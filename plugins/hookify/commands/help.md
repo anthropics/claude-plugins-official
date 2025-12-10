@@ -129,13 +129,27 @@ Use Python regex syntax:
 - `(eval|exec)\(` - matches "eval(" or "exec("
 - `\.env$` - matches files ending in .env
 
+## Rule Scopes: Global vs Local
+
+**Local rules** (project-specific):
+- Location: `.claude/hookify.{name}.local.md`
+- Active only in current project
+
+**Global rules** (user-wide):
+- Location: `~/.claude/hookify.{name}.local.md`
+- Active in ALL projects
+
+**Override**: Local rules with same `name:` override global rules.
+
+**Disable global locally**: Create local rule with same `name:` and `enabled: false`.
+
 ## Important Notes
 
 **No Restart Needed**: Hookify rules (`.local.md` files) take effect immediately on the next tool use. The hookify hooks are already loaded and read your rules dynamically.
 
 **Block or Warn**: Rules can either `block` operations (prevent execution) or `warn` (show message but allow). Set `action: block` or `action: warn` in the rule's frontmatter.
 
-**Rule Files**: Keep rules in `.claude/hookify.*.local.md` - they should be git-ignored (add to .gitignore if needed).
+**Rule Files**: Keep rules in `.claude/hookify.*.local.md` (local) or `~/.claude/hookify.*.local.md` (global). Local rules should be git-ignored.
 
 **Disable Rules**: Set `enabled: false` in frontmatter or delete the file.
 

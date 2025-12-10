@@ -258,6 +258,45 @@ Use environment variables instead of hardcoded values.
 **For stop events:**
 - Use general matching on session state
 
+## Rule Scopes: Global vs Local
+
+Hookify supports two rule scopes:
+
+### Local Rules (Project-specific)
+- **Location:** `.claude/hookify.{name}.local.md` (in project root)
+- **Scope:** Only active in current project
+- **Use for:** Project-specific conventions, team standards
+
+### Global Rules (User-wide)
+- **Location:** `~/.claude/hookify.{name}.local.md` (in home directory)
+- **Scope:** Active in ALL projects
+- **Use for:** Personal preferences, security rules, universal patterns
+
+### Override Priority
+
+**Local rules override global rules by `name:`**
+
+| Global Rule | Local Rule | Result |
+|-------------|------------|--------|
+| `warn-bash-shebang` | — | Global active |
+| `warn-bash-shebang` | `warn-bash-shebang` | **Local replaces global** |
+| `warn-bash-shebang` | `my-other-rule` | **Both active** (different names) |
+
+### Disabling a Global Rule Locally
+
+Create a local rule with the same `name:` and `enabled: false`:
+
+```markdown
+# .claude/hookify.bash-shebang.local.md
+---
+name: warn-bash-shebang
+enabled: false
+event: file
+---
+```
+
+This disables the global `warn-bash-shebang` rule for this project only.
+
 ## Management
 
 ### Enable/Disable Rules
