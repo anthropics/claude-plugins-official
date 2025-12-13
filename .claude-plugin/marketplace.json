@@ -259,6 +259,28 @@
       "source": "./external_plugins/context7",
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/context7",
       "tags": ["community-managed"]
+    },
+    {
+      "name": "auto-memory",
+      "description": "Automatic CLAUDE.md maintenance plugin. Watches file edits, deletes, and moves, then updates project memory in an isolated agent at end-of-turn. Zero config, minimal token overhead, marker-based updates that preserve manual content, and hierarchical CLAUDE.md support for monorepos.",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/severity1/claude-code-auto-memory.git"
+      },
+      "category": "productivity",
+      "homepage": "https://github.com/severity1/claude-code-auto-memory",
+      "tags": ["community-managed"]
+    },
+    {
+      "name": "prompt-improver",
+      "description": "UserPromptSubmit hook that evaluates prompt clarity and asks targeted clarifying questions before execution. Clear prompts proceed immediately with zero overhead. Vague prompts trigger research-based questioning via the AskUserQuestion tool for better first-attempt results.",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/severity1/claude-code-prompt-improver.git"
+      },
+      "category": "productivity",
+      "homepage": "https://github.com/severity1/claude-code-prompt-improver",
+      "tags": ["community-managed"]
     }
   ]
 }
