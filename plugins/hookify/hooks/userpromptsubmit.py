@@ -17,8 +17,8 @@ if PLUGIN_ROOT and PLUGIN_ROOT not in sys.path:
     sys.path.insert(0, PLUGIN_ROOT)
 
 try:
-    from core.config_loader import load_rules
-    from core.rule_engine import RuleEngine
+    from hookify_core.config_loader import load_rules
+    from hookify_core.rule_engine import RuleEngine
 except ImportError as e:
     error_msg = {"systemMessage": f"Hookify import error: {e}"}
     print(json.dumps(error_msg), file=sys.stdout)
