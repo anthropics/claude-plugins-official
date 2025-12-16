@@ -1,0 +1,7 @@
+{
+  "name": "lingo",
+  "description": "AI-powered i18n toolkit for React frameworks. Supports Next.js (App Router & Pages Router), TanStack Start, and React Router. Sets up locale routing, language switchers, and automatic locale detection using a systematic 13-step checklist.",
+  "author": {
+    "name": "Lingo.dev"
+  }
+}
