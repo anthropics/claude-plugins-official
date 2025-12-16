@@ -6,7 +6,7 @@ import sys
 from functools import lru_cache
 from typing import List, Dict, Any, Optional
 
-# Import from local module (use relative import for plugin directory structure)
+# Import from core module
 from core.config_loader import Rule, Condition
 
 
