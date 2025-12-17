@@ -1,0 +1,15 @@
+{
+  "mongodb-mcp-server": {
+    "command": "npx",
+    "args": [
+      "-y",
+      "mongodb-mcp-server@latest"
+    ],
+    "env": {
+      "MDB_MCP_CONNECTION_STRING": "${MDB_MCP_CONNECTION_STRING}",
+      "MDB_MCP_API_CLIENT_ID": "${MDB_MCP_API_CLIENT_ID}",
+      "MDB_MCP_API_CLIENT_SECRET": "${MDB_MCP_API_CLIENT_SECRET}"
+    }
+  }
+}
+

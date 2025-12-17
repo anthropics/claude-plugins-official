@@ -259,6 +259,13 @@
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/firebase"
     },
     {
+      "name": "mongodb",
+      "description": "MongoDB MCP integration for database operations, query execution, and infrastructure management. Query collections, run aggregations, manage indexes, and perform administrative operations on your MongoDB databases.",
+      "category": "database",
+      "source": "./external_plugins/mongodb",
+      "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/mongodb"
+    },
+    {
       "name": "context7",
       "description": "Upstash Context7 MCP server for up-to-date documentation lookup. Pull version-specific documentation and code examples directly from source repositories into your LLM context.",
       "category": "development",
