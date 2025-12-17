@@ -1,0 +1,21 @@
+{
+  "name": "firecrawl",
+  "description": "Web scraping and crawling powered by Firecrawl. Turn any website into clean, LLM-ready markdown or structured data. Scrape single pages, crawl entire sites, search the web, and extract structured information with automatic JavaScript rendering and anti-bot handling.",
+  "version": "1.0.0",
+  "author": {
+    "name": "Firecrawl",
+    "email": "hello@firecrawl.dev"
+  },
+  "homepage": "https://firecrawl.dev",
+  "repository": "https://github.com/mendableai/firecrawl",
+  "license": "AGPL-3.0",
+  "keywords": [
+    "web-scraping",
+    "crawling",
+    "data-extraction",
+    "markdown",
+    "llm",
+    "ai",
+    "web-search"
+  ]
+}
