@@ -126,8 +126,8 @@ This shows:
 
 ## Permissions
 
-- **Connection String Only**: Read/write operations on existing databases and collections
-- **With API Credentials**: Full infrastructure management including creating databases, collections, indexes, and managing Atlas resources
+- **Connection String Only**: Read/write operations on existing databases and collections, subject to the permissions of the database user
+- **With API Credentials**: Full infrastructure management including creating databases, collections, indexes, and managing Atlas resources, subject to the permissions of the service account or api key
 
 ## Resources
 
