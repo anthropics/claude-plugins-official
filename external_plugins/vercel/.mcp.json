@@ -1,6 +1,6 @@
 {
   "vercel": {
-    "type": "sse",
-    "url": "https://mcp.vercel.com/sse"
+    "type": "http",
+    "url": "https://mcp.vercel.com"
   }
 }
