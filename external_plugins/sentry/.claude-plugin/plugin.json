@@ -1,7 +1,0 @@
-{
-  "name": "sentry",
-  "description": "Sentry error monitoring integration. Access error reports, analyze stack traces, search issues by fingerprint, and debug production errors directly from your development environment.",
-  "author": {
-    "name": "Sentry"
-  }
-}

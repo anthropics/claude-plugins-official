@@ -237,8 +237,11 @@
       "name": "sentry",
       "description": "Sentry error monitoring integration. Access error reports, analyze stack traces, search issues by fingerprint, and debug production errors directly from your development environment.",
       "category": "monitoring",
-      "source": "./external_plugins/sentry",
-      "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/sentry"
+      "source": {
+        "source": "url",
+        "url": "https://github.com/getsentry/sentry-for-claude.git"
+      },
+      "homepage": "https://github.com/getsentry/sentry-for-claude/tree/main"
     },
     {
       "name": "slack",
@@ -256,6 +259,13 @@
         "url": "https://github.com/vercel/vercel-deploy-claude-code-plugin.git"
       },
       "homepage": "https://github.com/vercel/vercel-deploy-claude-code-plugin"
+    },
+        {
+      "name": "stripe",
+      "description": "Stripe development plugin for Claude",
+      "category": "development",
+      "source": "./external_plugins/stripe",
+      "homepage": "https://github.com/stripe/ai/tree/main/providers/claude/plugin"
     },
     {
       "name": "firebase",
