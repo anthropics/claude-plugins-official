@@ -502,6 +502,16 @@
       "source": "./external_plugins/context7",
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/context7",
       "tags": ["community-managed"]
+    },
+    {
+      "name": "pinecone",
+      "description": "",
+      "category": "development",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/pinecone-io/pinecone-claude-code-plugin.git"
+      },
+      "homepage": "https://github.com/pinecone-io/pinecone-claude-code-plugin"
     }
   ]
 }
