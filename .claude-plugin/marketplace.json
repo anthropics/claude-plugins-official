@@ -506,7 +506,7 @@
     {
       "name": "pinecone",
       "description": "",
-      "category": "development",
+      "category": "database",
       "source": {
         "source": "url",
         "url": "https://github.com/pinecone-io/pinecone-claude-code-plugin.git"
