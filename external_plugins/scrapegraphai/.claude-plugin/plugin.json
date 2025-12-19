@@ -1,0 +1,12 @@
+{
+  "name": "scrapegraphai",
+  "version": "1.2.0",
+  "description": "Intelligent web scraping with LLM-powered content extraction, browser automation, and multi-site search capabilities",
+  "author": {
+    "name": "ScrapeGraphAI",
+    "url": "https://scrapegraphai.com"
+  },
+  "homepage": "https://scrapegraphai.com",
+  "keywords": ["web-scraping", "automation", "llm", "data-extraction", "crawling", "browser-automation"]
+}
+
