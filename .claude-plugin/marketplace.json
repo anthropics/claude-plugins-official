@@ -502,6 +502,16 @@
       "source": "./external_plugins/context7",
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/context7",
       "tags": ["community-managed"]
+    },
+    {
+      "name": "sanity",
+      "description": "Official Sanity developer companion for Claude Code. Includes MCP integration, interactive skills, slash commands, and expert context rules.",
+      "category": "cms",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/sanity-io/agent-toolkit.git"
+      },
+      "homepage": "https://github.com/sanity-io/agent-toolkit"
     }
   ]
 }
