@@ -9,9 +9,7 @@ import os
 import sys
 import json
 
-# CRITICAL: Add plugin root to Python path for imports
-# The plugin is installed in a versioned directory (e.g., hookify/0.1.0/ or hookify/<hash>/)
-# so we import directly from 'core' module, not 'hookify.core'
+# import directly from 'core' module
 PLUGIN_ROOT = os.environ.get('CLAUDE_PLUGIN_ROOT')
 if PLUGIN_ROOT and PLUGIN_ROOT not in sys.path:
     sys.path.insert(0, PLUGIN_ROOT)

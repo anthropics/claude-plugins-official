@@ -1,6 +1,0 @@
-{
-  "notion": {
-    "type": "sse",
-    "url": "https://mcp.notion.com/sse"
-  }
-}

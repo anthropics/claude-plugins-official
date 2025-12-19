@@ -1,7 +1,0 @@
-{
-  "name": "atlassian",
-  "description": "Connect to Atlassian products including Jira and Confluence. Search and create issues, access documentation, manage sprints, and integrate your development workflow with Atlassian's collaboration tools.",
-  "author": {
-    "name": "Atlassian"
-  }
-}
