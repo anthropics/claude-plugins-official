@@ -465,6 +465,13 @@
       "homepage": "https://github.com/getsentry/sentry-for-claude/tree/main"
     },
     {
+      "name": "shopify",
+      "description": "Shopify development plugin for Claude",
+      "category": "development",
+      "source": "./external_plugins/shopify",
+      "homepage": "https://shopify.dev/docs/apps/build/devmcp"
+    },
+    {
       "name": "slack",
       "description": "Slack workspace integration. Search messages, access channels, read threads, and stay connected with your team's communications while coding. Find relevant discussions and context quickly.",
       "category": "productivity",
