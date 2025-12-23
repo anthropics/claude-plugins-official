@@ -502,6 +502,17 @@
       "source": "./external_plugins/context7",
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/context7",
       "tags": ["community-managed"]
+    },
+    {
+      "name": "mem0",
+      "description": "Persistent memory for Claude Code using mem0.ai. Automatically retrieves relevant memories before each prompt and stores conversations when sessions end. Semantic vector search with user-scoped memories.",
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/0xtechdean/claude-code-mem0.git"
+      },
+      "homepage": "https://github.com/0xtechdean/claude-code-mem0",
+      "tags": ["community-managed"]
     }
   ]
 }
