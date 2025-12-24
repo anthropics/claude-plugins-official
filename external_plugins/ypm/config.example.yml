@@ -1,0 +1,90 @@
+# YPM Configuration File (Template)
+#
+# Copy this file to create your config.yml:
+#   cp config.example.yml config.yml
+#
+# Then edit config.yml to match your environment.
+
+# Monitor target directories
+monitor:
+  # Directories to monitor (multiple allowed)
+  # Examples:
+  #   - /Users/yourname/Projects
+  #   - /home/yourname/workspace
+  #   - ~/Documents/dev
+  directories:
+    - /path/to/your/projects    # TODO: Change to your project directory
+
+  # Exclusion patterns (e.g., this project itself)
+  # Specify as relative path or partial match
+  exclude:
+    - proj_YPM/YPM         # Exclude YPM itself
+    # Add more as needed:
+    # - "node_modules"
+    # - ".git"
+    # - "tmp"
+
+  # Project detection patterns
+  # Directory patterns for detecting Git repositories
+  # Adjust according to your directory structure
+  #
+  # Examples:
+  #   - "*"              # 1 level (all projects directly under)
+  #   - "work/*"         # 2 levels (work/project1, work/project2, ...)
+  #   - "proj_*/*"       # Specific naming convention (proj_xxx/yyy)
+  patterns:
+    - "*"                # Default: all projects directly under
+    # Add more as needed:
+    # - "personal/*"
+    # - "client/*"
+    # - "work/*/*"       # 3 levels
+
+# Project classification criteria
+classification:
+  # Active: updated within N days
+  # Default: 7 days (1 week)
+  # Adjust examples: 3 days (short), 14 days (2 weeks)
+  active_days: 7
+
+  # Dormant: no updates for N days or more
+  # Default: 30 days (1 month)
+  # Adjust examples: 60 days (2 months), 90 days (3 months)
+  inactive_days: 30
+
+# Progress estimation criteria
+# YPM estimates progress from documentation and Git history
+# Use these as reference; manual adjustment in PROJECT_STATUS.md is also possible
+progress:
+  phase_0: 0-20    # Design/planning stage (documentation, architecture design)
+  phase_1: 20-30   # Development environment setup (dependencies, initial config)
+  phase_2: 30-60   # Core feature implementation
+  phase_3: 60-80   # Testing/improvement (bug fixes, refactoring)
+  phase_4: 80-100  # Production/feature expansion (deployment, new features)
+
+# Editor settings
+editor:
+  # Default editor for /open command
+  # Supported: code (VS Code), cursor (Cursor), zed (Zed)
+  # Change with: /open --editor <editor_name>
+  default: code
+
+# Other settings
+settings:
+  # Language setting for YPM output
+  # Supported: en (English), ja (Japanese)
+  # Default: en
+  # When set to non-English, Claude will translate output dynamically
+  language: en
+
+  # Include non-Git directories
+  # false: Monitor only Git repositories (recommended)
+  # true: Monitor all directories (Note: non-Git projects will also appear)
+  include_non_git: false
+
+  # Documentation loading priority
+  # YPM retrieves project overview in this order
+  # Adjust order as needed
+  doc_priority:
+    - CLAUDE.md      # Claude Code instructions
+    - README.md      # Project overview
+    - docs/INDEX.md  # Documentation index

@@ -1,0 +1,4 @@
+# YPM Dependencies
+
+# YAML parsing for config.yml
+pyyaml>=6.0

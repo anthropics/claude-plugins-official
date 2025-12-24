@@ -1,0 +1,21 @@
+{
+  "name": "ypm",
+  "version": "1.0.0",
+  "description": "Multi-project progress tracking system powered by Claude Code. Automatically tracks status of multiple projects from Git history and documentation.",
+  "author": {
+    "name": "Hiroshi Yamato",
+    "email": "contact@signalcompose.com",
+    "url": "https://hiroshiyamato.com"
+  },
+  "homepage": "https://github.com/signalcompose/YPM",
+  "repository": "https://github.com/signalcompose/YPM",
+  "license": "MIT",
+  "keywords": [
+    "project-management",
+    "multi-project",
+    "progress-tracking",
+    "git",
+    "workflow",
+    "productivity"
+  ]
+}
