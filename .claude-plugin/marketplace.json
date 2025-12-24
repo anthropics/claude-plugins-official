@@ -502,6 +502,17 @@
       "source": "./external_plugins/context7",
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/context7",
       "tags": ["community-managed"]
+    },
+    {
+      "name": "ypm",
+      "description": "Multi-project progress tracking system powered by Claude Code. Automatically tracks status of multiple projects from Git history and documentation with centralized PROJECT_STATUS.md management.",
+      "author": {
+        "name": "Hiroshi Yamato"
+      },
+      "category": "productivity",
+      "source": "./external_plugins/ypm",
+      "homepage": "https://github.com/signalcompose/YPM",
+      "tags": ["community-managed"]
     }
   ]
 }
