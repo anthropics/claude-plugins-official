@@ -1,10 +1,9 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
-  "name": "claude-plugins-official",
-  "description": "Directory of popular Claude Code extensions including development tools, productivity plugins, and MCP integrations",
+  "name": "test-local",
+  "description": "test-local marketplace",
   "owner": {
-    "name": "Anthropic",
-    "email": "support@anthropic.com"
+    "name": "test"
   },
   "plugins": [
     {
@@ -508,8 +507,8 @@
       "description": "Access official Microsoft documentation, API references, and code samples for Azure, .NET, Windows, and more.",
       "category": "development",
       "source": {
-        "source": "github",
-        "repo": "microsoftdocs/mcp"
+        "source": "url",
+        "url": "https://github.com/MicrosoftDocs/mcp.git"
       },
       "homepage": "https://github.com/microsoftdocs/mcp"
     }
