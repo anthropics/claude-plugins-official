@@ -1,0 +1,7 @@
+{
+  "name": "dart-lsp",
+  "description": "Dart/Flutter language server for enhanced code intelligence including go-to-definition, find references, hover information, and code analysis",
+  "author": {
+    "name": "Tyler Jewell"
+  }
+}
