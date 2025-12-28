@@ -502,6 +502,17 @@
       "source": "./external_plugins/context7",
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/context7",
       "tags": ["community-managed"]
+    },
+    {
+      "name": "dx",
+      "description": "Developer experience essentials: GitHub Actions failure analysis, conversation cloning, context handoffs, and Reddit research via Gemini CLI.",
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/ykdojo/claude-code-tips.git"
+      },
+      "homepage": "https://github.com/ykdojo/claude-code-tips",
+      "tags": ["community-managed"]
     }
   ]
 }
