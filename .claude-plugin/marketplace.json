@@ -229,6 +229,40 @@
       }
     },
     {
+      "name": "ballerina-lsp",
+      "description": "Ballerina language server for code intelligence and cloud-native development",
+      "version": "1.0.0",
+      "author": {
+        "name": "WSO2",
+        "email": "contact@ballerina.io"
+      },
+      "source": "./plugins/ballerina-lsp",
+      "homepage": "https://ballerina.io",
+      "repository": "https://github.com/ballerina-platform/ballerina-lang",
+      "category": "development",
+      "strict": false,
+      "lspServers": {
+        "ballerina": {
+          "command": "bal",
+          "args": ["start-language-server"],
+          "extensionToLanguage": {
+            ".bal": "ballerina"
+          },
+          "initializationOptions": {
+            "enableSemanticHighlighting": false,
+            "enableBackgroundDriftCheck": false,
+            "enableInlayHints": false,
+            "supportBalaScheme": false,
+            "supportQuickPick": true,
+            "supportPositionalRenamePopup": true,
+            "enableLightWeightMode": false,
+            "enableIndexPackages": true,
+            "enableMemoryUsageMonitor": false
+          }
+        }
+      }
+    },
+    {
       "name": "agent-sdk-dev",
       "description": "Development kit for working with the Claude Agent SDK",
       "author": {
