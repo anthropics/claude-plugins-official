@@ -1,20 +1,14 @@
 ---
 description: "Cancel active Ralph Wiggum loop"
-allowed-tools: ["Bash"]
+allowed-tools: ["Bash(${CLAUDE_PLUGIN_ROOT}/scripts/cancel-ralph.sh:*)"]
 hide-from-slash-command-tool: "true"
 ---
 
 # Cancel Ralph
 
-```!
-if [[ -f .claude/ralph-loop.local.md ]]; then
-  ITERATION=$(grep '^iteration:' .claude/ralph-loop.local.md | sed 's/iteration: *//')
-  echo "FOUND_LOOP=true"
-  echo "ITERATION=$ITERATION"
-else
-  echo "FOUND_LOOP=false"
-fi
-```
+Run this command to check for an active Ralph loop:
+
+"${CLAUDE_PLUGIN_ROOT}/scripts/cancel-ralph.sh"
 
 Check the output above:
 
