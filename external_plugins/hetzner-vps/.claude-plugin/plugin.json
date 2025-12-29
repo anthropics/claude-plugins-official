@@ -1,0 +1,13 @@
+{
+  "name": "hetzner-vps",
+  "description": "Provision secure, Claude Code-ready Hetzner VPS instances with auto-firewall, fail2ban, and SSH hardening. Spin up a production-ready cloud server for ~$5/month in under 5 minutes.",
+  "version": "1.0.0",
+  "author": {
+    "name": "Pete Sena",
+    "url": "https://linkedin.com/in/petersena"
+  },
+  "homepage": "https://labs.theresonance.studio",
+  "repository": "https://github.com/The-Resonance/claude-code-hetzner-vps",
+  "license": "MIT",
+  "keywords": ["hetzner", "vps", "cloud", "provisioning", "security", "devops", "infrastructure"]
+}
