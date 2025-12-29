@@ -9,9 +9,7 @@ hide-from-slash-command-tool: "true"
 
 Run this command to initialize the Ralph loop:
 
-```bash
 "${CLAUDE_PLUGIN_ROOT}/scripts/setup-ralph-loop.sh" $ARGUMENTS
-```
 
 After running the setup script, if a completion promise was set, display its requirements.
 

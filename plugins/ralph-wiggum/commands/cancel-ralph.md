@@ -8,9 +8,7 @@ hide-from-slash-command-tool: "true"
 
 Run this command to check for an active Ralph loop:
 
-```bash
 "${CLAUDE_PLUGIN_ROOT}/scripts/cancel-ralph.sh"
-```
 
 Check the output above:
 
