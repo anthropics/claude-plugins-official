@@ -1,7 +1,7 @@
 ---
 description: "Start Ralph Wiggum loop in current session"
-argument-hint: "PROMPT [--max-iterations N] [--completion-promise TEXT]"
-allowed-tools: ["Bash(${CLAUDE_PLUGIN_ROOT}/scripts/setup-ralph-loop.sh)"]
+argument-hint: "PROMPT [--name NAME] [--max-iterations N] [--completion-promise TEXT]"
+allowed-tools: ["Bash(${CLAUDE_PLUGIN_ROOT}/scripts/setup-ralph-loop.sh:*)"]
 hide-from-slash-command-tool: "true"
 ---
 
@@ -9,16 +9,22 @@ hide-from-slash-command-tool: "true"
 
 Execute the setup script to initialize the Ralph loop:
 
-```!
+```bash
 "${CLAUDE_PLUGIN_ROOT}/scripts/setup-ralph-loop.sh" $ARGUMENTS
+```
 
-# Extract and display completion promise if set
-if [ -f .claude/ralph-loop.local.md ]; then
-  PROMISE=$(grep '^completion_promise:' .claude/ralph-loop.local.md | sed 's/completion_promise: *//' | sed 's/^"\(.*\)"$/\1/')
+After the script runs, check for completion promise and display critical reminder:
+
+```bash
+# Find the most recently created ralph loop state file
+LATEST_STATE=$(ls -t .claude/ralph-loop-*.local.md 2>/dev/null | head -1)
+if [ -n "$LATEST_STATE" ]; then
+  PROMISE=$(grep '^completion_promise:' "$LATEST_STATE" | sed 's/completion_promise: *//' | sed 's/^"\(.*\)"$/\1/')
+  LOOP_NAME=$(grep '^name:' "$LATEST_STATE" | sed 's/name: *//' | tr -d '"')
   if [ -n "$PROMISE" ] && [ "$PROMISE" != "null" ]; then
     echo ""
     echo "═══════════════════════════════════════════════════════════"
-    echo "CRITICAL - Ralph Loop Completion Promise"
+    echo "CRITICAL - Ralph Loop '$LOOP_NAME' Completion Promise"
     echo "═══════════════════════════════════════════════════════════"
     echo ""
     echo "To complete this loop, output this EXACT text:"

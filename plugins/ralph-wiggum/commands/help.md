@@ -39,34 +39,50 @@ Start a Ralph loop in your current session.
 ```
 /ralph-loop "Refactor the cache layer" --max-iterations 20
 /ralph-loop "Add tests" --completion-promise "TESTS COMPLETE"
+/ralph-loop "Review charts" --name chart-review --completion-promise "REVIEW_DONE"
 ```
 
 **Options:**
+- `--name <name>` - Loop name for parallel loops (default: "default")
 - `--max-iterations <n>` - Max iterations before auto-stop
 - `--completion-promise <text>` - Promise phrase to signal completion
 
 **How it works:**
-1. Creates `.claude/.ralph-loop.local.md` state file
+1. Creates `.claude/ralph-loop-{name}.local.md` state file
 2. You work on the task
 3. When you try to exit, stop hook intercepts
 4. Same prompt fed back
 5. You see your previous work
 6. Continues until promise detected or max iterations
 
+**Parallel Loops:**
+Run multiple loops in different terminal sessions:
+```bash
+# Terminal 1
+/ralph-loop "Review charts" --name chart-review --completion-promise "CHARTS_DONE"
+
+# Terminal 2
+/ralph-loop "Review seniority" --name seniority --completion-promise "SENIORITY_DONE"
+```
+Each loop runs independently with its own state file.
+
 ---
 
-### /cancel-ralph
+### /cancel-ralph [LOOP_NAME | --all]
 
 Cancel an active Ralph loop (removes the loop state file).
 
 **Usage:**
 ```
-/cancel-ralph
+/cancel-ralph                  # List active loops, cancel if only one
+/cancel-ralph chart-review     # Cancel specific loop by name
+/cancel-ralph --all            # Cancel all active loops
 ```
 
 **How it works:**
-- Checks for active loop state file
-- Removes `.claude/.ralph-loop.local.md`
+- Lists all active loop state files
+- Removes `.claude/ralph-loop-{name}.local.md`
+- Cleans up TTY link files
 - Reports cancellation with iteration count
 
 ---

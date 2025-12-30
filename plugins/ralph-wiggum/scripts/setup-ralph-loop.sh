@@ -2,6 +2,7 @@
 
 # Ralph Loop Setup Script
 # Creates state file for in-session Ralph loop
+# Supports named parallel loops via --name parameter
 
 set -euo pipefail
 
@@ -9,6 +10,7 @@ set -euo pipefail
 PROMPT_PARTS=()
 MAX_ITERATIONS=0
 COMPLETION_PROMISE="null"
+LOOP_NAME="default"
 
 # Parse options and positional arguments
 while [[ $# -gt 0 ]]; do
@@ -24,6 +26,7 @@ ARGUMENTS:
   PROMPT...    Initial prompt to start the loop (can be multiple words without quotes)
 
 OPTIONS:
+  --name <name>                  Loop name for parallel loops (default: "default")
   --max-iterations <n>           Maximum iterations before auto-stop (default: unlimited)
   --completion-promise '<text>'  Promise phrase (USE QUOTES for multi-word)
   -h, --help                     Show this help message
@@ -39,11 +42,19 @@ DESCRIPTION:
   - Tasks requiring self-correction and refinement
   - Learning how Ralph works
 
+PARALLEL LOOPS:
+  Run multiple loops in different terminal sessions using --name:
+
+  Terminal 1: /ralph-loop "Task A" --name task-a --completion-promise "A_DONE"
+  Terminal 2: /ralph-loop "Task B" --name task-b --completion-promise "B_DONE"
+
+  Each loop has its own state file and runs independently.
+
 EXAMPLES:
   /ralph-loop Build a todo API --completion-promise 'DONE' --max-iterations 20
   /ralph-loop --max-iterations 10 Fix the auth bug
   /ralph-loop Refactor cache layer  (runs forever)
-  /ralph-loop --completion-promise 'TASK COMPLETE' Create a REST API
+  /ralph-loop --name chart-review "Review charts" --completion-promise 'REVIEW_DONE'
 
 STOPPING:
   Only by reaching --max-iterations or detecting --completion-promise
@@ -51,10 +62,13 @@ STOPPING:
 
 MONITORING:
   # View current iteration:
-  grep '^iteration:' .claude/ralph-loop.local.md
+  grep '^iteration:' .claude/ralph-loop-*.local.md
 
   # View full state:
-  head -10 .claude/ralph-loop.local.md
+  head -10 .claude/ralph-loop-default.local.md
+
+  # List all active loops:
+  ls -la .claude/ralph-loop-*.local.md
 HELP_EOF
       exit 0
       ;;
@@ -101,6 +115,26 @@ HELP_EOF
       COMPLETION_PROMISE="$2"
       shift 2
       ;;
+    --name)
+      if [[ -z "${2:-}" ]]; then
+        echo "❌ Error: --name requires a loop name" >&2
+        echo "" >&2
+        echo "   Valid examples:" >&2
+        echo "     --name chart-review" >&2
+        echo "     --name seniority" >&2
+        echo "     --name task-1" >&2
+        echo "" >&2
+        echo "   Names should be alphanumeric with hyphens (no spaces)" >&2
+        exit 1
+      fi
+      # Sanitize name: only allow alphanumeric and hyphens
+      LOOP_NAME=$(echo "$2" | tr -cd 'a-zA-Z0-9-')
+      if [[ -z "$LOOP_NAME" ]]; then
+        echo "❌ Error: Loop name must contain alphanumeric characters" >&2
+        exit 1
+      fi
+      shift 2
+      ;;
     *)
       # Non-option argument - collect all as prompt parts
       PROMPT_PARTS+=("$1")
@@ -137,9 +171,13 @@ else
   COMPLETION_PROMISE_YAML="null"
 fi
 
-cat > .claude/ralph-loop.local.md <<EOF
+# State file uses loop name
+STATE_FILE=".claude/ralph-loop-${LOOP_NAME}.local.md"
+
+cat > "$STATE_FILE" <<EOF
 ---
 active: true
+name: "$LOOP_NAME"
 iteration: 1
 max_iterations: $MAX_ITERATIONS
 completion_promise: $COMPLETION_PROMISE_YAML
@@ -149,9 +187,13 @@ started_at: "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 $PROMPT
 EOF
 
+# Create TTY link file so stop hook knows which loop belongs to this terminal
+TTY_ID=$(tty 2>/dev/null | tr '/' '_' || echo "unknown")
+echo "$LOOP_NAME" > ".claude/.ralph-tty${TTY_ID}"
+
 # Output setup message
 cat <<EOF
-🔄 Ralph loop activated in this session!
+🔄 Ralph loop "${LOOP_NAME}" activated!
 
 Iteration: 1
 Max iterations: $(if [[ $MAX_ITERATIONS -gt 0 ]]; then echo $MAX_ITERATIONS; else echo "unlimited"; fi)
@@ -161,7 +203,8 @@ The stop hook is now active. When you try to exit, the SAME PROMPT will be
 fed back to you. You'll see your previous work in files, creating a
 self-referential loop where you iteratively improve on the same task.
 
-To monitor: head -10 .claude/ralph-loop.local.md
+To monitor: head -10 $STATE_FILE
+To cancel:  /cancel-ralph ${LOOP_NAME}
 
 ⚠️  WARNING: This loop cannot be stopped manually! It will run infinitely
     unless you set --max-iterations or --completion-promise.
