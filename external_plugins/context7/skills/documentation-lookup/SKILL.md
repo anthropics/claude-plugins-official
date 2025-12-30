@@ -5,19 +5,7 @@ description: Use when user needs code generation, setup/configuration steps, or 
 
 # Context7 Documentation Skill
 
-Automatically fetch up-to-date, version-specific documentation and code examples straight from the source.
-
-## Why Use This
-
-Without Context7:
-- Code examples based on outdated training data
-- Hallucinated APIs that don't exist
-- Generic answers for old package versions
-
-With Context7:
-- Current documentation from source repositories
-- Working code examples
-- Version-specific information
+Fetch up-to-date, version-specific documentation and code examples from source repositories.
 
 ## When to Trigger
 
@@ -27,14 +15,16 @@ With Context7:
 - User needs API reference or examples
 - User mentions any framework: React, Next.js, Vue, Svelte, Express, Prisma, Tailwind, etc.
 
-## Available Tools
+## Workflow
 
-- `resolve-library-id`: Convert library name → Context7 ID
-- `get-library-docs`: Fetch docs with optional topic filter
-
-## How to Use
-
-1. Identify the library from user's question
-2. Call `resolve-library-id` with library name
-3. Call `get-library-docs` with resolved ID and topic (if specific)
+1. Call `resolve-library-id` with the library name and user's question
+2. Select the best match (prioritize exact name, high `totalSnippets`, high `benchmarkScore`)
+3. Call `query-docs` with the library ID and user's question
 4. Present code examples and explanations
+
+## Tips
+
+- Use version-specific IDs for pinned versions: `/vercel/next.js/v15.1.8`
+- The `query` parameter improves result relevance - pass the user's full question
+- Limited to 3 `query-docs` calls per question to prevent context bloat
+- Check `versions` field from `resolve-library-id` for available versions

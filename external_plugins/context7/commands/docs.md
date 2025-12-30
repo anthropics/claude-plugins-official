@@ -1,31 +1,28 @@
 ---
 description: Fetch up-to-date documentation and code examples for any library
-argument-hint: <library> [topic]
+argument-hint: <library> [query]
 ---
 
 # Context7 Documentation Lookup
 
-Fetch current, version-specific documentation straight from source repositories.
+Fetch current, version-specific documentation from source repositories.
 
 ## Arguments
 
-`$ARGUMENTS` = `<library> [topic]`
+`$ARGUMENTS` = `<library> [query]`
+
+- First word: library name (or direct library ID starting with `/`)
+- Remaining: your specific question or topic
 
 Examples:
-- `react hooks` → library="react", topic="hooks"
-- `next.js routing` → library="next.js", topic="routing"
-- `prisma` → library="prisma", topic=none
+- `react hooks`
+- `next.js authentication`
+- `/vercel/next.js/v15.1.8 app router`
 
 ## Steps
 
-1. Parse arguments: first word = library, remaining = topic
-2. Call `resolve-library-id` with the library name
-3. Call `get-library-docs` with:
-   - `context7CompatibleLibraryID`: the resolved ID
-   - `topic`: the topic (if provided)
-4. Present documentation with code examples
-
-## Tips
-
-- If you know the exact library ID, use it directly: `/context7:docs /vercel/next.js routing`
-- Use `page` parameter (1-10) if initial results aren't sufficient
+1. Parse arguments: first word = library, remaining = query
+2. If library starts with `/`, use it directly as library ID
+3. Otherwise, call `resolve-library-id` with library name and query
+4. Call `query-docs` with the library ID and query
+5. Present documentation with code examples
