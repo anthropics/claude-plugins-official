@@ -1,0 +1,9 @@
+{
+  "name": "faf",
+  "description": ".faf - Foundational AI-context Format. IANA registered (application/vnd.faf+yaml). Persistent project context for Claude Code - Project DNA that survives across sessions.",
+  "author": {
+    "name": "wolfejam",
+    "email": "james@wolfejames.com",
+    "url": "https://wolfejam.dev"
+  }
+}
