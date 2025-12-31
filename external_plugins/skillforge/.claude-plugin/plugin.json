@@ -1,0 +1,26 @@
+{
+  "name": "skillforge",
+  "description": "Complete AI development toolkit with 33 skills, 12 agents, 10 commands, and 27 hooks. Features progressive loading, LangGraph workflows, security patterns, and production-ready development patterns for full-stack applications.",
+  "version": "1.0.0",
+  "author": {
+    "name": "Yonatan Gross",
+    "url": "https://github.com/yonatangross"
+  },
+  "homepage": "https://github.com/yonatangross/skillforge-claude-plugin",
+  "repository": "https://github.com/yonatangross/skillforge-claude-plugin",
+  "license": "MIT",
+  "keywords": [
+    "ai-development",
+    "langgraph",
+    "fastapi",
+    "react",
+    "typescript",
+    "python",
+    "multi-agent",
+    "rag",
+    "semantic-search",
+    "security",
+    "testing",
+    "progressive-loading"
+  ]
+}
