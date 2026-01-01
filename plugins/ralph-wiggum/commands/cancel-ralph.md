@@ -7,7 +7,7 @@ hide-from-slash-command-tool: "true"
 # Cancel Ralph
 
 ```!
-if [ -f .claude/ralph-loop.local.md ]; then ITERATION=$(grep "^iteration:" .claude/ralph-loop.local.md | sed "s/iteration: *//"); echo "FOUND_LOOP=true"; echo "ITERATION=$ITERATION"; else echo "FOUND_LOOP=false"; fi
+test -f .claude/ralph-loop.local.md && echo "FOUND_LOOP=true" && grep "^iteration:" .claude/ralph-loop.local.md || echo "FOUND_LOOP=false"
 ```
 
 Check the output above:
