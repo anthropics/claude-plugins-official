@@ -6,14 +6,10 @@ hide-from-slash-command-tool: "true"
 
 # Cancel Ralph
 
-```!
-if [[ -f .claude/ralph-loop.local.md ]]; then
-  ITERATION=$(grep '^iteration:' .claude/ralph-loop.local.md | sed 's/iteration: *//')
-  echo "FOUND_LOOP=true"
-  echo "ITERATION=$ITERATION"
-else
-  echo "FOUND_LOOP=false"
-fi
+**FIRST**: Execute this command using the Bash tool to check for an active loop:
+
+```
+"${CLAUDE_PLUGIN_ROOT}/scripts/cancel-ralph-loop.sh"
 ```
 
 Check the output above:
