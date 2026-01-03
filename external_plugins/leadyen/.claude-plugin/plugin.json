@@ -1,0 +1,13 @@
+{
+  "name": "leadyen",
+  "description": "B2B sales intelligence - find leads, enrich contacts, automate outreach",
+  "version": "1.0.0",
+  "author": {
+    "name": "GetPlatform",
+    "url": "https://getplatform.co"
+  },
+  "homepage": "https://leadyen.com",
+  "repository": "https://github.com/getplatform/getplatform-plugins",
+  "license": "MIT",
+  "keywords": ["sales", "leads", "b2b", "prospecting", "enrichment", "outreach"]
+}
