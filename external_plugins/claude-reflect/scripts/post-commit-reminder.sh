@@ -16,8 +16,8 @@ COMMAND="$(echo "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null)"
 # Exit if no command
 [ -z "$COMMAND" ] && exit 0
 
-# Check if it was a git commit command (not amend, not git commit without actual commit)
-if [[ "$COMMAND" == *"git commit"* ]]; then
+# Check if it was a git commit command (not amend)
+if [[ "$COMMAND" == *"git commit"* && "$COMMAND" != *"--amend"* ]]; then
   # Build reminder message
   MSG="Git commit detected!"
 

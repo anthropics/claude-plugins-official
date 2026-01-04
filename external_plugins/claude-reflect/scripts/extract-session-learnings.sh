@@ -16,13 +16,13 @@ if [ ! -f "$SESSION_FILE" ]; then
 fi
 
 # Extract user messages, excluding meta/system messages and tool results
-# Filter: type=user, not isMeta, message.content is a simple string (not array/object)
+# Filter: type=user, not isMeta, extract text from content array
 extract_messages() {
   jq -r '
-    select(.type=="user") |
-    select(.isMeta != true) |
-    select(.message.content | type == "string") |
-    .message.content
+    select(.type=="user" and .isMeta != true) |
+    .message.content[]? |
+    select(.type=="text") |
+    .text
   ' "$SESSION_FILE" 2>/dev/null \
     | grep -v '^$' \
     | grep -v '^<' \
