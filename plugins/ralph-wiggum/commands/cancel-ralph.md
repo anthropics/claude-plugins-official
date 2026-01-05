@@ -1,20 +1,18 @@
 ---
 description: "Cancel active Ralph Wiggum loop"
-allowed-tools: ["Bash"]
+allowed-tools: ["Bash(test -f .claude/ralph-loop.local.md:*)", "Bash(rm .claude/ralph-loop.local.md)", "Read(.claude/ralph-loop.local.md)"]
 hide-from-slash-command-tool: "true"
 ---
 
 # Cancel Ralph
 
-**FIRST**: Execute this command using the Bash tool to cancel any active loop:
+To cancel the Ralph loop:
 
-```
-"${CLAUDE_PLUGIN_ROOT}/scripts/cancel-ralph-loop.sh"
-```
+1. Check if `.claude/ralph-loop.local.md` exists using Bash: `test -f .claude/ralph-loop.local.md && echo "EXISTS" || echo "NOT_FOUND"`
 
-The script handles everything - it will:
-- Find and delete the loop state file if it exists
-- Report whether a loop was cancelled and at what iteration
-- Show the expected file location if no loop was found
+2. **If NOT_FOUND**: Say "No active Ralph loop found."
 
-Simply report the output to the user. No additional commands needed.
+3. **If EXISTS**:
+   - Read `.claude/ralph-loop.local.md` to get the current iteration number from the `iteration:` field
+   - Remove the file using Bash: `rm .claude/ralph-loop.local.md`
+   - Report: "Cancelled Ralph loop (was at iteration N)" where N is the iteration value

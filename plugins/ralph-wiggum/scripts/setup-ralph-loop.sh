@@ -175,15 +175,15 @@ if [[ -n "$PROMPT" ]]; then
   echo "$PROMPT"
 fi
 
-# Display completion promise instructions if set
-if [[ "$COMPLETION_PROMISE" != "null" ]] && [[ -n "$COMPLETION_PROMISE" ]]; then
+# Display completion promise requirements if set
+if [[ "$COMPLETION_PROMISE" != "null" ]]; then
   echo ""
   echo "═══════════════════════════════════════════════════════════"
   echo "CRITICAL - Ralph Loop Completion Promise"
   echo "═══════════════════════════════════════════════════════════"
   echo ""
   echo "To complete this loop, output this EXACT text:"
-  echo "  <promise>${COMPLETION_PROMISE}</promise>"
+  echo "  <promise>$COMPLETION_PROMISE</promise>"
   echo ""
   echo "STRICT REQUIREMENTS (DO NOT VIOLATE):"
   echo "  ✓ Use <promise> XML tags EXACTLY as shown above"
