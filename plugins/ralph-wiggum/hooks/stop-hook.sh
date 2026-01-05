@@ -3,11 +3,87 @@
 # Ralph Wiggum Stop Hook
 # Prevents session exit when a ralph-loop is active
 # Feeds Claude's output back as input to continue the loop
+# Enhanced with rate limit detection and auto-wait
 
 set -euo pipefail
 
 # Read hook input from stdin (advanced stop hook API)
 HOOK_INPUT=$(cat)
+
+# Function to get ccusage command
+get_ccusage_cmd() {
+    if command -v ccusage &> /dev/null; then
+        echo "ccusage"
+    elif command -v bunx &> /dev/null; then
+        echo "bunx ccusage"
+    elif command -v npx &> /dev/null; then
+        echo "npx ccusage@latest"
+    else
+        return 1
+    fi
+}
+
+# Function to get remaining seconds until block reset
+get_remaining_seconds() {
+    local ccusage_cmd=$(get_ccusage_cmd 2>/dev/null)
+    if [[ -z "$ccusage_cmd" ]]; then
+        echo "0"
+        return
+    fi
+
+    local ccusage_output=$($ccusage_cmd blocks 2>/dev/null | grep -A1 "ACTIVE" | tr '\n' ' ')
+    local hours=0
+    local minutes=0
+
+    if [[ "$ccusage_output" =~ ([0-9]+)h[[:space:]]*([0-9]+)m[[:space:]]*remaining ]]; then
+        hours=${BASH_REMATCH[1]}
+        minutes=${BASH_REMATCH[2]}
+    elif [[ "$ccusage_output" =~ ([0-9]+)m[[:space:]]*remaining ]]; then
+        minutes=${BASH_REMATCH[1]}
+    fi
+
+    echo $((hours * 3600 + minutes * 60))
+}
+
+# Function to check if rate limited (check transcript for rate limit errors)
+check_rate_limited() {
+    local transcript_path="$1"
+
+    if [[ ! -f "$transcript_path" ]]; then
+        echo "false"
+        return
+    fi
+
+    # Look for common rate limit error patterns in transcript
+    if grep -qi "rate.limit\|rate_limit\|too.many.requests\|429\|quota.exceeded\|usage.limit" "$transcript_path" 2>/dev/null; then
+        echo "true"
+    else
+        echo "false"
+    fi
+}
+
+# Function to wait for rate limit reset
+wait_for_reset() {
+    local remaining=$(get_remaining_seconds)
+
+    if [[ "$remaining" -le 0 ]]; then
+        # No active block or ccusage not available, wait 5 minutes as fallback
+        remaining=300
+    fi
+
+    # Add 60 seconds buffer
+    remaining=$((remaining + 60))
+
+    local hours=$((remaining / 3600))
+    local minutes=$(((remaining % 3600) / 60))
+
+    echo "⏳ Rate limit detected. Waiting ${hours}h ${minutes}m for reset..." >&2
+    echo "   Will resume at: $(date -d "+${remaining} seconds" '+%H:%M:%S' 2>/dev/null || date -v+${remaining}S '+%H:%M:%S' 2>/dev/null || echo "~${hours}h ${minutes}m from now")" >&2
+
+    sleep "$remaining"
+
+    echo "✅ Rate limit reset. Continuing..." >&2
+}
 
 # Check if ralph-loop is active
 RALPH_STATE_FILE=".claude/ralph-loop.local.md"
@@ -64,6 +140,14 @@ if [[ ! -f "$TRANSCRIPT_PATH" ]]; then
   echo "   Ralph loop is stopping." >&2
   rm "$RALPH_STATE_FILE"
   exit 0
+fi
+
+# Check for rate limit and wait if needed
+IS_RATE_LIMITED=$(check_rate_limited "$TRANSCRIPT_PATH")
+if [[ "$IS_RATE_LIMITED" == "true" ]]; then
+  echo "🚨 Ralph loop: Rate limit detected!" >&2
+  wait_for_reset
+  # After waiting, continue with the loop (don't check transcript for output)
 fi
 
 # Read last assistant message from transcript (JSONL format - one JSON per line)
