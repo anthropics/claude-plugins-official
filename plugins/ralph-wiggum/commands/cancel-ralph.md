@@ -6,17 +6,15 @@ hide-from-slash-command-tool: "true"
 
 # Cancel Ralph
 
-**FIRST**: Execute this command using the Bash tool to check for an active loop:
+**FIRST**: Execute this command using the Bash tool to cancel any active loop:
 
 ```
 "${CLAUDE_PLUGIN_ROOT}/scripts/cancel-ralph-loop.sh"
 ```
 
-Check the output above:
+The script handles everything - it will:
+- Find and delete the loop state file if it exists
+- Report whether a loop was cancelled and at what iteration
+- Show the expected file location if no loop was found
 
-1. **If FOUND_LOOP=false**:
-   - Say "No active Ralph loop found."
-
-2. **If FOUND_LOOP=true**:
-   - Use Bash: `rm .claude/ralph-loop.local.md`
-   - Report: "Cancelled Ralph loop (was at iteration N)" where N is the ITERATION value from above.
+Simply report the output to the user. No additional commands needed.
