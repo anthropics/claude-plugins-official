@@ -317,7 +317,7 @@ claude plugin install lisa@claude-plugins-official
 Alternatively, install from the standalone repository:
 
 ```bash
-/plugin marketplace add Arakiss/lisa-plugin
+/plugin marketplace add Arakiss/lisa
 /plugin install lisa@lisa-marketplace
 ```
 

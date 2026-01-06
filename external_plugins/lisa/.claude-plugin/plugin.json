@@ -7,8 +7,8 @@
     "email": "petru@arakiss.com",
     "url": "https://github.com/Arakiss"
   },
-  "repository": "https://github.com/Arakiss/lisa-plugin",
-  "homepage": "https://github.com/Arakiss/lisa-plugin#readme",
+  "repository": "https://github.com/Arakiss/lisa",
+  "homepage": "https://github.com/Arakiss/lisa#readme",
   "license": "MIT",
   "keywords": [
     "iterative",
