@@ -1,0 +1,10 @@
+{
+  "name": "grep-by-vercel",
+  "description": "Search over a million public GitHub repositories using grep.app's official MCP server. Find real-world code examples, implementation patterns, and learn from open-source projects.",
+  "author": {
+    "name": "Vercel",
+    "url": "https://vercel.com"
+  },
+  "homepage": "https://grep.app",
+  "keywords": ["github", "search", "code-search", "grep", "examples", "repositories"]
+}
