@@ -1,0 +1,24 @@
+{
+  "name": "lisa",
+  "version": "1.3.0",
+  "description": "Intelligent iterative loops for Claude Code. An evolution of the Ralph Wiggum technique with observability, safety limits, and progress tracking.",
+  "author": {
+    "name": "Arakiss",
+    "email": "petru@arakiss.com",
+    "url": "https://github.com/Arakiss"
+  },
+  "repository": "https://github.com/Arakiss/lisa-plugin",
+  "homepage": "https://github.com/Arakiss/lisa-plugin#readme",
+  "license": "MIT",
+  "keywords": [
+    "iterative",
+    "loops",
+    "automation",
+    "ralph-wiggum",
+    "autonomous",
+    "ai-agent"
+  ],
+  "commands": "./commands/",
+  "skills": "./skills/",
+  "hooks": "./hooks/hooks.json"
+}
