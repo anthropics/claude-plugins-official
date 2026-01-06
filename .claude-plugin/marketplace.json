@@ -502,6 +502,14 @@
       "source": "./external_plugins/context7",
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/context7",
       "tags": ["community-managed"]
+    },
+    {
+      "name": "faf",
+      "description": ".faf - Foundational AI-context Format. IANA registered (application/vnd.faf+yaml). Persistent project context for Claude Code - Project DNA that survives across sessions.",
+      "category": "productivity",
+      "source": "./external_plugins/faf",
+      "homepage": "https://faf.one",
+      "tags": ["community-managed"]
     }
   ]
 }

@@ -1,0 +1,6 @@
+{
+  "faf": {
+    "command": "npx",
+    "args": ["-y", "claude-faf-mcp"]
+  }
+}
