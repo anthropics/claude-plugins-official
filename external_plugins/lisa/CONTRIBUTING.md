@@ -23,7 +23,7 @@ Feature suggestions are welcome! Please:
 
 - Check if the feature was already suggested
 - Describe the use case clearly
-- Explain how it aligns with Lisa's philosophy (observable, safe, intelligent loops)
+- Explain how it aligns with Lisa's philosophy (observable, safe loops with logging)
 
 ### Pull Requests
 
@@ -37,14 +37,14 @@ Feature suggestions are welcome! Please:
 
 ```bash
 # Clone your fork
-git clone git@github.com:YOUR_USERNAME/lisa-plugin.git
-cd lisa-plugin
+git clone git@github.com:YOUR_USERNAME/lisa.git
+cd lisa
 
 # Test locally
 claude --plugin-dir .
 
 # Try a command
-/lisa --help
+/lisa:help
 ```
 
 ## Code Style
@@ -56,7 +56,7 @@ claude --plugin-dir .
 ## Plugin Structure
 
 ```
-lisa-plugin/
+lisa/
 ├── .claude-plugin/
 │   ├── plugin.json           # Plugin manifest
 │   └── marketplace.json      # Marketplace catalog
@@ -73,12 +73,12 @@ lisa-plugin/
 
 ```bash
 # Start Claude with your local plugin
-claude --plugin-dir /path/to/lisa-plugin
+claude --plugin-dir /path/to/lisa
 
 # Test commands
-/lisa-status
-/lisa --help
-/lisa "Test prompt" --max-iterations 3
+/lisa:status
+/lisa:help
+/lisa:loop "Test prompt" --max-iterations 3
 ```
 
 ### Verify Hook Behavior
