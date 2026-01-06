@@ -1,0 +1,8 @@
+{
+  "name": "evolve",
+  "description": "Evolve novel algorithms through LLM-driven mutation, crossover, and selection with true genetic recombination",
+  "author": {
+    "name": "Aaron Erickson",
+    "email": "aaron.c.erickson@gmail.com"
+  }
+}
