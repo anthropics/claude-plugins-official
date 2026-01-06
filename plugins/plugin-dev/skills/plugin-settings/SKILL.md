@@ -449,7 +449,7 @@ Coordinate with auth-agent on shared types.
 - Sends notifications to coordinator if enabled
 - Allows quick activation/deactivation via `enabled: true/false`
 
-### ralph-wiggum Plugin
+### ralph-loop Plugin
 
 **.claude/ralph-loop.local.md:**
 ```markdown
@@ -512,7 +512,7 @@ fi
 For detailed implementation patterns:
 
 - **`references/parsing-techniques.md`** - Complete guide to parsing YAML frontmatter and markdown bodies
-- **`references/real-world-examples.md`** - Deep dive into multi-agent-swarm and ralph-wiggum implementations
+- **`references/real-world-examples.md`** - Deep dive into multi-agent-swarm and ralph-loop implementations
 
 ### Example Files
 

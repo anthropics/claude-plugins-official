@@ -29,7 +29,7 @@ OPTIONS:
   -h, --help                     Show this help message
 
 DESCRIPTION:
-  Starts a Ralph Wiggum loop in your CURRENT session. The stop hook prevents
+  Starts a Ralph Loop in your CURRENT session. The stop hook prevents
   exit and feeds your output back as input until completion or iteration limit.
 
   To signal completion, you must output: <promise>YOUR_PHRASE</promise>

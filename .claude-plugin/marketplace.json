@@ -328,15 +328,15 @@
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/plugins/frontend-design"
     },
     {
-      "name": "ralph-wiggum",
-      "description": "Interactive self-referential AI loops for iterative development. Claude works on the same task repeatedly, seeing its previous work, until completion.",
+      "name": "ralph-loop",
+      "description": "Interactive self-referential AI loops for iterative development, implementing the Ralph Wiggum technique. Claude works on the same task repeatedly, seeing its previous work, until completion.",
       "author": {
         "name": "Anthropic",
         "email": "support@anthropic.com"
       },
-      "source": "./plugins/ralph-wiggum",
+      "source": "./plugins/ralph-loop",
       "category": "development",
-      "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/plugins/ralph-wiggum"
+      "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/plugins/ralph-loop"
     },
     {
       "name": "hookify",
