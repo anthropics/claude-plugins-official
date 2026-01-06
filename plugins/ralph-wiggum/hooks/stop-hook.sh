@@ -23,6 +23,9 @@ ITERATION=$(echo "$FRONTMATTER" | grep '^iteration:' | sed 's/iteration: *//')
 MAX_ITERATIONS=$(echo "$FRONTMATTER" | grep '^max_iterations:' | sed 's/max_iterations: *//')
 # Extract completion_promise and strip surrounding quotes if present
 COMPLETION_PROMISE=$(echo "$FRONTMATTER" | grep '^completion_promise:' | sed 's/completion_promise: *//' | sed 's/^"\(.*\)"$/\1/')
+# Extract fresh_context_interval (default 0 = disabled)
+FRESH_CONTEXT_INTERVAL=$(echo "$FRONTMATTER" | grep '^fresh_context_interval:' | sed 's/fresh_context_interval: *//')
+[[ ! "$FRESH_CONTEXT_INTERVAL" =~ ^[0-9]+$ ]] && FRESH_CONTEXT_INTERVAL=0
 
 # Validate numeric fields before arithmetic operations
 if [[ ! "$ITERATION" =~ ^[0-9]+$ ]]; then
@@ -149,11 +152,53 @@ if [[ -z "$PROMPT_TEXT" ]]; then
   exit 0
 fi
 
+# Check if context refresh is needed (spawn fresh session)
+ITERATION_UPDATED=false
+if [[ $FRESH_CONTEXT_INTERVAL -gt 0 ]] && [[ $((ITERATION % FRESH_CONTEXT_INTERVAL)) -eq 0 ]]; then
+  # Update state file BEFORE spawning (prevents race condition)
+  TEMP_FILE="${RALPH_STATE_FILE}.tmp.$$"
+  sed "s/^iteration: .*/iteration: $NEXT_ITERATION/" "$RALPH_STATE_FILE" > "$TEMP_FILE"
+  mv "$TEMP_FILE" "$RALPH_STATE_FILE"
+  ITERATION_UPDATED=true
+
+  # Build system message for new session
+  SYSTEM_MSG="🔄 Ralph iteration $NEXT_ITERATION (fresh context)"
+  if [[ "$COMPLETION_PROMISE" != "null" ]] && [[ -n "$COMPLETION_PROMISE" ]]; then
+    SYSTEM_MSG="$SYSTEM_MSG | Complete: <promise>$COMPLETION_PROMISE</promise>"
+  fi
+
+  # Check if we have a terminal
+  if [[ ! -t 0 ]]; then
+    echo "⚠️  Ralph: No terminal available - skipping context refresh" >&2
+    # Fall through to normal block behavior
+  else
+    echo "🔄 Ralph: Context refresh at iteration $ITERATION - spawning fresh session..." >&2
+
+    # IMPORTANT: NO -p flag! Must be interactive for stop hook to work
+    nohup claude "$PROMPT_TEXT" --append-system-prompt "$SYSTEM_MSG" \
+      </dev/tty >/dev/tty 2>&1 &
+
+    SPAWN_PID=$!
+    sleep 0.3
+
+    # Verify spawn succeeded
+    if kill -0 "$SPAWN_PID" 2>/dev/null; then
+      echo "✅ Ralph: Fresh session started (PID: $SPAWN_PID)" >&2
+      exit 0  # No JSON output = allow session to end
+    fi
+
+    echo "⚠️  Ralph: Spawn failed, falling back to normal loop" >&2
+  fi
+  # Fall through to normal block behavior if spawn failed or no terminal
+fi
+
 # Update iteration in frontmatter (portable across macOS and Linux)
-# Create temp file, then atomically replace
-TEMP_FILE="${RALPH_STATE_FILE}.tmp.$$"
-sed "s/^iteration: .*/iteration: $NEXT_ITERATION/" "$RALPH_STATE_FILE" > "$TEMP_FILE"
-mv "$TEMP_FILE" "$RALPH_STATE_FILE"
+# Skip if already updated by context refresh block
+if [[ "$ITERATION_UPDATED" != "true" ]]; then
+  TEMP_FILE="${RALPH_STATE_FILE}.tmp.$$"
+  sed "s/^iteration: .*/iteration: $NEXT_ITERATION/" "$RALPH_STATE_FILE" > "$TEMP_FILE"
+  mv "$TEMP_FILE" "$RALPH_STATE_FILE"
+fi
 
 # Build system message with iteration count and completion promise info
 if [[ "$COMPLETION_PROMISE" != "null" ]] && [[ -n "$COMPLETION_PROMISE" ]]; then

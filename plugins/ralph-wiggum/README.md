@@ -27,6 +27,7 @@ This plugin implements Ralph using a **Stop hook** that intercepts Claude's exit
 The loop happens **inside your current session** - you don't need external bash loops. The Stop hook in `hooks/stop-hook.sh` creates the self-referential feedback loop by blocking normal session exit.
 
 This creates a **self-referential feedback loop** where:
+
 - The prompt never changes between iterations
 - Claude's previous work persists in files
 - Each iteration sees modified files and git history
@@ -39,6 +40,7 @@ This creates a **self-referential feedback loop** where:
 ```
 
 Claude will:
+
 - Implement the API iteratively
 - Run tests and see failures
 - Fix bugs based on test output
@@ -52,19 +54,23 @@ Claude will:
 Start a Ralph loop in your current session.
 
 **Usage:**
+
 ```bash
-/ralph-loop "<prompt>" --max-iterations <n> --completion-promise "<text>"
+/ralph-loop "<prompt>" --max-iterations <n> --completion-promise "<text>" --fresh-context <n>
 ```
 
 **Options:**
+
 - `--max-iterations <n>` - Stop after N iterations (default: unlimited)
 - `--completion-promise <text>` - Phrase that signals completion
+- `--fresh-context <n>` - Spawn fresh session every N iterations (clears context window)
 
 ### /cancel-ralph
 
 Cancel the active Ralph loop.
 
 **Usage:**
+
 ```bash
 /cancel-ralph
 ```
@@ -76,10 +82,12 @@ Cancel the active Ralph loop.
 ❌ Bad: "Build a todo API and make it good."
 
 ✅ Good:
+
 ```markdown
 Build a REST API for todos.
 
 When complete:
+
 - All CRUD endpoints working
 - Input validation in place
 - Tests passing (coverage > 80%)
@@ -92,6 +100,7 @@ When complete:
 ❌ Bad: "Create a complete e-commerce platform."
 
 ✅ Good:
+
 ```markdown
 Phase 1: User authentication (JWT, tests)
 Phase 2: Product catalog (list/search, tests)
@@ -105,8 +114,10 @@ Output <promise>COMPLETE</promise> when all phases done.
 ❌ Bad: "Write code for feature X."
 
 ✅ Good:
+
 ```markdown
 Implement feature X following TDD:
+
 1. Write failing tests
 2. Implement feature
 3. Run tests
@@ -131,6 +142,27 @@ Always use `--max-iterations` as a safety net to prevent infinite loops on impos
 #  - Suggest alternative approaches"
 ```
 
+### 5. Context Management
+
+By default, the context window accumulates across iterations. For long-running loops (>20-30 iterations), this can cause context overflow. Use `--fresh-context` to spawn fresh sessions periodically:
+
+```bash
+# Spawn fresh session every 20 iterations
+/ralph-loop "Build API" --max-iterations 100 --fresh-context 20
+
+# Context clears at iterations 20, 40, 60, 80
+# Files and git history persist (not lost!)
+```
+
+**How it works:**
+
+- At the specified interval, the current session ends
+- A new Claude session spawns with fresh (empty) context
+- Previous work persists in files - Claude reads them to continue
+- The new session picks up where the old one left off
+
+**Trade-off:** Each "epoch" starts fresh, so Claude loses in-context learning from previous iterations. However, files and git history are preserved.
+
 **Note**: The `--completion-promise` uses exact string matching, so you cannot use it for multiple completion conditions (like "SUCCESS" vs "BLOCKED"). Always rely on `--max-iterations` as your primary safety mechanism.
 
 ## Philosophy
@@ -138,26 +170,32 @@ Always use `--max-iterations` as a safety net to prevent infinite loops on impos
 Ralph embodies several key principles:
 
 ### 1. Iteration > Perfection
+
 Don't aim for perfect on first try. Let the loop refine the work.
 
 ### 2. Failures Are Data
+
 "Deterministically bad" means failures are predictable and informative. Use them to tune prompts.
 
 ### 3. Operator Skill Matters
+
 Success depends on writing good prompts, not just having a good model.
 
 ### 4. Persistence Wins
+
 Keep trying until success. The loop handles retry logic automatically.
 
 ## When to Use Ralph
 
 **Good for:**
+
 - Well-defined tasks with clear success criteria
 - Tasks requiring iteration and refinement (e.g., getting tests to pass)
 - Greenfield projects where you can walk away
 - Tasks with automatic verification (tests, linters)
 
 **Not good for:**
+
 - Tasks requiring human judgment or design decisions
 - One-shot operations
 - Tasks with unclear success criteria

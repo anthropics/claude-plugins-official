@@ -9,6 +9,7 @@ set -euo pipefail
 PROMPT_PARTS=()
 MAX_ITERATIONS=0
 COMPLETION_PROMISE="null"
+FRESH_CONTEXT_INTERVAL=0
 
 # Parse options and positional arguments
 while [[ $# -gt 0 ]]; do
@@ -26,6 +27,7 @@ ARGUMENTS:
 OPTIONS:
   --max-iterations <n>           Maximum iterations before auto-stop (default: unlimited)
   --completion-promise '<text>'  Promise phrase (USE QUOTES for multi-word)
+  --fresh-context <n>            Spawn fresh session every N iterations (clears context)
   -h, --help                     Show this help message
 
 DESCRIPTION:
@@ -44,6 +46,7 @@ EXAMPLES:
   /ralph-loop --max-iterations 10 Fix the auth bug
   /ralph-loop Refactor cache layer  (runs forever)
   /ralph-loop --completion-promise 'TASK COMPLETE' Create a REST API
+  /ralph-loop Build API --max-iterations 100 --fresh-context 20  (refresh context every 20 iterations)
 
 STOPPING:
   Only by reaching --max-iterations or detecting --completion-promise
@@ -101,6 +104,30 @@ HELP_EOF
       COMPLETION_PROMISE="$2"
       shift 2
       ;;
+    --fresh-context)
+      if [[ -z "${2:-}" ]]; then
+        echo "❌ Error: --fresh-context requires an interval argument" >&2
+        echo "" >&2
+        echo "   Valid examples:" >&2
+        echo "     --fresh-context 10  (refresh every 10 iterations)" >&2
+        echo "     --fresh-context 20  (refresh every 20 iterations)" >&2
+        echo "" >&2
+        echo "   You provided: --fresh-context (with no number)" >&2
+        exit 1
+      fi
+      if ! [[ "$2" =~ ^[1-9][0-9]*$ ]]; then
+        echo "❌ Error: --fresh-context must be a positive integer > 0, got: $2" >&2
+        echo "" >&2
+        echo "   Valid examples:" >&2
+        echo "     --fresh-context 10" >&2
+        echo "     --fresh-context 20" >&2
+        echo "" >&2
+        echo "   Invalid: 0, decimals (10.5), negative numbers (-5), text" >&2
+        exit 1
+      fi
+      FRESH_CONTEXT_INTERVAL="$2"
+      shift 2
+      ;;
     *)
       # Non-option argument - collect all as prompt parts
       PROMPT_PARTS+=("$1")
@@ -142,6 +169,7 @@ cat > .claude/ralph-loop.local.md <<EOF
 active: true
 iteration: 1
 max_iterations: $MAX_ITERATIONS
+fresh_context_interval: $FRESH_CONTEXT_INTERVAL
 completion_promise: $COMPLETION_PROMISE_YAML
 started_at: "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 ---
@@ -155,6 +183,7 @@ cat <<EOF
 
 Iteration: 1
 Max iterations: $(if [[ $MAX_ITERATIONS -gt 0 ]]; then echo $MAX_ITERATIONS; else echo "unlimited"; fi)
+Fresh context: $(if [[ $FRESH_CONTEXT_INTERVAL -gt 0 ]]; then echo "every $FRESH_CONTEXT_INTERVAL iterations"; else echo "disabled"; fi)
 Completion promise: $(if [[ "$COMPLETION_PROMISE" != "null" ]]; then echo "${COMPLETION_PROMISE//\"/} (ONLY output when TRUE - do not lie!)"; else echo "none (runs forever)"; fi)
 
 The stop hook is now active. When you try to exit, the SAME PROMPT will be
