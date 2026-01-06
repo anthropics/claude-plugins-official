@@ -169,6 +169,24 @@ Keep trying until success. The loop handles retry logic automatically.
 - One $50k contract completed for $297 in API costs
 - Created entire programming language ("cursed") over 3 months using this approach
 
+## Windows Compatibility
+
+The stop hook uses a bash script that requires Git for Windows to run properly.
+
+**Issue**: On Windows, the `bash` command may resolve to WSL bash (often misconfigured) instead of Git Bash, causing the hook to fail with errors like:
+- `wsl: Unknown key 'automount.crossDistro'`
+- `execvpe(/bin/bash) failed: No such file or directory`
+
+**Workaround**: Edit the cached plugin's `hooks/hooks.json` to use Git Bash explicitly:
+
+```json
+"command": "\"C:/Program Files/Git/bin/bash.exe\" ${CLAUDE_PLUGIN_ROOT}/hooks/stop-hook.sh"
+```
+
+**Location**: `~/.claude/plugins/cache/claude-plugins-official/ralph-wiggum/<hash>/hooks/hooks.json`
+
+**Note**: Use `Git/bin/bash.exe` (the wrapper with proper PATH), not `Git/usr/bin/bash.exe` (raw MinGW bash without utilities in PATH).
+
 ## Learn More
 
 - Original technique: https://ghuntley.com/ralph/
