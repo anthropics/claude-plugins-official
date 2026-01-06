@@ -1,0 +1,29 @@
+{
+  "name": "lisa-marketplace",
+  "description": "Lisa plugin marketplace - Intelligent iterative loops for Claude Code",
+  "owner": {
+    "name": "Arakiss",
+    "email": "petru@arakiss.com",
+    "url": "https://github.com/Arakiss"
+  },
+  "plugins": [
+    {
+      "name": "lisa",
+      "source": "./",
+      "description": "Intelligent iterative loops for Claude Code. An evolution of the Ralph Wiggum technique with observability, safety limits, and progress tracking.",
+      "version": "1.3.0",
+      "author": {
+        "name": "Arakiss",
+        "url": "https://github.com/Arakiss"
+      },
+      "keywords": [
+        "iterative",
+        "loops",
+        "automation",
+        "ralph-wiggum",
+        "autonomous",
+        "ai-agent"
+      ]
+    }
+  ]
+}

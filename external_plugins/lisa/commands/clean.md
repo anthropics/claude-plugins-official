@@ -1,3 +1,8 @@
+---
+description: "Remove stale loop files, logs, and orphaned PROMPT.md files"
+hide-from-slash-command-tool: "true"
+---
+
 # Lisa Clean
 
 Clean up Lisa artifacts and stale files from the project.

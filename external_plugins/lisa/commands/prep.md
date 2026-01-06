@@ -1,3 +1,8 @@
+---
+description: "Create PROMPT.md, IMPLEMENTATION_PLAN.md, and specs/ scaffolding for a new loop"
+hide-from-slash-command-tool: "true"
+---
+
 # Lisa Prep
 
 Prepare groundwork files for a Lisa loop. This command creates the scaffolding needed for effective autonomous iteration.

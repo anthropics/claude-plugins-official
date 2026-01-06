@@ -1,6 +1,29 @@
 # Changelog
 
-All notable changes to this Lisa plugin fork.
+All notable changes to the Lisa plugin.
+
+## [1.3.2] - 2026-01-06
+
+### Changed
+
+- **Command naming**: Renamed `/lisa:lisa` to `/lisa:loop` for clarity
+  - All commands now follow consistent `lisa:action` pattern:
+    - `/lisa:loop` - Start iterative loop that auto-restarts until completion promise is detected
+    - `/lisa:cancel` - Cancel active Lisa loop
+    - `/lisa:clean` - Remove stale loop files, logs, and orphaned PROMPT.md files
+    - `/lisa:status` - Check current loop iteration, max limit, and completion promise
+    - `/lisa:prep` - Create PROMPT.md, IMPLEMENTATION_PLAN.md, and specs/ scaffolding
+    - `/lisa:help` - Explain Lisa technique and available commands
+
+- **README updates**: Updated all command references to use new `lisa:action` format
+
+### Fixed
+
+- **Installation documentation**: Corrected marketplace install commands:
+  ```bash
+  claude plugin marketplace add Arakiss/lisa
+  claude plugin install lisa@lisa-marketplace
+  ```
 
 ## [1.3.0] - 2026-01-06
 

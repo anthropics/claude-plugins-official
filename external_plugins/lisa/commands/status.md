@@ -1,3 +1,8 @@
+---
+description: "Check current loop iteration, max limit, and completion promise"
+hide-from-slash-command-tool: "true"
+---
+
 # Lisa Status
 
 Check the current state of a Lisa loop.

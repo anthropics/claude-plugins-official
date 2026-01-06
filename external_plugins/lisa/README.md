@@ -1,14 +1,14 @@
 # Lisa
 
-**Intelligent iterative loops for Claude Code** — An evolution of the Ralph Wiggum technique.
+**Observable iterative loops for Claude Code** — An evolution of the Ralph Wiggum technique.
 
 > *"I'm going to become a famous jazz musician. And you know what? It's not going to be easy, but I'm going to work hard and I'm going to practice every day."* — Lisa Simpson
 
 ## From Ralph to Lisa
 
-This plugin is inspired by [Geoffrey Huntley's Ralph Wiggum technique](https://ghuntley.com/ralph/) but has evolved significantly. Like Lisa Simpson compared to Ralph Wiggum, this implementation is more methodical, observable, and intelligent — while preserving the core philosophy of iterative refinement.
+This plugin is inspired by [Geoffrey Huntley's Ralph Wiggum technique](https://ghuntley.com/ralph/) but has evolved significantly. Like Lisa Simpson compared to Ralph Wiggum, this implementation is more methodical and observable — while preserving the core philosophy of iterative refinement.
 
-### The Original Ralph (2024)
+### The Original Ralph (2025)
 
 Geoffrey Huntley's Ralph was beautifully simple:
 
@@ -24,7 +24,7 @@ while :; do cat PROMPT.md | npx --yes @sourcegraph/amp ; done
 
 ### The Evolution to Lisa
 
-Lisa preserves Ralph's core philosophy but adds **observability**, **safety**, and **intelligence**:
+Lisa preserves Ralph's core philosophy but adds **observability** and **safety**:
 
 | Aspect | Ralph (Original) | Lisa (This Plugin) |
 |--------|------------------|-------------------|
@@ -33,7 +33,7 @@ Lisa preserves Ralph's core philosophy but adds **observability**, **safety**, a
 | **State** | None | YAML frontmatter in `.claude/lisa-loop.local.md` |
 | **Progress** | Invisible | Auto-detects from IMPLEMENTATION_PLAN.md |
 | **Logging** | None | Full iteration log with timestamps and metrics |
-| **Cleanup** | Manual | `/lisa-clean` handles orphaned files |
+| **Cleanup** | Manual | `/lisa:clean` handles orphaned files |
 | **Orchestration** | User must know when to use | Claude proposes automatically |
 | **Safety** | Infinite loop risk | Required `--max-iterations` |
 
@@ -45,7 +45,7 @@ Lisa preserves Ralph's core philosophy but adds **observability**, **safety**, a
 4. **Errors as feedback** — No "failure", only steps toward completion
 5. **Autonomous operation** — No human intervention between iterations
 
-### What's Added (Lisa's Intelligence)
+### What's Added (Lisa's Features)
 
 | Feature | Why It Matters |
 |---------|----------------|
@@ -79,13 +79,13 @@ When all requirements are met: <promise>DONE</promise>
 EOF
 
 # 2. Start the loop
-/lisa PROMPT.md --max-iterations 50
+/lisa:loop PROMPT.md --max-iterations 50
 ```
 
 ### Option 2: Inline prompt
 
 ```bash
-/lisa "Fix all TypeScript errors. Output <promise>FIXED</promise> when tsc passes." --max-iterations 30
+/lisa:loop "Fix all TypeScript errors. Output <promise>FIXED</promise> when tsc passes." --max-iterations 30
 ```
 
 ---
@@ -94,7 +94,7 @@ EOF
 
 ```
 ┌───────────────────────────────────────────────┐
-│  /lisa PROMPT.md --max-iterations 50          │
+│  /lisa:loop PROMPT.md --max-iterations 50     │
 └───────────────────────┬───────────────────────┘
                         │
                         ▼
@@ -142,12 +142,12 @@ EOF
 
 ## Commands
 
-### `/lisa` (or `/lisa-loop`)
+### `/lisa:loop`
 
-Start a Lisa loop.
+Start an iterative loop that auto-restarts until completion promise is detected.
 
 ```bash
-/lisa <prompt> [options]
+/lisa:loop <prompt> [options]
 ```
 
 **Options:**
@@ -156,16 +156,16 @@ Start a Lisa loop.
 
 **Examples:**
 ```bash
-/lisa PROMPT.md --max-iterations 50
-/lisa "Refactor to async/await" --max-iterations 30 --completion-promise "REFACTORED"
+/lisa:loop PROMPT.md --max-iterations 50
+/lisa:loop "Refactor to async/await" --max-iterations 30 --completion-promise "REFACTORED"
 ```
 
-### `/lisa-status`
+### `/lisa:status`
 
-Check current loop state.
+Check current loop iteration, max limit, and completion promise.
 
 ```bash
-/lisa-status
+/lisa:status
 
 # Output:
 # 🔄 Lisa loop active
@@ -175,20 +175,20 @@ Check current loop state.
 #    Promise: "DONE"
 ```
 
-### `/lisa-cancel`
+### `/lisa:cancel`
 
-Stop the active loop.
+Cancel active Lisa loop.
 
 ```bash
-/lisa-cancel
+/lisa:cancel
 ```
 
-### `/lisa-clean`
+### `/lisa:clean`
 
-Clean up artifacts.
+Remove stale loop files, logs, and orphaned PROMPT.md files.
 
 ```bash
-/lisa-clean [options]
+/lisa:clean [options]
 ```
 
 **Options:**
@@ -197,12 +197,13 @@ Clean up artifacts.
 - `--force` — Clean even if loop appears active
 - `--dry-run` — Show what would be cleaned
 
-### `/lisa-prep`
+### `/lisa:prep`
 
-Guided setup for complex tasks. Creates:
-- `PROMPT.md` — Loop prompt
-- `IMPLEMENTATION_PLAN.md` — Task checklist
-- `specs/` — Requirements
+Create PROMPT.md, IMPLEMENTATION_PLAN.md, and specs/ scaffolding for a new loop.
+
+### `/lisa:help`
+
+Explain Lisa technique and available commands.
 
 ---
 
@@ -301,30 +302,67 @@ When all 48 chapters are written and validated:
 
 ## Installation
 
-### From Claude Plugins Official
+### Option 1: From Marketplace (Recommended)
 
 ```bash
-/plugin install lisa@claude-plugins-official
+# Add the Lisa marketplace
+/plugin marketplace add Arakiss/lisa
+
+# Install the plugin
+/plugin install lisa@lisa-marketplace
 ```
 
 Or using CLI:
 ```bash
-claude plugin install lisa@claude-plugins-official
+claude plugin marketplace add Arakiss/lisa
+claude plugin install lisa@lisa-marketplace
 ```
 
-### From Standalone Repository
-
-Alternatively, install from the standalone repository:
+### Option 2: As Local Plugin
 
 ```bash
-/plugin marketplace add Arakiss/lisa
-/plugin install lisa@lisa-marketplace
+# 1. Clone the plugin
+mkdir -p ~/.claude/plugins/local/plugins
+git clone git@github.com:Arakiss/lisa.git ~/.claude/plugins/local/plugins/lisa
+
+# 2. Register in plugins.json
+echo '{"plugins":["lisa"]}' > ~/.claude/plugins/local/plugins.json
 ```
+
+**Manual steps required:**
+
+3. Add to `~/.claude/settings.json` → `enabledPlugins`:
+```json
+"lisa@local-plugins": true
+```
+
+4. Add to `~/.claude/plugins/installed_plugins.json` → `plugins`:
+```json
+"lisa@local-plugins": [
+  {
+    "scope": "user",
+    "installPath": "/YOUR/HOME/.claude/plugins/local/plugins/lisa",
+    "version": "1.3.0",
+    "installedAt": "2026-01-06T00:00:00.000Z",
+    "lastUpdated": "2026-01-06T00:00:00.000Z",
+    "isLocal": true
+  }
+]
+```
+(Replace `/YOUR/HOME/` with your actual home directory path)
+
+5. Restart Claude Code
 
 ### Updating
 
+**From marketplace:**
 ```bash
-/plugin update lisa@claude-plugins-official
+/plugin update lisa@lisa-marketplace
+```
+
+**Local installation:**
+```bash
+cd ~/.claude/plugins/local/plugins/lisa && git pull
 ```
 
 ---
@@ -334,14 +372,15 @@ Alternatively, install from the standalone repository:
 ```
 lisa/
 ├── .claude-plugin/
-│   └── plugin.json           # Plugin manifest
+│   ├── plugin.json           # Plugin manifest
+│   └── marketplace.json      # Marketplace catalog
 ├── commands/
-│   ├── lisa-loop.md          # /lisa
-│   ├── cancel.md             # /lisa-cancel
-│   ├── clean.md              # /lisa-clean
-│   ├── status.md             # /lisa-status
-│   ├── prep.md               # /lisa-prep
-│   └── help.md               # /lisa-help
+│   ├── loop.md               # /lisa:loop
+│   ├── cancel.md             # /lisa:cancel
+│   ├── clean.md              # /lisa:clean
+│   ├── status.md             # /lisa:status
+│   ├── prep.md               # /lisa:prep
+│   └── help.md               # /lisa:help
 ├── hooks/
 │   ├── hooks.json            # Hook configuration
 │   └── stop-hook.sh          # Core loop logic
@@ -368,7 +407,7 @@ lisa/
 grep "<promise>" PROMPT.md
 
 # Or set max iterations
-/lisa PROMPT.md --max-iterations 50
+/lisa:loop PROMPT.md --max-iterations 50
 ```
 
 ### Loop exits too early
@@ -388,7 +427,7 @@ grep "<promise>" PROMPT.md
 
 **Fix:**
 ```bash
-/lisa-clean --all
+/lisa:clean --all
 ```
 
 ### Can't see what's happening

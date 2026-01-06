@@ -1,7 +1,7 @@
 {
   "name": "lisa",
-  "version": "1.3.0",
-  "description": "Intelligent iterative loops for Claude Code. An evolution of the Ralph Wiggum technique with observability, safety limits, and progress tracking.",
+  "version": "1.3.3",
+  "description": "Observable iterative loops for Claude Code. An evolution of the Ralph Wiggum technique with logging, safety limits, and progress tracking.",
   "author": {
     "name": "Arakiss",
     "email": "petru@arakiss.com",
