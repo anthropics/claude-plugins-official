@@ -93,49 +93,49 @@ EOF
 ## How It Works
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│  /lisa PROMPT.md --max-iterations 50                        │
-└─────────────────────┬───────────────────────────────────────┘
-                      │
-                      ▼
-┌─────────────────────────────────────────────────────────────┐
-│  Setup                                                       │
-│  • Auto-detect <promise>...</promise> from file             │
-│  • Create .claude/lisa-loop.local.md state                  │
-│  • Initialize logging                                        │
-└─────────────────────┬───────────────────────────────────────┘
-                      │
-                      ▼
-┌─────────────────────────────────────────────────────────────┐
-│  Claude Works (Iteration N)                                  │
-│  • Reads prompt                                              │
-│  • Implements changes                                        │
-│  • Commits progress                                          │
-│  • Attempts to exit                                          │
-└─────────────────────┬───────────────────────────────────────┘
-                      │
-                      ▼
-┌─────────────────────────────────────────────────────────────┐
-│  Stop Hook Intercepts                                        │
-│  • Log iteration duration                                    │
-│  • Detect progress from IMPLEMENTATION_PLAN.md              │
-│  • Check for <promise>X</promise> in output                 │
-└─────────────────────┬───────────────────────────────────────┘
-                      │
-          ┌───────────┴───────────┐
-          ▼                       ▼
-    [Promise Found]         [No Promise]
-          │                       │
-          ▼                       ▼
-┌─────────────────┐     ┌─────────────────┐
-│  LOG SUMMARY    │     │  INCREMENT      │
-│  EXIT CLEAN     │     │  LOG PROGRESS   │
-└─────────────────┘     │  FEED PROMPT    │
-                        │  CONTINUE       │
-                        └────────┬────────┘
-                                 │
-                                 ▼
-                        [Claude Works...]
+┌───────────────────────────────────────────────┐
+│  /lisa PROMPT.md --max-iterations 50          │
+└───────────────────────┬───────────────────────┘
+                        │
+                        ▼
+┌───────────────────────────────────────────────┐
+│  Setup                                        │
+│  • Auto-detect <promise>...</promise>         │
+│  • Create .claude/lisa-loop.local.md          │
+│  • Initialize logging                         │
+└───────────────────────┬───────────────────────┘
+                        │
+                        ▼
+┌───────────────────────────────────────────────┐
+│  Claude Works (Iteration N)                   │
+│  • Reads prompt                               │
+│  • Implements changes                         │
+│  • Commits progress                           │
+│  • Attempts to exit                           │
+└───────────────────────┬───────────────────────┘
+                        │
+                        ▼
+┌───────────────────────────────────────────────┐
+│  Stop Hook Intercepts                         │
+│  • Log iteration duration                     │
+│  • Detect progress from IMPLEMENTATION_PLAN   │
+│  • Check for <promise>X</promise> in output   │
+└───────────────────────┬───────────────────────┘
+                        │
+            ┌───────────┴───────────┐
+            ▼                       ▼
+      [Promise Found]         [No Promise]
+            │                       │
+            ▼                       ▼
+   ┌─────────────────┐    ┌─────────────────┐
+   │  LOG SUMMARY    │    │  INCREMENT      │
+   │  EXIT CLEAN     │    │  LOG PROGRESS   │
+   └─────────────────┘    │  FEED PROMPT    │
+                          │  CONTINUE       │
+                          └────────┬────────┘
+                                   │
+                                   ▼
+                          [Claude Works...]
 ```
 
 ---
@@ -301,30 +301,42 @@ When all 48 chapters are written and validated:
 
 ## Installation
 
-### From Claude Plugins Official
+### Option 1: From Marketplace (Recommended)
 
 ```bash
-/plugin install lisa@claude-plugins-official
+# Add the Lisa marketplace
+/plugin marketplace add Arakiss/lisa-plugin
+
+# Install the plugin
+/plugin install lisa@lisa-marketplace
 ```
 
 Or using CLI:
 ```bash
-claude plugin install lisa@claude-plugins-official
+claude plugin marketplace add Arakiss/lisa-plugin
+claude plugin install lisa@lisa-marketplace
 ```
 
-### From Standalone Repository
-
-Alternatively, install from the standalone repository:
+### Option 2: As Local Plugin
 
 ```bash
-/plugin marketplace add Arakiss/lisa-plugin
-/plugin install lisa@lisa-marketplace
+mkdir -p ~/.claude/plugins/local/plugins
+git clone git@github.com:Arakiss/lisa-plugin.git ~/.claude/plugins/local/plugins/lisa
+
+# Register the plugin
+echo '{"plugins":["lisa"]}' > ~/.claude/plugins/local/plugins.json
 ```
 
 ### Updating
 
+**From marketplace:**
 ```bash
-/plugin update lisa@claude-plugins-official
+/plugin update lisa@lisa-marketplace
+```
+
+**Local installation:**
+```bash
+cd ~/.claude/plugins/local/plugins/lisa && git pull
 ```
 
 ---
@@ -332,9 +344,10 @@ Alternatively, install from the standalone repository:
 ## File Structure
 
 ```
-lisa/
+lisa-plugin/
 ├── .claude-plugin/
-│   └── plugin.json           # Plugin manifest
+│   ├── plugin.json           # Plugin manifest
+│   └── marketplace.json      # Marketplace catalog
 ├── commands/
 │   ├── lisa-loop.md          # /lisa
 │   ├── cancel.md             # /lisa-cancel
