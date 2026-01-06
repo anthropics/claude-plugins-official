@@ -1,0 +1,13 @@
+{
+  "name": "stripe",
+  "description": "Stripe development plugin for Claude",
+  "version": "0.1.0",
+  "author": {
+    "name": "Stripe",
+    "url": "https://stripe.com"
+  },
+  "homepage": "https://docs.stripe.com",
+  "repository": "https://github.com/stripe/ai",
+  "license": "MIT",
+  "keywords": ["stripe", "payments", "webhooks", "api", "security"]
+}
