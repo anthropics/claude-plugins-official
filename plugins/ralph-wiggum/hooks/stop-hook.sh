@@ -10,65 +10,90 @@ set -euo pipefail
 # Read hook input from stdin (advanced stop hook API)
 HOOK_INPUT=$(cat)
 
-# Function to get ccusage command
-get_ccusage_cmd() {
-    if command -v ccusage &> /dev/null; then
-        echo "ccusage"
-    elif command -v bunx &> /dev/null; then
-        echo "bunx ccusage"
-    elif command -v npx &> /dev/null; then
-        echo "npx ccusage@latest"
+# Function to check if rate limited and extract reset time from transcript
+# Looks for pattern like "resets 6:30am" or "resets 11:45pm"
+# Returns: "HH:MM" if rate limited, empty string if not
+check_rate_limit_reset_time() {
+    local transcript_path="$1"
+
+    if [[ ! -f "$transcript_path" ]]; then
+        echo ""
+        return
+    fi
+
+    # Look for "hit your limit" or "resets" pattern with time
+    # Pattern: resets followed by time like "6:30am" or "11:45pm"
+    local reset_match=$(grep -oiE "resets[[:space:]]+[0-9]{1,2}:[0-9]{2}[ap]m" "$transcript_path" 2>/dev/null | tail -1)
+
+    if [[ -n "$reset_match" ]]; then
+        # Extract time part (e.g., "6:30am")
+        local time_str=$(echo "$reset_match" | grep -oiE "[0-9]{1,2}:[0-9]{2}[ap]m")
+        echo "$time_str"
     else
-        return 1
+        echo ""
     fi
 }
 
-# Function to get remaining seconds until block reset
-get_remaining_seconds() {
-    local ccusage_cmd=$(get_ccusage_cmd 2>/dev/null)
-    if [[ -z "$ccusage_cmd" ]]; then
+# Function to calculate seconds until a given time (e.g., "6:30am")
+get_seconds_until_time() {
+    local time_str="$1"  # e.g., "6:30am" or "11:45pm"
+
+    if [[ -z "$time_str" ]]; then
         echo "0"
         return
     fi
 
-    local ccusage_output=$($ccusage_cmd blocks 2>/dev/null | grep -A1 "ACTIVE" | tr '\n' ' ')
-    local hours=0
-    local minutes=0
-
-    if [[ "$ccusage_output" =~ ([0-9]+)h[[:space:]]*([0-9]+)m[[:space:]]*remaining ]]; then
-        hours=${BASH_REMATCH[1]}
-        minutes=${BASH_REMATCH[2]}
-    elif [[ "$ccusage_output" =~ ([0-9]+)m[[:space:]]*remaining ]]; then
-        minutes=${BASH_REMATCH[1]}
-    fi
-
-    echo $((hours * 3600 + minutes * 60))
-}
-
-# Function to check if rate limited (check transcript for rate limit errors)
-check_rate_limited() {
-    local transcript_path="$1"
-
-    if [[ ! -f "$transcript_path" ]]; then
-        echo "false"
+    # Parse hour, minute, and am/pm
+    local hour minute ampm
+    if [[ "$time_str" =~ ([0-9]{1,2}):([0-9]{2})([aApP][mM]) ]]; then
+        hour=${BASH_REMATCH[1]}
+        minute=${BASH_REMATCH[2]}
+        ampm=${BASH_REMATCH[3]}
+    else
+        echo "0"
         return
     fi
 
-    # Look for common rate limit error patterns in transcript
-    if grep -qi "rate.limit\|rate_limit\|too.many.requests\|429\|quota.exceeded\|usage.limit" "$transcript_path" 2>/dev/null; then
-        echo "true"
-    else
-        echo "false"
+    # Convert to 24-hour format
+    ampm=$(echo "$ampm" | tr '[:upper:]' '[:lower:]')
+    if [[ "$ampm" == "pm" ]] && [[ $hour -ne 12 ]]; then
+        hour=$((hour + 12))
+    elif [[ "$ampm" == "am" ]] && [[ $hour -eq 12 ]]; then
+        hour=0
     fi
+
+    # Get current time components
+    local current_hour=$(date +%H | sed 's/^0//')
+    local current_minute=$(date +%M | sed 's/^0//')
+    local current_second=$(date +%S | sed 's/^0//')
+
+    # Calculate target seconds from midnight
+    local target_seconds=$((hour * 3600 + minute * 60))
+
+    # Calculate current seconds from midnight
+    local current_seconds=$((current_hour * 3600 + current_minute * 60 + current_second))
+
+    # Calculate difference
+    local diff=$((target_seconds - current_seconds))
+
+    # If target is in the past, assume it's tomorrow
+    if [[ $diff -le 0 ]]; then
+        diff=$((diff + 86400))
+    fi
+
+    echo "$diff"
 }
 
 # Function to wait for rate limit reset
 wait_for_reset() {
-    local remaining=$(get_remaining_seconds)
+    local reset_time="$1"
+    local remaining
 
-    if [[ "$remaining" -le 0 ]]; then
-        # No active block or ccusage not available, wait 5 minutes as fallback
-        remaining=300
+    if [[ -n "$reset_time" ]]; then
+        remaining=$(get_seconds_until_time "$reset_time")
+    else
+        # Fallback: wait 5 hours if no reset time found
+        remaining=18000
     fi
 
     # Add 60 seconds buffer
@@ -77,12 +102,15 @@ wait_for_reset() {
     local hours=$((remaining / 3600))
     local minutes=$(((remaining % 3600) / 60))
 
-    echo "⏳ Rate limit detected. Waiting ${hours}h ${minutes}m for reset..." >&2
-    echo "   Will resume at: $(date -d "+${remaining} seconds" '+%H:%M:%S' 2>/dev/null || date -v+${remaining}S '+%H:%M:%S' 2>/dev/null || echo "~${hours}h ${minutes}m from now")" >&2
+    echo "⏳ Rate limit hit! Waiting ${hours}h ${minutes}m for reset..." >&2
+    if [[ -n "$reset_time" ]]; then
+        echo "   Reset time: $reset_time" >&2
+    fi
+    echo "   Will resume at: $(date -d "+${remaining} seconds" '+%H:%M:%S' 2>/dev/null || date -v+"${remaining}"S '+%H:%M:%S' 2>/dev/null || echo "~${hours}h ${minutes}m from now")" >&2
 
     sleep "$remaining"
 
-    echo "✅ Rate limit reset. Continuing..." >&2
+    echo "✅ Rate limit reset. Continuing Ralph loop..." >&2
 }
 
 # Check if ralph-loop is active
@@ -143,10 +171,10 @@ if [[ ! -f "$TRANSCRIPT_PATH" ]]; then
 fi
 
 # Check for rate limit and wait if needed
-IS_RATE_LIMITED=$(check_rate_limited "$TRANSCRIPT_PATH")
-if [[ "$IS_RATE_LIMITED" == "true" ]]; then
+RESET_TIME=$(check_rate_limit_reset_time "$TRANSCRIPT_PATH")
+if [[ -n "$RESET_TIME" ]]; then
   echo "🚨 Ralph loop: Rate limit detected!" >&2
-  wait_for_reset
+  wait_for_reset "$RESET_TIME"
   # After waiting, continue with the loop (don't check transcript for output)
 fi
 
