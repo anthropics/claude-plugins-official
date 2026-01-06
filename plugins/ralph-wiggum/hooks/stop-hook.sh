@@ -1,8 +1,11 @@
 #!/bin/bash
 
-# Ralph Wiggum Stop Hook
+# Ralph Wiggum Stop Hook (SESSION-AWARE FIX)
 # Prevents session exit when a ralph-loop is active
 # Feeds Claude's output back as input to continue the loop
+#
+# FIX: Now validates session_id to prevent interference between
+#      multiple Claude Code sessions in the same directory
 
 set -euo pipefail
 
@@ -17,12 +20,47 @@ if [[ ! -f "$RALPH_STATE_FILE" ]]; then
   exit 0
 fi
 
+# ============================================================
+# SESSION-AWARENESS FIX: Extract and validate session_id
+# ============================================================
+CURRENT_SESSION_ID=$(echo "$HOOK_INPUT" | jq -r '.session_id // empty')
+
+if [[ -z "$CURRENT_SESSION_ID" ]]; then
+  # No session_id in hook input (old Claude Code version?) - allow exit
+  echo "⚠️  Ralph loop: No session_id in hook input, allowing exit" >&2
+  exit 0
+fi
+
 # Parse markdown frontmatter (YAML between ---) and extract values
 FRONTMATTER=$(sed -n '/^---$/,/^---$/{ /^---$/d; p; }' "$RALPH_STATE_FILE")
 ITERATION=$(echo "$FRONTMATTER" | grep '^iteration:' | sed 's/iteration: *//')
 MAX_ITERATIONS=$(echo "$FRONTMATTER" | grep '^max_iterations:' | sed 's/max_iterations: *//')
 # Extract completion_promise and strip surrounding quotes if present
 COMPLETION_PROMISE=$(echo "$FRONTMATTER" | grep '^completion_promise:' | sed 's/completion_promise: *//' | sed 's/^"\(.*\)"$/\1/')
+# Extract session_id from state file (may be null or empty on first run)
+STATE_SESSION_ID=$(echo "$FRONTMATTER" | grep '^session_id:' | sed 's/session_id: *//' | sed 's/^"\(.*\)"$/\1/' || echo "")
+
+# ============================================================
+# SESSION-AWARENESS FIX: Check if this session owns the loop
+# ============================================================
+if [[ -z "$STATE_SESSION_ID" ]] || [[ "$STATE_SESSION_ID" == "null" ]]; then
+  # First iteration: State file doesn't have session_id yet
+  # Write current session_id to claim ownership
+  TEMP_FILE="${RALPH_STATE_FILE}.tmp.$$"
+  # Add session_id to frontmatter (after 'active: true')
+  sed "s/^active: true$/active: true\nsession_id: \"$CURRENT_SESSION_ID\"/" "$RALPH_STATE_FILE" > "$TEMP_FILE"
+  mv "$TEMP_FILE" "$RALPH_STATE_FILE"
+  STATE_SESSION_ID="$CURRENT_SESSION_ID"
+  # Continue processing - this session owns the loop
+elif [[ "$STATE_SESSION_ID" != "$CURRENT_SESSION_ID" ]]; then
+  # DIFFERENT session trying to exit - allow it!
+  # This is the FIX: Don't interfere with other sessions
+  exit 0
+fi
+
+# ============================================================
+# Original logic continues below (only for the owning session)
+# ============================================================
 
 # Validate numeric fields before arithmetic operations
 if [[ ! "$ITERATION" =~ ^[0-9]+$ ]]; then
