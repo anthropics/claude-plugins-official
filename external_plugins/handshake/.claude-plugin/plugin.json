@@ -1,0 +1,23 @@
+{
+  "name": "handshake",
+  "description": "Multi-agent swarm orchestration for parallel development with Claude Code. Launch multiple Claude agents simultaneously, coordinate work across crews, and ship faster.",
+  "version": "1.1.0",
+  "author": {
+    "name": "LeePick",
+    "email": "lexicon@leepick.com",
+    "url": "https://leepick.com"
+  },
+  "homepage": "https://github.com/leepickdev/handshake",
+  "repository": "https://github.com/leepickdev/handshake",
+  "license": "MIT",
+  "keywords": [
+    "swarm",
+    "multi-agent",
+    "parallel",
+    "orchestration",
+    "hive",
+    "collaboration",
+    "crews",
+    "agents"
+  ]
+}
