@@ -301,42 +301,30 @@ When all 48 chapters are written and validated:
 
 ## Installation
 
-### Option 1: From Marketplace (Recommended)
+### From Claude Plugins Official
 
 ```bash
-# Add the Lisa marketplace
-/plugin marketplace add Arakiss/lisa-plugin
-
-# Install the plugin
-/plugin install lisa@lisa-marketplace
+/plugin install lisa@claude-plugins-official
 ```
 
 Or using CLI:
 ```bash
-claude plugin marketplace add Arakiss/lisa-plugin
-claude plugin install lisa@lisa-marketplace
+claude plugin install lisa@claude-plugins-official
 ```
 
-### Option 2: As Local Plugin
+### From Standalone Repository
+
+Alternatively, install from the standalone repository:
 
 ```bash
-mkdir -p ~/.claude/plugins/local/plugins
-git clone git@github.com:Arakiss/lisa-plugin.git ~/.claude/plugins/local/plugins/lisa
-
-# Register the plugin
-echo '{"plugins":["lisa"]}' > ~/.claude/plugins/local/plugins.json
+/plugin marketplace add Arakiss/lisa-plugin
+/plugin install lisa@lisa-marketplace
 ```
 
 ### Updating
 
-**From marketplace:**
 ```bash
-/plugin update lisa@lisa-marketplace
-```
-
-**Local installation:**
-```bash
-cd ~/.claude/plugins/local/plugins/lisa && git pull
+/plugin update lisa@claude-plugins-official
 ```
 
 ---
@@ -344,10 +332,9 @@ cd ~/.claude/plugins/local/plugins/lisa && git pull
 ## File Structure
 
 ```
-lisa-plugin/
+lisa/
 ├── .claude-plugin/
-│   ├── plugin.json           # Plugin manifest
-│   └── marketplace.json      # Marketplace catalog
+│   └── plugin.json           # Plugin manifest
 ├── commands/
 │   ├── lisa-loop.md          # /lisa
 │   ├── cancel.md             # /lisa-cancel
