@@ -3,11 +3,115 @@
 # Ralph Wiggum Stop Hook
 # Prevents session exit when a ralph-loop is active
 # Feeds Claude's output back as input to continue the loop
+# Enhanced with rate limit detection and auto-wait
 
 set -euo pipefail
 
 # Read hook input from stdin (advanced stop hook API)
 HOOK_INPUT=$(cat)
+
+# Function to check if rate limited and extract reset time from transcript
+# Looks for pattern like "resets 6:30am" or "resets 11:45pm"
+# Returns: "HH:MM" if rate limited, empty string if not
+check_rate_limit_reset_time() {
+    local transcript_path="$1"
+
+    if [[ ! -f "$transcript_path" ]]; then
+        echo ""
+        return
+    fi
+
+    # Look for "hit your limit" or "resets" pattern with time
+    # Pattern: resets followed by time like "6:30am" or "11:45pm"
+    local reset_match=$(grep -oiE "resets[[:space:]]+[0-9]{1,2}:[0-9]{2}[ap]m" "$transcript_path" 2>/dev/null | tail -1)
+
+    if [[ -n "$reset_match" ]]; then
+        # Extract time part (e.g., "6:30am")
+        local time_str=$(echo "$reset_match" | grep -oiE "[0-9]{1,2}:[0-9]{2}[ap]m")
+        echo "$time_str"
+    else
+        echo ""
+    fi
+}
+
+# Function to calculate seconds until a given time (e.g., "6:30am")
+get_seconds_until_time() {
+    local time_str="$1"  # e.g., "6:30am" or "11:45pm"
+
+    if [[ -z "$time_str" ]]; then
+        echo "0"
+        return
+    fi
+
+    # Parse hour, minute, and am/pm
+    local hour minute ampm
+    if [[ "$time_str" =~ ([0-9]{1,2}):([0-9]{2})([aApP][mM]) ]]; then
+        hour=${BASH_REMATCH[1]}
+        minute=${BASH_REMATCH[2]}
+        ampm=${BASH_REMATCH[3]}
+    else
+        echo "0"
+        return
+    fi
+
+    # Convert to 24-hour format
+    ampm=$(echo "$ampm" | tr '[:upper:]' '[:lower:]')
+    if [[ "$ampm" == "pm" ]] && [[ $hour -ne 12 ]]; then
+        hour=$((hour + 12))
+    elif [[ "$ampm" == "am" ]] && [[ $hour -eq 12 ]]; then
+        hour=0
+    fi
+
+    # Get current time components
+    local current_hour=$(date +%H | sed 's/^0//')
+    local current_minute=$(date +%M | sed 's/^0//')
+    local current_second=$(date +%S | sed 's/^0//')
+
+    # Calculate target seconds from midnight
+    local target_seconds=$((hour * 3600 + minute * 60))
+
+    # Calculate current seconds from midnight
+    local current_seconds=$((current_hour * 3600 + current_minute * 60 + current_second))
+
+    # Calculate difference
+    local diff=$((target_seconds - current_seconds))
+
+    # If target is in the past, assume it's tomorrow
+    if [[ $diff -le 0 ]]; then
+        diff=$((diff + 86400))
+    fi
+
+    echo "$diff"
+}
+
+# Function to wait for rate limit reset
+wait_for_reset() {
+    local reset_time="$1"
+    local remaining
+
+    if [[ -n "$reset_time" ]]; then
+        remaining=$(get_seconds_until_time "$reset_time")
+    else
+        # Fallback: wait 5 hours if no reset time found
+        remaining=18000
+    fi
+
+    # Add 60 seconds buffer
+    remaining=$((remaining + 60))
+
+    local hours=$((remaining / 3600))
+    local minutes=$(((remaining % 3600) / 60))
+
+    echo "⏳ Rate limit hit! Waiting ${hours}h ${minutes}m for reset..." >&2
+    if [[ -n "$reset_time" ]]; then
+        echo "   Reset time: $reset_time" >&2
+    fi
+    echo "   Will resume at: $(date -d "+${remaining} seconds" '+%H:%M:%S' 2>/dev/null || date -v+"${remaining}"S '+%H:%M:%S' 2>/dev/null || echo "~${hours}h ${minutes}m from now")" >&2
+
+    sleep "$remaining"
+
+    echo "✅ Rate limit reset. Continuing Ralph loop..." >&2
+}
 
 # Check if ralph-loop is active
 RALPH_STATE_FILE=".claude/ralph-loop.local.md"
@@ -64,6 +168,14 @@ if [[ ! -f "$TRANSCRIPT_PATH" ]]; then
   echo "   Ralph loop is stopping." >&2
   rm "$RALPH_STATE_FILE"
   exit 0
+fi
+
+# Check for rate limit and wait if needed
+RESET_TIME=$(check_rate_limit_reset_time "$TRANSCRIPT_PATH")
+if [[ -n "$RESET_TIME" ]]; then
+  echo "🚨 Ralph loop: Rate limit detected!" >&2
+  wait_for_reset "$RESET_TIME"
+  # After waiting, continue with the loop (don't check transcript for output)
 fi
 
 # Read last assistant message from transcript (JSONL format - one JSON per line)
