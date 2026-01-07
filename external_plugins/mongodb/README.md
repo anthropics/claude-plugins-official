@@ -38,7 +38,7 @@ With MongoDB API credentials (`MDB_MCP_API_CLIENT_ID` and `MDB_MCP_API_CLIENT_SE
 - User and role management
 - Atlas cluster management
 
-**Recommendation**: API credentials are recommended because they provide access to clusters within the credential's scope, enabling broader infrastructure management capabilities.
+**Note**: API credentials are required for Atlas tools and infrastructure management operations. They also provide access to clusters within the credential's scope, enabling broader infrastructure management capabilities.
 
 ## Setup
 
@@ -55,7 +55,7 @@ export MDB_MCP_CONNECTION_STRING="mongodb+srv://username:password@cluster.mongod
 
 See [MongoDB Atlas Connection String documentation](https://www.mongodb.com/docs/manual/reference/connection-string/?deployment-type=atlas&interface=atlas-ui&utm_source=github-claude-plugins-official) for details on obtaining your connection string.
 
-**Option 2: API Credentials (Recommended - Broader Cluster Access)**
+**Option 2: API Credentials (Required for Atlas Tools)**
 ```bash
 export MDB_MCP_API_CLIENT_ID="your_client_id"
 export MDB_MCP_API_CLIENT_SECRET="your_client_secret"
@@ -68,7 +68,10 @@ export MDB_MCP_API_CLIENT_ID="your_client_id"
 export MDB_MCP_API_CLIENT_SECRET="your_client_secret"
 ```
 
-**Recommendation**: API credentials are recommended because they provide access to clusters within the credential's scope. Connection strings provide more granular control by limiting operations to a specific cluster.
+**Choosing Between Options**:
+- **Connection String Only**: Use when you only need basic database operations on a specific cluster. Provides granular control by limiting operations to a single cluster.
+- **API Credentials Only**: Use when you need Atlas tools or infrastructure management operations. Provides access to clusters within the credential's scope.
+- **Both**: Provides maximum flexibility with both single-cluster operations and broader infrastructure management capabilities.
 
 ### Granting Programmatic Access to Atlas
 
@@ -142,13 +145,15 @@ This shows:
 
 ## Permissions
 
-- **Connection String Only**: Read/write operations on existing databases and collections for a single cluster, subject to the permissions of the database user
-- **API Credentials Only**: Full infrastructure management including creating databases, collections, indexes, and managing Atlas resources for clusters within the credential's scope, subject to the permissions of the service account or API key
-- **Both Configured**: Maximum flexibility with both single-cluster operations and broader infrastructure management capabilities
+- **Connection String Only**: Read/write operations on existing databases and collections for a single cluster, subject to the permissions of the database user. Cannot perform Atlas infrastructure management operations.
+- **API Credentials Only**: Full infrastructure management including creating databases, collections, indexes, and managing Atlas resources for clusters within the credential's scope, subject to the permissions of the service account or API key. Also enables basic database operations.
+- **Both Configured**: Maximum flexibility with both single-cluster operations and broader infrastructure management capabilities. The connection string provides direct database access, while API credentials enable Atlas tools.
 
 ## Resources
 
 - [MongoDB MCP Technical Documentation](https://www.mongodb.com/docs/mcp-server/get-started/?utm_source=github-claude-plugins-official)
+- [MongoDB MCP Configuration Guide](https://www.mongodb.com/docs/mcp-server/configuration/?utm_source=github-claude-plugins-official)
+- [MongoDB MCP Troubleshooting](https://www.mongodb.com/docs/mcp-server/configuration/troubleshooting/?utm_source=github-claude-plugins-official)
 - [MongoDB MCP Github Repo](https://github.com/mongodb-js/mongodb-mcp-server?utm_source=github-claude-plugins-official)
 - [MongoDB Atlas Documentation](https://www.mongodb.com/docs/atlas/?utm_source=github-claude-plugins-official)
 

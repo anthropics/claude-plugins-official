@@ -18,7 +18,7 @@ When this command is invoked:
    
    **Note**: Users must configure either `MDB_MCP_CONNECTION_STRING` OR both `MDB_MCP_API_CLIENT_ID` and `MDB_MCP_API_CLIENT_SECRET` together. They don't need the connection string if both API credentials are configured.
    
-   **Recommendation**: API credentials are recommended because they can be used to provide access to clusters within the scope of the credential. However, more granular control can be provided by using only a connection string, which limits access to a specific database/cluster.
+   **Note**: API credentials are required for Atlas tools and infrastructure management operations. Connection strings provide operations on a single cluster and are suitable for basic database operations. The choice depends on your use case: use connection strings for basic operations on a specific cluster, or API credentials if you need Atlas tools or infrastructure management.
 
 2. **Important**: Do NOT print or read the actual values of these variables. Only check if they are set or not set.
 
@@ -35,15 +35,22 @@ When this command is invoked:
 
 5. Provide guidance based on the results:
    - If neither `MDB_MCP_CONNECTION_STRING` nor both API credentials are set: Explain that users must configure either the connection string OR both API credentials together
-   - If only `MDB_MCP_CONNECTION_STRING` is set: Confirm configuration is correct for basic operations. Note that connection strings provide operations on a single cluster.
-   - If only both API credentials are set (no connection string): Confirm configuration is correct. Note that API credentials are recommended because they provide access to clusters within the credential's scope, enabling broader infrastructure management capabilities.
+   - If only `MDB_MCP_CONNECTION_STRING` is set: Confirm configuration is correct for basic database operations on a single cluster. Note that connection strings cannot perform Atlas infrastructure management operations.
+   - If only both API credentials are set (no connection string): Confirm configuration is correct. Note that API credentials enable both basic database operations and Atlas tools/infrastructure management operations for clusters within the credential's scope.
    - If only one of the API credentials is set: Warn that both must be set together or neither
-   - If both connection string and API credentials are set: Confirm configuration is correct (both options are configured). Note that API credentials provide broader cluster access within their scope, while connection strings offer more granular control to specific databases/clusters.
+   - If both connection string and API credentials are set: Confirm configuration is correct (both options are configured). Note that API credentials enable Atlas tools and infrastructure management, while connection strings provide direct database access to a specific cluster.
 
 6. Remind the user that:
    - Environment variables must be set before starting Claude Code (MCP servers start at launch)
    - Variables can be set in shell profile or loaded from `.env` file
-   - API credentials are recommended for broader cluster access within the credential's scope, while connection strings provide more granular control to specific databases/clusters
+   - Connection strings are suitable for basic database operations on a specific cluster
+   - API credentials are required for Atlas tools and infrastructure management operations, and also enable basic database operations for clusters within the credential's scope
+
+7. If configuration issues persist, mention that MongoDB MCP Server logs can help diagnose problems:
+   - **Windows**: `%LOCALAPPDATA%\mongodb\mongodb-mcp\.app-logs`
+   - **macOS and Linux**: `~/.mongodb/mongodb-mcp/.app-logs`
+   - Logs can help identify connection string formatting issues, authentication problems, and other configuration errors
+   - For more detailed troubleshooting guidance, refer to the [MongoDB MCP Server Troubleshooting documentation](https://www.mongodb.com/docs/mcp-server/configuration/troubleshooting/?utm_source=github-claude-plugins-official)
 
 ## Example Output Format
 
@@ -66,12 +73,24 @@ MDB_MCP_CONNECTION_STRING: ❌ Not set
 MDB_MCP_API_CLIENT_ID: ✅ Set
 MDB_MCP_API_CLIENT_SECRET: ✅ Set
 
-Status: Configuration valid. Full MongoDB MCP features available with API credentials.
+Status: Configuration valid. Full MongoDB MCP features available with API credentials, including Atlas tools and infrastructure management operations.
 ```
+
+## Additional Troubleshooting Resources
+
+If environment variables are correctly configured but issues persist:
+
+- **Check MongoDB MCP Server logs** for detailed error messages:
+  - Windows: `%LOCALAPPDATA%\mongodb\mongodb-mcp\.app-logs`
+  - macOS and Linux: `~/.mongodb/mongodb-mcp/.app-logs`
+- **Verify connection string format** matches MongoDB connection string requirements
+- **Confirm API credentials** have appropriate permissions for the operations you're trying to perform
+- **Review the official troubleshooting guide**: [MongoDB MCP Server Troubleshooting](https://www.mongodb.com/docs/mcp-server/configuration/troubleshooting/?utm_source=github-claude-plugins-official)
 
 ## Notes
 
 - Never display the actual values of environment variables
 - Only report whether each variable is set or not set
 - Provide actionable guidance based on the configuration status
+- Log files are the primary source for diagnosing connection and authentication issues
 
