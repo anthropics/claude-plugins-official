@@ -512,6 +512,13 @@
         "url": "https://github.com/pinecone-io/pinecone-claude-code-plugin.git"
       },
       "homepage": "https://github.com/pinecone-io/pinecone-claude-code-plugin"
+    },
+    {
+      "name": "huggingface",
+      "description": "Hugging Face Skills and MCP integration for AI/ML development. Search models, datasets, and papers on the Hub. Access skills for dataset creation, model training, evaluation, and paper publishing. Run compute jobs and interact with Spaces directly from Claude Code.",
+      "category": "ml",
+      "source": "./external_plugins/huggingface",
+      "homepage": "https://github.com/huggingface/skills"
     }
   ]
 }
