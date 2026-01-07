@@ -1,0 +1,7 @@
+{
+    "name": "huggingface",
+    "description": "Hugging Face Skills and MCP integration for AI/ML development. Includes data engineering, model training, evaluation, metric tracking, and access to the Hugging Face Hub for models, datasets, and Spaces.",
+    "author": {
+        "name": "Hugging Face"
+    }
+}
