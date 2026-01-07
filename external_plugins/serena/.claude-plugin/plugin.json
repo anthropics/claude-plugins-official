@@ -1,7 +1,7 @@
 {
   "name": "serena",
-  "description": "Semantic code analysis MCP server providing intelligent code understanding, refactoring suggestions, and codebase navigation through language server protocol integration.",
+  "description": "Semantic code analysis and editing MCP server providing intelligent code understanding, symbol-based codebase navigation and editing through language server protocol/JetBrains IDE integration.",
   "author": {
-    "name": "Oraios"
+    "name": "Oraios AI"
   }
 }
