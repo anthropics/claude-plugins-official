@@ -1,14 +1,14 @@
 ---
-description: "Explain Ralph Wiggum technique and available commands"
+description: "Explain Ralph Loop plugin and available commands"
 ---
 
-# Ralph Wiggum Plugin Help
+# Ralph Loop Plugin Help
 
 Please explain the following to the user:
 
-## What is the Ralph Wiggum Technique?
+## What is Ralph Loop?
 
-The Ralph Wiggum technique is an iterative development methodology based on continuous AI loops, pioneered by Geoffrey Huntley.
+Ralph Loop implements the Ralph Wiggum technique - an iterative development methodology based on continuous AI loops, pioneered by Geoffrey Huntley.
 
 **Core concept:**
 ```bash
