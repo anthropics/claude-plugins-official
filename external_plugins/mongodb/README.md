@@ -19,13 +19,15 @@ Once installed, configure your MongoDB connection (see Setup below).
 
 ## Features
 
-### Basic Database Operations (Requires Connection String)
-Requires `MDB_MCP_CONNECTION_STRING` environment variable:
+### Basic Database Operations
+With either `MDB_MCP_CONNECTION_STRING` OR both `MDB_MCP_API_CLIENT_ID` and `MDB_MCP_API_CLIENT_SECRET`:
 - Query collections with flexible filters
 - Insert, update, and delete documents
 - Run aggregation pipelines
 - Count documents
 - List databases and collections
+
+**Note**: Connection strings provide operations on a single cluster. API credentials provide access to clusters within the credential's scope.
 
 ### Infrastructure Management (Requires API Credentials)
 With MongoDB API credentials (`MDB_MCP_API_CLIENT_ID` and `MDB_MCP_API_CLIENT_SECRET`):
@@ -36,23 +38,37 @@ With MongoDB API credentials (`MDB_MCP_API_CLIENT_ID` and `MDB_MCP_API_CLIENT_SE
 - User and role management
 - Atlas cluster management
 
+**Recommendation**: API credentials are recommended because they provide access to clusters within the credential's scope, enabling broader infrastructure management capabilities.
+
 ## Setup
 
 ### Required Environment Variables
 
-**Minimum (Basic Operations):**
+You must configure **either**:
+- `MDB_MCP_CONNECTION_STRING`, OR
+- Both `MDB_MCP_API_CLIENT_ID` and `MDB_MCP_API_CLIENT_SECRET` together
+
+**Option 1: Connection String (Single Cluster Operations)**
 ```bash
 export MDB_MCP_CONNECTION_STRING="mongodb+srv://username:password@cluster.mongodb.net/?appName=claude-code"
 ```
 
 See [MongoDB Atlas Connection String documentation](https://www.mongodb.com/docs/manual/reference/connection-string/?deployment-type=atlas&interface=atlas-ui&utm_source=github-claude-plugins-official) for details on obtaining your connection string.
 
-**Full Access (Infrastructure Management):**
+**Option 2: API Credentials (Recommended - Broader Cluster Access)**
+```bash
+export MDB_MCP_API_CLIENT_ID="your_client_id"
+export MDB_MCP_API_CLIENT_SECRET="your_client_secret"
+```
+
+**Option 3: Both (Maximum Flexibility)**
 ```bash
 export MDB_MCP_CONNECTION_STRING="mongodb+srv://username:password@cluster.mongodb.net/?appName=claude-code"
 export MDB_MCP_API_CLIENT_ID="your_client_id"
 export MDB_MCP_API_CLIENT_SECRET="your_client_secret"
 ```
+
+**Recommendation**: API credentials are recommended because they provide access to clusters within the credential's scope. Connection strings provide more granular control by limiting operations to a specific cluster.
 
 ### Granting Programmatic Access to Atlas
 
@@ -126,8 +142,9 @@ This shows:
 
 ## Permissions
 
-- **Connection String Only**: Read/write operations on existing databases and collections, subject to the permissions of the database user
-- **With API Credentials**: Full infrastructure management including creating databases, collections, indexes, and managing Atlas resources, subject to the permissions of the service account or api key
+- **Connection String Only**: Read/write operations on existing databases and collections for a single cluster, subject to the permissions of the database user
+- **API Credentials Only**: Full infrastructure management including creating databases, collections, indexes, and managing Atlas resources for clusters within the credential's scope, subject to the permissions of the service account or API key
+- **Both Configured**: Maximum flexibility with both single-cluster operations and broader infrastructure management capabilities
 
 ## Resources
 
