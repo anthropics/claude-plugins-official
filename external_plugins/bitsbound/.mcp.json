@@ -1,0 +1,9 @@
+{
+  "bitsbound": {
+    "command": "npx",
+    "args": ["-y", "@bitsbound/mcp-server"],
+    "env": {
+      "BITSBOUND_API_KEY": "${BITSBOUND_API_KEY}"
+    }
+  }
+}

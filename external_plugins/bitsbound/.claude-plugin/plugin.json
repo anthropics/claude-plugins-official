@@ -1,0 +1,23 @@
+{
+  "name": "bitsbound",
+  "description": "AI-powered contract analysis with real OOXML Track Changes. Upload any contract and get partner-level redlines, negotiation emails, and risk analysis in ~25 minutes. Supports 9 verticals: SaaS, M&A, VC, Employment, NDA, Equipment, Commercial Lease, Professional Services, and more.",
+  "author": {
+    "name": "BitsBound, Inc.",
+    "email": "support@bitsbound.com"
+  },
+  "homepage": "https://bitsbound.com",
+  "repository": "https://github.com/BitsBound/bitsbound-mcp-server",
+  "license": "MIT",
+  "keywords": [
+    "legal",
+    "contract",
+    "redline",
+    "track-changes",
+    "nda",
+    "saas",
+    "msa",
+    "negotiation",
+    "docx",
+    "ooxml"
+  ]
+}
