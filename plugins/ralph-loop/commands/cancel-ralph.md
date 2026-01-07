@@ -1,5 +1,5 @@
 ---
-description: "Cancel active Ralph Wiggum loop"
+description: "Cancel active Ralph Loop"
 allowed-tools: ["Bash(test -f .claude/ralph-loop.local.md:*)", "Bash(rm .claude/ralph-loop.local.md)", "Read(.claude/ralph-loop.local.md)"]
 hide-from-slash-command-tool: "true"
 ---
