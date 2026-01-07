@@ -1,0 +1,105 @@
+name: Check Upstream Sync
+
+on:
+  schedule:
+    # Every Monday at 9:00 AM UTC
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check-upstream:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Add upstream remote and fetch
+        run: |
+          git remote add upstream https://github.com/anthropics/claude-plugins-official.git 2>/dev/null || true
+          git fetch upstream main
+
+      - name: Check for new commits
+        id: check-commits
+        run: |
+          NEW_COMMITS=$(git log --oneline origin/main..upstream/main)
+
+          if [ -z "$NEW_COMMITS" ]; then
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+            echo "No new commits found in upstream"
+          else
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            echo "New commits found:"
+            echo "$NEW_COMMITS"
+
+            # Write commits to file for safe handling
+            echo "$NEW_COMMITS" > /tmp/commits.txt
+          fi
+
+      - name: Create issue for upstream changes
+        if: steps.check-commits.outputs.has_changes == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const commits = fs.readFileSync('/tmp/commits.txt', 'utf8').trim();
+
+            // Use code block for untrusted commit messages to prevent markdown injection
+            const issueBody = [
+              '## Upstream Changes Detected',
+              '',
+              'New commits from anthropics/claude-plugins-official:',
+              '',
+              '```',
+              commits,
+              '```',
+              '',
+              '**Action Required**: Review changes and sync if needed.'
+            ].join('\n');
+
+            try {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: 'Upstream Changes Detected',
+                body: issueBody,
+                assignees: ['circuitfive']
+              });
+            } catch (error) {
+              console.error('Failed to create issue:', error);
+              throw error;
+            }
+
+      - name: Create error issue on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+
+            const issueBody = [
+              '## Upstream Sync Check Failed',
+              '',
+              'The automated upstream sync check workflow encountered an error.',
+              '',
+              `**Workflow Run:** [View logs](${runUrl})`,
+              '',
+              'Please review the workflow logs to identify and fix the issue.'
+            ].join('\n');
+
+            try {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: 'Upstream Sync Check Failed',
+                body: issueBody,
+                assignees: ['circuitfive']
+              });
+            } catch (error) {
+              console.error('Failed to create error issue:', error);
+            }
