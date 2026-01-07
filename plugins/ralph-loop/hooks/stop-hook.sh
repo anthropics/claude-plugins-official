@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Ralph Loop Stop Hook
 # Prevents session exit when a ralph-loop is active
