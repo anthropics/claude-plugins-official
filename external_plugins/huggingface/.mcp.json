@@ -1,0 +1,6 @@
+{
+    "huggingface": {
+        "type": "sse",
+        "url": "https://huggingface.co/mcp"
+    }
+}
