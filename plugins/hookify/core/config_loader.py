@@ -7,7 +7,6 @@ Loads and parses .claude/hookify.*.local.md files.
 import os
 import sys
 import glob
-import re
 from typing import List, Optional, Dict, Any
 from dataclasses import dataclass, field
 

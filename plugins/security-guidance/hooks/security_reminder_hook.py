@@ -20,7 +20,7 @@ def debug_log(message):
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
         with open(DEBUG_LOG_FILE, "a") as f:
             f.write(f"[{timestamp}] {message}\n")
-    except Exception as e:
+    except Exception:
         # Silently ignore logging errors to avoid disrupting the hook
         pass
 
