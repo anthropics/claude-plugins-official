@@ -10,6 +10,24 @@ PROMPT_PARTS=()
 MAX_ITERATIONS=0
 COMPLETION_PROMISE="null"
 
+# Check for --from-file as first argument
+# This is used to avoid newline issues when passing multi-line prompts
+# via command line arguments (Claude Code blocks commands with newlines)
+if [[ "${1:-}" == "--from-file" ]] && [[ -n "${2:-}" ]]; then
+  FROM_FILE="$2"
+  if [[ -f "$FROM_FILE" ]]; then
+    # Read arguments from file, normalize newlines to spaces
+    FILE_CONTENT=$(cat "$FROM_FILE" | tr '\n' ' ' | sed 's/  */ /g' | sed 's/^ *//;s/ *$//')
+    # Clean up the temp file
+    rm -f "$FROM_FILE"
+    # Parse arguments from file content
+    eval "set -- $FILE_CONTENT"
+  else
+    echo "❌ Error: File not found: $FROM_FILE" >&2
+    exit 1
+  fi
+fi
+
 # Parse options and positional arguments
 while [[ $# -gt 0 ]]; do
   case $1 in
