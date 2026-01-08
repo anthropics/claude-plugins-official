@@ -1,0 +1,10 @@
+{
+  "name": "sugar",
+  "description": "AI-powered autonomous development system that integrates with Claude Code for background task execution. Manage task queues, run autonomous development workflows, and let AI handle complex multi-step development work.",
+  "author": {
+    "name": "Steven Leggett",
+    "url": "https://github.com/roboticforce"
+  },
+  "homepage": "https://github.com/roboticforce/sugar",
+  "keywords": ["autonomous", "development", "task-management", "ai", "automation", "agents", "workflow"]
+}
