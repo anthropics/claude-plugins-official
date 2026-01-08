@@ -1,0 +1,8 @@
+{
+  "name": "r-lsp",
+  "description": "R language server (languageserver) integration for Claude Code with support for R and R Markdown files",
+  "author": {
+    "name": "Anthropic",
+    "email": "support@anthropic.com"
+  }
+}

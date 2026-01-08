@@ -1,0 +1,17 @@
+{
+  "r-languageserver": {
+    "type": "stdio",
+    "command": "R",
+    "args": [
+      "--slave",
+      "-e",
+      "languageserver::run()"
+    ],
+    "extensionToLanguage": {
+      ".R": "r",
+      ".r": "r",
+      ".Rmd": "rmd",
+      ".rmd": "rmd"
+    }
+  }
+}
