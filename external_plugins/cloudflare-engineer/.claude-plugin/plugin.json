@@ -1,0 +1,24 @@
+{
+  "name": "cloudflare-engineer",
+  "version": "1.1.0",
+  "description": "Senior Cloudflare Systems Engineer capabilities - architecture design, cost optimization, security auditing, and implementation patterns for Workers, D1, R2, KV, Queues, and the full Cloudflare stack. Now with live validation via MCP tools and actionable patterns.",
+  "author": {
+    "name": "Little Bear Apps",
+    "email": "hello@littlebearapps.com"
+  },
+  "homepage": "https://github.com/littlebearapps/cloudflare-engineer",
+  "repository": "https://github.com/littlebearapps/cloudflare-engineer",
+  "license": "MIT",
+  "keywords": [
+    "cloudflare",
+    "workers",
+    "d1",
+    "r2",
+    "kv",
+    "queues",
+    "devops",
+    "infrastructure",
+    "security",
+    "cost-optimization"
+  ]
+}

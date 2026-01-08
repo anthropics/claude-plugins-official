@@ -1,0 +1,40 @@
+{
+  "name": "littlebearapps-cloudflare",
+  "owner": {
+    "name": "Little Bear Apps",
+    "email": "hello@littlebearapps.com"
+  },
+  "metadata": {
+    "description": "Cloudflare engineering tools for Claude Code by Little Bear Apps",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "cloudflare-engineer",
+      "source": "./",
+      "description": "Senior Cloudflare Systems Engineer capabilities - architecture design, cost optimization, security auditing, and implementation patterns",
+      "version": "1.1.0",
+      "author": {
+        "name": "Little Bear Apps",
+        "email": "hello@littlebearapps.com"
+      },
+      "homepage": "https://github.com/littlebearapps/cloudflare-engineer",
+      "repository": "https://github.com/littlebearapps/cloudflare-engineer",
+      "license": "MIT",
+      "keywords": [
+        "cloudflare",
+        "workers",
+        "d1",
+        "r2",
+        "kv",
+        "queues",
+        "devops",
+        "infrastructure",
+        "security",
+        "cost-optimization",
+        "architecture"
+      ],
+      "category": "cloud-infrastructure"
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "description": "Pre-deploy validation hook for Cloudflare Workers - validates wrangler config before deployment",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/pre-deploy-check.py",
+            "timeout": 30
+          }
+        ],
+        "matcher": "Bash"
+      }
+    ]
+  }
+}
