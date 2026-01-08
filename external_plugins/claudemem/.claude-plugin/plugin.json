@@ -1,0 +1,11 @@
+{
+  "name": "claudemem",
+  "description": "Persistent memory for Claude Code. Remembers your projects, tasks, and decisions across sessions. Converts conversations into PRDs, epics, and tasks automatically.",
+  "version": "1.0.0",
+  "author": {
+    "name": "Damola Akinleye"
+  },
+  "repository": "https://github.com/Dammyjay93/claudemem",
+  "license": "MIT",
+  "keywords": ["memory", "project-management", "productivity", "sessions", "tasks"]
+}
