@@ -535,6 +535,17 @@
         "url": "https://github.com/pinecone-io/pinecone-claude-code-plugin.git"
       },
       "homepage": "https://github.com/pinecone-io/pinecone-claude-code-plugin"
+    },
+    {
+      "name": "plannotator",
+      "description": "Interactive plan review UI that intercepts ExitPlanMode via hooks. Visually annotate plans with comments, deletions, and replacements before approving or denying. Features offline URL sharing, Obsidian/Bear integration, and configurable plan saving.",
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/backnotprop/plannotator.git"
+      },
+      "homepage": "https://github.com/backnotprop/plannotator",
+      "tags": ["community-managed"]
     }
   ]
 }
