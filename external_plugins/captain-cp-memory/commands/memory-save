@@ -1,0 +1,19 @@
+#!/usr/bin/env node
+
+/**
+ * /memory-save command
+ * Save a memory entry
+ */
+
+const { saveMemory } = require('../lib/memory');
+
+const content = process.argv.slice(2).join(' ');
+
+if (!content) {
+  console.log('Usage: /memory-save <content>');
+  console.log('Example: /memory-save Remember: Use strict TypeScript mode');
+  process.exit(1);
+}
+
+const memory = saveMemory(content, 'note');
+console.log(`✅ Memory saved at ${new Date(memory.timestamp).toLocaleString()}`);

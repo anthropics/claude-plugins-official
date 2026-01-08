@@ -1,0 +1,31 @@
+#!/usr/bin/env node
+
+/**
+ * /memory-search command
+ * Search through saved memories
+ */
+
+const { searchMemories } = require('../lib/memory');
+
+const query = process.argv.slice(2).join(' ');
+
+if (!query) {
+  console.log('Usage: /memory-search <query>');
+  console.log('Example: /memory-search typescript config');
+  process.exit(1);
+}
+
+const results = searchMemories(query, 10);
+
+if (results.length === 0) {
+  console.log(`No memories found for: "${query}"`);
+} else {
+  console.log(`Found ${results.length} memories for: "${query}"\n`);
+  
+  results.forEach((memory, i) => {
+    const date = new Date(memory.timestamp).toLocaleString();
+    console.log(`[${i + 1}] ${date}`);
+    console.log(`    ${memory.content}`);
+    console.log('');
+  });
+}

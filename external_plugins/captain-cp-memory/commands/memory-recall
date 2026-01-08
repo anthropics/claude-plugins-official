@@ -1,0 +1,24 @@
+#!/usr/bin/env node
+
+/**
+ * /memory-recall command
+ * Show recent conversation context
+ */
+
+const { recentMemories } = require('../lib/memory');
+
+const count = parseInt(process.argv[2]) || 5;
+const memories = recentMemories(count);
+
+if (memories.length === 0) {
+  console.log('No memories found. Use /memory-save to start recording.');
+} else {
+  console.log(`Recent ${memories.length} memories:\n`);
+  
+  memories.forEach((memory, i) => {
+    const date = new Date(memory.timestamp).toLocaleString();
+    console.log(`[${i + 1}] ${date}`);
+    console.log(`    ${memory.content}`);
+    console.log('');
+  });
+}

@@ -1,0 +1,31 @@
+{
+  "name": "captain-cp-memory",
+  "version": "0.1.0",
+  "description": "Persistent memory and context retention for Claude Code CLI",
+  "main": "lib/memory.js",
+  "bin": {
+    "memory-search": "./commands/memory-search",
+    "memory-save": "./commands/memory-save",
+    "memory-recall": "./commands/memory-recall",
+    "memory-stats": "./commands/memory-stats"
+  },
+  "scripts": {
+    "test": "node test/test-memory.js"
+  },
+  "keywords": [
+    "claude",
+    "memory",
+    "context",
+    "persistence",
+    "ai"
+  ],
+  "author": "Captain CP <captain@barrersoftware.com>",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/barrersoftware/captain-cp-memory"
+  }
+}

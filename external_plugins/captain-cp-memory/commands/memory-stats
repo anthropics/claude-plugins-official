@@ -1,0 +1,32 @@
+#!/usr/bin/env node
+
+/**
+ * /memory-stats command
+ * Show memory statistics
+ */
+
+const { getStats } = require('../lib/memory');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+
+const MEMORY_FILE = path.join(os.homedir(), '.claude-memory', 'memories.jsonl');
+const stats = getStats();
+
+console.log('📊 Captain CP Memory Stats\n');
+console.log(`Total memories: ${stats.total}`);
+
+if (stats.total > 0) {
+  console.log(`Oldest: ${new Date(stats.oldest).toLocaleString()}`);
+  console.log(`Newest: ${new Date(stats.newest).toLocaleString()}`);
+  
+  console.log('\nBy type:');
+  Object.entries(stats.byType).forEach(([type, count]) => {
+    console.log(`  ${type}: ${count}`);
+  });
+  
+  if (fs.existsSync(MEMORY_FILE)) {
+    const size = fs.statSync(MEMORY_FILE).size;
+    console.log(`\nStorage: ${(size / 1024).toFixed(2)} KB`);
+  }
+}
