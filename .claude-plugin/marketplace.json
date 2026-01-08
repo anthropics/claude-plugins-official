@@ -1,9 +1,10 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
-  "name": "test-local",
-  "description": "test-local marketplace",
+  "name": "claude-plugins-official",
+  "description": "Directory of popular Claude Code extensions including development tools, productivity plugins, and MCP integrations",
   "owner": {
-    "name": "test"
+    "name": "Anthropic",
+    "email": "support@anthropic.com"
   },
   "plugins": [
     {
