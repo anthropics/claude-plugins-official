@@ -120,7 +120,7 @@ Use this workflow for structured, high-quality plugin development from concept t
 - YAML frontmatter + markdown body structure
 - Parsing techniques for bash scripts (sed, awk, grep patterns)
 - Temporarily active hooks (flag files and quick-exit)
-- Real-world examples from multi-agent-swarm and ralph-wiggum plugins
+- Real-world examples from multi-agent-swarm and ralph-loop plugins
 - Atomic file updates and validation
 - Gitignore and lifecycle management
 

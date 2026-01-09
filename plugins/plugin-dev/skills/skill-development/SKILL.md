@@ -310,7 +310,7 @@ Study the skills in this plugin as examples of best practices:
 
 **plugin-settings skill:**
 - Specific triggers: "plugin settings", ".local.md files", "YAML frontmatter"
-- References show real implementations (multi-agent-swarm, ralph-wiggum)
+- References show real implementations (multi-agent-swarm, ralph-loop)
 - Working parsing scripts
 
 Each demonstrates progressive disclosure and strong triggering.
