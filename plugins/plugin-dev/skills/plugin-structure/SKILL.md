@@ -387,6 +387,46 @@ Claude Code automatically discovers and loads components:
    - Agents: Describe role clearly (`code-reviewer`, `test-generator`)
    - Skills: Topic-focused (`error-handling`, `api-design`)
 
+4. **Platform Identity**: Use a consistent prefix across ALL components
+
+   When users have multiple plugins installed, generic names create ambiguity. A platform identity prefix creates immediate clustering and clarity.
+
+   **Pattern**: `{platform}-{domain}-{action|role|topic}`
+
+   - `{platform}` - Canonical invocation term (e.g., `aria`, `acme`, `dev`)
+   - `{domain}` - Functional area (e.g., `rfp`, `proposal`, `test`)
+   - `{action|role|topic}` - Specific purpose
+
+   **Example - Building an RFP plugin for "Aria" platform:**
+
+   | Component | Generic (Avoid) | Platform Identity (Preferred) |
+   |-----------|-----------------|-------------------------------|
+   | Command file | `prep.md` | `aria-rfp-prep.md` |
+   | Command name | `prep` | `aria-rfp-prep` |
+   | Agent file | `classifier.md` | `aria-rfp-classifier.md` |
+   | Agent name | `classifier` | `aria-rfp-classifier` |
+   | Skill directory | `classification/` | `aria-rfp-classification/` |
+   | Skill name | `Classification` | `ARIA RFP Classification` |
+
+   **Required parity** - The prefix MUST appear consistently in:
+   - Directory names
+   - File names
+   - Frontmatter `name` fields
+   - Internal references (agent examples, descriptions)
+
+   **Why it matters:**
+   - **Agent traversal**: AI agents see `aria-rfp-*` and know these components work as a cohesive system
+   - **Human discoverability**: Users type `/aria` and see all related commands
+   - **Namespace collision avoidance**: Multiple plugins can have "classifier" or "prep" concepts
+   - **Maintenance clarity**: Developers immediately know which files belong together
+
+   **Verification checklist:**
+   - [ ] All filenames use `{platform}-{domain}-` prefix
+   - [ ] All frontmatter `name` fields match filenames
+   - [ ] All skill directories use the prefix
+   - [ ] All internal references use prefixed names
+   - [ ] README documents the naming convention
+
 ### Portability
 
 1. **Always use ${CLAUDE_PLUGIN_ROOT}**: Never hardcode paths
