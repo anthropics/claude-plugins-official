@@ -1,7 +1,7 @@
 {
   "name": "skillforge",
-  "description": "Complete AI development toolkit with 33 skills, 12 agents, 10 commands, and 27 hooks. Features progressive loading, LangGraph workflows, security patterns, and production-ready development patterns for full-stack applications.",
-  "version": "1.0.0",
+  "description": "Complete AI development toolkit with 78 skills, 20 agents, 12 commands, and 92 hooks. Features progressive loading, LangGraph workflows, security patterns, and production-ready development patterns for full-stack applications.",
+  "version": "4.6.3",
   "author": {
     "name": "Yonatan Gross",
     "url": "https://github.com/yonatangross"

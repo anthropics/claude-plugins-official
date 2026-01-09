@@ -4,15 +4,15 @@ Complete AI development toolkit for Claude Code.
 
 ## Features
 
-- **33 Skills**: AI/LLM, backend, frontend, security, testing, architecture
-- **12 Agents**: Specialized agents for different development tasks
-- **10 Commands**: /implement, /explore, /verify, /commit, /review-pr, etc.
-- **27 Hooks**: Lifecycle, notification, pre-tool, post-tool hooks
+- **78 Skills**: AI/LLM, backend, frontend, security, testing, architecture
+- **20 Agents**: Specialized agents for product thinking and technical implementation
+- **12 Commands**: /implement, /explore, /verify, /commit, /configure, /review-pr, etc.
+- **92 Hooks**: Security-hardened lifecycle, permission, pre-tool, and post-tool hooks
 
 ## Installation
 
 ```bash
-/plugin install skillforge@claude-plugin-directory
+/plugin install skillforge
 ```
 
 Or install directly from GitHub:
@@ -25,11 +25,11 @@ git clone https://github.com/yonatangross/skillforge-claude-plugin .claude
 
 | Category | Skills |
 |----------|--------|
-| AI/LLM | ai-native-development, langgraph-workflows, llm-caching-patterns, pgvector-search |
-| Backend | api-design-framework, database-schema-designer, streaming-api-patterns |
-| Frontend | react-server-components-framework, design-system-starter, type-safety-validation |
-| Security | security-checklist, defense-in-depth, llm-safety-patterns |
-| Testing | testing-strategy-builder, webapp-testing, evidence-verification |
+| AI/LLM | agent-loops, embeddings, function-calling, llm-streaming, rag-retrieval, reranking-patterns |
+| Backend | api-design-framework, clean-architecture, caching-strategies, rate-limiting, background-jobs |
+| Frontend | react-server-components-framework, design-system-starter, type-safety-validation, motion-animation-patterns |
+| Security | owasp-top-10, auth-patterns, input-validation, llm-safety-patterns |
+| Testing | unit-testing, integration-testing, e2e-testing, msw-mocking, vcr-http-recording |
 
 ## Repository
 
