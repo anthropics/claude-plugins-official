@@ -252,6 +252,26 @@
       }
     },
     {
+      "name": "lean4-lsp",
+      "description": "Lean 4 language server for theorem proving",
+      "version": "1.0.0",
+      "author": {
+        "name": "Alok Singh"
+      },
+      "source": "./plugins/lean4-lsp",
+      "category": "development",
+      "strict": false,
+      "lspServers": {
+        "lean": {
+          "command": "lake",
+          "args": ["serve", "--"],
+          "extensionToLanguage": {
+            ".lean": "lean"
+          }
+        }
+      }
+    },
+    {
       "name": "agent-sdk-dev",
       "description": "Development kit for working with the Claude Agent SDK",
       "author": {
