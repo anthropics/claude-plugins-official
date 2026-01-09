@@ -1,0 +1,12 @@
+{
+  "name": "kreatsaas",
+  "description": "SaaS Builder Guide - Build production-ready SaaS from design to deployment. 11 skill guides, 5 AI agents, beginner FAQ, multi-language (Korean/English).",
+  "version": "1.0.0",
+  "author": {
+    "name": "johunsang",
+    "url": "https://github.com/johunsang"
+  },
+  "repository": "https://github.com/johunsang/kreatsaas",
+  "homepage": "https://github.com/johunsang/kreatsaas",
+  "license": "MIT"
+}
