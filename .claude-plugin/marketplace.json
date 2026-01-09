@@ -472,6 +472,13 @@
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/linear"
     },
     {
+      "name": "circleback",
+      "description": "Circleback conversational context integration. Search and access meetings, emails, calendar events, and more.",
+      "category": "productivity",
+      "source": "./external_plugins/circleback",
+      "homepage": "https://github.com/anthropics/claude-plugins-official/tree/main/external_plugins/circleback"
+    },
+    {
       "name": "Notion",
       "description": "Notion workspace integration. Search pages, create and update documents, manage databases, and access your team's knowledge base directly from Claude Code for seamless documentation workflows.",
       "category": "productivity",
