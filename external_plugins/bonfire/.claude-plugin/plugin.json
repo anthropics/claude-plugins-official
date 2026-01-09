@@ -1,0 +1,13 @@
+{
+  "name": "bonfire",
+  "description": "AI forgets everything between sessions. Bonfire fixes that.",
+  "version": "0.8.1",
+  "author": {
+    "name": "Vieko Franetovic",
+    "url": "https://vieko.dev"
+  },
+  "homepage": "https://vieko.dev/bonfire",
+  "repository": "https://github.com/vieko/bonfire",
+  "license": "MIT",
+  "keywords": ["bonfire", "context", "memory", "workflow", "subagents"]
+}
