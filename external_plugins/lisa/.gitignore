@@ -1,0 +1,29 @@
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+*.sublime-*
+
+# Node (if any scripts use it)
+node_modules/
+npm-debug.log*
+
+# Python (if any scripts use it)
+__pycache__/
+*.py[cod]
+.env
+.venv/
+
+# Testing artifacts
+*.log
+coverage/
+
+# Local development
+.claude/
+*.local.md
