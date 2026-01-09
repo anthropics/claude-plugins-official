@@ -1,0 +1,6 @@
+{
+  "pubnub": {
+    "command": "npx",
+    "args": ["-y", "@pubnub/mcp"]
+  }
+}

@@ -548,6 +548,16 @@
       "homepage": "https://github.com/pinecone-io/pinecone-claude-code-plugin"
     },
     {
+      "name": "pubnub",
+      "description": "PubNub SDK documentation and PubNub API tools for Claude Code. This adds ability to interact with PubNub's SDKs and APIs.",
+      "category": "development",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/pubnub/pubnub-mcp-server.git"
+      },
+      "homepage": "https://github.com/pubnub/pubnub-mcp-server"
+    },
+    {
       "name": "huggingface-skills",
       "description": "Build, train, evaluate, and use open source AI models, datasets, and spaces.",
       "category": "development",

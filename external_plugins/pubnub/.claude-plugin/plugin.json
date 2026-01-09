@@ -1,0 +1,7 @@
+{
+  "name": "pubnub",
+  "description": "PubNub Model Context Protocol MCP Server for Claude Code.",
+  "author": {
+    "name": "PubNub"
+  }
+}
