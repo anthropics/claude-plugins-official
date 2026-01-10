@@ -1,0 +1,9 @@
+{
+  "name": "task",
+  "version": "2.0.0",
+  "description": "Complex Task Mode - Full-featured task management with templates, analytics, achievements, snapshots, and collaboration for Claude Code.",
+  "author": {
+    "name": "mmmprod"
+  },
+  "homepage": "https://github.com/mmmprod/task-plugin"
+}
