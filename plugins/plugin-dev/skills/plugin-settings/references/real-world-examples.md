@@ -126,7 +126,7 @@ sed "s/^pr_number: .*/pr_number: $PR_NUM/" \
 mv temp.md ".claude/multi-agent-swarm.local.md"
 ```
 
-## ralph-wiggum Plugin
+## ralph-loop Plugin
 
 ### Settings File Structure
 
@@ -253,7 +253,7 @@ echo "Ralph loop initialized: .claude/ralph-loop.local.md"
 
 ## Pattern Comparison
 
-| Feature | multi-agent-swarm | ralph-wiggum |
+| Feature | multi-agent-swarm | ralph-loop |
 |---------|-------------------|--------------|
 | **File** | `.claude/multi-agent-swarm.local.md` | `.claude/ralph-loop.local.md` |
 | **Purpose** | Agent coordination state | Loop iteration state |
