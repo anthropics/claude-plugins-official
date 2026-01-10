@@ -1,0 +1,41 @@
+{
+  "name": "pact-framework",
+  "version": "1.0.0",
+  "description": "PACT Framework - Prepare, Architect, Code, Test methodology with specialist agents for systematic AI-assisted development",
+  "author": {
+    "name": "ProfSynapse",
+    "url": "https://github.com/ProfSynapse/PACT-prompt"
+  },
+  "license": "MIT",
+  "repository": "https://github.com/ProfSynapse/PACT-prompt",
+  "homepage": "https://github.com/ProfSynapse/PACT-prompt",
+  "keywords": [
+    "pact",
+    "agents",
+    "development",
+    "architecture",
+    "testing",
+    "multi-agent",
+    "n8n",
+    "workflow"
+  ],
+  "commands": [
+    "./commands/orchestrate.md",
+    "./commands/comPACT.md",
+    "./commands/imPACT.md",
+    "./commands/peer-review.md",
+    "./commands/plan-mode.md",
+    "./commands/wrap-up.md",
+    "./commands/log-changes.md"
+  ],
+  "agents": [
+    "./agents/pact-preparer.md",
+    "./agents/pact-architect.md",
+    "./agents/pact-backend-coder.md",
+    "./agents/pact-frontend-coder.md",
+    "./agents/pact-database-engineer.md",
+    "./agents/pact-n8n.md",
+    "./agents/pact-test-engineer.md"
+  ],
+  "skills": "./skills/"
+}
