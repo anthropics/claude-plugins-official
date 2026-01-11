@@ -1,0 +1,16 @@
+{
+  "name": "vibe",
+  "description": "SPEC-driven AI coding framework with parallel agents, BDD verification, and quality assurance. Features 12 slash commands including /vibe.spec, /vibe.run, /vibe.verify for structured development workflows.",
+  "author": {
+    "name": "su-record"
+  },
+  "repository": "https://github.com/su-record/vibe",
+  "keywords": [
+    "spec",
+    "ai-coding",
+    "parallel-agents",
+    "bdd",
+    "code-review",
+    "quality-assurance"
+  ]
+}
