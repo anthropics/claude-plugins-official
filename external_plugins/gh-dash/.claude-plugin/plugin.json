@@ -1,0 +1,8 @@
+{
+  "name": "gh-dash",
+  "description": "GitHub PR dashboard with CI/CD status, bot comments, and merge actions. View PR status, track running checks, see CodeRabbit/Bugbot feedback, and merge PRs directly from your terminal.",
+  "author": {
+    "name": "Jake Kozloski",
+    "url": "https://github.com/jakozloski/claude-code-gh-dash"
+  }
+}
