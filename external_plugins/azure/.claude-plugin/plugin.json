@@ -1,0 +1,11 @@
+{
+  "name": "azure",
+  "description": "Microsoft Azure MCP integration for cloud resource management, deployments, and Azure services. Manage your Azure infrastructure, monitor applications, and deploy resources directly from Claude Code.",
+  "version": "1.0.0",
+  "author": {
+    "name": "Microsoft",
+    "url": "https://azure.microsoft.com"
+  },
+  "homepage": "https://github.com/microsoft/mcp/blob/main/servers/Azure.Mcp.Server/README.md",
+  "keywords": ["azure", "cloud", "infrastructure", "deployment", "microsoft", "devops"]
+}

@@ -515,7 +515,14 @@
       },
       "homepage": "https://github.com/vercel/vercel-deploy-claude-code-plugin"
     },
-        {
+    {
+      "name": "azure",
+      "description": "Microsoft Azure MCP integration for cloud resource management, deployments, and Azure services. Manage your Azure infrastructure, monitor applications, and deploy resources directly from Claude Code.",
+      "category": "deployment",
+      "source": "./external_plugins/azure",
+      "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/azure"
+    },
+    {
       "name": "stripe",
       "description": "Stripe development plugin for Claude",
       "category": "development",
