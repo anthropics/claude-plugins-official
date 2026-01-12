@@ -556,6 +556,17 @@
         "url": "https://github.com/huggingface/skills.git"
       },
       "homepage": "https://github.com/huggingface/skills.git"
+    },
+    {
+      "name": "mcplite",
+      "description": "Dynamic MCP server management to optimize context window usage. Switch between MCP profiles, enable/disable servers on-demand, and save thousands of tokens by loading only what you need.",
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/daniel-ddtech/mcplite.git"
+      },
+      "homepage": "https://github.com/daniel-ddtech/mcplite",
+      "tags": ["community-managed"]
     }
   ]
 }
