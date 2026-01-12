@@ -538,24 +538,14 @@
       "tags": ["community-managed"]
     },
     {
-      "name": "pinecone",
-      "description": "Pinecone vector database integration. Streamline your Pinecone development with powerful tools for managing vector indexes, querying data, and rapid prototyping. Use slash commands like /quickstart to generate AGENTS.md files and initialize Python projects and /query to quickly explore indexes. Access the Pinecone MCP server for creating, describing, upserting and querying indexes with Claude. Perfect for developers building semantic search, RAG applications, recommendation systems, and other vector-based applications with Pinecone.",
-      "category": "database",
+      "name": "firecrawl",
+      "description": "Web scraping and crawling powered by Firecrawl. Turn any website into clean, LLM-ready markdown or structured data. Scrape single pages, crawl entire sites, search the web, and extract structured information. Includes an AI agent for autonomous multi-source data gathering - just describe what you need and it finds, navigates, and extracts automatically.",
+      "category": "data",
       "source": {
         "source": "url",
-        "url": "https://github.com/pinecone-io/pinecone-claude-code-plugin.git"
+        "url": "https://github.com/firecrawl/firecrawl-claude-plugin.git"
       },
-      "homepage": "https://github.com/pinecone-io/pinecone-claude-code-plugin"
-    },
-    {
-      "name": "huggingface-skills",
-      "description": "Build, train, evaluate, and use open source AI models, datasets, and spaces.",
-      "category": "development",
-      "source": {
-        "source": "url",
-        "url": "https://github.com/huggingface/skills.git"
-      },
-      "homepage": "https://github.com/huggingface/skills.git"
+      "homepage": "https://firecrawl.dev"
     }
   ]
 }
