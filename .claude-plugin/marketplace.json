@@ -556,6 +556,17 @@
         "url": "https://github.com/huggingface/skills.git"
       },
       "homepage": "https://github.com/huggingface/skills.git"
+    },
+    {
+      "name": "oh-my-claude-sisyphus",
+      "description": "Multi-agent orchestration system for Claude Code. Delegate tasks to 11 specialized agents (oracle, librarian, prometheus, momus, etc.), manage todos persistently, and work relentlessly until every task is complete. Like Sisyphus, the agents persist until the boulder reaches the top.",
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/Yeachan-Heo/oh-my-claude-sisyphus.git"
+      },
+      "homepage": "https://github.com/Yeachan-Heo/oh-my-claude-sisyphus",
+      "tags": ["community-managed"]
     }
   ]
 }
