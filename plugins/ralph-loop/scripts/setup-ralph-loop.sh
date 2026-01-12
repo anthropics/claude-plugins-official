@@ -18,10 +18,11 @@ while [[ $# -gt 0 ]]; do
 Ralph Loop - Interactive self-referential development loop
 
 USAGE:
-  /ralph-loop [PROMPT...] [OPTIONS]
+  /ralph-loop [PROMPT...] [N] [OPTIONS]
 
 ARGUMENTS:
   PROMPT...    Initial prompt to start the loop (can be multiple words without quotes)
+  N            Optional: bare number at end = max iterations (shorthand)
 
 OPTIONS:
   --max-iterations <n>           Maximum iterations before auto-stop (default: unlimited)
@@ -40,9 +41,10 @@ DESCRIPTION:
   - Learning how Ralph works
 
 EXAMPLES:
-  /ralph-loop Build a todo API --completion-promise 'DONE' --max-iterations 20
-  /ralph-loop --max-iterations 10 Fix the auth bug
-  /ralph-loop Refactor cache layer  (runs forever)
+  /ralph-loop Fix the auth bug 10                    # 10 iterations (shorthand)
+  /ralph-loop Build a todo API 20 --completion-promise 'DONE'
+  /ralph-loop --max-iterations 10 Fix the auth bug   # explicit flag also works
+  /ralph-loop Refactor cache layer                   # runs forever (no limit!)
   /ralph-loop --completion-promise 'TASK COMPLETE' Create a REST API
 
 STOPPING:
@@ -108,6 +110,18 @@ HELP_EOF
       ;;
   esac
 done
+
+# Check if last prompt part is a bare number (shorthand for max-iterations)
+# e.g., "/ralph-loop Fix the bug 10" → max_iterations=10
+if [[ ${#PROMPT_PARTS[@]} -gt 0 ]]; then
+  LAST_PART="${PROMPT_PARTS[-1]}"
+  if [[ "$LAST_PART" =~ ^[0-9]+$ ]] && [[ $MAX_ITERATIONS -eq 0 ]]; then
+    # Last part is a number and max-iterations wasn't explicitly set
+    MAX_ITERATIONS="$LAST_PART"
+    # Remove the number from prompt parts
+    unset 'PROMPT_PARTS[-1]'
+  fi
+fi
 
 # Join all prompt parts with spaces
 PROMPT="${PROMPT_PARTS[*]}"
