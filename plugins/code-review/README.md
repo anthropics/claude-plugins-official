@@ -16,10 +16,12 @@ Performs automated code review on a pull request using multiple specialized agen
 1. Checks if review is needed (skips closed, draft, trivial, or already-reviewed PRs)
 2. Gathers relevant CLAUDE.md guideline files from the repository
 3. Summarizes the pull request changes
-4. Launches 4 parallel agents to independently review:
-   - **Agents #1 & #2**: Audit for CLAUDE.md compliance
-   - **Agent #3**: Scan for obvious bugs in changes
-   - **Agent #4**: Analyze git blame/history for context-based issues
+4. Launches 5 parallel agents to independently review:
+   - **Agent #1**: Audit for CLAUDE.md compliance
+   - **Agent #2**: Scan for obvious bugs in changes
+   - **Agent #3**: Analyze git blame/history for context-based issues
+   - **Agent #4**: Check previous PR comments for applicable feedback
+   - **Agent #5**: Verify code comments compliance
 5. Scores each issue 0-100 for confidence level
 6. Filters out issues below 80 confidence threshold
 7. Posts review comment with high-confidence issues only
@@ -35,7 +37,7 @@ Performs automated code review on a pull request using multiple specialized agen
 /code-review
 
 # Claude will:
-# - Launch 4 review agents in parallel
+# - Launch 5 review agents in parallel
 # - Score each issue for confidence
 # - Post comment with issues ≥80 confidence
 # - Skip posting if no high-confidence issues found
@@ -142,7 +144,7 @@ This plugin is included in the Claude Code repository. The command is automatica
 
 **Solution**:
 - Normal for large changes - agents run in parallel
-- 4 independent agents ensure thoroughness
+- 5 independent agents ensure thoroughness
 - Consider splitting large PRs into smaller ones
 
 ### Too many false positives
@@ -219,9 +221,11 @@ Edit `commands/code-review.md` to add or modify agent tasks:
 ## Technical Details
 
 ### Agent architecture
-- **2x CLAUDE.md compliance agents**: Redundancy for guideline checks
+- **1x CLAUDE.md compliance agent**: Audits changes against guidelines
 - **1x bug detector**: Focused on obvious bugs in changes only
 - **1x history analyzer**: Context from git blame and history
+- **1x PR comments checker**: Reviews previous PR feedback for patterns
+- **1x code comments verifier**: Ensures compliance with inline guidance
 - **Nx confidence scorers**: One per issue for independent scoring
 
 ### Scoring system
