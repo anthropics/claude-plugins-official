@@ -566,6 +566,17 @@
         "url": "https://github.com/circlebackai/claude-code-plugin.git"
       },
       "homepage": "https://github.com/circlebackai/claude-code-plugin.git"
+    },
+    {
+      "name": "claude-pulse",
+      "description": "Real-time session dashboard for Claude Code. Track costs per-token, monitor tool success rates, get smart context alerts, and visualize session analytics with a customizable statusline.",
+      "category": "monitoring",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/hyeongjun-dev/claude-pulse.git"
+      },
+      "homepage": "https://github.com/hyeongjun-dev/claude-pulse",
+      "tags": ["community-managed"]
     }
   ]
 }

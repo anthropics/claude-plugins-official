@@ -1,0 +1,8 @@
+{
+  "name": "claude-pulse",
+  "description": "Real-time session dashboard for Claude Code — cost tracking, analytics, and smart context alerts",
+  "author": {
+    "name": "Leo (Hyeongjun Yu)",
+    "url": "https://github.com/hyeongjun-dev"
+  }
+}
