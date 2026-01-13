@@ -1,0 +1,13 @@
+{
+  "name": "cost-guardian",
+  "description": "Real-time budget enforcement, cost tracking, and optimization for Claude Code. Track spending, set limits, get warnings before expensive operations, and optimize your token usage.",
+  "version": "1.0.0",
+  "author": {
+    "name": "Vladyslav Podoliako",
+    "url": "https://vladyslavpodoliako.com/"
+  },
+  "repository": "https://github.com/Belkins/cost-guardian",
+  "homepage": "https://github.com/Belkins/cost-guardian",
+  "license": "MIT",
+  "keywords": ["cost", "budget", "tracking", "analytics", "optimization", "spending", "tokens", "usage"]
+}

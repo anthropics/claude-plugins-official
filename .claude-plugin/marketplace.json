@@ -566,6 +566,17 @@
         "url": "https://github.com/circlebackai/claude-code-plugin.git"
       },
       "homepage": "https://github.com/circlebackai/claude-code-plugin.git"
+    },
+    {
+      "name": "cost-guardian",
+      "description": "Real-time budget enforcement, cost tracking, and optimization for Claude Code. Track spending, set limits, get warnings before expensive operations, and optimize your token usage.",
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/Belkins/cost-guardian.git"
+      },
+      "homepage": "https://github.com/Belkins/cost-guardian",
+      "tags": ["community-managed"]
     }
   ]
 }
