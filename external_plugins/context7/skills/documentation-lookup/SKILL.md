@@ -1,30 +1,53 @@
 ---
 name: documentation-lookup
-description: Use when user needs code generation, setup/configuration steps, or library/API documentation. Automatically fetch up-to-date docs for any library or framework without requiring "use context7" in the prompt.
+description: This skill should be used when the user asks about libraries, frameworks, API references, or needs code examples. Activates for setup questions, code generation involving libraries, or mentions of specific frameworks like React, Vue, Next.js, Prisma, Supabase, etc.
 ---
 
-# Context7 Documentation Skill
+When the user asks about libraries, frameworks, or needs code examples, use Context7 to fetch current documentation instead of relying on training data.
 
-Fetch up-to-date, version-specific documentation and code examples from source repositories.
+## When to Use This Skill
 
-## When to Trigger
+Activate this skill when the user:
 
-- User asks "how do I..." for any library
-- User needs code generation with a specific library
-- User asks about setup or configuration
-- User needs API reference or examples
-- User mentions any framework: React, Next.js, Vue, Svelte, Express, Prisma, Tailwind, etc.
+- Asks setup or configuration questions ("How do I configure Next.js middleware?")
+- Requests code involving libraries ("Write a Prisma query for...")
+- Needs API references ("What are the Supabase auth methods?")
+- Mentions specific frameworks (React, Vue, Svelte, Express, Tailwind, etc.)
 
-## Workflow
+## How to Fetch Documentation
 
-1. Call `resolve-library-id` with the library name and user's question
-2. Select the best match (prioritize exact name, high `totalSnippets`, high `benchmarkScore`)
-3. Call `query-docs` with the library ID and user's question
-4. Present code examples and explanations
+### Step 1: Resolve the Library ID
 
-## Tips
+Call `resolve-library-id` with:
 
-- Use version-specific IDs for pinned versions: `/vercel/next.js/v15.1.8`
-- The `query` parameter improves result relevance - pass the user's full question
-- Limited to 3 `query-docs` calls per question to prevent context bloat
-- Check `versions` field from `resolve-library-id` for available versions
+- `libraryName`: The library name extracted from the user's question
+- `query`: The user's full question (improves relevance ranking)
+
+### Step 2: Select the Best Match
+
+From the resolution results, choose based on:
+
+- Exact or closest name match to what the user asked for
+- Higher benchmark scores indicate better documentation quality
+- If the user mentioned a version (e.g., "React 19"), prefer version-specific IDs
+
+### Step 3: Fetch the Documentation
+
+Call `query-docs` with:
+
+- `libraryId`: The selected Context7 library ID (e.g., `/vercel/next.js`)
+- `query`: The user's specific question
+
+### Step 4: Use the Documentation
+
+Incorporate the fetched documentation into your response:
+
+- Answer the user's question using current, accurate information
+- Include relevant code examples from the docs
+- Cite the library version when relevant
+
+## Guidelines
+
+- **Be specific**: Pass the user's full question as the query for better results
+- **Version awareness**: When users mention versions ("Next.js 15", "React 19"), use version-specific library IDs if available from the resolution step
+- **Prefer official sources**: When multiple matches exist, prefer official/primary packages over community forks
