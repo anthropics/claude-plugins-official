@@ -1,0 +1,16 @@
+{
+  "name": "claude-history",
+  "version": "1.0.0",
+  "description": "Automatic transcript backup. Every conversation saved, organized by date, fully searchable.",
+  "author": {
+    "name": "Ryan"
+  },
+  "keywords": [
+    "export",
+    "backup",
+    "transcript",
+    "history",
+    "archive"
+  ],
+  "license": "MIT"
+}
