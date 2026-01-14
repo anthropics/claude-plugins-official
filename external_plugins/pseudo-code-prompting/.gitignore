@@ -1,0 +1,45 @@
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Editor directories and files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# Hook logs (generated at runtime)
+.claude/hooks/logs/
+
+# Session-specific files (not part of plugin)
+.claude/context/session-*.json
+
+# Environment files (if any)
+.env
+.env.local
+
+# Node modules (if using npm for development)
+node_modules/
+
+# Build outputs
+dist/
+build/
+
+# Example projects - committed but ignored by Claude Code plugin loader
+# Claude Code only loads: skills/, agents/, commands/, hooks/, plugin.json
+# examples/ folder is safe for demo projects

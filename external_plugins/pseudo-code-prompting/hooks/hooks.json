@@ -1,0 +1,36 @@
+{
+  "description": "Pseudo-code prompting plugin hooks for transformation and validation",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/user-prompt-submit.sh",
+            "statusMessage": "Checking for pseudo-code transformation commands...",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/context-compression-helper.sh",
+            "statusMessage": "Analyzing context compression opportunities...",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/post-transform-validation.sh",
+            "statusMessage": "Validating transformed output...",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

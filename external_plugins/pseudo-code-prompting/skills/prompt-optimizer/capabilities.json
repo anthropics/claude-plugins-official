@@ -1,0 +1,44 @@
+{
+  "skill_id": "prompt-optimizer",
+  "name": "Prompt Optimizer",
+  "description": "Optimize pseudo-code for token efficiency and clarity",
+  "version": "1.0.0",
+  "tier": "discovery",
+  "tokens_estimate": 98,
+  "triggers": {
+    "keywords": [
+      "optimize",
+      "reduce tokens",
+      "simplify",
+      "refactor",
+      "improve efficiency"
+    ],
+    "patterns": [
+      "optimize.*pseudo",
+      "reduce.*complexity",
+      "simplify.*function",
+      "improve.*efficiency"
+    ],
+    "contexts": [
+      "verbose pseudo-code",
+      "token optimization needed",
+      "clarity improvement required"
+    ]
+  },
+  "capabilities": [
+    "token-reduction",
+    "parameter-consolidation",
+    "naming-optimization",
+    "redundancy-removal"
+  ],
+  "use_cases": [
+    "Reducing token count in pseudo-code",
+    "Improving clarity while maintaining semantics",
+    "Consolidating redundant parameters"
+  ],
+  "when_to_load_tier_2": [
+    "Optimization requested explicitly",
+    "Verbose pseudo-code detected",
+    "Token budget constraints present"
+  ]
+}

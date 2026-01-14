@@ -1,0 +1,45 @@
+{
+  "skill_id": "prompt-analyzer",
+  "name": "Prompt Analyzer",
+  "description": "Analyze prompts for complexity, ambiguity, and optimization potential",
+  "version": "1.0.0",
+  "tier": "discovery",
+  "tokens_estimate": 102,
+  "triggers": {
+    "keywords": [
+      "analyze prompt",
+      "complexity",
+      "ambiguity",
+      "clarify",
+      "check clarity",
+      "measure complexity"
+    ],
+    "patterns": [
+      "analyze.*request",
+      "check.*clarity",
+      "measure.*complexity",
+      "assess.*ambiguity"
+    ],
+    "contexts": [
+      "unclear requirements",
+      "quality assessment needed",
+      "pre-transformation analysis"
+    ]
+  },
+  "capabilities": [
+    "ambiguity-detection",
+    "complexity-scoring",
+    "missing-requirement-identification",
+    "optimization-suggestions"
+  ],
+  "use_cases": [
+    "Analyzing prompts before transformation",
+    "Identifying unclear or incomplete requirements",
+    "Providing quality metrics for prompts"
+  ],
+  "when_to_load_tier_2": [
+    "Analysis requested explicitly",
+    "Quality check needed",
+    "High ambiguity detected in initial scan"
+  ]
+}

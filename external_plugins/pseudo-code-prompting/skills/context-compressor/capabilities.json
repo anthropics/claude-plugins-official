@@ -1,0 +1,50 @@
+{
+  "skill_id": "context-compressor",
+  "name": "Context Compressor",
+  "description": "Compress conversation context using pseudo-code summaries to manage token limits",
+  "version": "1.0.0",
+  "tier": "discovery",
+  "tokens_estimate": 105,
+  "triggers": {
+    "keywords": [
+      "compress",
+      "summarize",
+      "context window",
+      "token limit",
+      "memory",
+      "conversation history"
+    ],
+    "patterns": [
+      "compress.*context",
+      "summarize.*conversation",
+      "reduce.*tokens",
+      "manage.*memory",
+      "context.*window"
+    ],
+    "contexts": [
+      "long conversation",
+      "token limit approaching",
+      "context overflow",
+      "conversation summary needed"
+    ]
+  },
+  "capabilities": [
+    "conversation-summarization",
+    "decision-tracking",
+    "state-compression",
+    "history-pruning",
+    "pseudo-code-encoding"
+  ],
+  "use_cases": [
+    "Compressing long conversations into pseudo-code summaries",
+    "Tracking decisions and state changes efficiently",
+    "Managing context window in extended sessions",
+    "Preserving critical information while reducing tokens"
+  ],
+  "when_to_load_tier_2": [
+    "Conversation exceeds token threshold",
+    "User requests summary",
+    "Context window management needed",
+    "Long-running task with multiple phases"
+  ]
+}

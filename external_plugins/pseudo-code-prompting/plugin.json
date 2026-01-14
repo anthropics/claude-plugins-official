@@ -1,0 +1,25 @@
+{
+  "name": "pseudo-code-prompting",
+  "version": "1.1.0",
+  "description": "Transform natural language into structured, validated pseudo-code with 6 skills, 5 agents, 4 commands, and 3 hooks for optimal implementation clarity",
+  "author": {
+    "name": "Elad Ariel",
+    "url": "https://github.com/EladAriel/pseudo-code-prompting-plugin"
+  },
+  "homepage": "https://github.com/EladAriel/pseudo-code-prompting-plugin",
+  "repository": "https://github.com/EladAriel/pseudo-code-prompting-plugin",
+  "license": "MIT",
+  "keywords": [
+    "prompt-engineering",
+    "pseudo-code",
+    "feature-development",
+    "automation",
+    "workflow-optimization",
+    "progressive-loading",
+    "requirement-engineering",
+    "validation",
+    "optimization",
+    "compression",
+    "security-validation"
+  ]
+}

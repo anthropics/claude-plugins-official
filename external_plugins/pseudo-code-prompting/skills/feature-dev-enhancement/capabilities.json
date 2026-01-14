@@ -1,0 +1,43 @@
+{
+  "skill_id": "feature-dev-enhancement",
+  "name": "Feature-Dev Enhancement",
+  "description": "Apply structured pseudo-code across feature-dev workflow phases",
+  "version": "1.0.0",
+  "tier": "discovery",
+  "tokens_estimate": 108,
+  "triggers": {
+    "keywords": [
+      "feature-dev",
+      "workflow",
+      "phases",
+      "discovery",
+      "exploration",
+      "implementation"
+    ],
+    "patterns": [
+      "/feature-dev.*",
+      "enhance.*workflow",
+      "structure.*phases"
+    ],
+    "contexts": [
+      "multi-phase development",
+      "feature implementation workflow",
+      "team coordination"
+    ]
+  },
+  "capabilities": [
+    "phase-structuring",
+    "requirement-mapping",
+    "coordination-enhancement",
+    "review-criteria-generation",
+    "pattern-reuse"
+  ],
+  "integrates_with": [
+    "prompt-structurer"
+  ],
+  "when_to_load_tier_2": [
+    "Starting feature-dev command",
+    "Multi-phase workflow detected",
+    "Team coordination needed"
+  ]
+}

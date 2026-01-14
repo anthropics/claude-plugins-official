@@ -1,0 +1,46 @@
+{
+  "skill_id": "prompt-structurer",
+  "name": "Prompt Structurer",
+  "description": "Transform natural language to pseudo-code using PROMPTCONVERTER methodology",
+  "version": "1.0.0",
+  "tier": "discovery",
+  "tokens_estimate": 105,
+  "triggers": {
+    "keywords": [
+      "transform",
+      "structure",
+      "pseudo-code",
+      "convert query",
+      "function syntax",
+      "formalize request"
+    ],
+    "patterns": [
+      "convert.*to.*pseudo",
+      "structure.*request",
+      "transform.*query",
+      "formalize.*feature"
+    ],
+    "contexts": [
+      "ambiguous user request",
+      "verbose feature description",
+      "unstructured requirement"
+    ]
+  },
+  "capabilities": [
+    "intent-analysis",
+    "function-naming",
+    "parameter-extraction",
+    "constraint-inference",
+    "semantic-preservation"
+  ],
+  "use_cases": [
+    "Converting natural language feature requests to structured format",
+    "Reducing ambiguity in requirements",
+    "Creating searchable, parseable directives"
+  ],
+  "when_to_load_tier_2": [
+    "User request needs structuring",
+    "Starting feature-dev workflow",
+    "Ambiguous requirements detected"
+  ]
+}
