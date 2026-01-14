@@ -185,8 +185,7 @@
           "extensionToLanguage": {
             ".kt": "kotlin",
             ".kts": "kotlin"
-          },
-          "startupTimeout" : 120000
+          }
         }
       }
     },
@@ -226,8 +225,7 @@
           "command": "jdtls",
           "extensionToLanguage": {
             ".java": "java"
-          },
-          "startupTimeout": 120000
+          }
         }
       }
     },
