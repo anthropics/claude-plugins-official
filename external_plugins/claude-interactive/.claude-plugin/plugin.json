@@ -1,0 +1,19 @@
+{
+  "name": "claude-interactive",
+  "version": "1.0.0",
+  "description": "Human-in-the-loop result filtering. Filter search results BEFORE they pollute your context.",
+  "author": {
+    "name": "Ryan"
+  },
+  "keywords": [
+    "search",
+    "filtering",
+    "human-in-the-loop",
+    "hitl",
+    "context-management",
+    "grep",
+    "glob",
+    "websearch"
+  ],
+  "license": "MIT"
+}
