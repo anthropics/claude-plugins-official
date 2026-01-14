@@ -1,0 +1,40 @@
+{
+  "name": "vizvibe",
+  "version": "1.0.0",
+  "description": "Visual context map for trajectory management - track your coding journey as a graph",
+  "author": {
+    "name": "Nam Hyeong Keol",
+    "url": "https://github.com/NamHyeongKeol"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/NamHyeongKeol/viz-vibe"
+  },
+  "commands": [
+    {
+      "name": "init",
+      "description": "Initialize vizvibe.mmd trajectory for this project",
+      "path": "${CLAUDE_PLUGIN_ROOT}/commands/init.md"
+    },
+    {
+      "name": "update",
+      "description": "Manually update the trajectory with recent work",
+      "path": "${CLAUDE_PLUGIN_ROOT}/commands/update.md"
+    },
+    {
+      "name": "status",
+      "description": "Show current trajectory status",
+      "path": "${CLAUDE_PLUGIN_ROOT}/commands/status.md"
+    }
+  ],
+  "skills": [
+    {
+      "name": "vizvibe",
+      "path": "${CLAUDE_PLUGIN_ROOT}/skills/vizvibe"
+    }
+  ],
+  "hooks": {
+    "path": "${CLAUDE_PLUGIN_ROOT}/hooks/hooks.json"
+  }
+}
