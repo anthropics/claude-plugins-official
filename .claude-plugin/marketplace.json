@@ -36,6 +36,34 @@
       }
     },
     {
+      "name": "tsgo-lsp",
+      "description": "TypeScript native (tsgo) language server - 10x faster TypeScript/JavaScript code intelligence",
+      "version": "1.0.0",
+      "author": {
+        "name": "Anthropic",
+        "email": "support@anthropic.com"
+      },
+      "source": "./plugins/tsgo-lsp",
+      "category": "development",
+      "strict": false,
+      "lspServers": {
+        "tsgo": {
+          "command": "tsgo",
+          "args": ["--lsp", "-stdio"],
+          "extensionToLanguage": {
+            ".ts": "typescript",
+            ".tsx": "typescriptreact",
+            ".js": "javascript",
+            ".jsx": "javascriptreact",
+            ".mts": "typescript",
+            ".cts": "typescript",
+            ".mjs": "javascript",
+            ".cjs": "javascript"
+          }
+        }
+      }
+    },
+    {
       "name": "pyright-lsp",
       "description": "Python language server (Pyright) for type checking and code intelligence",
       "version": "1.0.0",
