@@ -1,0 +1,6 @@
+{
+  "claudia": {
+    "command": "bunx",
+    "args": ["claudia-cli", "mcp"]
+  }
+}

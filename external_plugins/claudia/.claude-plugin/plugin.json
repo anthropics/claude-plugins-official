@@ -1,0 +1,7 @@
+{
+  "name": "claudia",
+  "description": "AI-native task management system. Track progress, coordinate multi-agent work, manage hierarchical tasks with dependencies, sprints, acceptance criteria, and a web dashboard.",
+  "author": {
+    "name": "Yuval Suede"
+  }
+}
