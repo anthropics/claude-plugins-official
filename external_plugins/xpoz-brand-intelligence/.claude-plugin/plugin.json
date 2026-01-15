@@ -1,0 +1,13 @@
+{
+  "name": "xpoz-brand-intelligence",
+  "description": "Brand intelligence analysis using XPOZ social data - sentiment analysis, competitive intelligence, and influencer discovery from Twitter/X",
+  "version": "1.0.0",
+  "author": {
+    "name": "XPOZ",
+    "url": "https://xpoz.ai"
+  },
+  "homepage": "https://xpoz.ai",
+  "repository": "https://github.com/XPOZpublic/xpoz-claude-code-plugins",
+  "license": "MIT",
+  "keywords": ["brand", "sentiment", "social", "twitter", "influencers", "analytics", "mcp"]
+}
