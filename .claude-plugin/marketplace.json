@@ -21,7 +21,9 @@
       "lspServers": {
         "typescript": {
           "command": "typescript-language-server",
-          "args": ["--stdio"],
+          "args": [
+            "--stdio"
+          ],
           "extensionToLanguage": {
             ".ts": "typescript",
             ".tsx": "typescriptreact",
@@ -49,7 +51,9 @@
       "lspServers": {
         "pyright": {
           "command": "pyright-langserver",
-          "args": ["--stdio"],
+          "args": [
+            "--stdio"
+          ],
           "extensionToLanguage": {
             ".py": "python",
             ".pyi": "python"
@@ -111,7 +115,9 @@
       "lspServers": {
         "clangd": {
           "command": "clangd",
-          "args": ["--background-index"],
+          "args": [
+            "--background-index"
+          ],
           "extensionToLanguage": {
             ".c": "c",
             ".h": "c",
@@ -140,7 +146,9 @@
       "lspServers": {
         "intelephense": {
           "command": "intelephense",
-          "args": ["--stdio"],
+          "args": [
+            "--stdio"
+          ],
           "extensionToLanguage": {
             ".php": "php"
           }
@@ -181,12 +189,14 @@
       "lspServers": {
         "kotlin-lsp": {
           "command": "kotlin-lsp",
-          "args": ["--stdio"],
+          "args": [
+            "--stdio"
+          ],
           "extensionToLanguage": {
             ".kt": "kotlin",
             ".kts": "kotlin"
           },
-          "startupTimeout" : 120000
+          "startupTimeout": 120000
         }
       }
     },
@@ -407,7 +417,9 @@
       "category": "development",
       "source": "./external_plugins/serena",
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/serena",
-      "tags": ["community-managed"]
+      "tags": [
+        "community-managed"
+      ]
     },
     {
       "name": "playwright",
@@ -515,7 +527,7 @@
       },
       "homepage": "https://github.com/vercel/vercel-deploy-claude-code-plugin"
     },
-        {
+    {
       "name": "stripe",
       "description": "Stripe development plugin for Claude",
       "category": "development",
@@ -535,7 +547,9 @@
       "category": "development",
       "source": "./external_plugins/context7",
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/context7",
-      "tags": ["community-managed"]
+      "tags": [
+        "community-managed"
+      ]
     },
     {
       "name": "pinecone",
@@ -566,6 +580,21 @@
         "url": "https://github.com/circlebackai/claude-code-plugin.git"
       },
       "homepage": "https://github.com/circlebackai/claude-code-plugin.git"
+    },
+    {
+      "name": "oh-my-claude-sisyphus",
+      "description": "Claude Code native multi-agent orchestration - intelligent model routing with 19 specialized agents across 3 tiers (Haiku/Sonnet/Opus), 11 slash commands including ultrawork, chillwork, deepinit, prometheus planning, and ralph-loop modes. Features smart delegation, background execution, and cost optimization.",
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/Yeachan-Heo/oh-my-claude-sisyphus.git"
+      },
+      "homepage": "https://github.com/Yeachan-Heo/oh-my-claude-sisyphus",
+      "tags": [
+        "community-managed",
+        "multi-agent",
+        "orchestration"
+      ]
     }
   ]
 }
