@@ -1,0 +1,10 @@
+{
+  "name": "notes",
+  "version": "0.1.0",
+  "description": "Save, manage, and retrieve contextual notes from Claude Code sessions",
+  "author": {
+    "name": "Graeme",
+    "email": "graeme@arizonabay.com"
+  },
+  "keywords": ["notes", "context", "sessions", "productivity"]
+}
