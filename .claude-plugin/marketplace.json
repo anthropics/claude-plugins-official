@@ -252,6 +252,30 @@
       }
     },
     {
+      "name": "ruby-lsp",
+      "description": "Ruby language server for code intelligence and analysis",
+      "version": "1.0.0",
+      "author": {
+        "name": "Anthropic",
+        "email": "support@anthropic.com"
+      },
+      "source": "./plugins/ruby-lsp",
+      "category": "development",
+      "strict": false,
+      "lspServers": {
+        "ruby-lsp": {
+          "command": "ruby-lsp",
+          "extensionToLanguage": {
+            ".rb": "ruby",
+            ".rake": "ruby",
+            ".gemspec": "ruby",
+            ".ru": "ruby",
+            ".erb": "erb"
+          }
+        }
+      }
+    },
+    {
       "name": "agent-sdk-dev",
       "description": "Development kit for working with the Claude Agent SDK",
       "author": {
