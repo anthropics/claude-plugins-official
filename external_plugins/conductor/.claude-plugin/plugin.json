@@ -1,0 +1,10 @@
+{
+  "name": "conductor",
+  "description": "Spec-driven development framework for Claude Code. Plan before you build with tracks, specs, and implementation plans. Transforms Claude into a proactive project manager that follows a strict protocol: Context -> Spec & Plan -> Implement.",
+  "version": "1.0.0",
+  "author": {
+    "name": "Yury Gagarin",
+    "email": "yurcheg13@gmail.com"
+  },
+  "homepage": "https://github.com/gagarinyury/claude_conductor"
+}
