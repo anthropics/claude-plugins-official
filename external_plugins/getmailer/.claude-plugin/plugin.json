@@ -1,0 +1,13 @@
+{
+  "name": "getmailer",
+  "description": "Email marketing & deliverability - send emails, manage templates, monitor reputation",
+  "version": "1.0.0",
+  "author": {
+    "name": "GetPlatform",
+    "url": "https://getplatform.co"
+  },
+  "homepage": "https://getmailer.co",
+  "repository": "https://github.com/getplatform/getplatform-plugins",
+  "license": "MIT",
+  "keywords": ["email", "marketing", "smtp", "templates", "deliverability"]
+}
