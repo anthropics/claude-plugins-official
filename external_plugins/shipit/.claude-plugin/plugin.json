@@ -1,0 +1,7 @@
+{
+  "name": "shipit",
+  "version": "1.0.0",
+  "description": "Quick commit and push - analyze changes, generate commit message, commit, and push in one command",
+  "author": "karan",
+  "repository": "https://github.com/1-Martian-Way/shipit"
+}
