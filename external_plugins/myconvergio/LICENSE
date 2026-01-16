@@ -1,0 +1,60 @@
+MyConvergio - Claude Code Subagents Suite
+Copyright (c) 2025 Convergio.io
+
+This work is licensed under the Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License.
+
+To view a copy of this license, visit:
+http://creativecommons.org/licenses/by-nc-sa/4.0/
+
+---
+
+TERMS OF USE
+
+You are free to:
+- Share — copy and redistribute the material in any medium or format
+- Adapt — remix, transform, and build upon the material
+
+Under the following terms:
+- Attribution — You must give appropriate credit, provide a link to the license, and indicate if changes were made
+- NonCommercial — You may not use the material for commercial purposes
+- ShareAlike — If you remix, transform, or build upon the material, you must distribute your contributions under the same license
+
+NO WARRANTIES OR GUARANTEES
+
+This software is provided "AS IS" and "AS AVAILABLE" without any warranties or guarantees of any kind, express or implied. This is an experimental project provided for educational and research purposes only.
+
+The author(s) disclaim all warranties, including but not limited to:
+- Merchantability
+- Fitness for a particular purpose  
+- Non-infringement
+- Accuracy or reliability
+- Performance or availability
+
+USE AT YOUR OWN RISK
+
+You acknowledge and agree that:
+- This is experimental software that may contain bugs, errors, or unexpected behavior
+- The author(s) are not responsible for any damages, losses, or issues arising from use
+- No technical support or maintenance is provided
+- Features may change or be discontinued at any time
+
+DISCLAIMER OF AFFILIATION
+
+This project is:
+- NOT affiliated with, endorsed by, or sponsored by Anthropic PBC
+- NOT affiliated with, endorsed by, or sponsored by OpenAI Inc.
+- NOT an official Microsoft product or service
+- An independent experimental project by the author
+
+AUTHOR DISCLOSURE:
+Roberto D'Angelo is a Microsoft employee. This is a personal project inspired by Microsoft's exceptional culture and values, adapted for AI agent ecosystems. The values framework acknowledges Microsoft's leadership in ethical technology development while being implemented independently.
+
+Claude Code subagents are a feature of Claude by Anthropic. This project provides example implementations and is not associated with the official Claude development team.
+
+RELATED PROJECTS
+
+This work is part of the broader Convergio.io initiative. For more information, visit: https://convergio.io (coming soon)
+
+---
+
+For questions about licensing or commercial use, please contact: roberdan@fightthestroke.org
