@@ -433,38 +433,9 @@ Deploy application to $1 environment using version $2...
 
 ## Common Patterns
 
-### Review Pattern
+Common command patterns include review, testing, documentation, and workflow patterns.
 
-```markdown
----
-description: Review code changes
-allowed-tools: Read, Bash(git:*)
----
-
-Files changed: !`git diff --name-only`
-
-Review each file for:
-1. Code quality and style
-2. Potential bugs or issues
-3. Test coverage
-4. Documentation needs
-
-Provide specific feedback for each file.
-```
-
-### Testing Pattern
-
-```markdown
----
-description: Run tests for specific file
-argument-hint: [test-file]
-allowed-tools: Bash(npm:*)
----
-
-Run tests: !`npm test $1`
-
-Analyze results and suggest fixes for failures.
-```
+**Working examples with bash execution:** See `references/bash-execution-examples.md` for complete code examples including Review Pattern, Testing Pattern, and Workflow Pattern.
 
 ### Documentation Pattern
 
@@ -480,23 +451,6 @@ Generate comprehensive documentation for @$1 including:
 - Return value descriptions
 - Usage examples
 - Edge cases and errors
-```
-
-### Workflow Pattern
-
-```markdown
----
-description: Complete PR workflow
-argument-hint: [pr-number]
-allowed-tools: Bash(gh:*), Read
----
-
-PR #$1 Workflow:
-
-1. Fetch PR: !`gh pr view $1`
-2. Review changes
-3. Run checks
-4. Approve or request changes
 ```
 
 ## Troubleshooting
@@ -536,34 +490,7 @@ Plugin commands have access to `${CLAUDE_PLUGIN_ROOT}`, an environment variable 
 - Load plugin configuration
 - Access plugin templates
 
-**Basic usage:**
-
-```markdown
----
-description: Analyze using plugin script
-allowed-tools: Bash(node:*)
----
-
-Run analysis: !`node ${CLAUDE_PLUGIN_ROOT}/scripts/analyze.js $1`
-
-Review results and report findings.
-```
-
-**Common patterns:**
-
-```markdown
-# Execute plugin script
-!`bash ${CLAUDE_PLUGIN_ROOT}/scripts/script.sh`
-
-# Load plugin configuration
-@${CLAUDE_PLUGIN_ROOT}/config/settings.json
-
-# Use plugin template
-@${CLAUDE_PLUGIN_ROOT}/templates/report.md
-
-# Access plugin resources
-@${CLAUDE_PLUGIN_ROOT}/docs/reference.md
-```
+**Working examples:** See `references/bash-execution-examples.md` for basic usage and common patterns with `${CLAUDE_PLUGIN_ROOT}`.
 
 **Why use it:**
 - Works across all installations
@@ -627,20 +554,7 @@ Template: @${CLAUDE_PLUGIN_ROOT}/templates/docs.md
 Generate documentation for $1 following template structure.
 ```
 
-**Multi-script pattern:**
-
-```markdown
----
-description: Complete build workflow
-allowed-tools: Bash(*)
----
-
-Build: !`bash ${CLAUDE_PLUGIN_ROOT}/scripts/build.sh`
-Test: !`bash ${CLAUDE_PLUGIN_ROOT}/scripts/test.sh`
-Package: !`bash ${CLAUDE_PLUGIN_ROOT}/scripts/package.sh`
-
-Review outputs and report workflow status.
-```
+**Multi-script pattern:** See `references/bash-execution-examples.md` for examples of orchestrating multiple plugin scripts.
 
 **See `references/plugin-features-reference.md` for detailed patterns.**
 
@@ -716,31 +630,7 @@ See `references/plugin-features-reference.md` for examples of commands that coor
 
 ### Multi-Component Workflows
 
-Combine agents, skills, and scripts:
-
-```markdown
----
-description: Comprehensive review workflow
-argument-hint: [file]
-allowed-tools: Bash(node:*), Read
----
-
-Target: @$1
-
-Phase 1 - Static Analysis:
-!`node ${CLAUDE_PLUGIN_ROOT}/scripts/lint.js $1`
-
-Phase 2 - Deep Review:
-Launch code-reviewer agent for detailed analysis.
-
-Phase 3 - Standards Check:
-Use coding-standards skill for validation.
-
-Phase 4 - Report:
-Template: @${CLAUDE_PLUGIN_ROOT}/templates/review.md
-
-Compile findings into report following template.
-```
+Combine agents, skills, and scripts for comprehensive workflows.
 
 **When to use:**
 - Complex multi-step workflows
@@ -748,78 +638,19 @@ Compile findings into report following template.
 - Require specialized analysis
 - Need structured outputs
 
+**Working example:** See `references/bash-execution-examples.md` for a comprehensive review workflow example that combines scripts, agents, skills, and templates.
+
 ## Validation Patterns
 
 Commands should validate inputs and resources before processing.
 
-### Argument Validation
+**Validation types include:**
+- **Argument validation** - Check required arguments and valid values
+- **File existence checks** - Verify files exist before processing
+- **Plugin resource validation** - Ensure plugin scripts and configs are available
+- **Error handling** - Gracefully handle command failures
 
-```markdown
----
-description: Deploy with validation
-argument-hint: [environment]
----
-
-Validate environment: !`echo "$1" | grep -E "^(dev|staging|prod)$" || echo "INVALID"`
-
-If $1 is valid environment:
-  Deploy to $1
-Otherwise:
-  Explain valid environments: dev, staging, prod
-  Show usage: /deploy [environment]
-```
-
-### File Existence Checks
-
-```markdown
----
-description: Process configuration
-argument-hint: [config-file]
----
-
-Check file exists: !`test -f $1 && echo "EXISTS" || echo "MISSING"`
-
-If file exists:
-  Process configuration: @$1
-Otherwise:
-  Explain where to place config file
-  Show expected format
-  Provide example configuration
-```
-
-### Plugin Resource Validation
-
-```markdown
----
-description: Run plugin analyzer
-allowed-tools: Bash(test:*)
----
-
-Validate plugin setup:
-- Script: !`test -x ${CLAUDE_PLUGIN_ROOT}/bin/analyze && echo "✓" || echo "✗"`
-- Config: !`test -f ${CLAUDE_PLUGIN_ROOT}/config.json && echo "✓" || echo "✗"`
-
-If all checks pass, run analysis.
-Otherwise, report missing components.
-```
-
-### Error Handling
-
-```markdown
----
-description: Build with error handling
-allowed-tools: Bash(*)
----
-
-Execute build: !`bash ${CLAUDE_PLUGIN_ROOT}/scripts/build.sh 2>&1 || echo "BUILD_FAILED"`
-
-If build succeeded:
-  Report success and output location
-If build failed:
-  Analyze error output
-  Suggest likely causes
-  Provide troubleshooting steps
-```
+**Working examples:** See `references/bash-execution-examples.md` for complete validation pattern examples.
 
 **Best practices:**
 - Validate early in command
@@ -831,4 +662,5 @@ If build failed:
 
 For detailed frontmatter field specifications, see `references/frontmatter-reference.md`.
 For plugin-specific features and patterns, see `references/plugin-features-reference.md`.
+For bash execution syntax examples, see `references/bash-execution-examples.md`.
 For command pattern examples, see `examples/` directory.
