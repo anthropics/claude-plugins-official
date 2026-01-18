@@ -25,11 +25,20 @@ Initial request: $ARGUMENTS
 
 **Actions**:
 1. Create todo list with all phases
-2. If feature unclear, ask user for:
+2. Check worktree setup:
+   - Run `git worktree list` to see existing worktrees
+   - Ask user: "Should I create a worktree for this feature or work on the main branch?"
+   - If worktree:
+     - Get feature name/branch from user
+     - Create worktree: `git worktree add ../<repo-name>-<feature> <branch-name>`
+     - Use naming: `<repo>-<short-feature-desc>` (e.g., `open-ledger-csv`)
+     - Change directory to new worktree path
+   - If main branch: Continue in current directory
+3. If feature unclear, ask user for:
    - What problem are they solving?
    - What should the feature do?
    - Any constraints or requirements?
-3. Summarize understanding and confirm with user
+4. Summarize understanding and confirm with user
 
 ---
 
@@ -112,14 +121,62 @@ If the user says "whatever you think is best", provide your recommendation and g
 
 ## Phase 7: Summary
 
-**Goal**: Document what was accomplished
+**Goal**: Provide concise summary with link to detailed plan
 
 **Actions**:
 1. Mark all todos complete
-2. Summarize:
-   - What was built
-   - Key decisions made
-   - Files modified
-   - Suggested next steps
+2. Output concise summary (5-10 lines max):
+   - ✓ One-line feature description
+   - File count: N modified, M created
+   - Key decision (1 sentence, only if notable architectural choice)
+   - Worktree cleanup command (if worktree created)
+   - Clickable link to full plan file
+
+**Summary format**:
+```
+✓ [Brief feature description]
+
+Files: [N] modified, [M] created
+Key decision: [One sentence if notable, omit line otherwise]
+
+Worktree: Run `git worktree remove ../path` when done (if applicable)
+
+📄 Full plan: \e]8;;file:///absolute/path/to/plan.md\e\\View full plan\e]8;;\e\\
+     or open: file:///home/travis/.claude/plans/[plan-name].md
+```
+
+**Creating clickable link**:
+Use OSC 8 escape codes for terminal hyperlinks:
+```
+\e]8;;file:///absolute/path\e\\View full plan\e]8;;\e\\
+```
+
+Always include raw path fallback for terminals without hyperlink support.
+
+**Example output**:
+```
+✓ OAuth authentication with provider abstraction
+
+Files: 3 modified, 1 created
+Key decision: Pragmatic approach balances clean boundaries with minimal refactoring
+
+Worktree: Run `git worktree remove ../my-app-oauth` when done
+
+📄 Full plan: \e]8;;file:///home/travis/.claude/plans/peaceful-jumping-key.md\e\\View full plan\e]8;;\e\\
+     or open: file:///home/travis/.claude/plans/peaceful-jumping-key.md
+```
+
+**Plan file contents** (created during workflow, not Phase 7):
+The detailed markdown file should contain:
+- What was built (comprehensive)
+- Key decisions with rationale
+- All files modified/created with line numbers
+- Implementation approach
+- Worktree cleanup instructions (if applicable)
+- Edge cases handled
+- Suggested next steps
+
+**Worktree cleanup template** (remove from Phase 7, keep in plan file):
+Full instructions remain in plan file only. Summary shows one-line command.
 
 ---

@@ -209,42 +209,28 @@ What would you like to do?
 
 ### Phase 7: Summary
 
-**Goal**: Document what was accomplished
+**Goal**: Provide concise summary with link to detailed plan
 
 **What happens:**
 - Marks all todos complete
-- Summarizes:
-  - What was built
-  - Key decisions made
-  - Files modified
-  - Suggested next steps
+- Outputs concise summary (~5-10 lines):
+  - ✓ One-line feature description
+  - File count
+  - Key decision (if notable)
+  - Worktree cleanup (if applicable)
+  - Clickable link to full plan file
 
 **Example:**
 ```
-Feature Complete: OAuth Authentication
+✓ OAuth authentication with provider abstraction
 
-What was built:
-- OAuth provider abstraction supporting Google and GitHub
-- OAuth routes and middleware integrated with existing auth
-- Token refresh and session integration
-- Error handling for all OAuth flows
+Files: 3 modified, 1 created
+Key decision: Pragmatic approach balances clean boundaries with minimal refactoring
 
-Key decisions:
-- Used pragmatic approach with OAuthProvider abstraction
-- Integrated with existing session management
-- Added OAuth state to prevent CSRF
-
-Files modified:
-- src/auth/OAuthProvider.ts (new)
-- src/auth/AuthService.ts
-- src/routes/auth.ts
-- src/middleware/authMiddleware.ts
-
-Suggested next steps:
-- Add tests for OAuth flows
-- Add more OAuth providers (Microsoft, Apple)
-- Update documentation
+📄 Full plan: file:///home/travis/.claude/plans/peaceful-jumping-key.md
 ```
+
+Full details available in clickable plan file link.
 
 ## Agents
 
