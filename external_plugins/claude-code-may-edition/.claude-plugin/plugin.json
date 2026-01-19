@@ -1,0 +1,10 @@
+{
+  "name": "claude-code-may-edition",
+  "description": "Developer wrapper with personality persistence, floating memory, MCP integration, and turbo mode. Adds cognitive exoskeleton capabilities to Claude Code.",
+  "author": {
+    "name": "AgewellEPM",
+    "email": "lukekist@agewellepm.com"
+  },
+  "homepage": "https://github.com/AgewellEPM/claude-code-may-edition",
+  "keywords": ["memory", "personality", "mcp", "turbo", "bypass", "context"]
+}
