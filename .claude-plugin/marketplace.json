@@ -576,6 +576,17 @@
         "url": "https://github.com/obra/superpowers.git"
       },
       "homepage": "https://github.com/obra/superpowers.git"
+    },
+    {
+      "name": "swift-developer",
+      "description": "Autonomous Swift development agent for iOS/macOS apps, Swift packages, SwiftUI, and Swift 6 concurrency with Apple documentation verification and unsafe pattern detection hooks.",
+      "category": "development",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/hmohamed01/claude-code-plugins.git",
+        "path": "swift-developer"
+      },
+      "homepage": "https://github.com/hmohamed01/claude-code-plugins/tree/main/swift-developer"
     }
   ]
 }
