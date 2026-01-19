@@ -252,6 +252,28 @@
       }
     },
     {
+      "name": "terraform-ls",
+      "description": "Terraform language server for code intelligence",
+      "version": "1.0.0",
+      "author": {
+        "name": "Anthropic",
+        "email": "support@anthropic.com"
+      },
+      "source": "./plugins/terraform-ls",
+      "category": "development",
+      "strict": false,
+      "lspServers": {
+        "terraform": {
+          "command": "terraform-ls",
+          "args": ["serve"],
+          "extensionToLanguage": {
+            ".tf": "terraform",
+            ".tfvars": "terraform-vars"
+          }
+        }
+      }
+    },
+    {
       "name": "agent-sdk-dev",
       "description": "Development kit for working with the Claude Agent SDK",
       "author": {
