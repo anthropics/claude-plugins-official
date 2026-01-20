@@ -1,0 +1,8 @@
+{
+  "name": "beads",
+  "description": "Git-backed issue tracker for AI agents. Track issues with first-class dependency support using the bd CLI.",
+  "author": {
+    "name": "Steve Yegge",
+    "url": "https://github.com/steveyegge/beads"
+  }
+}
