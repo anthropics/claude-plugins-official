@@ -1,0 +1,7 @@
+{
+  "name": "posthog",
+  "description": "Access PostHog analytics, feature flags, experiments, error tracking, and insights directly from Claude Code",
+  "author": {
+    "name": "PostHog"
+  }
+}
