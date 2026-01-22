@@ -598,6 +598,18 @@
         "url": "https://github.com/obra/superpowers.git"
       },
       "homepage": "https://github.com/obra/superpowers.git"
+    },
+    {
+      "name": "contractkit",
+      "description": "Generate complete Foundry smart contract projects from safe templates. Scaffold ERC20, ERC721, Escrow, and Vault contracts with tests, deployment scripts, and security documentation.",
+      "author": {
+        "name": "HCS412",
+        "url": "https://github.com/HCS412"
+      },
+      "category": "development",
+      "source": "./plugins/contractkit",
+      "homepage": "https://github.com/HCS412/contractkit",
+      "tags": ["community-managed"]
     }
   ]
 }
