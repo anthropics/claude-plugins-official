@@ -1,0 +1,55 @@
+{
+  "name": "contractkit",
+  "version": "0.1.0",
+  "description": "Generate complete smart contract projects from safe templates. Scaffold, test, deploy, and interact with Foundry-based contracts.",
+  "author": "ContractKit Contributors",
+  "license": "MIT",
+  "repository": "https://github.com/HCS412/contractkit",
+  "keywords": ["solidity", "foundry", "smart-contracts", "ethereum", "web3"],
+  "skills": [
+    {
+      "name": "new",
+      "description": "Scaffold a new smart contract project from a template",
+      "path": "skills/new/SKILL.md"
+    },
+    {
+      "name": "test",
+      "description": "Format and run tests for the current project",
+      "path": "skills/test/SKILL.md"
+    },
+    {
+      "name": "local",
+      "description": "Start a local Anvil blockchain for development",
+      "path": "skills/local/SKILL.md"
+    },
+    {
+      "name": "deploy",
+      "description": "Deploy contracts to local or testnet",
+      "path": "skills/deploy/SKILL.md"
+    },
+    {
+      "name": "call",
+      "description": "Call functions on deployed contracts",
+      "path": "skills/call/SKILL.md"
+    },
+    {
+      "name": "status",
+      "description": "Show project status and deployment information",
+      "path": "skills/status/SKILL.md"
+    },
+    {
+      "name": "explain",
+      "description": "Explain what a contract does and its risks",
+      "path": "skills/explain/SKILL.md"
+    },
+    {
+      "name": "audit-lite",
+      "description": "Generate a risk checklist (not an audit)",
+      "path": "skills/audit-lite/SKILL.md"
+    }
+  ],
+  "requirements": {
+    "tools": ["forge", "anvil", "cast"],
+    "installInstructions": "Install Foundry: curl -L https://foundry.paradigm.xyz | bash && foundryup"
+  }
+}
