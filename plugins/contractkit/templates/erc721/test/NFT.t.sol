@@ -1,10 +1,20 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
 import {NFT} from "../src/NFT.sol";
+import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 
-contract NFTTest is Test {
+contract NFTTest is Test, IERC721Receiver {
+    /// @dev Required for receiving ERC721 tokens when test contract is the receiver
+    function onERC721Received(address, address, uint256, bytes calldata)
+        external
+        pure
+        returns (bytes4)
+    {
+        return IERC721Receiver.onERC721Received.selector;
+    }
+
     NFT public nft;
     address public admin;
     address public minter;

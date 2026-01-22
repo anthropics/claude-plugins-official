@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
 import {Vault} from "../src/Vault.sol";
@@ -82,7 +82,9 @@ contract VaultTest is Test {
         vault.deposit{value: 1 ether}();
 
         vm.prank(user1);
-        vm.expectRevert(abi.encodeWithSelector(Vault.InsufficientBalance.selector, 2 ether, 1 ether));
+        vm.expectRevert(
+            abi.encodeWithSelector(Vault.InsufficientBalance.selector, 2 ether, 1 ether)
+        );
         vault.withdraw(2 ether);
     }
 

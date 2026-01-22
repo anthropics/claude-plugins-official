@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
 import {Escrow} from "../src/Escrow.sol";
@@ -17,6 +17,7 @@ contract EscrowTest is Test {
         arbiter = makeAddr("arbiter");
 
         vm.deal(payer, 10 ether);
+        vm.deal(payee, 10 ether);
 
         vm.prank(payer);
         escrow = new Escrow(payee, arbiter, AMOUNT);

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.24;
 
 import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
@@ -17,7 +17,9 @@ contract NFT is ERC721, AccessControl {
     /// @param name_ The collection name
     /// @param symbol_ The collection symbol
     /// @param baseURI_ The base URI for token metadata
-    constructor(string memory name_, string memory symbol_, string memory baseURI_) ERC721(name_, symbol_) {
+    constructor(string memory name_, string memory symbol_, string memory baseURI_)
+        ERC721(name_, symbol_)
+    {
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _grantRole(MINTER_ROLE, msg.sender);
         _baseTokenURI = baseURI_;
@@ -51,7 +53,12 @@ contract NFT is ERC721, AccessControl {
     }
 
     /// @dev Required override for AccessControl
-    function supportsInterface(bytes4 interfaceId) public view override(ERC721, AccessControl) returns (bool) {
+    function supportsInterface(bytes4 interfaceId)
+        public
+        view
+        override(ERC721, AccessControl)
+        returns (bool)
+    {
         return super.supportsInterface(interfaceId);
     }
 }
