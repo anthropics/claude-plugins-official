@@ -1,0 +1,7 @@
+{
+  "name": "couchbase",
+  "description": "Couchbase MCP integration for NoSQL database operations. Query data using SQL++, manage documents, explore schemas, optimize indexes, and monitor cluster health directly from your development workflow.",
+  "author": {
+    "name": "Couchbase"
+  }
+}

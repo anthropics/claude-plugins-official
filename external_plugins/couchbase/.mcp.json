@@ -1,0 +1,6 @@
+{
+  "couchbase": {
+    "command": "uvx",
+    "args": ["couchbase-mcp-server"]
+  }
+}
