@@ -1,0 +1,23 @@
+{
+  "name": "shopify",
+  "description": "Shopify development plugin for Claude" ,
+  "version": "1.0.0",
+  "author": {
+    "name": "Shopify",
+    "url": "https://shopify.dev"
+  },
+  "homepage": "https://shopify.dev/docs/",
+  "repository": "https://github.com/Shopify/dev-mcp",
+  "license": "MIT",
+  "keywords": [
+    "shopify",
+    "graphql",
+    "liquid",
+    "polaris",
+    "ecommerce",
+    "api",
+    "storefront",
+    "functions",
+    "themes"
+  ]
+}
