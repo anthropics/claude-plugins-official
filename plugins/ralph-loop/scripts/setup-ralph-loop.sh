@@ -50,11 +50,11 @@ STOPPING:
   No manual stop - Ralph runs infinitely by default!
 
 MONITORING:
-  # View current iteration:
-  grep '^iteration:' .claude/ralph-loop.local.md
+  # View current iteration (state files are session-specific):
+  grep '^iteration:' .claude/ralph-loop-*.local.md
 
-  # View full state:
-  head -10 .claude/ralph-loop.local.md
+  # List all active loops:
+  ls -la .claude/ralph-loop-*.local.md 2>/dev/null
 HELP_EOF
       exit 0
       ;;
@@ -130,6 +130,29 @@ fi
 # Create state file for stop hook (markdown with YAML frontmatter)
 mkdir -p .claude
 
+# Derive session ID from CWD to create session-specific state file
+# This prevents context bleeding between concurrent sessions
+# Claude's project path encoding: / -> -, . -> -
+PROJECT_DIR="${HOME}/.claude/projects/$(pwd | tr '/' '-' | tr '.' '-')"
+SESSION_ID=""
+
+if [[ -d "$PROJECT_DIR" ]]; then
+  # Find the most recently modified transcript (current session)
+  # Exclude agent-* files which are subagent transcripts
+  CURRENT_TRANSCRIPT=$(ls -t "$PROJECT_DIR"/*.jsonl 2>/dev/null | grep -v '/agent-' | head -1)
+  if [[ -n "$CURRENT_TRANSCRIPT" ]]; then
+    SESSION_ID=$(basename "$CURRENT_TRANSCRIPT" .jsonl)
+  fi
+fi
+
+# Fallback to timestamp+random if session ID couldn't be determined
+if [[ -z "$SESSION_ID" ]]; then
+  SESSION_ID="fallback-$(date +%s)-$$"
+  echo "⚠️  Warning: Could not determine session ID, using fallback: $SESSION_ID" >&2
+fi
+
+RALPH_STATE_FILE=".claude/ralph-loop-${SESSION_ID}.local.md"
+
 # Quote completion promise for YAML if it contains special chars or is not null
 if [[ -n "$COMPLETION_PROMISE" ]] && [[ "$COMPLETION_PROMISE" != "null" ]]; then
   COMPLETION_PROMISE_YAML="\"$COMPLETION_PROMISE\""
@@ -137,7 +160,7 @@ else
   COMPLETION_PROMISE_YAML="null"
 fi
 
-cat > .claude/ralph-loop.local.md <<EOF
+cat > "$RALPH_STATE_FILE" <<EOF
 ---
 active: true
 iteration: 1
@@ -161,7 +184,8 @@ The stop hook is now active. When you try to exit, the SAME PROMPT will be
 fed back to you. You'll see your previous work in files, creating a
 self-referential loop where you iteratively improve on the same task.
 
-To monitor: head -10 .claude/ralph-loop.local.md
+Session ID: $SESSION_ID
+State file: $RALPH_STATE_FILE
 
 ⚠️  WARNING: This loop cannot be stopped manually! It will run infinitely
     unless you set --max-iterations or --completion-promise.

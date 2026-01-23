@@ -9,11 +9,21 @@ set -euo pipefail
 # Read hook input from stdin (advanced stop hook API)
 HOOK_INPUT=$(cat)
 
-# Check if ralph-loop is active
-RALPH_STATE_FILE=".claude/ralph-loop.local.md"
+# Extract session ID from transcript path for session-specific state file
+# This prevents context bleeding between concurrent sessions
+TRANSCRIPT_PATH=$(echo "$HOOK_INPUT" | jq -r '.transcript_path')
+if [[ -z "$TRANSCRIPT_PATH" ]] || [[ "$TRANSCRIPT_PATH" == "null" ]]; then
+  # No transcript path - allow exit (shouldn't happen in normal operation)
+  exit 0
+fi
+
+SESSION_ID=$(basename "$TRANSCRIPT_PATH" .jsonl)
+
+# Check if ralph-loop is active for THIS session
+RALPH_STATE_FILE=".claude/ralph-loop-${SESSION_ID}.local.md"
 
 if [[ ! -f "$RALPH_STATE_FILE" ]]; then
-  # No active loop - allow exit
+  # No active loop for this session - allow exit
   exit 0
 fi
 
@@ -54,9 +64,7 @@ if [[ $MAX_ITERATIONS -gt 0 ]] && [[ $ITERATION -ge $MAX_ITERATIONS ]]; then
   exit 0
 fi
 
-# Get transcript path from hook input
-TRANSCRIPT_PATH=$(echo "$HOOK_INPUT" | jq -r '.transcript_path')
-
+# Verify transcript file exists (TRANSCRIPT_PATH already extracted at top)
 if [[ ! -f "$TRANSCRIPT_PATH" ]]; then
   echo "⚠️  Ralph loop: Transcript file not found" >&2
   echo "   Expected: $TRANSCRIPT_PATH" >&2
