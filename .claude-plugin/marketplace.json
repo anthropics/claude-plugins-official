@@ -58,6 +58,29 @@
       }
     },
     {
+      "name": "ty-lsp",
+      "description": "Python language server using ty - an extremely fast type checker (10-100x faster than mypy/Pyright) by Astral",
+      "version": "1.0.0",
+      "author": {
+        "name": "Astral Software Inc."
+      },
+      "source": "./external_plugins/ty",
+      "category": "development",
+      "strict": false,
+      "homepage": "https://github.com/astral-sh/ty",
+      "tags": ["community-managed"],
+      "lspServers": {
+        "ty": {
+          "command": "ty",
+          "args": ["server"],
+          "extensionToLanguage": {
+            ".py": "python",
+            ".pyi": "python"
+          }
+        }
+      }
+    },
+    {
       "name": "gopls-lsp",
       "description": "Go language server for code intelligence and refactoring",
       "version": "1.0.0",

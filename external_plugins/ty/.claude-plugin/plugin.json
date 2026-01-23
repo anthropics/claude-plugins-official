@@ -1,0 +1,11 @@
+{
+  "name": "ty-lsp",
+  "version": "1.0.0",
+  "description": "Python language server using ty - an extremely fast type checker by Astral",
+  "author": {
+    "name": "Astral Software Inc."
+  },
+  "repository": "https://github.com/astral-sh/ty",
+  "license": "MIT",
+  "keywords": ["python", "lsp", "language-server", "type-checking", "ty", "astral"]
+}
