@@ -134,18 +134,26 @@ Always use `--max-iterations` as a safety net to prevent infinite loops on impos
 
 **Note**: The `--completion-promise` uses exact string matching, so you cannot use it for multiple completion conditions (like "SUCCESS" vs "BLOCKED"). Always rely on `--max-iterations` as your primary safety mechanism.
 
-### 5. Context Management
+### 5. Context Management (True Ralph Technique)
 
-Context is cleared by default after each iteration to prevent context window bloat. Work persists in files, so context clearing doesn't lose progress.
-
-**When to use `--no-clear-context`:**
-- Short loops where context continuity helps
-- Tasks requiring memory of previous attempts in conversation
+Use `--clear-context` to implement the true Ralph Wiggum technique with fresh context per iteration:
 
 ```bash
-# Keep context for tasks that need conversation memory
-/ralph-loop "Debug complex issue" --max-iterations 10 --no-clear-context
+# True Ralph: fresh context each iteration, work persists in files
+/ralph-loop "Build feature X" --max-iterations 50 --clear-context
 ```
+
+**How it works:** When `--clear-context` is enabled, the stop hook prefixes the prompt with `/clear`, which clears the context window before starting the next iteration. This matches the original Ralph technique where each iteration gets a fresh context.
+
+**When to use `--clear-context`:**
+- Long-running loops (recommended for 10+ iterations)
+- Tasks that generate verbose output
+- When you want true Ralph behavior (fresh context per iteration)
+- Loops where previous conversation isn't needed (work persists in files)
+
+**When NOT to use:**
+- Short loops where context continuity helps
+- Tasks requiring memory of previous conversation attempts
 
 ## Philosophy
 

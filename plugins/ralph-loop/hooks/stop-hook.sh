@@ -171,16 +171,19 @@ fi
 
 # Output JSON to block the stop and feed prompt back
 # The "reason" field contains the prompt that will be sent back to Claude
-# The "clearContext" field signals Claude Code to clear the context window
+# When clear_context is enabled, prefix with /clear to clear the context window
 if [[ "$CLEAR_CONTEXT" == "true" ]]; then
+  # Prefix prompt with /clear command to clear context before next iteration
+  PROMPT_WITH_CLEAR="/clear
+
+$PROMPT_TEXT"
   jq -n \
-    --arg prompt "$PROMPT_TEXT" \
+    --arg prompt "$PROMPT_WITH_CLEAR" \
     --arg msg "$SYSTEM_MSG" \
     '{
       "decision": "block",
       "reason": $prompt,
-      "systemMessage": $msg,
-      "clearContext": true
+      "systemMessage": $msg
     }'
 else
   jq -n \
