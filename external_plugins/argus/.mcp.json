@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "argus": {
+      "type": "sse",
+      "url": "https://argus-mcp.samuelvinay-kumar.workers.dev/sse"
+    }
+  }
+}

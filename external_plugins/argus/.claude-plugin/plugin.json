@@ -1,0 +1,22 @@
+{
+  "name": "argus",
+  "description": "Full Stack Quality Intelligence - Autonomous E2E testing, commit impact analysis, security scanning, and self-healing tests. Run tests on any URL, predict test failures before pushing, and auto-fix broken selectors.",
+  "version": "1.0.0",
+  "author": {
+    "name": "Raphatech",
+    "email": "hello@heyargus.ai",
+    "url": "https://heyargus.ai"
+  },
+  "homepage": "https://heyargus.ai",
+  "repository": "https://github.com/RaphaEnterprises-AI/argus-plugin",
+  "license": "MIT",
+  "keywords": [
+    "testing",
+    "e2e",
+    "api-testing",
+    "security",
+    "commit-analysis",
+    "self-healing",
+    "quality-intelligence"
+  ]
+}
