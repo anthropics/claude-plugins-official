@@ -46,3 +46,4 @@ Simple web scraping endpoint that fetches raw HTML content from a website withou
 - Returns raw HTML content
 - Use this for simple HTML extraction without AI processing
 
+

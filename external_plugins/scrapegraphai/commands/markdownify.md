@@ -39,3 +39,4 @@ Convert a webpage to clean, readable Markdown format using ScrapeGraphAI.
 - Costs 2 credits per page
 - Returns async request ID - check status with the request ID if needed
 
+

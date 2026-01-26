@@ -54,3 +54,4 @@ Create a new scheduled job that will run automatically based on a cron expressio
 - Use webhook_url for result notifications
 - Check job status with scheduled jobs list command
 
+

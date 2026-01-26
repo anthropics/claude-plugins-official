@@ -41,3 +41,4 @@ Scrape a website and extract structured data using ScrapeGraphAI's LLM-powered e
 - Costs 10 credits per page
 - Returns async request ID - check status with the request ID if needed
 
+

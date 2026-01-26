@@ -44,3 +44,4 @@ Generate or modify JSON schemas based on natural language descriptions. Can crea
 - Check status with: `GET /generate_schema/{request_id}`
 - Use generated schemas with smart-scrape for consistent data extraction
 
+

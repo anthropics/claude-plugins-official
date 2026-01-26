@@ -41,3 +41,4 @@ Search the web and scrape content from multiple websites using ScrapeGraphAI's s
 - Costs 2 credits per website (markdown mode)
 - Returns async request ID - check status with the request ID if needed
 
+
