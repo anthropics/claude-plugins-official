@@ -1,0 +1,8 @@
+{
+  "name": "slay-the-spire",
+  "description": "Slay the Spire AI assistant - Parse screenshots, track runs, detect archetypes. No MCP dependencies required. Uses built-in Claude Code vision and file-based state management.",
+  "author": {
+    "name": "Ben Smith",
+    "email": "ben@example.com"
+  }
+}
