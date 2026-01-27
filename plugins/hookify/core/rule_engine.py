@@ -86,8 +86,20 @@ class RuleEngine:
         # If only warnings, show them but allow operation
         if warning_rules:
             messages = [f"**[{r.name}]**\n{r.message}" for r in warning_rules]
+            combined_message = "\n\n".join(messages)
+
+            # For UserPromptSubmit, also include additionalContext so Claude sees the warning
+            # (systemMessage only shows to the user, additionalContext is injected into Claude's context)
+            if hook_event == 'UserPromptSubmit':
+                return {
+                    "systemMessage": combined_message,
+                    "hookSpecificOutput": {
+                        "hookEventName": "UserPromptSubmit",
+                        "additionalContext": f"[Hookify Reminder]\n{combined_message}"
+                    }
+                }
             return {
-                "systemMessage": "\n\n".join(messages)
+                "systemMessage": combined_message
             }
 
         # No matches - allow operation
@@ -223,9 +235,10 @@ class RuleEngine:
                     except UnicodeDecodeError as e:
                         print(f"Warning: Encoding error in transcript {transcript_path}: {e}", file=sys.stderr)
                         return ''
-            elif field == 'user_prompt':
+            elif field in ('user_prompt', 'prompt'):
                 # For UserPromptSubmit events
-                return input_data.get('user_prompt', '')
+                # Claude Code sends 'prompt', support both for compatibility
+                return input_data.get('prompt', '') or input_data.get('user_prompt', '')
 
         # Handle special cases by tool type
         if tool_name == 'Bash':
