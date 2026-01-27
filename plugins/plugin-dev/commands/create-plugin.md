@@ -317,9 +317,34 @@ Guide the user through creating a complete, high-quality Claude Code plugin from
    - For settings: Provide configuration templates
 
 2. **Add marketplace entry** (if publishing):
-   - Show user how to add to marketplace.json
+   - Create `.claude-plugin/marketplace.json` with this template:
+     ```json
+     {
+       "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+       "name": "plugin-name-local",
+       "description": "Brief marketplace description",
+       "owner": {
+         "name": "Author Name",
+         "email": "author@example.com"
+       },
+       "plugins": [
+         {
+           "name": "plugin-name",
+           "description": "Plugin description",
+           "version": "1.0.0",
+           "author": {
+             "name": "Author Name",
+             "email": "author@example.com"
+           },
+           "source": "./",
+           "category": "productivity"
+         }
+       ]
+     }
+     ```
+   - **Critical**: Use `"source": "./"` (with trailing slash), NOT `"source": "."`
    - Help draft marketplace description
-   - Suggest category and tags
+   - Suggest category: `development`, `productivity`, `documentation`, `testing`, `integration`, `utilities`
 
 3. **Create summary**:
    - Mark all todos complete

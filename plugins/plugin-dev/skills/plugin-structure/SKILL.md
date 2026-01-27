@@ -473,4 +473,10 @@ my-plugin/
 
 ---
 
+## Related References
+
+- `references/manifest-reference.md` - Detailed plugin.json field documentation
+- `references/marketplace-reference.md` - Marketplace.json schema and registration
+- `references/component-patterns.md` - Advanced component organization patterns
+
 For detailed examples and advanced patterns, see files in `references/` and `examples/` directories.
