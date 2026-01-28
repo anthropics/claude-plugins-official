@@ -598,6 +598,16 @@
         "url": "https://github.com/obra/superpowers.git"
       },
       "homepage": "https://github.com/obra/superpowers.git"
+    },
+    {
+      "name": "posthog",
+      "description": "Connect Claude Code to your PostHog analytics platform. Query insights, manage feature flags, run A/B experiments, track errors, and analyze LLM costs all through natural language. The plugin provides 10 slash commands for common workflows and full access to PostHog's MCP tools. Ask questions like \"What are my top errors?\" or \"Create a feature flag for 50% of users\" and Claude handles the API calls. Supports OAuth authentication, EU and US cloud regions, and self-hosted instances.",
+      "category": "monitoring",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/PostHog/posthog-for-claude.git"
+      },
+      "homepage": "https://github.com/PostHog/posthog-for-claude.git"
     }
   ]
 }
