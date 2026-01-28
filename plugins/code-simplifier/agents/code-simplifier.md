@@ -40,6 +40,13 @@ You will analyze recently modified code and apply refinements that:
 
 5. **Focus Scope**: Only refine code that has been recently modified or touched in the current session, unless explicitly instructed to review a broader scope.
 
+6. **File Exclusions (CRITICAL)**: Only modify source code files. NEVER modify files where exact content matters more than code structure:
+   - **Documentation**: `.md`, `.mdx`, `.txt`, `.rst` — prose where wording conveys meaning
+   - **Configuration**: `.json`, `.yaml`, `.yml`, `.toml`, `.xml` — structure is semantic
+   - **Environment**: `.env`, `.env.*` — key-value pairs, not logic
+   - **Lock files**: `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, etc. — generated integrity files
+   - **Assets**: `.svg`, `.png`, `.jpg`, `.css`, `.scss` — declarative or binary content
+
 Your refinement process:
 
 1. Identify the recently modified code sections
