@@ -1,0 +1,10 @@
+{
+  "name": "caffeinate",
+  "version": "0.1.0",
+  "description": "Blocks sleep commands and reminds Claude to use background tasks instead",
+  "author": {
+    "name": "Anthropic",
+    "email": "support@anthropic.com"
+  },
+  "keywords": ["productivity", "hooks", "bash", "background-tasks"]
+}
