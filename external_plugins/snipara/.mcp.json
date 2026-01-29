@@ -1,0 +1,9 @@
+{
+  "snipara": {
+    "type": "http",
+    "url": "https://api.snipara.com/mcp",
+    "headers": {
+      "X-API-Key": "${SNIPARA_API_KEY}"
+    }
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "name": "snipara",
+  "description": "Context optimization + safe code execution - Query docs with 90% token reduction and execute code with Docker isolation via RLM Runtime. Supports memory, team collaboration, and agent swarms.",
+  "author": {
+    "name": "Snipara Team"
+  },
+  "homepage": "https://snipara.com",
+  "repository": "https://github.com/alopez3006/snipara-claude",
+  "license": "MIT",
+  "keywords": ["documentation", "context", "mcp", "rag", "optimization", "rlm", "code-execution", "docker", "memory", "swarms"]
+}
