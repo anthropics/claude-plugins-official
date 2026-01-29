@@ -362,6 +362,17 @@
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/plugins/frontend-design"
     },
     {
+      "name": "artifact",
+      "description": "Creates interactive HTML artifacts — self-contained single-file explorers with visual controls, live preview, and prompt output with copy button. Includes templates for design playgrounds, data explorers, concept maps, and writing tools.",
+      "author": {
+        "name": "Anthropic",
+        "email": "support@anthropic.com"
+      },
+      "source": "./plugins/artifact",
+      "category": "development",
+      "homepage": "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/artifact"
+    },
+    {
       "name": "ralph-loop",
       "description": "Interactive self-referential AI loops for iterative development, implementing the Ralph Wiggum technique. Claude works on the same task repeatedly, seeing its previous work, until completion.",
       "author": {
