@@ -252,6 +252,29 @@
       }
     },
     {
+      "name": "scala-lsp",
+      "description": "Scala language server (Metals) for code intelligence",
+      "version": "1.0.0",
+      "author": {
+        "name": "Anthropic",
+        "email": "support@anthropic.com"
+      },
+      "source": "./plugins/scala-lsp",
+      "category": "development",
+      "strict": false,
+      "lspServers": {
+        "scala": {
+          "command": "metals",
+          "args": ["--stdio"],
+          "extensionToLanguage": {
+            ".sbt": "scala",
+            ".scala": "scala",
+            ".sc": "scala"
+          }
+        }
+      }
+    },
+    {
       "name": "agent-sdk-dev",
       "description": "Development kit for working with the Claude Agent SDK",
       "author": {
