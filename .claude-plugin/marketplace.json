@@ -329,6 +329,17 @@
       "homepage": "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/code-simplifier"
     },
     {
+      "name": "caffeinate",
+      "description": "Prevents blocking sleep commands by intercepting them and prompting Claude to use background execution instead. Keeps your session responsive during long-running operations.",
+      "author": {
+        "name": "Anthropic",
+        "email": "support@anthropic.com"
+      },
+      "source": "./plugins/caffeinate",
+      "category": "productivity",
+      "homepage": "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/caffeinate"
+    },
+    {
       "name": "explanatory-output-style",
       "description": "Adds educational insights about implementation choices and codebase patterns (mimics the deprecated Explanatory output style)",
       "author": {

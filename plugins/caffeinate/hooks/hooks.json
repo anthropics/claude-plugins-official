@@ -1,0 +1,17 @@
+{
+  "description": "Blocks sleep commands and reminds Claude to use background tasks",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/check-sleep.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
