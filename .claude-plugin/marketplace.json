@@ -571,6 +571,23 @@
       "tags": ["community-managed"]
     },
     {
+      "name": "stagehand",
+      "description": "Browser automation skill for Claude Code using Stagehand. Automate web interactions, extract data, and navigate websites using natural language.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Browserbase"
+      },
+      "source": {
+        "source": "github",
+        "repo": "browserbase/agent-browse"
+      },
+      "category": "automation",
+      "keywords": ["browser", "automation", "stagehand", "web-scraping"],
+      "homepage": "https://github.com/browserbase/agent-browse",
+      "strict": false,
+      "skills": [
+        "./.claude/skills/browser-automation"
+      ]
       "name": "pinecone",
       "description": "Pinecone vector database integration. Streamline your Pinecone development with powerful tools for managing vector indexes, querying data, and rapid prototyping. Use slash commands like /quickstart to generate AGENTS.md files and initialize Python projects and /query to quickly explore indexes. Access the Pinecone MCP server for creating, describing, upserting and querying indexes with Claude. Perfect for developers building semantic search, RAG applications, recommendation systems, and other vector-based applications with Pinecone.",
       "category": "database",
