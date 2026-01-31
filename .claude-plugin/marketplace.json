@@ -629,6 +629,17 @@
         "url": "https://github.com/coderabbitai/claude-plugin.git"
       },
       "homepage": "https://github.com/coderabbitai/claude-plugin.git"
+    },
+    {
+      "name": "claude-code-plugins-hub",
+      "description": "Comprehensive plugin marketplace with 270+ plugins and 1,000+ skills covering SaaS integrations, DevOps automation, database tools, crypto trading, AI/ML workflows, and more. Includes 40+ vendor-specific skill packs (Databricks, Langfuse, Mistral, Stripe, Firebase, etc.) with 24 skills each. Features interactive tutorials, Learning Lab, and CLI tool (ccpi).",
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/jeremylongshore/claude-code-plugins-plus-skills.git"
+      },
+      "homepage": "https://claudecodeplugins.io",
+      "tags": ["community-managed", "marketplace"]
     }
   ]
 }
