@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "scrapegraphai": {
+      "type": "http",
+      "url": "https://api.scrapegraphai.com/v1",
+      "headers": {
+        "SGAI-APIKEY": "${SCRAPEGRAPHAI_API_KEY}"
+      }
+    }
+  }
+}
+
+
