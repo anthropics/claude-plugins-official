@@ -154,7 +154,6 @@ See [references/templates.md](references/templates.md) for CLAUDE.md templates b
 
 When presenting recommendations, remind users:
 
-- **`#` key shortcut**: During a Claude session, press `#` to have Claude auto-incorporate learnings into CLAUDE.md
 - **Keep it concise**: CLAUDE.md should be human-readable; dense is better than verbose
 - **Actionable commands**: All documented commands should be copy-paste ready
 - **Use `.claude.local.md`**: For personal preferences not shared with team (add to `.gitignore`)
