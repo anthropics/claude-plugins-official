@@ -185,8 +185,7 @@
           "extensionToLanguage": {
             ".kt": "kotlin",
             ".kts": "kotlin"
-          },
-          "startupTimeout" : 120000
+          }
         }
       }
     },
