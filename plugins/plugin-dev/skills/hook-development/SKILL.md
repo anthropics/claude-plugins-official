@@ -588,6 +588,25 @@ input=$(cat)
 4. New hook configuration loads
 5. Test hooks with `claude --debug`
 
+### Disabling Hooks
+
+**Important:** Hooks are loaded from the plugin manifest (`plugin.json` or `config.json`), not auto-discovered by file presence.
+
+**To disable a hook:**
+1. Remove the hook entry from `plugin.json`/`config.json` hooks array
+2. Or remove the hook from `hooks/hooks.json`
+3. Restart Claude Code
+
+**Common mistake:** Renaming or deleting a hook script file does NOT disable it. Claude Code will try to load the hook from the manifest and fail with a missing file error.
+
+```bash
+# ❌ WRONG: Just renaming the file
+mv hooks/my-hook.sh hooks/my-hook.sh.disabled
+
+# ✅ CORRECT: Remove from plugin.json/config.json hooks configuration
+# Then optionally rename/delete the file
+```
+
 ### Hook Validation at Startup
 
 Hooks are validated when Claude Code starts:
@@ -661,6 +680,7 @@ echo "$output" | jq .
 - ❌ Rely on hook execution order
 - ❌ Modify global state unpredictably
 - ❌ Log sensitive information
+- ❌ Disable hooks by renaming files (remove from config instead)
 
 ## Additional Resources
 
