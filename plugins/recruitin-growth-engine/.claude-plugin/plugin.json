@@ -1,0 +1,8 @@
+{
+  "name": "recruitin-growth-engine",
+  "description": "Autonomous growth intelligence engine for Recruitin. Generates recruitment campaigns, measures performance data, and self-optimizes based on historical results. Integrates LinkedIn authority campaigns, Meta Ads performance campaigns, and Supabase-backed data analysis for continuous cost-per-hire optimization.",
+  "author": {
+    "name": "Recruitin",
+    "email": "info@recruitin.nl"
+  }
+}

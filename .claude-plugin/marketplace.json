@@ -629,6 +629,16 @@
         "url": "https://github.com/coderabbitai/claude-plugin.git"
       },
       "homepage": "https://github.com/coderabbitai/claude-plugin.git"
+    },
+    {
+      "name": "recruitin-growth-engine",
+      "description": "Autonomous recruitment marketing growth engine. Generates LinkedIn authority campaigns and Meta Ads performance campaigns, stores weekly metrics in Supabase, and self-optimizes based on historical cost-per-hire data. Built for the Dutch recruitment market.",
+      "author": {
+        "name": "Recruitin",
+        "email": "info@recruitin.nl"
+      },
+      "source": "./plugins/recruitin-growth-engine",
+      "category": "productivity"
     }
   ]
 }
