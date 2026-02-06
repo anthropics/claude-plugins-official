@@ -110,6 +110,10 @@ Tool Recommendation: [PiAPI / Canva / Midjourney / DALL-E]
 2. Check `winning_strategies` view for top-performing tone-of-voice and content-type combinations
 3. Load client brand voice from `client_brand_voices` table
 4. Review the current 12-week cycle position to maintain strategic coherence
+5. **Check market intelligence:** Query `market_intelligence` table for latest vacancy volumes, salary trends, and ghosting risks in the target keyword/region
+6. **Check competitor activity:** Query latest concurrent tracker data to avoid topic overlap and find content gaps
+7. **Check ICP signals:** Query `icp_scores` for high-scoring prospects and use their hiring signals as campaign context
+8. **Select content style:** Use the 4 proven Notion styles (contrarian, data_story, how_to, behind_scenes) matched to the current 12-week phase — see `references/content-styles-notion.md`
 
 ### After Generating Content
 

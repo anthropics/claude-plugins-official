@@ -149,6 +149,48 @@ WHERE cam.status IN ('active', 'completed')
 GROUP BY cam.target_industry, COALESCE(cam.target_role, 'general');
 
 -- ============================================
+-- TABEL 6: MARKET INTELLIGENCE
+-- Data van de intelligence-hub scrapers
+-- ============================================
+CREATE TABLE market_intelligence (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  data_type TEXT CHECK (data_type IN ('market_trend', 'icp_signal', 'competitor_activity', 'sector_news')),
+  keyword TEXT,
+  region TEXT,
+  source TEXT,
+  metric_value NUMERIC,
+  metric_label TEXT,
+  risk_level TEXT,
+  relevance_score INT,
+  raw_data JSONB,
+  scraped_at TIMESTAMPTZ DEFAULT NOW(),
+  week_number INT,
+  year INT
+);
+
+-- ============================================
+-- TABEL 7: ICP SCORES
+-- Prospect kwalificatie van Pipedrive/Zapier
+-- ============================================
+CREATE TABLE icp_scores (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  company_name TEXT NOT NULL,
+  pipedrive_deal_id TEXT,
+  bedrijfsgrootte_fte INT,
+  sector TEXT,
+  regio TEXT,
+  recruitment_type TEXT,
+  budget_range TEXT,
+  decision_maker_role TEXT,
+  urgentie TEXT,
+  icp_score NUMERIC(5,2),
+  icp_match BOOLEAN,
+  score_percentage NUMERIC(5,1),
+  classification TEXT CHECK (classification IN ('A', 'B', 'C', 'no_match')),
+  last_updated TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================
 -- INDEXES (voor snelle queries)
 -- ============================================
 CREATE INDEX idx_weekly_metrics_campaign ON weekly_metrics(campaign_id);
@@ -156,6 +198,11 @@ CREATE INDEX idx_weekly_metrics_week ON weekly_metrics(year, week_number);
 CREATE INDEX idx_content_log_campaign ON content_log(campaign_id);
 CREATE INDEX idx_campaigns_client ON campaigns(client_id);
 CREATE INDEX idx_campaigns_status ON campaigns(status);
+CREATE INDEX idx_market_intelligence_type ON market_intelligence(data_type);
+CREATE INDEX idx_market_intelligence_week ON market_intelligence(year, week_number);
+CREATE INDEX idx_market_intelligence_keyword ON market_intelligence(keyword);
+CREATE INDEX idx_icp_scores_classification ON icp_scores(classification);
+CREATE INDEX idx_icp_scores_sector ON icp_scores(sector);
 
 -- ============================================
 -- FUNCTIE: Refresh winning strategies
@@ -187,6 +234,8 @@ Je zou moeten zien:
 - `client_brand_voices`
 - `clients`
 - `content_log`
+- `icp_scores`
+- `market_intelligence`
 - `weekly_metrics`
 - `winning_strategies`
 
@@ -289,6 +338,47 @@ INSERT INTO campaigns (
   'HR Decision Makers',
   'recruitment-marketing'
 );
+```
+
+## Stap 4b: Seed Data — Market Intelligence (Sample Data)
+
+Voer dit uit om voorbeeld-data van de intelligence-hub scrapers te importeren:
+
+```sql
+-- Sample market trend data (van intelligence-hub scrapers)
+INSERT INTO market_intelligence (data_type, keyword, region, source, metric_value, metric_label, risk_level, week_number, year) VALUES
+  ('market_trend', 'PLC programmeur', 'Gelderland', 'Indeed', 127, 'vacancy_count', 'HIGH', 5, 2026),
+  ('market_trend', 'PLC programmeur', 'Overijssel', 'Indeed', 43, 'vacancy_count', 'MEDIUM', 5, 2026),
+  ('market_trend', 'PLC programmeur', 'Noord-Brabant', 'Indeed', 89, 'vacancy_count', 'HIGH', 5, 2026),
+  ('market_trend', 'field service engineer', 'Gelderland', 'Indeed', 156, 'vacancy_count', 'HIGH', 5, 2026),
+  ('market_trend', 'maintenance engineer', 'Overijssel', 'Indeed', 67, 'vacancy_count', 'MEDIUM', 5, 2026),
+  ('market_trend', 'automation engineer', 'Gelderland', 'Indeed', 98, 'vacancy_count', 'MEDIUM', 5, 2026),
+  ('market_trend', 'commissioning engineer', 'Noord-Brabant', 'Indeed', 34, 'vacancy_count', 'LOW', 5, 2026),
+  ('market_trend', 'technisch commercieel', 'Gelderland', 'Indeed', 112, 'vacancy_count', 'HIGH', 5, 2026);
+
+-- Sample ICP hiring signals
+INSERT INTO market_intelligence (data_type, keyword, region, source, metric_value, metric_label, relevance_score, week_number, year) VALUES
+  ('icp_signal', 'ASML', 'Gelderland', 'career_page', 8, 'open_positions', 85, 5, 2026),
+  ('icp_signal', 'VDL Groep', 'Noord-Brabant', 'career_page', 12, 'open_positions', 78, 5, 2026),
+  ('icp_signal', 'Philips', 'Noord-Brabant', 'career_page', 5, 'open_positions', 62, 5, 2026),
+  ('icp_signal', 'Siemens', 'Gelderland', 'career_page', 6, 'open_positions', 70, 5, 2026),
+  ('icp_signal', 'Alfen', 'Gelderland', 'career_page', 4, 'open_positions', 55, 5, 2026);
+
+-- Sample competitor activity
+INSERT INTO market_intelligence (data_type, keyword, source, metric_value, metric_label, risk_level, relevance_score, week_number, year) VALUES
+  ('competitor_activity', 'Yacht', 'blog', 3, 'posts_this_week', 'GEMIDDELD', 45, 5, 2026),
+  ('competitor_activity', 'Brunel', 'blog', 5, 'posts_this_week', 'HOOG', 72, 5, 2026),
+  ('competitor_activity', 'Randstad', 'linkedin', 8, 'posts_this_week', 'HOOG', 38, 5, 2026),
+  ('competitor_activity', 'Olympia', 'blog', 1, 'posts_this_week', 'LAAG', 22, 5, 2026),
+  ('competitor_activity', 'Tempo-Team', 'blog', 2, 'posts_this_week', 'LAAG', 30, 5, 2026);
+
+-- Sample ICP prospect scores
+INSERT INTO icp_scores (company_name, bedrijfsgrootte_fte, sector, regio, recruitment_type, budget_range, decision_maker_role, urgentie, icp_score, icp_match, score_percentage, classification) VALUES
+  ('ASML', 42000, 'manufacturing', 'gelderland', 'RPO', '€100k+', 'HR Director', 'urgent', 26.5, true, 93.0, 'A'),
+  ('VDL Groep', 15000, 'automotive', 'noord-brabant', 'w&s', '€50k-€100k', 'HR Manager', 'normaal', 21.0, true, 73.7, 'B'),
+  ('Alfen', 800, 'renewable energy', 'gelderland', 'w&s', '€25k-€50k', 'HR Manager', 'urgent', 19.5, true, 68.4, 'B'),
+  ('Stork', 3000, 'industrial services', 'gelderland', 'interim', '€50k-€100k', 'Head of HR', 'normaal', 20.0, true, 70.2, 'B'),
+  ('BAM', 20000, 'construction', 'gelderland, overijssel', 'RPO', '€100k+', 'Directeur HR', 'langzaam', 22.5, true, 78.9, 'A');
 ```
 
 ## Stap 5: API Keys Noteren

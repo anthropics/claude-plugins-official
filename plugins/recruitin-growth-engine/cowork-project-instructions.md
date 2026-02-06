@@ -182,21 +182,83 @@ Geef een waarschuwing als:
 
 ---
 
+## Content Stijlen (4 Bewezen Formats)
+
+Gebruik deze 4 LinkedIn post-stijlen afwisselend, afgestemd op de 12-weken fase:
+
+### 1. Contrarian (Weeks 4-6, 7-9)
+Bold statement → data uit eigen praktijk → plot twist → discussievraag
+Doel: Engagement door debat. 3-5x gemiddelde interactie.
+
+### 2. Data Story (Weeks 1-3)
+Specifiek getal → 3 insights met data → conclusie + vraag
+Doel: Autoriteit door cijfers. Hoog save/share ratio.
+
+### 3. How-To (Weeks 7-9, 10-12)
+Herkenbaar probleem → 4 concrete stappen → resultaat met cijfer → "Save deze post"
+Doel: Waarde bieden. Lead generation.
+
+### 4. Behind the Scenes (Weeks 7-9)
+Eerlijke bekentenis → context → les geleerd → nieuwe aanpak → "Herken je dit?"
+Doel: Vertrouwen door authenticiteit.
+
+---
+
+## Market Intelligence (Intelligence Hub)
+
+Het systeem wordt gevoed door 3 scrapers die wekelijks draaien:
+
+### Beschikbare Data
+- **Market Trends:** Vacature-volumes voor 10 technische functies in 3 regio's (Gelderland, Overijssel, Brabant) van Indeed + Monsterboard
+- **ICP Monitor:** Hiring signals van 17+ target bedrijven (ASML, VDL, Siemens, Philips, Stork, BAM, Alfen etc.)
+- **Concurrent Tracker:** Content activiteit van 8 concurrenten (Yacht, Brunel, Olympia, Tempo-Team, Randstad, Unique, Manpower, Cottus)
+
+### Gebruik bij Content Creatie
+- Refereer aan actuele vacature-aantallen in data_story posts (bv. "127 PLC programmeur vacatures in Gelderland deze week")
+- Gebruik ICP hiring signals als haak voor performance campagnes
+- Check concurrent activiteit om content gaps te vinden (onderwerpen die zij NIET behandelen)
+- Gebruik ghosting-risk data in contrarian posts over de arbeidsmarkt
+
+### ICP Scoring (7 Criteria)
+Prospects worden gescoord op: bedrijfsgrootte, sector, regio, recruitment type, budget, decision maker, urgentie.
+- A-prospects (score ≥22/28.5): Directe outreach + premium campagne
+- B-prospects (score 14-22): Standaard campagne inclusie
+- C-prospects (score 7-14): Alleen authority content, geen ad spend
+
+---
+
 ## Supabase Integratie
 
 De database is de ruggengraat van het systeem. Alle beslissingen zijn data-gedreven.
+
+**8 tabellen:** clients, campaigns, content_log, weekly_metrics, client_brand_voices, winning_strategies, market_intelligence, icp_scores
 
 **Voordat je content genereert:**
 1. Check `winning_strategies` voor de best presterende aanpak in deze branche/rol
 2. Laad de `client_brand_voices` voor de juiste tone
 3. Bekijk `content_log` om herhaling te voorkomen
 4. Check de positie in de 12-weken cyclus
+5. Query `market_intelligence` voor actuele vacature-volumes en salary data
+6. Query `market_intelligence` (competitor_activity) voor content gaps
+7. Query `icp_scores` voor high-scoring prospects als campagne-context
 
 **Nadat content is goedgekeurd:**
 1. Log naar `content_log` met campaign_id, type, tone, visual_prompt
 2. Update `campaigns` status indien nodig
 
 **Elke maandag (data-import):**
-1. Nieuwe rij per actieve campagne in `weekly_metrics`
-2. Refresh `winning_strategies` materialized view
-3. Genereer het weekrapport
+1. Importeer scraper-output naar `market_intelligence` tabel
+2. Nieuwe rij per actieve campagne in `weekly_metrics`
+3. Refresh `winning_strategies` materialized view
+4. Genereer het weekrapport
+
+---
+
+## Notion Integratie
+
+Content drafts worden beheerd in Notion:
+- **Recruitment News Database:** Nieuwsartikelen voor content inspiratie
+- **Content Drafts & Publishing:** Draft → Ready to Send → Published → Archived
+- **LinkedIn & Recruitment Intelligence Hub:** Master content overzicht
+
+Bij het aanmaken van drafts: gebruik de 4 stijl-templates (contrarian/data_story/how_to/behind_scenes) en houd je aan de LinkedIn limiet van 1.300 tekens per post.
