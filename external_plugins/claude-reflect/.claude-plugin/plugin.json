@@ -1,0 +1,20 @@
+{
+  "name": "claude-reflect",
+  "version": "1.4.1",
+  "description": "Self-learning system for Claude Code that captures corrections and updates CLAUDE.md automatically",
+  "author": {
+    "name": "Bayram Annakov",
+    "url": "https://github.com/bayramannakov"
+  },
+  "repository": "https://github.com/bayramannakov/claude-reflect",
+  "license": "MIT",
+  "keywords": [
+    "claude-code",
+    "self-learning",
+    "corrections",
+    "CLAUDE.md",
+    "memory",
+    "learnings"
+  ],
+  "hooks": "./hooks/hooks.json"
+}
