@@ -1,0 +1,13 @@
+{
+  "name": "getchannel",
+  "description": "Multi-channel ad management - Google, Meta, TikTok, LinkedIn campaigns",
+  "version": "1.0.0",
+  "author": {
+    "name": "GetPlatform",
+    "url": "https://getplatform.co"
+  },
+  "homepage": "https://getchannel.co",
+  "repository": "https://github.com/getplatform/getplatform-plugins",
+  "license": "MIT",
+  "keywords": ["advertising", "google-ads", "meta-ads", "tiktok", "campaigns", "marketing"]
+}
