@@ -58,6 +58,29 @@
       }
     },
     {
+      "name": "basedpyright-lsp",
+      "description": "Python language server using basedpyright - a pyright fork with stricter type checking and additional rules",
+      "version": "1.0.0",
+      "author": {
+        "name": "Tyler Laprade"
+      },
+      "source": "./external_plugins/basedpyright",
+      "category": "development",
+      "strict": false,
+      "homepage": "https://github.com/DetachHead/basedpyright",
+      "tags": ["community-managed"],
+      "lspServers": {
+        "basedpyright": {
+          "command": "basedpyright-langserver",
+          "args": ["--stdio"],
+          "extensionToLanguage": {
+            ".py": "python",
+            ".pyi": "python"
+          }
+        }
+      }
+    },
+    {
       "name": "gopls-lsp",
       "description": "Go language server for code intelligence and refactoring",
       "version": "1.0.0",
