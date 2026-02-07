@@ -1,0 +1,21 @@
+{
+  "name": "claude-code-harness",
+  "version": "2.3.4",
+  "description": "Development harness for solo developers with Plan → Work → Review workflow. Includes guardrails, SSOT memory, parallel execution, and 21 skills for full-cycle development.",
+  "author": {
+    "name": "Manus AI & Chachamaru",
+    "url": "https://github.com/Chachamaru127"
+  },
+  "homepage": "https://github.com/Chachamaru127/claude-code-harness",
+  "repository": "https://github.com/Chachamaru127/claude-code-harness",
+  "license": "MIT",
+  "keywords": [
+    "workflow",
+    "harness",
+    "plan-work-review",
+    "guardrails",
+    "ssot",
+    "solo-developer",
+    "vibecoder"
+  ]
+}
