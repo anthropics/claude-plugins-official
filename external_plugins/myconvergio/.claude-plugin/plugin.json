@@ -1,0 +1,23 @@
+{
+  "name": "myconvergio",
+  "version": "3.0.0",
+  "description": "Enterprise Agent Suite: 57 specialized AI agents for strategy, development, compliance, and operations",
+  "author": {
+    "name": "Roberto Dandrea",
+    "email": "info@roberdan.com",
+    "url": "https://github.com/roberdan"
+  },
+  "homepage": "https://github.com/roberdan/MyConvergio",
+  "repository": "https://github.com/roberdan/MyConvergio",
+  "license": "CC-BY-NC-SA-4.0",
+  "keywords": [
+    "enterprise",
+    "agents",
+    "strategy",
+    "architecture",
+    "compliance",
+    "operations",
+    "ai-agents",
+    "subagents"
+  ]
+}
