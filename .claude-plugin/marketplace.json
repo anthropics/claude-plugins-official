@@ -252,6 +252,27 @@
       }
     },
     {
+      "name": "purescript-lsp",
+      "description": "PureScript language server for type checking, diagnostics, and code intelligence",
+      "version": "1.0.0",
+      "author": {
+        "name": "Mark Eibes",
+        "email": "mark@yoga.dev"
+      },
+      "source": "./plugins/purescript-lsp",
+      "category": "development",
+      "strict": false,
+      "lspServers": {
+        "purescript": {
+          "command": "purescript-language-server",
+          "args": ["--stdio"],
+          "extensionToLanguage": {
+            ".purs": "purescript"
+          }
+        }
+      }
+    },
+    {
       "name": "agent-sdk-dev",
       "description": "Development kit for working with the Claude Agent SDK",
       "author": {
