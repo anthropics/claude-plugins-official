@@ -1,0 +1,17 @@
+name: Validate Marketplace JSON
+
+on:
+  pull_request:
+    paths:
+      - '.claude-plugin/marketplace.json'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Validate marketplace.json
+        run: bun .github/scripts/validate-marketplace.ts .claude-plugin/marketplace.json
