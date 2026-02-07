@@ -505,7 +505,7 @@
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/linear"
     },
     {
-      "name": "Notion",
+      "name": "notion",
       "description": "Notion workspace integration. Search pages, create and update documents, manage databases, and access your team's knowledge base directly from Claude Code for seamless documentation workflows.",
       "category": "productivity",
       "source": {
