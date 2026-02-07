@@ -1,0 +1,13 @@
+{
+  "name": "stagehand",
+  "description": "Browser automation skill for Claude Code using Stagehand. Automate web interactions, extract data, and navigate websites using natural language.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Browserbase"
+  },
+  "homepage": "https://github.com/browserbase/agent-browse",
+  "repository": "https://github.com/browserbase/agent-browse",
+  "keywords": ["browser", "automation", "stagehand", "web-scraping"],
+  "strict": false
+}
+  
