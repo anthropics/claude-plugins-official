@@ -1,0 +1,8 @@
+{
+  "name": "bug-hunter",
+  "version": "1.0.0",
+  "description": "Multi-agent bug hunting plugin that launches parallel specialist agents to find bugs across categories, deduplicates and scores findings, runs regression guard analysis, and produces prioritized reports",
+  "author": {
+    "name": "su1ph3r"
+  }
+}

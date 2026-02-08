@@ -428,6 +428,16 @@
       "homepage": "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/claude-md-management"
     },
     {
+      "name": "bug-hunter",
+      "description": "Multi-agent bug hunting with 8 parallel specialist agents covering logic errors, error handling, edge cases, security, race conditions, resource leaks, API contracts, and state management. Includes deduplication, priority scoring, regression guard, and prioritized reporting.",
+      "author": {
+        "name": "su1ph3r"
+      },
+      "source": "./plugins/bug-hunter",
+      "category": "productivity",
+      "homepage": "https://github.com/Su1ph3r/claude-plugins/tree/main/plugins/bug-hunter"
+    },
+    {
       "name": "greptile",
       "description": "AI-powered codebase search and understanding. Query your repositories using natural language to find relevant code, understand dependencies, and get contextual answers about your codebase architecture.",
       "category": "development",
