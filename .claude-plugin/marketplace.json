@@ -649,6 +649,17 @@
         "url": "https://github.com/firecrawl/firecrawl-claude-plugin.git"
       },
       "homepage": "https://github.com/firecrawl/firecrawl-claude-plugin.git"
+    },
+    {
+      "name": "scratch-programming",
+      "description": "Automates Scratch programming by injecting blocks directly into the web editor's VM via Playwright. Enables Claude to programmatically create and run Scratch projects by connecting to the Scratch VM, serializing project JSON, and injecting block definitions.",
+      "category": "development",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/yokobond/scratch-skills.git"
+      },
+      "homepage": "https://github.com/yokobond/scratch-skills",
+      "tags": ["community-managed"]
     }
   ]
 }
