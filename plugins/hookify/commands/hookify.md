@@ -68,13 +68,20 @@ After gathering behaviors (from arguments or agent), present to user using AskUs
   - Label: Short description (e.g., "Block rm -rf")
   - Description: Why it's problematic
 
-**Question 2: For each selected behavior, ask about action:**
+**Question 2: Ask about scope (global vs local):**
+- "Where should this rule apply?"
+- Header: "Scope"
+- Options:
+  - "This project only" (local: `.claude/`) - for project-specific rules
+  - "All projects (global)" (global: `~/.claude/`) - for universal rules
+
+**Question 3: For each selected behavior, ask about action:**
 - "Should this block the operation or just warn?"
 - Options:
   - "Just warn" (action: warn - shows message but allows)
   - "Block operation" (action: block - prevents execution)
 
-**Question 3: Ask for example patterns:**
+**Question 4: Ask for example patterns:**
 - "What patterns should trigger this rule?"
 - Show detected patterns
 - Allow user to refine or add more
@@ -125,16 +132,19 @@ conditions:
 
 ### Step 4: Create Files and Confirm
 
-**IMPORTANT**: Rule files must be created in the current working directory's `.claude/` folder, NOT the plugin directory.
+**IMPORTANT**: Rule files location depends on chosen scope:
+- **Local (project):** `.claude/hookify.{name}.local.md` (in project root)
+- **Global (all projects):** `~/.claude/hookify.{name}.local.md` (in home directory)
 
-Use the current working directory (where Claude Code was started) as the base path.
-
+**For local rules:**
 1. Check if `.claude/` directory exists in current working directory
    - If not, create it first with: `mkdir -p .claude`
+2. Use Write tool to create `.claude/hookify.{name}.local.md`
 
-2. Use Write tool to create each `.claude/hookify.{name}.local.md` file
-   - Use relative path from current working directory: `.claude/hookify.{name}.local.md`
-   - The path should resolve to the project's .claude directory, not the plugin's
+**For global rules:**
+1. Use Write tool to create `~/.claude/hookify.{name}.local.md`
+   - Expand `~` to user's home directory (e.g., `$HOME/.claude/...`)
+   - Works on macOS, Linux, and Windows (with appropriate path)
 
 3. Show user what was created:
    ```
@@ -203,7 +213,11 @@ Use the current working directory (where Claude Code was started) as the base pa
 ## Important Notes
 
 - **No restart needed**: Rules take effect immediately on the next tool use
-- **File location**: Create files in project's `.claude/` directory (current working directory), NOT the plugin's .claude/
+- **Two scopes available**:
+  - Local: `.claude/` (project-specific)
+  - Global: `~/.claude/` (all projects)
+- **Override by name**: Local rules with same `name:` override global rules
+- **Disable globally**: Create local rule with same name and `enabled: false`
 - **Regex syntax**: Use Python regex syntax (raw strings, no need to escape in YAML)
 - **Action types**: Rules can `warn` (default) or `block` operations
 - **Testing**: Test rules immediately after creating them
