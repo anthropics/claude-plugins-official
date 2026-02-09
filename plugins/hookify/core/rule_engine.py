@@ -73,7 +73,8 @@ class RuleEngine:
                 return {
                     "hookSpecificOutput": {
                         "hookEventName": hook_event,
-                        "permissionDecision": "deny"
+                        "permissionDecision": "deny",
+                        "permissionDecisionReason": combined_message
                     },
                     "systemMessage": combined_message
                 }
@@ -86,8 +87,19 @@ class RuleEngine:
         # If only warnings, show them but allow operation
         if warning_rules:
             messages = [f"**[{r.name}]**\n{r.message}" for r in warning_rules]
+            combined_warn = "\n\n".join(messages)
+
+            if hook_event in ['PreToolUse', 'PostToolUse']:
+                return {
+                    "hookSpecificOutput": {
+                        "hookEventName": hook_event,
+                        "permissionDecision": "allow",
+                        "additionalContext": combined_warn
+                    },
+                    "systemMessage": combined_warn
+                }
             return {
-                "systemMessage": "\n\n".join(messages)
+                "systemMessage": combined_warn
             }
 
         # No matches - allow operation
