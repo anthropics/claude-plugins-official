@@ -1,0 +1,7 @@
+{
+  "name": "Lingo.dev",
+  "description": "Guides AI coding agents through a well-structured, multi-step process to confidently implement i18n in any React app, no matter the complexity. Sets up locale routing, language switchers, automatic user locale detection, and complete localization infrastructure.",
+  "author": {
+    "name": "Lingo.dev"
+  }
+}
