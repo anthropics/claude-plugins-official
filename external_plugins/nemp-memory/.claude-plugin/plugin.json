@@ -1,0 +1,14 @@
+{
+  "name": "nemp-memory",
+  "description": "Persistent local memory for AI agents. Auto-detects your tech stack, remembers decisions across sessions, and shares context between agents. 100% local, zero cloud, plain JSON. Tracks which agent wrote what with full audit logs.",
+  "author": {
+    "name": "Sukin Shetty"
+  },
+  "homepage": "https://nemp.dev",
+  "repository": "https://github.com/SukinShetty/Nemp-memory"
+}
+```
+
+Then:
+```
+notepad external_plugins\nemp-memory\.mcp.json

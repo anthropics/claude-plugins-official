@@ -1,0 +1,6 @@
+{
+  "nemp-memory": {
+    "command": "npx",
+    "args": ["-y", "nemp-mcp-server"]
+  }
+}

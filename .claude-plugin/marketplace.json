@@ -649,6 +649,17 @@
         "url": "https://github.com/firecrawl/firecrawl-claude-plugin.git"
       },
       "homepage": "https://github.com/firecrawl/firecrawl-claude-plugin.git"
+    },
+    {
+      "name": "nemp-memory",
+      "description": "Persistent local memory for AI agents. Auto-detects your tech stack, remembers decisions across sessions, and shares context between agents. 100% local, zero cloud, plain JSON.",
+      "category": "development",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/SukinShetty/Nemp-memory.git"
+      },
+      "homepage": "https://github.com/SukinShetty/Nemp-memory"
     }
   ]
 }
+  
