@@ -1,0 +1,8 @@
+{
+  "csharp-ls": {
+    "command": "csharp-ls",
+    "extensionToLanguage": {
+      ".cs": "csharp"
+    }
+  }
+}

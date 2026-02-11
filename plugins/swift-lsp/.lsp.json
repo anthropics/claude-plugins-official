@@ -1,0 +1,8 @@
+{
+  "sourcekit-lsp": {
+    "command": "sourcekit-lsp",
+    "extensionToLanguage": {
+      ".swift": "swift"
+    }
+  }
+}

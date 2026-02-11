@@ -1,0 +1,17 @@
+{
+  "clangd": {
+    "command": "clangd",
+    "args": ["--background-index"],
+    "extensionToLanguage": {
+      ".c": "c",
+      ".h": "c",
+      ".cpp": "cpp",
+      ".cc": "cpp",
+      ".cxx": "cpp",
+      ".hpp": "cpp",
+      ".hxx": "cpp",
+      ".C": "cpp",
+      ".H": "cpp"
+    }
+  }
+}
