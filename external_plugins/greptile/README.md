@@ -45,6 +45,14 @@ Then reload your shell or run `source ~/.zshrc`.
 - `search_custom_context` - Search patterns by content
 - `create_custom_context` - Create a new coding pattern
 
+## Skills
+
+### check-pr
+Checks a PR for unresolved review comments, failing status checks, and incomplete descriptions. Categorizes issues as actionable or informational, optionally fixes them, and resolves review threads. Uses `gh` CLI only.
+
+### greploop
+Iteratively improves a PR until Greptile gives it a 5/5 confidence score with zero unresolved comments. Triggers review, fixes comments, pushes, and repeats (max 5 iterations). Uses `gh` CLI only.
+
 ## Example Usage
 
 Ask Claude Code to:
