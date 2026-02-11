@@ -1,0 +1,1 @@
+{"scrapegraphai":{"type":"http","url":"https://scrapegraph-mcp.onrender.com/mcp","headers":{"X-API-Key":"${SCRAPEGRAPH_API_KEY}"}}}

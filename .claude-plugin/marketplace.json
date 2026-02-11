@@ -649,6 +649,13 @@
         "url": "https://github.com/firecrawl/firecrawl-claude-plugin.git"
       },
       "homepage": "https://github.com/firecrawl/firecrawl-claude-plugin.git"
+    },
+    {
+      "name": "scrapegraphai",
+      "description": "AI-powered web scraping via ScrapeGraphAI. Convert any page to markdown, extract structured data with natural language, search the web, crawl entire sites, and run agentic multi-step workflows. SmartScraper, SearchScraper, SmartCrawler, Markdownify, Sitemap, and Agentic Scraper—no proxies or selectors needed. Get an API key at https://dashboard.scrapegraphai.com",
+      "category": "development",
+      "source": "./external_plugins/scrapegraphai",
+      "homepage": "https://scrapegraphai.com"
     }
   ]
 }
