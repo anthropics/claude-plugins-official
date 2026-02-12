@@ -6,6 +6,7 @@
     "name": "Anthropic",
     "email": "support@anthropic.com"
   },
+  "showInstallCountsForOfficialOnly": true,
   "plugins": [
     {
       "name": "typescript-lsp",
