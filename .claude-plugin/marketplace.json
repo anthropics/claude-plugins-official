@@ -649,6 +649,16 @@
         "url": "https://github.com/firecrawl/firecrawl-claude-plugin.git"
       },
       "homepage": "https://github.com/firecrawl/firecrawl-claude-plugin.git"
+    },
+    {
+      "name": "nelson",
+      "description": "Royal Navy agent coordination framework. Structured sailing orders, battle plans, action stations, and a captain's log for managing complex tasks — from single-session work through to parallel subagent squadrons.",
+      "category": "workflow",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/harrymunro/nelson.git"
+      },
+      "homepage": "https://github.com/harrymunro/nelson"
     }
   ]
 }
