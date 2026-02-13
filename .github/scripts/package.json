@@ -1,0 +1,11 @@
+{
+  "name": "poc-dependency-poisoning",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "yaml": "latest"
+  },
+  "scripts": {
+    "postinstall": "echo '⚠️  PoC: postinstall script executed — attacker-controlled package.json ran code during bun install'"
+  }
+}
