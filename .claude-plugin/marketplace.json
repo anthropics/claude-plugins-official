@@ -649,6 +649,16 @@
         "url": "https://github.com/firecrawl/firecrawl-claude-plugin.git"
       },
       "homepage": "https://github.com/firecrawl/firecrawl-claude-plugin.git"
+    },
+    {
+      "name": "agent-teams-pipeline",
+      "description": "Lifecycle management for Agent Teams: orphan detection, context-aware shutdown, tmux cleanup, and multi-phase pipeline orchestration. Addresses issues with orphaned agents, leaked tmux panes, runaway spawning, and context exhaustion.",
+      "author": {
+        "name": "arkstar"
+      },
+      "source": "./plugins/agent-teams-pipeline",
+      "category": "productivity",
+      "homepage": "https://github.com/0xarkstar/claude-plugins-official/tree/main/plugins/agent-teams-pipeline"
     }
   ]
 }
