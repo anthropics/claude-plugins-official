@@ -9,6 +9,7 @@ You are helping a developer implement a new feature. Follow a systematic approac
 
 ## Core Principles
 
+- **Respect user preferences**: User CLAUDE.md preferences override defaults below. If CLAUDE.md limits agents, follow those limits.
 - **Ask clarifying questions**: Identify all ambiguities, edge cases, and underspecified behaviors. Ask specific, concrete questions rather than making assumptions. Wait for user answers before proceeding with implementation. Ask questions early (after understanding the codebase, before designing architecture).
 - **Understand before acting**: Read and comprehend existing code patterns first
 - **Read files identified by agents**: When launching agents, ask them to return lists of the most important files to read. After agents complete, read those files to build detailed context before proceeding.
@@ -38,7 +39,7 @@ Initial request: $ARGUMENTS
 **Goal**: Understand relevant existing code and patterns at both high and low levels
 
 **Actions**:
-1. Launch 2-3 code-explorer agents in parallel. Each agent should:
+1. Launch code-explorer agents (1-3 depending on complexity). Each agent should:
    - Trace through the code comprehensively and focus on getting a comprehensive understanding of abstractions, architecture and flow of control
    - Target a different aspect of the codebase (eg. similar features, high level understanding, architectural understanding, user experience, etc)
    - Include a list of 5-10 key files to read
@@ -75,7 +76,7 @@ If the user says "whatever you think is best", provide your recommendation and g
 **Goal**: Design multiple implementation approaches with different trade-offs
 
 **Actions**:
-1. Launch 2-3 code-architect agents in parallel with different focuses: minimal changes (smallest change, maximum reuse), clean architecture (maintainability, elegant abstractions), or pragmatic balance (speed + quality)
+1. Launch code-architect agents (1-3 depending on complexity) with different focuses: minimal changes, clean architecture, or pragmatic balance
 2. Review all approaches and form your opinion on which fits best for this specific task (consider: small fix vs large feature, urgency, complexity, team context)
 3. Present to user: brief summary of each approach, trade-offs comparison, **your recommendation with reasoning**, concrete implementation differences
 4. **Ask user which approach they prefer**
@@ -103,7 +104,7 @@ If the user says "whatever you think is best", provide your recommendation and g
 **Goal**: Ensure code is simple, DRY, elegant, easy to read, and functionally correct
 
 **Actions**:
-1. Launch 3 code-reviewer agents in parallel with different focuses: simplicity/DRY/elegance, bugs/functional correctness, project conventions/abstractions
+1. Launch code-reviewer agents (1-3 depending on scope) with different focuses: simplicity/DRY, bugs/correctness, or conventions/abstractions
 2. Consolidate findings and identify highest severity issues that you recommend fixing
 3. **Present findings to user and ask what they want to do** (fix now, fix later, or proceed as-is)
 4. Address issues based on user decision
