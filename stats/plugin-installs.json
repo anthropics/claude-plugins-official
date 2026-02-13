@@ -1,229 +1,237 @@
 {
-  "generated_at": "2026-02-06T06:02:00.137740+00:00",
+  "generated_at": "2026-02-13T06:00:17.887800+00:00",
   "description": "Claude Code plugin installation statistics (all-time)",
   "metrics": {
-    "total_plugins": 106
+    "total_plugins": 120
   },
   "plugins": [
     {
       "plugin": "frontend-design@claude-plugins-official",
-      "unique_installs": 160242
+      "unique_installs": 183759
     },
     {
       "plugin": "context7@claude-plugins-official",
-      "unique_installs": 104103
+      "unique_installs": 115503
     },
     {
       "plugin": "code-review@claude-plugins-official",
-      "unique_installs": 79880
+      "unique_installs": 91933
     },
     {
       "plugin": "github@claude-plugins-official",
-      "unique_installs": 74053
+      "unique_installs": 83345
     },
     {
       "plugin": "feature-dev@claude-plugins-official",
-      "unique_installs": 71580
+      "unique_installs": 80588
     },
     {
       "plugin": "code-simplifier@claude-plugins-official",
-      "unique_installs": 62086
-    },
-    {
-      "plugin": "ralph-loop@claude-plugins-official",
-      "unique_installs": 59171
-    },
-    {
-      "plugin": "typescript-lsp@claude-plugins-official",
-      "unique_installs": 54798
+      "unique_installs": 73439
     },
     {
       "plugin": "superpowers@claude-plugins-official",
-      "unique_installs": 52555
+      "unique_installs": 72147
+    },
+    {
+      "plugin": "ralph-loop@claude-plugins-official",
+      "unique_installs": 67562
+    },
+    {
+      "plugin": "typescript-lsp@claude-plugins-official",
+      "unique_installs": 61765
     },
     {
       "plugin": "playwright@claude-plugins-official",
-      "unique_installs": 51714
+      "unique_installs": 60378
     },
     {
       "plugin": "commit-commands@claude-plugins-official",
-      "unique_installs": 47422
+      "unique_installs": 52976
     },
     {
       "plugin": "serena@claude-plugins-official",
-      "unique_installs": 44629
+      "unique_installs": 47364
     },
     {
       "plugin": "security-guidance@claude-plugins-official",
-      "unique_installs": 41939
+      "unique_installs": 47274
     },
     {
       "plugin": "pr-review-toolkit@claude-plugins-official",
-      "unique_installs": 31893
-    },
-    {
-      "plugin": "supabase@claude-plugins-official",
-      "unique_installs": 28923
+      "unique_installs": 35736
     },
     {
       "plugin": "pyright-lsp@claude-plugins-official",
-      "unique_installs": 28691
+      "unique_installs": 32249
     },
     {
       "plugin": "figma@claude-plugins-official",
-      "unique_installs": 28155
+      "unique_installs": 31936
     },
     {
-      "plugin": "ralph-wiggum@claude-plugins-official",
-      "unique_installs": 27079
-    },
-    {
-      "plugin": "agent-sdk-dev@claude-plugins-official",
-      "unique_installs": 25377
-    },
-    {
-      "plugin": "atlassian@claude-plugins-official",
-      "unique_installs": 24303
-    },
-    {
-      "plugin": "plugin-dev@claude-plugins-official",
-      "unique_installs": 19225
-    },
-    {
-      "plugin": "explanatory-output-style@claude-plugins-official",
-      "unique_installs": 19195
+      "plugin": "supabase@claude-plugins-official",
+      "unique_installs": 31746
     },
     {
       "plugin": "claude-md-management@claude-plugins-official",
-      "unique_installs": 19006
+      "unique_installs": 28868
+    },
+    {
+      "plugin": "agent-sdk-dev@claude-plugins-official",
+      "unique_installs": 27597
+    },
+    {
+      "plugin": "ralph-wiggum@claude-plugins-official",
+      "unique_installs": 27127
+    },
+    {
+      "plugin": "atlassian@claude-plugins-official",
+      "unique_installs": 26859
+    },
+    {
+      "plugin": "plugin-dev@claude-plugins-official",
+      "unique_installs": 21681
+    },
+    {
+      "plugin": "explanatory-output-style@claude-plugins-official",
+      "unique_installs": 21571
     },
     {
       "plugin": "greptile@claude-plugins-official",
-      "unique_installs": 17546
-    },
-    {
-      "plugin": "Notion@claude-plugins-official",
-      "unique_installs": 16743
-    },
-    {
-      "plugin": "hookify@claude-plugins-official",
-      "unique_installs": 16682
-    },
-    {
-      "plugin": "linear@claude-plugins-official",
-      "unique_installs": 14188
-    },
-    {
-      "plugin": "vercel@claude-plugins-official",
-      "unique_installs": 13484
+      "unique_installs": 20163
     },
     {
       "plugin": "claude-code-setup@claude-plugins-official",
-      "unique_installs": 13370
+      "unique_installs": 19541
+    },
+    {
+      "plugin": "Notion@claude-plugins-official",
+      "unique_installs": 18738
+    },
+    {
+      "plugin": "hookify@claude-plugins-official",
+      "unique_installs": 18502
+    },
+    {
+      "plugin": "linear@claude-plugins-official",
+      "unique_installs": 15749
+    },
+    {
+      "plugin": "vercel@claude-plugins-official",
+      "unique_installs": 15454
     },
     {
       "plugin": "learning-output-style@claude-plugins-official",
-      "unique_installs": 12801
-    },
-    {
-      "plugin": "sentry@claude-plugins-official",
-      "unique_installs": 11259
+      "unique_installs": 14537
     },
     {
       "plugin": "slack@claude-plugins-official",
-      "unique_installs": 11138
+      "unique_installs": 12797
+    },
+    {
+      "plugin": "sentry@claude-plugins-official",
+      "unique_installs": 12586
     },
     {
       "plugin": "gopls-lsp@claude-plugins-official",
-      "unique_installs": 10813
+      "unique_installs": 12195
     },
     {
       "plugin": "csharp-lsp@claude-plugins-official",
-      "unique_installs": 10227
+      "unique_installs": 11692
     },
     {
       "plugin": "gitlab@claude-plugins-official",
-      "unique_installs": 9447
+      "unique_installs": 10720
     },
     {
       "plugin": "rust-analyzer-lsp@claude-plugins-official",
-      "unique_installs": 9324
+      "unique_installs": 10634
     },
     {
       "plugin": "stripe@claude-plugins-official",
-      "unique_installs": 9146
+      "unique_installs": 10475
     },
     {
       "plugin": "laravel-boost@claude-plugins-official",
-      "unique_installs": 8886
+      "unique_installs": 9552
     },
     {
       "plugin": "php-lsp@claude-plugins-official",
-      "unique_installs": 8095
+      "unique_installs": 9213
     },
     {
       "plugin": "jdtls-lsp@claude-plugins-official",
-      "unique_installs": 8054
-    },
-    {
-      "plugin": "clangd-lsp@claude-plugins-official",
-      "unique_installs": 7061
-    },
-    {
-      "plugin": "swift-lsp@claude-plugins-official",
-      "unique_installs": 6822
-    },
-    {
-      "plugin": "firebase@claude-plugins-official",
-      "unique_installs": 6766
-    },
-    {
-      "plugin": "huggingface-skills@claude-plugins-official",
-      "unique_installs": 6189
+      "unique_installs": 9152
     },
     {
       "plugin": "playground@claude-plugins-official",
-      "unique_installs": 5469
+      "unique_installs": 8414
+    },
+    {
+      "plugin": "clangd-lsp@claude-plugins-official",
+      "unique_installs": 8112
+    },
+    {
+      "plugin": "swift-lsp@claude-plugins-official",
+      "unique_installs": 7732
+    },
+    {
+      "plugin": "firebase@claude-plugins-official",
+      "unique_installs": 7707
+    },
+    {
+      "plugin": "huggingface-skills@claude-plugins-official",
+      "unique_installs": 7615
     },
     {
       "plugin": "kotlin-lsp@claude-plugins-official",
-      "unique_installs": 4319
+      "unique_installs": 5312
     },
     {
       "plugin": "lua-lsp@claude-plugins-official",
-      "unique_installs": 4241
+      "unique_installs": 4824
+    },
+    {
+      "plugin": "coderabbit@claude-plugins-official",
+      "unique_installs": 4356
     },
     {
       "plugin": "asana@claude-plugins-official",
-      "unique_installs": 2769
+      "unique_installs": 3331
+    },
+    {
+      "plugin": "circleback@claude-plugins-official",
+      "unique_installs": 3253
+    },
+    {
+      "plugin": "pinecone@claude-plugins-official",
+      "unique_installs": 2999
     },
     {
       "plugin": "claude-opus-4-5-migration@claude-plugins-official",
       "unique_installs": 2714
     },
     {
-      "plugin": "circleback@claude-plugins-official",
-      "unique_installs": 2672
-    },
-    {
-      "plugin": "pinecone@claude-plugins-official",
-      "unique_installs": 2503
-    },
-    {
-      "plugin": "coderabbit@claude-plugins-official",
-      "unique_installs": 2485
-    },
-    {
       "plugin": "posthog@claude-plugins-official",
-      "unique_installs": 1343
+      "unique_installs": 2258
+    },
+    {
+      "plugin": "firecrawl@claude-plugins-official",
+      "unique_installs": 1486
+    },
+    {
+      "plugin": "sonatype-guide@claude-plugins-official",
+      "unique_installs": 931
     },
     {
       "plugin": "figma-mcp@claude-plugins-official",
-      "unique_installs": 98
+      "unique_installs": 99
     },
     {
       "plugin": "artifact@claude-plugins-official",
-      "unique_installs": 72
+      "unique_installs": 75
     },
     {
       "plugin": "example-plugin@claude-plugins-official",
@@ -238,15 +246,7 @@
       "unique_installs": 2
     },
     {
-      "plugin": "firecrawl@claude-plugins-official",
-      "unique_installs": 2
-    },
-    {
-      "plugin": "typescript-native-lsp@claude-plugins-official",
-      "unique_installs": 1
-    },
-    {
-      "plugin": "datadog@claude-plugins-official",
+      "plugin": "codex-skills@claude-plugins-official",
       "unique_installs": 1
     },
     {
@@ -254,11 +254,27 @@
       "unique_installs": 1
     },
     {
+      "plugin": "datadog@claude-plugins-official",
+      "unique_installs": 1
+    },
+    {
+      "plugin": "omnisharp-lsp@claude-plugins-official",
+      "unique_installs": 1
+    },
+    {
+      "plugin": "perlnavigator-lsp@claude-plugins-official",
+      "unique_installs": 1
+    },
+    {
       "plugin": "bun-typescript@claude-plugins-official",
       "unique_installs": 1
     },
     {
-      "plugin": "vectorhub-memory@claude-plugins-official",
+      "plugin": "typescript-native-lsp@claude-plugins-official",
+      "unique_installs": 1
+    },
+    {
+      "plugin": "docs-search-tool@claude-plugins-official",
       "unique_installs": 1
     },
     {
@@ -274,23 +290,83 @@
       "unique_installs": 1
     },
     {
-      "plugin": "document-skills@claude-plugins-official",
+      "plugin": "vectorhub-memory@claude-plugins-official",
       "unique_installs": 1
     },
     {
-      "plugin": "forge-security@claude-plugins-official",
+      "plugin": "project-collaboration-system@claude-plugins-official",
       "unique_installs": 1
     },
     {
-      "plugin": "ocpm@claude-plugins-official",
+      "plugin": "openspec@claude-plugins-official",
       "unique_installs": 1
     },
     {
-      "plugin": "pyrefly-lsp@claude-plugins-official",
+      "plugin": "claude-memory@claude-plugins-official",
       "unique_installs": 1
     },
     {
-      "plugin": "test-automation-generator@claude-plugins-official",
+      "plugin": "hardworking@claude-plugins-official",
+      "unique_installs": 1
+    },
+    {
+      "plugin": "terraform-ls@claude-plugins-official",
+      "unique_installs": 1
+    },
+    {
+      "plugin": "design-principles@claude-plugins-official",
+      "unique_installs": 1
+    },
+    {
+      "plugin": "creative-music-output-style@claude-plugins-official",
+      "unique_installs": 1
+    },
+    {
+      "plugin": "freshservice@claude-plugins-official",
+      "unique_installs": 1
+    },
+    {
+      "plugin": "n8n-skills@claude-plugins-official",
+      "unique_installs": 1
+    },
+    {
+      "plugin": "context@claude-plugins-official",
+      "unique_installs": 1
+    },
+    {
+      "plugin": "dj-content-creator@claude-plugins-official",
+      "unique_installs": 1
+    },
+    {
+      "plugin": "csharp-roslyn-lsp@claude-plugins-official",
+      "unique_installs": 1
+    },
+    {
+      "plugin": "memory-agent@claude-plugins-official",
+      "unique_installs": 1
+    },
+    {
+      "plugin": "my-time-plugin@claude-plugins-official",
+      "unique_installs": 1
+    },
+    {
+      "plugin": "miro@claude-plugins-official",
+      "unique_installs": 1
+    },
+    {
+      "plugin": "prototyper@claude-plugins-official",
+      "unique_installs": 1
+    },
+    {
+      "plugin": "lean-lsp@claude-plugins-official",
+      "unique_installs": 1
+    },
+    {
+      "plugin": "agent-browser@claude-plugins-official",
+      "unique_installs": 1
+    },
+    {
+      "plugin": "gdscript-lsp@claude-plugins-official",
       "unique_installs": 1
     },
     {
@@ -310,19 +386,31 @@
       "unique_installs": 1
     },
     {
-      "plugin": "creative-music-output-style@claude-plugins-official",
+      "plugin": "document-skills@claude-plugins-official",
       "unique_installs": 1
     },
     {
-      "plugin": "design-principles@claude-plugins-official",
+      "plugin": "forge-security@claude-plugins-official",
       "unique_installs": 1
     },
     {
-      "plugin": "n8n-skills@claude-plugins-official",
+      "plugin": "ocpm@claude-plugins-official",
       "unique_installs": 1
     },
     {
-      "plugin": "dokploy@claude-plugins-official",
+      "plugin": "pyrefly-lsp@claude-plugins-official",
+      "unique_installs": 1
+    },
+    {
+      "plugin": "hosts-db@claude-plugins-official",
+      "unique_installs": 1
+    },
+    {
+      "plugin": "test-automation-generator@claude-plugins-official",
+      "unique_installs": 1
+    },
+    {
+      "plugin": "frontend-lab@claude-plugins-official",
       "unique_installs": 1
     },
     {
@@ -330,15 +418,7 @@
       "unique_installs": 1
     },
     {
-      "plugin": "any-chat-completions@claude-plugins-official",
-      "unique_installs": 1
-    },
-    {
-      "plugin": "autonomous-loop@claude-plugins-official",
-      "unique_installs": 1
-    },
-    {
-      "plugin": "backend-specialist@claude-plugins-official",
+      "plugin": "dokploy@claude-plugins-official",
       "unique_installs": 1
     },
     {
@@ -350,11 +430,19 @@
       "unique_installs": 1
     },
     {
-      "plugin": "grid-design@claude-plugins-official",
+      "plugin": "any-chat-completions@claude-plugins-official",
       "unique_installs": 1
     },
     {
-      "plugin": "frontend-lab@claude-plugins-official",
+      "plugin": "backend-specialist@claude-plugins-official",
+      "unique_installs": 1
+    },
+    {
+      "plugin": "autonomous-loop@claude-plugins-official",
+      "unique_installs": 1
+    },
+    {
+      "plugin": "grid-design@claude-plugins-official",
       "unique_installs": 1
     },
     {
@@ -362,43 +450,31 @@
       "unique_installs": 1
     },
     {
-      "plugin": "context@claude-plugins-official",
+      "plugin": "airtable@claude-plugins-official",
       "unique_installs": 1
     },
     {
-      "plugin": "lean-lsp@claude-plugins-official",
+      "plugin": "claude-rules-generator@claude-plugins-official",
       "unique_installs": 1
     },
     {
-      "plugin": "my-time-plugin@claude-plugins-official",
+      "plugin": "beast-plan@claude-plugins-official",
       "unique_installs": 1
     },
     {
-      "plugin": "gdscript-lsp@claude-plugins-official",
+      "plugin": "aws-diagram@claude-plugins-official",
       "unique_installs": 1
     },
     {
-      "plugin": "miro@claude-plugins-official",
+      "plugin": "rs-commands@claude-plugins-official",
       "unique_installs": 1
     },
     {
-      "plugin": "memory-agent@claude-plugins-official",
+      "plugin": "vertical-builder@claude-plugins-official",
       "unique_installs": 1
     },
     {
-      "plugin": "openspec@claude-plugins-official",
-      "unique_installs": 1
-    },
-    {
-      "plugin": "hardworking@claude-plugins-official",
-      "unique_installs": 1
-    },
-    {
-      "plugin": "project-collaboration-system@claude-plugins-official",
-      "unique_installs": 1
-    },
-    {
-      "plugin": "terraform-ls@claude-plugins-official",
+      "plugin": "silince-gutnebrg-builder@claude-plugins-official",
       "unique_installs": 1
     },
     {
@@ -407,26 +483,6 @@
     },
     {
       "plugin": "plan-guardian@claude-plugins-official",
-      "unique_installs": 1
-    },
-    {
-      "plugin": "silince-gutnebrg-builder@claude-plugins-official",
-      "unique_installs": 1
-    },
-    {
-      "plugin": "airtable@claude-plugins-official",
-      "unique_installs": 1
-    },
-    {
-      "plugin": "aws-diagram@claude-plugins-official",
-      "unique_installs": 1
-    },
-    {
-      "plugin": "claude-rules-generator@claude-plugins-official",
-      "unique_installs": 1
-    },
-    {
-      "plugin": "rs-commands@claude-plugins-official",
       "unique_installs": 1
     }
   ]
