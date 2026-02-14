@@ -441,7 +441,7 @@ description: Review code changes
 allowed-tools: Read, Bash(git:*)
 ---
 
-Files changed: !`git diff --name-only`
+Files changed: ! `git diff --name-only`
 
 Review each file for:
 1. Code quality and style
@@ -461,7 +461,7 @@ argument-hint: [test-file]
 allowed-tools: Bash(npm:*)
 ---
 
-Run tests: !`npm test $1`
+Run tests: ! `npm test $1`
 
 Analyze results and suggest fixes for failures.
 ```
@@ -493,7 +493,7 @@ allowed-tools: Bash(gh:*), Read
 
 PR #$1 Workflow:
 
-1. Fetch PR: !`gh pr view $1`
+1. Fetch PR: ! `gh pr view $1`
 2. Review changes
 3. Run checks
 4. Approve or request changes
@@ -544,7 +544,7 @@ description: Analyze using plugin script
 allowed-tools: Bash(node:*)
 ---
 
-Run analysis: !`node ${CLAUDE_PLUGIN_ROOT}/scripts/analyze.js $1`
+Run analysis: ! `node ${CLAUDE_PLUGIN_ROOT}/scripts/analyze.js $1`
 
 Review results and report findings.
 ```
@@ -553,7 +553,7 @@ Review results and report findings.
 
 ```markdown
 # Execute plugin script
-!`bash ${CLAUDE_PLUGIN_ROOT}/scripts/script.sh`
+! `bash ${CLAUDE_PLUGIN_ROOT}/scripts/script.sh`
 
 # Load plugin configuration
 @${CLAUDE_PLUGIN_ROOT}/config/settings.json
@@ -635,9 +635,9 @@ description: Complete build workflow
 allowed-tools: Bash(*)
 ---
 
-Build: !`bash ${CLAUDE_PLUGIN_ROOT}/scripts/build.sh`
-Test: !`bash ${CLAUDE_PLUGIN_ROOT}/scripts/test.sh`
-Package: !`bash ${CLAUDE_PLUGIN_ROOT}/scripts/package.sh`
+Build: ! `bash ${CLAUDE_PLUGIN_ROOT}/scripts/build.sh`
+Test: ! `bash ${CLAUDE_PLUGIN_ROOT}/scripts/test.sh`
+Package: ! `bash ${CLAUDE_PLUGIN_ROOT}/scripts/package.sh`
 
 Review outputs and report workflow status.
 ```
@@ -728,7 +728,7 @@ allowed-tools: Bash(node:*), Read
 Target: @$1
 
 Phase 1 - Static Analysis:
-!`node ${CLAUDE_PLUGIN_ROOT}/scripts/lint.js $1`
+! `node ${CLAUDE_PLUGIN_ROOT}/scripts/lint.js $1`
 
 Phase 2 - Deep Review:
 Launch code-reviewer agent for detailed analysis.
@@ -760,7 +760,7 @@ description: Deploy with validation
 argument-hint: [environment]
 ---
 
-Validate environment: !`echo "$1" | grep -E "^(dev|staging|prod)$" || echo "INVALID"`
+Validate environment: ! `echo "$1" | grep -E "^(dev|staging|prod)$" || echo "INVALID"`
 
 If $1 is valid environment:
   Deploy to $1
@@ -777,7 +777,7 @@ description: Process configuration
 argument-hint: [config-file]
 ---
 
-Check file exists: !`test -f $1 && echo "EXISTS" || echo "MISSING"`
+Check file exists: ! `test -f $1 && echo "EXISTS" || echo "MISSING"`
 
 If file exists:
   Process configuration: @$1
@@ -796,8 +796,8 @@ allowed-tools: Bash(test:*)
 ---
 
 Validate plugin setup:
-- Script: !`test -x ${CLAUDE_PLUGIN_ROOT}/bin/analyze && echo "✓" || echo "✗"`
-- Config: !`test -f ${CLAUDE_PLUGIN_ROOT}/config.json && echo "✓" || echo "✗"`
+- Script: ! `test -x ${CLAUDE_PLUGIN_ROOT}/bin/analyze && echo "✓" || echo "✗"`
+- Config: ! `test -f ${CLAUDE_PLUGIN_ROOT}/config.json && echo "✓" || echo "✗"`
 
 If all checks pass, run analysis.
 Otherwise, report missing components.
@@ -811,7 +811,7 @@ description: Build with error handling
 allowed-tools: Bash(*)
 ---
 
-Execute build: !`bash ${CLAUDE_PLUGIN_ROOT}/scripts/build.sh 2>&1 || echo "BUILD_FAILED"`
+Execute build: ! `bash ${CLAUDE_PLUGIN_ROOT}/scripts/build.sh 2>&1 || echo "BUILD_FAILED"`
 
 If build succeeded:
   Report success and output location
