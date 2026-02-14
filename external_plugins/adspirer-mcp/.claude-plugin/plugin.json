@@ -1,0 +1,12 @@
+{
+  "name": "adspirer-mcp",
+  "description": "Cross-platform ad management plugin. Create, analyze, and optimize campaigns across Google Ads, Meta Ads, TikTok Ads, and LinkedIn Ads via natural language.",
+  "version": "1.1.0",
+  "author": {
+    "name": "Adspirer",
+    "url": "https://www.adspirer.com"
+  },
+  "homepage": "https://www.adspirer.com",
+  "repository": "https://github.com/amekala/ads-mcp",
+  "keywords": ["advertising", "google-ads", "meta-ads", "linkedin-ads", "tiktok-ads", "campaigns", "ppc", "marketing"]
+}
