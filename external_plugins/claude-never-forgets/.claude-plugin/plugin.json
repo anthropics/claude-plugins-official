@@ -1,0 +1,12 @@
+{
+  "name": "claude-never-forgets",
+  "version": "1.0.0",
+  "description": "Persistent memory across sessions. Learns preferences, conventions, and corrections automatically.",
+  "author": {
+    "name": "yldrmahmet",
+    "url": "https://github.com/yldrmahmet"
+  },
+  "repository": "https://github.com/yldrmahmet/claude-never-forgets",
+  "license": "MIT",
+  "keywords": ["memory", "persistence", "learning", "context"]
+}
