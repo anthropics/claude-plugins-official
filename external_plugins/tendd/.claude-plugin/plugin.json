@@ -1,0 +1,8 @@
+{
+  "name": "tendd",
+  "version": "1.0.0",
+  "description": "Tenacity-Driven Development — structured agent pipelines with iterative review loops that never settle for good enough.",
+  "author": {
+    "name": "Insoo Chung"
+  }
+}
