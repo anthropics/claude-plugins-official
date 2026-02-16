@@ -649,6 +649,17 @@
         "url": "https://github.com/firecrawl/firecrawl-claude-plugin.git"
       },
       "homepage": "https://github.com/firecrawl/firecrawl-claude-plugin.git"
+    },
+    {
+      "name": "claudex",
+      "description": "Give Claude Code a Codex-powered teammate. Two different AI architectures (Claude + OpenAI Codex) collaborate on the same codebase — parallel planning, red-teaming, debugging, code review, and verification. Codex runs in a read-only sandbox and produces independent analysis that Claude synthesizes with its own. Includes slash commands for parallel planning, brainstorming, and targeted collaboration.",
+      "category": "development",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/OmriT123/Claudex.git"
+      },
+      "homepage": "https://github.com/OmriT123/Claudex",
+      "tags": ["community-managed"]
     }
   ]
 }
