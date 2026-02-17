@@ -1,0 +1,8 @@
+{
+  "name": "ghost-mode",
+  "description": "Write code indistinguishable from human developers. Eliminates AI markers, uses authentic patterns, and produces production-ready code that passes human review.",
+  "author": {
+    "name": "LuminaryxApp"
+  },
+  "source": "https://github.com/LuminaryxApp/GhostMode.git"
+}
