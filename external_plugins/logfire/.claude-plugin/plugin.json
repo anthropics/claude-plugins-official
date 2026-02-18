@@ -1,0 +1,10 @@
+{
+  "name": "logfire",
+  "description": "Pydantic Logfire observability platform integration. Query traces, monitor application performance, analyze logs, and debug issues directly from Claude Code.",
+  "author": {
+    "name": "Pydantic",
+    "url": "https://pydantic.dev/logfire"
+  },
+  "homepage": "https://pydantic.dev/logfire",
+  "keywords": ["pydantic", "logfire", "observability", "tracing", "logging"]
+}
