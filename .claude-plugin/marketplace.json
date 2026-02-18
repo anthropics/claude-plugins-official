@@ -649,6 +649,16 @@
         "url": "https://github.com/firecrawl/firecrawl-claude-plugin.git"
       },
       "homepage": "https://github.com/firecrawl/firecrawl-claude-plugin.git"
+    },
+    {
+      "name": "cosmosdb",
+      "description": "Azure Cosmos DB best practices for AI coding agents. Comprehensive rules across categories covering data modeling, partition key design, query optimization, SDK usage, indexing strategies, throughput & scaling, global distribution, monitoring, and design patterns — prioritized by impact to guide code generation and review.",
+      "category": "database",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/AzureCosmosDB/cosmosdb-agent-kit.git"
+      },
+      "homepage": "https://github.com/AzureCosmosDB/cosmosdb-agent-kit"
     }
   ]
 }
