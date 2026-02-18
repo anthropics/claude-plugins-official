@@ -649,6 +649,16 @@
         "url": "https://github.com/firecrawl/firecrawl-claude-plugin.git"
       },
       "homepage": "https://github.com/firecrawl/firecrawl-claude-plugin.git"
+    },
+    {
+      "name": "ai-devkit",
+      "description": "Structured AI-assisted development with phase workflows, persistent memory, and reusable skills",
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/codeaholicguy/ai-devkit.git"
+      },
+      "homepage": "https://ai-devkit.com"
     }
   ]
 }
