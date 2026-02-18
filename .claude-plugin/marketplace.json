@@ -660,6 +660,17 @@
         "url": "https://github.com/firecrawl/firecrawl-claude-plugin.git"
       },
       "homepage": "https://github.com/firecrawl/firecrawl-claude-plugin.git"
+    },
+    {
+      "name": "qodo-skills",
+      "description": "Qodo Skills provides a curated library of reusable AI agent capabilities that extend Claude's functionality for software development workflows. Each skill is designed to integrate seamlessly into your development process, enabling tasks like code quality checks, automated testing, security scanning, and compliance validation. Skills operate across your entire SDLC—from IDE to CI/CD—ensuring consistent standards and catching issues early.",
+      "category": "development",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/qodo-ai/qodo-skills/tree/main.git",
+        "sha": "623eb4ed4364d8111f9a9132a791d7497d814b6a"
+      },
+      "homepage": "https://github.com/qodo-ai/qodo-skills/tree/main.git"
     }
   ]
 }
