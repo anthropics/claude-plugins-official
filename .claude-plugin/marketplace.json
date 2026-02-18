@@ -660,6 +660,18 @@
         "url": "https://github.com/firecrawl/firecrawl-claude-plugin.git"
       },
       "homepage": "https://github.com/firecrawl/firecrawl-claude-plugin.git"
+    },
+    {
+      "name": "semgrep",
+      "description": "Semgrep catches security vulnerabilities in real-time and guides Claude to write secure code from the start.",
+      "category": "security",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/semgrep/mcp-marketplace.git",
+        "ref": "main",
+        "sha": "9fa3dd7166a15a4fa04aea00116176a03867328d"
+      },
+      "homepage": "https://github.com/semgrep/mcp-marketplace.git"
     }
   ]
 }
