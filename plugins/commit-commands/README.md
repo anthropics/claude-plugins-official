@@ -58,6 +58,8 @@ Complete workflow command that commits, pushes, and creates a pull request in on
 **Usage:**
 ```bash
 /commit-push-pr
+# or with an explicit plan/prompt file:
+/commit-push-pr path/to/PLAN.md
 ```
 
 **Example workflow:**
@@ -80,6 +82,11 @@ Complete workflow command that commits, pushes, and creates a pull request in on
   - Summary of changes (1-3 bullet points)
   - Test plan checklist
   - Claude Code attribution
+- **Includes plan/prompt context in the PR body** — automatically looks for a plan file in these locations (in order):
+  1. The path passed as an argument (e.g. `/commit-push-pr PLAN.md`)
+  2. `PLAN.md` in the current directory
+  3. `.plan.md` in the current directory
+  4. The most recently modified file in `~/.claude/plans/`
 - Handles branch creation automatically
 - Uses GitHub CLI (`gh`) for PR creation
 
