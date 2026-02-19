@@ -36,6 +36,7 @@ This creates a **self-referential feedback loop** where:
 
 ```bash
 /ralph-loop "Build a REST API for todos. Requirements: CRUD operations, input validation, tests. Output <promise>COMPLETE</promise> when done." --completion-promise "COMPLETE" --max-iterations 50
+/ralph-loop --prompt-file prompts/todo-api.md --completion-promise "COMPLETE" --max-iterations 50
 ```
 
 Claude will:
@@ -54,9 +55,11 @@ Start a Ralph loop in your current session.
 **Usage:**
 ```bash
 /ralph-loop "<prompt>" --max-iterations <n> --completion-promise "<text>"
+/ralph-loop --prompt-file <path> --max-iterations <n> --completion-promise "<text>"
 ```
 
 **Options:**
+- `--prompt-file <path>` - Read initial prompt from a file
 - `--max-iterations <n>` - Stop after N iterations (default: unlimited)
 - `--completion-promise <text>` - Phrase that signals completion
 
