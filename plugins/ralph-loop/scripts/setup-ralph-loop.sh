@@ -7,6 +7,7 @@ set -euo pipefail
 
 # Parse arguments
 PROMPT_PARTS=()
+PROMPT_FILE=""
 MAX_ITERATIONS=0
 COMPLETION_PROMISE="null"
 
@@ -19,11 +20,13 @@ Ralph Loop - Interactive self-referential development loop
 
 USAGE:
   /ralph-loop [PROMPT...] [OPTIONS]
+  /ralph-loop --prompt-file <path> [OPTIONS]
 
 ARGUMENTS:
   PROMPT...    Initial prompt to start the loop (can be multiple words without quotes)
 
 OPTIONS:
+  --prompt-file <path>           Read initial prompt from file
   --max-iterations <n>           Maximum iterations before auto-stop (default: unlimited)
   --completion-promise '<text>'  Promise phrase (USE QUOTES for multi-word)
   -h, --help                     Show this help message
@@ -41,6 +44,7 @@ DESCRIPTION:
 
 EXAMPLES:
   /ralph-loop Build a todo API --completion-promise 'DONE' --max-iterations 20
+  /ralph-loop --prompt-file prompts/todo.md --max-iterations 20
   /ralph-loop --max-iterations 10 Fix the auth bug
   /ralph-loop Refactor cache layer  (runs forever)
   /ralph-loop --completion-promise 'TASK COMPLETE' Create a REST API
@@ -84,6 +88,18 @@ HELP_EOF
       MAX_ITERATIONS="$2"
       shift 2
       ;;
+    --prompt-file)
+      if [[ -z "${2:-}" ]]; then
+        echo "❌ Error: --prompt-file requires a path argument" >&2
+        echo "" >&2
+        echo "   Valid examples:" >&2
+        echo "     --prompt-file prompts/task.md" >&2
+        echo "     --prompt-file /absolute/path/to/prompt.md" >&2
+        exit 1
+      fi
+      PROMPT_FILE="$2"
+      shift 2
+      ;;
     --completion-promise)
       if [[ -z "${2:-}" ]]; then
         echo "❌ Error: --completion-promise requires a text argument" >&2
@@ -109,8 +125,31 @@ HELP_EOF
   esac
 done
 
-# Join all prompt parts with spaces
-PROMPT="${PROMPT_PARTS[*]}"
+# Build prompt from either prompt parts or prompt file.
+# Explicitly disallow mixing to avoid silent ambiguity.
+if [[ -n "$PROMPT_FILE" ]] && [[ ${#PROMPT_PARTS[@]} -gt 0 ]]; then
+  echo "❌ Error: Cannot use both --prompt-file and inline PROMPT arguments" >&2
+  echo "" >&2
+  echo "   Choose one approach:" >&2
+  echo "     /ralph-loop --prompt-file prompts/task.md --max-iterations 20" >&2
+  echo "     /ralph-loop Build a todo API --max-iterations 20" >&2
+  exit 1
+fi
+
+if [[ -n "$PROMPT_FILE" ]]; then
+  if [[ ! -f "$PROMPT_FILE" ]]; then
+    echo "❌ Error: Prompt file not found: $PROMPT_FILE" >&2
+    exit 1
+  fi
+  if [[ ! -r "$PROMPT_FILE" ]]; then
+    echo "❌ Error: Prompt file is not readable: $PROMPT_FILE" >&2
+    exit 1
+  fi
+  PROMPT="$(cat "$PROMPT_FILE")"
+else
+  # Join all prompt parts with spaces
+  PROMPT="${PROMPT_PARTS[*]:-}"
+fi
 
 # Validate prompt is non-empty
 if [[ -z "$PROMPT" ]]; then
@@ -120,6 +159,7 @@ if [[ -z "$PROMPT" ]]; then
   echo "" >&2
   echo "   Examples:" >&2
   echo "     /ralph-loop Build a REST API for todos" >&2
+  echo "     /ralph-loop --prompt-file prompts/task.md --max-iterations 20" >&2
   echo "     /ralph-loop Fix the auth bug --max-iterations 20" >&2
   echo "     /ralph-loop --completion-promise 'DONE' Refactor code" >&2
   echo "" >&2
