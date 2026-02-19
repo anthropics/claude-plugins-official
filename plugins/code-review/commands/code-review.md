@@ -1,5 +1,5 @@
 ---
-allowed-tools: Bash(gh issue view:*), Bash(gh search:*), Bash(gh issue list:*), Bash(gh pr comment:*), Bash(gh pr diff:*), Bash(gh pr view:*), Bash(gh pr list:*)
+allowed-tools: Bash(gh issue view:*), Bash(gh search:*), Bash(gh issue list:*), Bash(gh pr comment:*), Bash(gh pr diff:*), Bash(gh pr view:*), Bash(gh pr list:*), Bash(gh api:*)
 description: Code review a pull request
 disable-model-invocation: false
 ---
@@ -25,10 +25,42 @@ To do this, follow these steps precisely:
    e. 100: Absolutely certain. The agent double checked the issue, and confirmed that it is definitely a real issue, that will happen frequently in practice. The evidence directly confirms this.
 6. Filter out any issues with a score less than 80. If there are no issues that meet this criteria, do not proceed.
 7. Use a Haiku agent to repeat the eligibility check from #1, to make sure that the pull request is still eligible for code review.
-8. Finally, use the gh bash command to comment back on the pull request with the result. When writing your comment, keep in mind to:
+8. Finally, post the review on the pull request using **inline review comments with suggested changes** where possible. This uses the GitHub Reviews API so that each issue appears as an inline comment on the exact lines of code, with a ` ```suggestion ` block that gives the PR author an "Apply suggestion" button in the GitHub UI. When writing your comments, keep in mind to:
    a. Keep your output brief
    b. Avoid emojis
-   c. Link and cite relevant code, files, and URLs
+   c. For each issue where a concrete code fix can be suggested, create an inline comment with a `suggestion` block
+   d. For issues without a clear single-line fix, include them in the review body instead
+
+To post the review, use `gh api` to call the GitHub Reviews API:
+
+```
+gh api repos/{owner}/{repo}/pulls/{number}/reviews \
+  --method POST \
+  --input - <<'JSON'
+{
+  "commit_id": "<full_sha>",
+  "event": "COMMENT",
+  "body": "<review summary>",
+  "comments": [
+    {
+      "path": "path/to/file.ext",
+      "start_line": <start_line>,
+      "line": <end_line>,
+      "side": "RIGHT",
+      "start_side": "RIGHT",
+      "body": "<description of the issue>\n\n```suggestion\n<fixed code here>\n```"
+    }
+  ]
+}
+JSON
+```
+
+Important notes for the API call:
+- `commit_id` must be the full SHA of the PR's head commit (use `gh pr view <number> --json headRefOid`)
+- `start_line` and `line` are line numbers in the file (not the diff). The suggestion replaces these lines.
+- `side` and `start_side` should be `"RIGHT"` (the new version of the file)
+- The ` ```suggestion ` block content must exactly match the indentation of the code it replaces
+- For single-line comments, omit `start_line` and `start_side`
 
 Examples of false positives, for steps 4 and 5:
 
@@ -47,25 +79,18 @@ Notes:
 - Use `gh` to interact with Github (eg. to fetch a pull request, or to create inline comments), rather than web fetch
 - Make a todo list first
 - You must cite and link each bug (eg. if referring to a CLAUDE.md, you must link it)
-- For your final comment, follow the following format precisely (assuming for this example that you found 3 issues):
+- For inline comments, make sure the `suggestion` block code exactly preserves the original indentation style (tabs vs spaces, indentation level) of the file
+- For the review body (summary), follow the following format precisely (assuming for this example that you found 3 issues):
 
 ---
 
 ### Code review
 
-Found 3 issues:
+Found 3 issues (see inline comments for suggested fixes):
 
 1. <brief description of bug> (CLAUDE.md says "<...>")
-
-<link to file and line with full sha1 + line range for context, note that you MUST provide the full sha and not use bash here, eg. https://github.com/anthropics/claude-code/blob/1d54823877c4de72b2316a64032a54afc404e619/README.md#L13-L17>
-
 2. <brief description of bug> (some/other/CLAUDE.md says "<...>")
-
-<link to file and line with full sha1 + line range for context>
-
 3. <brief description of bug> (bug due to <file and code snippet>)
-
-<link to file and line with full sha1 + line range for context>
 
 🤖 Generated with [Claude Code](https://claude.ai/code)
 
@@ -83,7 +108,9 @@ No issues found. Checked for bugs and CLAUDE.md compliance.
 
 🤖 Generated with [Claude Code](https://claude.ai/code)
 
-- When linking to code, follow the following format precisely, otherwise the Markdown preview won't render correctly: https://github.com/anthropics/claude-cli-internal/blob/c21d3c10bc8e898b7ac1a2d745bdc9bc4e423afe/package.json#L10-L15
+---
+
+- When linking to code outside of inline comments, follow the following format precisely, otherwise the Markdown preview won't render correctly: https://github.com/anthropics/claude-cli-internal/blob/c21d3c10bc8e898b7ac1a2d745bdc9bc4e423afe/package.json#L10-L15
   - Requires full git sha
   - You must provide the full sha. Commands like `https://github.com/owner/repo/blob/$(git rev-parse HEAD)/foo/bar` will not work, since your comment will be directly rendered in Markdown.
   - Repo name must match the repo you're code reviewing
