@@ -39,9 +39,11 @@ Start a Ralph loop in your current session.
 ```
 /ralph-loop "Refactor the cache layer" --max-iterations 20
 /ralph-loop "Add tests" --completion-promise "TESTS COMPLETE"
+/ralph-loop --prompt-file prompts/task.md --max-iterations 20
 ```
 
 **Options:**
+- `--prompt-file <path>` - Read prompt from a file
 - `--max-iterations <n>` - Max iterations before auto-stop
 - `--completion-promise <text>` - Promise phrase to signal completion
 
