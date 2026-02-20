@@ -5,6 +5,12 @@
 
 set -euo pipefail
 
+sanitize_id() {
+  # Keep filenames safe/stable across OSes.
+  # Allowed: alnum . _ -
+  echo "$1" | sed 's/[^A-Za-z0-9._-]/_/g'
+}
+
 # Parse arguments
 PROMPT_PARTS=()
 MAX_ITERATIONS=0
@@ -47,14 +53,14 @@ EXAMPLES:
 
 STOPPING:
   Only by reaching --max-iterations or detecting --completion-promise
-  No manual stop - Ralph runs infinitely by default!
+  Cancel manually with: /cancel-ralph
 
 MONITORING:
   # View current iteration:
-  grep '^iteration:' .claude/ralph-loop.local.md
+  grep '^iteration:' .claude/ralph-loop*.local.md
 
   # View full state:
-  head -10 .claude/ralph-loop.local.md
+  head -10 .claude/ralph-loop*.local.md
 HELP_EOF
       exit 0
       ;;
@@ -127,8 +133,25 @@ if [[ -z "$PROMPT" ]]; then
   exit 1
 fi
 
-# Create state file for stop hook (markdown with YAML frontmatter)
-mkdir -p .claude
+# Resolve project directory (so state files always live at the project root)
+PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$PWD}"
+STATE_DIR="$PROJECT_DIR/.claude"
+mkdir -p "$STATE_DIR"
+
+# Best-effort: Claude Code typically exposes a session id via env, but in some
+# legacy contexts it may be absent.
+SESSION_ID_RAW="${CLAUDE_SESSION_ID:-}"
+if [[ "$SESSION_ID_RAW" == "null" ]]; then
+  SESSION_ID_RAW=""
+fi
+SESSION_ID_SAFE="$(sanitize_id "$SESSION_ID_RAW")"
+
+STATE_FILE="$STATE_DIR/ralph-loop.local.md"
+SESSION_ID_YAML="null"
+if [[ -n "$SESSION_ID_SAFE" ]]; then
+  STATE_FILE="$STATE_DIR/ralph-loop.${SESSION_ID_SAFE}.local.md"
+  SESSION_ID_YAML="\"$SESSION_ID_RAW\""
+fi
 
 # Quote completion promise for YAML if it contains special chars or is not null
 if [[ -n "$COMPLETION_PROMISE" ]] && [[ "$COMPLETION_PROMISE" != "null" ]]; then
@@ -137,9 +160,10 @@ else
   COMPLETION_PROMISE_YAML="null"
 fi
 
-cat > .claude/ralph-loop.local.md <<EOF
+cat > "$STATE_FILE" <<EOF
 ---
 active: true
+session_id: $SESSION_ID_YAML
 iteration: 1
 max_iterations: $MAX_ITERATIONS
 completion_promise: $COMPLETION_PROMISE_YAML
@@ -157,14 +181,14 @@ Iteration: 1
 Max iterations: $(if [[ $MAX_ITERATIONS -gt 0 ]]; then echo $MAX_ITERATIONS; else echo "unlimited"; fi)
 Completion promise: $(if [[ "$COMPLETION_PROMISE" != "null" ]]; then echo "${COMPLETION_PROMISE//\"/} (ONLY output when TRUE - do not lie!)"; else echo "none (runs forever)"; fi)
 
+State file: $STATE_FILE
+
 The stop hook is now active. When you try to exit, the SAME PROMPT will be
 fed back to you. You'll see your previous work in files, creating a
 self-referential loop where you iteratively improve on the same task.
 
-To monitor: head -10 .claude/ralph-loop.local.md
-
-⚠️  WARNING: This loop cannot be stopped manually! It will run infinitely
-    unless you set --max-iterations or --completion-promise.
+To monitor: head -10 "$STATE_FILE"
+To cancel:  /cancel-ralph
 
 🔄
 EOF
@@ -190,13 +214,13 @@ if [[ "$COMPLETION_PROMISE" != "null" ]]; then
   echo "  ✓ The statement MUST be completely and unequivocally TRUE"
   echo "  ✓ Do NOT output false statements to exit the loop"
   echo "  ✓ Do NOT lie even if you think you should exit"
-  echo ""
+  echo "" 
   echo "IMPORTANT - Do not circumvent the loop:"
   echo "  Even if you believe you're stuck, the task is impossible,"
   echo "  or you've been running too long - you MUST NOT output a"
   echo "  false promise statement. The loop is designed to continue"
   echo "  until the promise is GENUINELY TRUE. Trust the process."
-  echo ""
+  echo "" 
   echo "  If the loop should stop, the promise statement will become"
   echo "  true naturally. Do not force it by lying."
   echo "═══════════════════════════════════════════════════════════"

@@ -6,14 +6,69 @@
 
 set -euo pipefail
 
+sanitize_id() {
+  # Keep filenames safe/stable across OSes.
+  # Allowed: alnum . _ -
+  echo "$1" | sed 's/[^A-Za-z0-9._-]/_/g'
+}
+
 # Read hook input from stdin (advanced stop hook API)
 HOOK_INPUT=$(cat)
 
-# Check if ralph-loop is active
-RALPH_STATE_FILE=".claude/ralph-loop.local.md"
+# Resolve project directory (so stop hook works even if invoked from a subdir)
+PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(echo "$HOOK_INPUT" | jq -r '.cwd // "."')}"
+STATE_DIR="$PROJECT_DIR/.claude"
 
-if [[ ! -f "$RALPH_STATE_FILE" ]]; then
-  # No active loop - allow exit
+# Determine current Claude Code session id (empty if unknown / legacy)
+SESSION_ID_RAW=$(echo "$HOOK_INPUT" | jq -r '.session_id // empty')
+if [[ "$SESSION_ID_RAW" == "null" ]]; then
+  SESSION_ID_RAW=""
+fi
+SESSION_ID_SAFE="$(sanitize_id "$SESSION_ID_RAW")"
+
+# State file paths
+LEGACY_STATE_FILE="$STATE_DIR/ralph-loop.local.md"
+SESSION_STATE_FILE=""
+if [[ -n "$SESSION_ID_SAFE" ]]; then
+  SESSION_STATE_FILE="$STATE_DIR/ralph-loop.${SESSION_ID_SAFE}.local.md"
+fi
+
+# Pick the correct state file (session-scoped). Never let a session with a real
+# session_id adopt an ownerless legacy file.
+RALPH_STATE_FILE=""
+
+if [[ -n "$SESSION_STATE_FILE" ]] && [[ -f "$SESSION_STATE_FILE" ]]; then
+  RALPH_STATE_FILE="$SESSION_STATE_FILE"
+elif [[ -f "$LEGACY_STATE_FILE" ]]; then
+  # Legacy format: may have session_id missing or "null".
+  LEGACY_FRONTMATTER=$(sed -n '/^---$/,/^---$/{ /^---$/d; p; }' "$LEGACY_STATE_FILE" 2>/dev/null || true)
+  LEGACY_SID=$(echo "$LEGACY_FRONTMATTER" | grep '^session_id:' | sed 's/session_id: *//' | sed 's/^"\(.*\)"$/\1/' | tr -d '\r')
+
+  if [[ -z "$LEGACY_SID" ]] || [[ "$LEGACY_SID" == "null" ]]; then
+    # Ownerless legacy file.
+    if [[ -z "$SESSION_ID_SAFE" ]]; then
+      # Current session also lacks an id (legacy mode) — allow.
+      RALPH_STATE_FILE="$LEGACY_STATE_FILE"
+    else
+      # Current session has an id — DO NOT claim ownerless file.
+      exit 0
+    fi
+  else
+    LEGACY_SID_SAFE="$(sanitize_id "$LEGACY_SID")"
+    if [[ -n "$SESSION_ID_SAFE" ]] && [[ "$LEGACY_SID_SAFE" == "$SESSION_ID_SAFE" ]]; then
+      # Migrate legacy state file to session-scoped filename.
+      mkdir -p "$STATE_DIR"
+      mv "$LEGACY_STATE_FILE" "$SESSION_STATE_FILE"
+      RALPH_STATE_FILE="$SESSION_STATE_FILE"
+    else
+      # Belongs to a different session.
+      exit 0
+    fi
+  fi
+fi
+
+if [[ -z "$RALPH_STATE_FILE" ]] || [[ ! -f "$RALPH_STATE_FILE" ]]; then
+  # No active loop for this session - allow exit
   exit 0
 fi
 
