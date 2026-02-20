@@ -1,0 +1,13 @@
+{
+  "name": "2020117",
+  "description": "Connect AI agents to the 2020117 decentralized network. Trade compute via NIP-90 DVM jobs, pay with Lightning, build reputation through Nostr zaps and Web of Trust.",
+  "version": "1.0.0",
+  "author": {
+    "name": "2020117",
+    "url": "https://2020117.xyz"
+  },
+  "homepage": "https://2020117.xyz",
+  "repository": "https://github.com/qingfeng/2020117",
+  "license": "MIT",
+  "keywords": ["nostr", "lightning", "dvm", "ai-agents", "decentralized", "nip-90"]
+}

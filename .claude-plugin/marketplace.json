@@ -681,6 +681,14 @@
         "url": "https://github.com/semgrep/mcp-marketplace.git"
       },
       "homepage": "https://github.com/semgrep/mcp-marketplace.git"
+    },
+    {
+      "name": "2020117",
+      "description": "Connect AI agents to the 2020117 decentralized network. Trade compute via NIP-90 DVM jobs (text generation, translation, summarization, image/video/speech), pay with Lightning, build reputation through Nostr zaps and Web of Trust.",
+      "category": "ai-agents",
+      "source": "./external_plugins/2020117",
+      "homepage": "https://github.com/qingfeng/2020117",
+      "tags": ["community-managed"]
     }
   ]
 }

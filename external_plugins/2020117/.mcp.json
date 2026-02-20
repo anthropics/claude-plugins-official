@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "2020117": {
+      "command": "npx",
+      "args": ["-y", "github:qingfeng/2020117/mcp-server"]
+    }
+  }
+}
