@@ -16,10 +16,12 @@ Performs automated code review on a pull request using multiple specialized agen
 1. Checks if review is needed (skips closed, draft, trivial, or already-reviewed PRs)
 2. Gathers relevant CLAUDE.md guideline files from the repository
 3. Summarizes the pull request changes
-4. Launches 4 parallel agents to independently review:
-   - **Agents #1 & #2**: Audit for CLAUDE.md compliance
-   - **Agent #3**: Scan for obvious bugs in changes
-   - **Agent #4**: Analyze git blame/history for context-based issues
+4. Launches 5 parallel agents to independently review:
+   - **Agent #1**: Audit for CLAUDE.md compliance
+   - **Agent #2**: Scan for obvious bugs in changes
+   - **Agent #3**: Analyze git blame/history for context-based issues
+   - **Agent #4**: Review previous PRs touching these files for applicable comments
+   - **Agent #5**: Check code comments compliance in modified files
 5. Scores each issue 0-100 for confidence level
 6. Filters out issues below 80 confidence threshold
 7. Posts review comment with high-confidence issues only
@@ -219,9 +221,11 @@ Edit `commands/code-review.md` to add or modify agent tasks:
 ## Technical Details
 
 ### Agent architecture
-- **2x CLAUDE.md compliance agents**: Redundancy for guideline checks
+- **1x CLAUDE.md compliance agent**: Checks adherence to project guidelines
 - **1x bug detector**: Focused on obvious bugs in changes only
 - **1x history analyzer**: Context from git blame and history
+- **1x prior PR reviewer**: Checks comments from previous PRs touching the same files
+- **1x code comments checker**: Ensures changes comply with guidance in code comments
 - **Nx confidence scorers**: One per issue for independent scoring
 
 ### Scoring system
