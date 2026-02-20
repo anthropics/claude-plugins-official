@@ -42,6 +42,10 @@ plugin-name/
 └── README.md            # Documentation
 ```
 
+## License
+
+Please see each linked plugin for the relevant LICENSE file.
+
 ## Documentation
 
 For more information on developing Claude Code plugins, see the [official documentation](https://code.claude.com/docs/en/plugins).
