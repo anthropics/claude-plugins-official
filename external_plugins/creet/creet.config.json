@@ -1,0 +1,8 @@
+{
+  "version": "1.3.0",
+  "autoRecommend": true,
+  "showReport": true,
+  "minMatchScore": 5,
+  "memoryPath": null,
+  "customKeywords": []
+}

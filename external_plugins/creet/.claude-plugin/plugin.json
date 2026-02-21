@@ -1,0 +1,26 @@
+{
+  "name": "creet",
+  "version": "1.3.0",
+  "description": "Skill navigator for Claude Code. Scans all installed plugins (Skills, MCP tools, LSP servers), recommends the best match for your task in 8 languages, and executes it. Type /c to start.",
+  "author": {
+    "name": "Creeta",
+    "email": "creet@creeta.com",
+    "url": "https://www.creeta.com"
+  },
+  "repository": "https://github.com/Creeta-creet/creet",
+  "license": "MIT",
+  "keywords": [
+    "claude-code",
+    "creet",
+    "skill-navigator",
+    "plugin-scanner",
+    "mcp-tools",
+    "lsp-servers",
+    "plugin-recommendation",
+    "meta-skill",
+    "productivity",
+    "session-hook",
+    "auto-recommend",
+    "multilingual"
+  ]
+}
