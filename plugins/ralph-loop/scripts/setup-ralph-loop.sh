@@ -132,7 +132,8 @@ mkdir -p .claude
 
 # Quote completion promise for YAML if it contains special chars or is not null
 if [[ -n "$COMPLETION_PROMISE" ]] && [[ "$COMPLETION_PROMISE" != "null" ]]; then
-  COMPLETION_PROMISE_YAML="\"$COMPLETION_PROMISE\""
+  ESCAPED=$(echo "$COMPLETION_PROMISE" | sed 's/\\/\\\\/g; s/"/\\"/g')
+  COMPLETION_PROMISE_YAML="\"$ESCAPED\""
 else
   COMPLETION_PROMISE_YAML="null"
 fi
