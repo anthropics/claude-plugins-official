@@ -1,0 +1,13 @@
+{
+  "name": "bizbrain-os",
+  "description": "The context layer that teaches AI your business. Persistent knowledge brain that compounds context across every Claude Code session.",
+  "version": "1.0.0",
+  "author": {
+    "name": "Tech Integration Labs",
+    "url": "https://github.com/TechIntegrationLabs"
+  },
+  "homepage": "https://github.com/TechIntegrationLabs/bizbrain-os-plugin",
+  "repository": "https://github.com/TechIntegrationLabs/bizbrain-os-plugin",
+  "license": "AGPL-3.0",
+  "keywords": ["knowledge-management", "context", "brain", "productivity", "entities", "projects"]
+}
