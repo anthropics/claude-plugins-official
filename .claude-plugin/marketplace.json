@@ -546,8 +546,11 @@
       "name": "slack",
       "description": "Slack workspace integration. Search messages, access channels, read threads, and stay connected with your team's communications while coding. Find relevant discussions and context quickly.",
       "category": "productivity",
-      "source": "./external_plugins/slack",
-      "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/slack"
+      "source": {
+        "source": "url",
+        "url": "https://github.com/slackapi/slack-mcp-plugin.git"
+      },
+      "homepage": "https://github.com/slackapi/slack-mcp-plugin/tree/main"
     },
     {
       "name": "vercel",
