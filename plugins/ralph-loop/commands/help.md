@@ -42,8 +42,9 @@ Start a Ralph loop in your current session.
 ```
 
 **Options:**
-- `--max-iterations <n>` - Max iterations before auto-stop
-- `--completion-promise <text>` - Promise phrase to signal completion
+- `-n, --max-iterations <n>` - Max iterations before auto-stop (default: 50)
+- `--no-limit` - Remove iteration cap (use with `-p` for safety)
+- `-p, --promise <text>` - Promise phrase to signal completion
 
 **How it works:**
 1. Creates `.claude/.ralph-loop.local.md` state file
@@ -81,7 +82,7 @@ To signal completion, Claude must output a `<promise>` tag:
 <promise>TASK COMPLETE</promise>
 ```
 
-The stop hook looks for this specific tag. Without it (or `--max-iterations`), Ralph runs infinitely.
+The stop hook looks for this specific tag. By default, Ralph caps at 50 iterations even without a promise. Use `--no-limit` to remove the cap (pair with `-p` for safety).
 
 ### Self-Reference Mechanism
 
@@ -96,7 +97,7 @@ The "loop" doesn't mean Claude talks to itself. It means:
 ### Interactive Bug Fix
 
 ```
-/ralph-loop "Fix the token refresh logic in auth.ts. Output <promise>FIXED</promise> when all tests pass." --completion-promise "FIXED" --max-iterations 10
+/ralph-loop "Fix the token refresh logic in auth.ts. Output <promise>FIXED</promise> when all tests pass." -p "FIXED" -n 10
 ```
 
 You'll see Ralph:

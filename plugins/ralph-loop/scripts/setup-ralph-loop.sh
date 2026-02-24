@@ -7,7 +7,9 @@ set -euo pipefail
 
 # Parse arguments
 PROMPT_PARTS=()
-MAX_ITERATIONS=0
+DEFAULT_MAX_ITERATIONS=50
+MAX_ITERATIONS=$DEFAULT_MAX_ITERATIONS
+MAX_ITERATIONS_EXPLICIT=false
 COMPLETION_PROMISE="null"
 
 # Parse options and positional arguments
@@ -24,8 +26,9 @@ ARGUMENTS:
   PROMPT...    Initial prompt to start the loop (can be multiple words without quotes)
 
 OPTIONS:
-  --max-iterations <n>           Maximum iterations before auto-stop (default: unlimited)
-  --completion-promise '<text>'  Promise phrase (USE QUOTES for multi-word)
+  -n, --max-iterations <n>       Maximum iterations before auto-stop (default: 50)
+  --no-limit                     Remove iteration cap (use with -p)
+  -p, --promise '<text>'         Promise phrase to signal completion
   -h, --help                     Show this help message
 
 DESCRIPTION:
@@ -40,14 +43,15 @@ DESCRIPTION:
   - Learning how Ralph works
 
 EXAMPLES:
-  /ralph-loop Build a todo API --completion-promise 'DONE' --max-iterations 20
-  /ralph-loop --max-iterations 10 Fix the auth bug
-  /ralph-loop Refactor cache layer  (runs forever)
-  /ralph-loop --completion-promise 'TASK COMPLETE' Create a REST API
+  /ralph-loop Build a todo API -p 'DONE' -n 20
+  /ralph-loop -n 10 Fix the auth bug
+  /ralph-loop Refactor cache layer  (default: 50 iterations)
+  /ralph-loop -p 'TASK COMPLETE' Create a REST API
+  /ralph-loop --no-limit -p 'DONE' Long running task
 
 STOPPING:
-  Only by reaching --max-iterations or detecting --completion-promise
-  No manual stop - Ralph runs infinitely by default!
+  Stops when -n/--max-iterations is reached (default: 50) or -p/--promise detected.
+  Use --no-limit to remove the cap (pair with -p for safety).
 
 MONITORING:
   # View current iteration:
@@ -58,7 +62,7 @@ MONITORING:
 HELP_EOF
       exit 0
       ;;
-    --max-iterations)
+    -n|--max-iterations|--max-iteration)
       if [[ -z "${2:-}" ]]; then
         echo "❌ Error: --max-iterations requires a number argument" >&2
         echo "" >&2
@@ -82,9 +86,15 @@ HELP_EOF
         exit 1
       fi
       MAX_ITERATIONS="$2"
+      MAX_ITERATIONS_EXPLICIT=true
       shift 2
       ;;
-    --completion-promise)
+    --no-limit|--unlimited)
+      MAX_ITERATIONS=0
+      MAX_ITERATIONS_EXPLICIT=true
+      shift
+      ;;
+    -p|--promise|--completion-promise)
       if [[ -z "${2:-}" ]]; then
         echo "❌ Error: --completion-promise requires a text argument" >&2
         echo "" >&2
@@ -149,25 +159,49 @@ started_at: "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 $PROMPT
 EOF
 
+# Build max iterations display string
+if [[ $MAX_ITERATIONS -gt 0 ]]; then
+  if [[ "$MAX_ITERATIONS_EXPLICIT" == "true" ]]; then
+    MAX_ITER_DISPLAY="$MAX_ITERATIONS"
+  else
+    MAX_ITER_DISPLAY="$MAX_ITERATIONS (default safety cap — override with --no-limit)"
+  fi
+else
+  MAX_ITER_DISPLAY="unlimited"
+fi
+
 # Output setup message
 cat <<EOF
 🔄 Ralph loop activated in this session!
 
 Iteration: 1
-Max iterations: $(if [[ $MAX_ITERATIONS -gt 0 ]]; then echo $MAX_ITERATIONS; else echo "unlimited"; fi)
-Completion promise: $(if [[ "$COMPLETION_PROMISE" != "null" ]]; then echo "${COMPLETION_PROMISE//\"/} (ONLY output when TRUE - do not lie!)"; else echo "none (runs forever)"; fi)
+Max iterations: $MAX_ITER_DISPLAY
+Completion promise: $(if [[ "$COMPLETION_PROMISE" != "null" ]]; then echo "${COMPLETION_PROMISE//\"/} (ONLY output when TRUE - do not lie!)"; else echo "none"; fi)
 
 The stop hook is now active. When you try to exit, the SAME PROMPT will be
 fed back to you. You'll see your previous work in files, creating a
 self-referential loop where you iteratively improve on the same task.
 
 To monitor: head -10 .claude/ralph-loop.local.md
-
-⚠️  WARNING: This loop cannot be stopped manually! It will run infinitely
-    unless you set --max-iterations or --completion-promise.
-
-🔄
 EOF
+
+# Show appropriate warning based on configuration
+if [[ $MAX_ITERATIONS -eq 0 ]] && [[ "$COMPLETION_PROMISE" == "null" ]]; then
+  cat <<EOF
+
+⚠️  WARNING: No stopping condition! This loop will run INFINITELY.
+    Consider adding -p or -n.
+
+EOF
+elif [[ $MAX_ITERATIONS -eq 0 ]]; then
+  cat <<EOF
+
+⚠️  No iteration cap set. Loop relies on completion promise to stop.
+
+EOF
+fi
+
+echo "🔄"
 
 # Output the initial prompt if provided
 if [[ -n "$PROMPT" ]]; then
