@@ -684,6 +684,17 @@
         "url": "https://github.com/semgrep/mcp-marketplace.git"
       },
       "homepage": "https://github.com/semgrep/mcp-marketplace.git"
+    },
+    {
+      "name": "mcp-scanner",
+      "description": "Security scanner for Claude Code plugins, skills, hooks, and MCP servers. Detects prompt injection, data exfiltration, credential theft, known malicious signatures, and 8 other threat categories using 88 static analysis signatures combined with semantic analysis. Includes runtime behavior monitoring, dependency auditing, and continuous monitoring via session gate scans and scheduled daily scans.",
+      "category": "security",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/digitaltitann/mcp-scanner.git"
+      },
+      "homepage": "https://github.com/digitaltitann/mcp-scanner",
+      "tags": ["community-managed"]
     }
   ]
 }
