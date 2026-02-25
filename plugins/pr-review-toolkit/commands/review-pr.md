@@ -12,80 +12,101 @@ Run a comprehensive pull request review using multiple specialized agents, each 
 
 ## Review Workflow:
 
-1. **Determine Review Scope**
-   - Check git status to identify changed files
-   - Parse arguments to see if user requested specific review aspects
-   - Default: Run all applicable reviews
+### Step 1: Determine Review Context and Gather All Data (CRITICAL)
 
-2. **Available Review Aspects:**
+**You MUST complete this entire step before launching any agents. Do NOT delegate data fetching to agents.**
 
-   - **comments** - Analyze code comment accuracy and maintainability
-   - **tests** - Review test coverage quality and completeness
-   - **errors** - Check error handling for silent failures
-   - **types** - Analyze type design and invariants (if new types added)
-   - **code** - General code review for project guidelines
-   - **simplify** - Simplify code for clarity and maintainability
-   - **all** - Run all applicable reviews (default)
+First, detect whether you are reviewing a PR or local changes. Run this command **alone** (not in parallel with other commands):
 
-3. **Identify Changed Files**
-   - Run `git diff --name-only` to see modified files
-   - Check if PR already exists: `gh pr view`
-   - Identify file types and what reviews apply
+```bash
+gh pr view --json number,title,body,headRefName,baseRefName,files 2>/dev/null
+```
 
-4. **Determine Applicable Reviews**
+- **If the command succeeds**: You are in **PR mode**. Store the PR number, title, body, base branch, and file list.
+- **If the command fails (exit code 1)**: This is expected — you are in **local mode**, reviewing uncommitted local changes.
 
-   Based on changes:
-   - **Always applicable**: code-reviewer (general quality)
-   - **If test files changed**: pr-test-analyzer
-   - **If comments/docs added**: comment-analyzer
-   - **If error handling changed**: silent-failure-hunter
-   - **If types added/modified**: type-design-analyzer
-   - **After passing review**: code-simplifier (polish and refine)
+Then, **after** determining the mode, fetch the diff and changed file list:
 
-5. **Launch Review Agents**
+- **PR mode**: Run `gh pr diff <number>` and `gh pr diff <number> --name-only`
+- **Local mode**: Run `git diff` (for unstaged) and/or `git diff --cached` (for staged), plus `git diff --name-only` and/or `git diff --cached --name-only`
 
-   **Sequential approach** (one at a time):
-   - Easier to understand and act on
-   - Each report is complete before next
-   - Good for interactive review
+Finally, use the Read tool to read the full contents of each changed file.
 
-   **Parallel approach** (user can request):
-   - Launch all agents simultaneously
-   - Faster for comprehensive review
-   - Results come back together
+Store all of this data — you will pass it to agents in the next steps.
 
-6. **Aggregate Results**
+### Step 2: Parse Arguments and Determine Applicable Reviews
 
-   After agents complete, summarize:
-   - **Critical Issues** (must fix before merge)
-   - **Important Issues** (should fix)
-   - **Suggestions** (nice to have)
-   - **Positive Observations** (what's good)
+**Available Review Aspects:**
 
-7. **Provide Action Plan**
+- **comments** - Analyze code comment accuracy and maintainability (agent: comment-analyzer)
+- **tests** - Review test coverage quality and completeness (agent: pr-test-analyzer)
+- **errors** - Check error handling for silent failures (agent: silent-failure-hunter)
+- **types** - Analyze type design and invariants (agent: type-design-analyzer)
+- **code** - General code review for project guidelines (agent: code-reviewer)
+- **simplify** - Simplify code for clarity and maintainability (agent: code-simplifier)
+- **all** - Run all applicable reviews (default)
 
-   Organize findings:
-   ```markdown
-   # PR Review Summary
+If the user specified aspects, only run those. Otherwise determine applicability based on the changes:
 
-   ## Critical Issues (X found)
-   - [agent-name]: Issue description [file:line]
+- **Always run**: code-reviewer (general quality)
+- **If test files changed**: pr-test-analyzer
+- **If comments/docs added or modified**: comment-analyzer
+- **If error handling code changed** (try/catch, error callbacks, Result types): silent-failure-hunter
+- **If types/interfaces/classes added or modified**: type-design-analyzer
+- **After other reviews pass**: code-simplifier (polish and refine)
 
-   ## Important Issues (X found)
-   - [agent-name]: Issue description [file:line]
+### Step 3: Launch Review Agents With Pre-fetched Context
 
-   ## Suggestions (X found)
-   - [agent-name]: Suggestion [file:line]
+**IMPORTANT: When launching each agent via the Task tool, include the diff and relevant file contents directly in the agent's prompt.** This prevents agents from redundantly fetching the same data.
 
-   ## Strengths
-   - What's well-done in this PR
+Structure each agent's Task prompt like this:
 
-   ## Recommended Action
-   1. Fix critical issues first
-   2. Address important issues
-   3. Consider suggestions
-   4. Re-run review after fixes
-   ```
+```
+Review the following changes for [aspect].
+
+## Changed Files
+<list of changed file paths>
+
+## Diff
+<the full diff output, or the relevant portion for this agent>
+
+## File Contents
+<full contents of each changed file relevant to this agent's review>
+
+## PR Context (if in PR mode)
+Title: <pr title>
+Description: <pr body>
+```
+
+**Parallelism rules:**
+- Launch all applicable review agents in parallel since data is pre-fetched and agents will not duplicate work.
+- The code-simplifier is the only exception — it should always run last, after other reviews complete.
+
+### Step 4: Aggregate Results
+
+After all agents complete, provide a unified summary:
+
+```markdown
+# PR Review Summary
+
+## Critical Issues (X found)
+- [agent-name]: Issue description [file:line]
+
+## Important Issues (X found)
+- [agent-name]: Issue description [file:line]
+
+## Suggestions (X found)
+- [agent-name]: Suggestion [file:line]
+
+## Strengths
+- What's well-done in this PR
+
+## Recommended Action
+1. Fix critical issues first
+2. Address important issues
+3. Consider suggestions
+4. Re-run review after fixes
+```
 
 ## Usage Examples:
 
@@ -106,13 +127,18 @@ Run a comprehensive pull request review using multiple specialized agents, each 
 # Simplifies code after passing review
 ```
 
-**Parallel review:**
+**All reviews (explicit):**
 ```
-/pr-review-toolkit:review-pr all parallel
-# Launches all agents in parallel
+/pr-review-toolkit:review-pr all
+# Runs all applicable reviews in parallel
 ```
 
 ## Agent Descriptions:
+
+**code-reviewer**:
+- Checks CLAUDE.md compliance
+- Detects bugs and issues
+- Reviews general code quality
 
 **comment-analyzer**:
 - Verifies comment accuracy vs code
@@ -134,11 +160,6 @@ Run a comprehensive pull request review using multiple specialized agents, each 
 - Reviews invariant expression
 - Rates type design quality
 
-**code-reviewer**:
-- Checks CLAUDE.md compliance
-- Detects bugs and issues
-- Reviews general code quality
-
 **code-simplifier**:
 - Simplifies complex code
 - Improves clarity and readability
@@ -148,42 +169,7 @@ Run a comprehensive pull request review using multiple specialized agents, each 
 ## Tips:
 
 - **Run early**: Before creating PR, not after
-- **Focus on changes**: Agents analyze git diff by default
+- **Focus on changes**: Agents analyze the diff you provide, not the whole repo
 - **Address critical first**: Fix high-priority issues before lower priority
 - **Re-run after fixes**: Verify issues are resolved
 - **Use specific reviews**: Target specific aspects when you know the concern
-
-## Workflow Integration:
-
-**Before committing:**
-```
-1. Write code
-2. Run: /pr-review-toolkit:review-pr code errors
-3. Fix any critical issues
-4. Commit
-```
-
-**Before creating PR:**
-```
-1. Stage all changes
-2. Run: /pr-review-toolkit:review-pr all
-3. Address all critical and important issues
-4. Run specific reviews again to verify
-5. Create PR
-```
-
-**After PR feedback:**
-```
-1. Make requested changes
-2. Run targeted reviews based on feedback
-3. Verify issues are resolved
-4. Push updates
-```
-
-## Notes:
-
-- Agents run autonomously and return detailed reports
-- Each agent focuses on its specialty for deep analysis
-- Results are actionable with specific file:line references
-- Agents use appropriate models for their complexity
-- All agents available in `/agents` list
