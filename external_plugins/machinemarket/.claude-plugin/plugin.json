@@ -1,0 +1,13 @@
+{
+  "name": "machinemarket",
+  "description": "Provision cloud servers with USDC on Base. One skill to configure, pay, and get SSH credentials — auto or interactive.",
+  "version": "1.0.0",
+  "author": {
+    "name": "MachineMarket",
+    "email": "hello@machinemarket.ai"
+  },
+  "homepage": "https://machinemarket.ai",
+  "repository": "https://github.com/stein-hashx0/machinemarket-plugin",
+  "license": "MIT",
+  "keywords": ["cloud", "vps", "server", "usdc", "base", "crypto", "agents", "infrastructure"]
+}
