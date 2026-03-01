@@ -1,0 +1,13 @@
+{
+  "name": "subgraph-mcp",
+  "version": "1.0.0",
+  "description": "Connect Claude to 15,000+ blockchain subgraphs via The Graph's Subgraph MCP server. Query DeFi, NFT, DAO, and governance data in natural language without writing GraphQL.",
+  "author": {
+    "name": "PaulieB14",
+    "url": "https://github.com/PaulieB14"
+  },
+  "homepage": "https://thegraph.com/docs/en/ai-suite/ai-introduction/",
+  "repository": "https://github.com/PaulieB14/subgraph-mcp-skills",
+  "license": "MIT",
+  "keywords": ["thegraph", "subgraph", "blockchain", "graphql", "defi", "web3", "mcp"]
+}
