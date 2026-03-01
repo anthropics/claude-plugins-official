@@ -1,0 +1,13 @@
+{
+  "name": "subgraphs-skills",
+  "version": "1.0.0",
+  "description": "Expert knowledge for developing, testing, and optimizing subgraphs with The Graph protocol. Includes skills for schema design, AssemblyScript mappings, Matchstick testing, and performance optimization.",
+  "author": {
+    "name": "PaulieB14",
+    "url": "https://github.com/PaulieB14"
+  },
+  "homepage": "https://thegraph.com/docs/",
+  "repository": "https://github.com/PaulieB14/subgraphs-skills",
+  "license": "MIT",
+  "keywords": ["thegraph", "subgraph", "blockchain", "indexing", "graphql", "web3", "assemblyscript"]
+}
