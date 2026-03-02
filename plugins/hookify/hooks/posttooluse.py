@@ -10,13 +10,14 @@ import sys
 import json
 
 # Add plugin root to Python path for imports
-PLUGIN_ROOT = os.environ.get('CLAUDE_PLUGIN_ROOT')
+PLUGIN_ROOT = os.environ.get("CLAUDE_PLUGIN_ROOT")
 if PLUGIN_ROOT and PLUGIN_ROOT not in sys.path:
     sys.path.insert(0, PLUGIN_ROOT)
 
 try:
     from core.config_loader import load_rules
     from core.rule_engine import RuleEngine
+    from core.audit_capture import capture_post_diff
 except ImportError as e:
     error_msg = {"systemMessage": f"Hookify import error: {e}"}
     print(json.dumps(error_msg), file=sys.stdout)
@@ -30,12 +31,20 @@ def main():
         input_data = json.load(sys.stdin)
 
         # Determine event type based on tool
-        tool_name = input_data.get('tool_name', '')
+        tool_name = input_data.get("tool_name", "")
+        tool_input = input_data.get("tool_input", {})
+        tool_output = input_data.get("tool_output")
         event = None
-        if tool_name == 'Bash':
-            event = 'bash'
-        elif tool_name in ['Edit', 'Write', 'MultiEdit']:
-            event = 'file'
+        if tool_name == "Bash":
+            event = "bash"
+        elif tool_name in ["Edit", "Write", "MultiEdit", "NotebookEdit"]:
+            event = "file"
+
+        # Capture post-diff for audit (after mutation completed)
+        try:
+            capture_post_diff(tool_name, tool_input, tool_output)
+        except Exception:
+            pass  # Never block on audit failure
 
         # Load rules
         rules = load_rules(event=event)
@@ -48,9 +57,7 @@ def main():
         print(json.dumps(result), file=sys.stdout)
 
     except Exception as e:
-        error_output = {
-            "systemMessage": f"Hookify error: {str(e)}"
-        }
+        error_output = {"systemMessage": f"Hookify error: {str(e)}"}
         print(json.dumps(error_output), file=sys.stdout)
 
     finally:
@@ -58,5 +65,5 @@ def main():
         sys.exit(0)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
