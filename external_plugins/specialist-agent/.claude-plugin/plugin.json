@@ -1,0 +1,8 @@
+{
+    "name": "specialist-agent",
+    "description": "Your AI development team — 27+ specialized agents and 21 skills that build, review, debug, and ship production code. Supports Vue, React, Next.js, SvelteKit, Angular, Astro, and Nuxt.",
+    "author": {
+          "name": "Herbert Julio",
+          "url": "https://github.com/HerbertJulio/specialist-agent"
+    }
+}
