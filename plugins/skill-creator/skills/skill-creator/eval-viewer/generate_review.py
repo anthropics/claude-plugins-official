@@ -276,7 +276,13 @@ def generate_html(
     if benchmark:
         embedded["benchmark"] = benchmark
 
-    data_json = json.dumps(embedded)
+    # Escape <, >, & as unicode escapes so the JSON is safe to embed inside
+    # a <script> tag.  These characters only appear inside JSON string values,
+    # where \uXXXX escapes are valid and decoded identically by JSON.parse().
+    # This prevents </script>, <!--, and any other HTML-significant sequence
+    # from being seen by the browser's HTML parser.
+    _HTML_UNSAFE = str.maketrans({"<": "\\u003c", ">": "\\u003e", "&": "\\u0026"})
+    data_json = json.dumps(embedded).translate(_HTML_UNSAFE)
 
     return template.replace("/*__EMBEDDED_DATA__*/", f"const EMBEDDED_DATA = {data_json};")
 
