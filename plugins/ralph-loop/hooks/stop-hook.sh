@@ -92,10 +92,10 @@ LAST_OUTPUT=$(echo "$LAST_LINE" | jq -r '
   map(select(.type == "text")) |
   map(.text) |
   join("\n")
-' 2>&1)
+' 2>&1) || true
 
-# Check if jq succeeded
-if [[ $? -ne 0 ]]; then
+# Check if jq succeeded (non-empty output starting with jq error prefix)
+if echo "$LAST_OUTPUT" | grep -q '^jq: \|^parse error'; then
   echo "⚠️  Ralph loop: Failed to parse assistant message JSON" >&2
   echo "   Error: $LAST_OUTPUT" >&2
   echo "   This may indicate a transcript format issue" >&2
@@ -105,10 +105,7 @@ if [[ $? -ne 0 ]]; then
 fi
 
 if [[ -z "$LAST_OUTPUT" ]]; then
-  echo "⚠️  Ralph loop: Assistant message contained no text content" >&2
-  echo "   Ralph loop is stopping." >&2
-  rm "$RALPH_STATE_FILE"
-  exit 0
+  echo "ℹ️  Ralph loop: Assistant message contained no text content, continuing" >&2
 fi
 
 # Check for completion promise (only if set)
