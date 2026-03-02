@@ -118,13 +118,18 @@ def build_run(root: Path, run_dir: Path) -> dict | None:
 
     run_id = str(run_dir.relative_to(root)).replace("/", "-").replace("\\", "-")
 
-    # Collect output files
+    # Collect output files recursively to include nested subdirectories
     outputs_dir = run_dir / "outputs"
     output_files: list[dict] = []
     if outputs_dir.is_dir():
-        for f in sorted(outputs_dir.iterdir()):
+        for f in sorted(outputs_dir.rglob("*")):
             if f.is_file() and f.name not in METADATA_FILES:
-                output_files.append(embed_file(f))
+                embedded = embed_file(f)
+                # Use relative path from outputs/ as the display name for nested files
+                rel = f.relative_to(outputs_dir)
+                if len(rel.parts) > 1:
+                    embedded["name"] = str(rel)
+                output_files.append(embedded)
 
     # Load grading if present
     grading = None
