@@ -252,6 +252,30 @@
       }
     },
     {
+      "name": "clojure-lsp",
+      "description": "Clojure/ClojureScript language server for code intelligence",
+      "version": "1.0.0",
+      "author": {
+        "name": "Julien Cornebise",
+        "email": "julien+clojure.lsp.plugin@cornebise.com"
+      },
+      "source": "./plugins/clojure-lsp",
+      "category": "development",
+      "strict": false,
+      "lspServers": {
+        "clojure-lsp": {
+          "command": "clojure-lsp",
+          "extensionToLanguage": {
+            ".clj": "clojure",
+            ".cljs": "clojurescript",
+            ".cljc": "clojure",
+            ".edn": "edn"
+          },
+          "startupTimeout": 120000
+        }
+      }
+    },
+    {
       "name": "agent-sdk-dev",
       "description": "Development kit for working with the Claude Agent SDK",
       "author": {
