@@ -18,3 +18,12 @@ Based on the above changes:
 3. Push the branch to origin
 4. Create a pull request using `gh pr create`
 5. You have the capability to call multiple tools in a single response. You MUST do all of the above in a single message. Do not use any other tools or do anything else. Do not send any other text or messages besides these tool calls.
+
+## Git command guidelines
+
+Follow these rules to avoid unnecessary security approval prompts:
+
+- **Directory navigation**: Use `git -C <path>` instead of `cd <path> && git` to avoid triggering directory-change security prompts.
+- **Commit messages**: Use multiple `-m` flags (one per paragraph) instead of heredoc or `$()` subshells to avoid triggering subshell security prompts.
+  Example: `git commit -m "title" -m "body paragraph" -m "Co-Authored-By: ..."`
+- **Echo output**: Use single quotes (`echo '---'`) instead of double quotes (`echo "---"`) to avoid triggering quote-detection warnings.
