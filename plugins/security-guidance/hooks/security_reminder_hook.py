@@ -4,6 +4,7 @@ Security Reminder Hook for Claude Code
 This hook checks for security patterns in file edits and warns about potential vulnerabilities.
 """
 
+import glob
 import json
 import os
 import random
@@ -134,24 +135,16 @@ def get_state_file(session_id):
 def cleanup_old_state_files():
     """Remove state files older than 30 days."""
     try:
-        state_dir = os.path.expanduser("~/.claude")
-        if not os.path.exists(state_dir):
-            return
-
+        pattern = os.path.expanduser("~/.claude/security_warnings_state_*.json")
         current_time = datetime.now().timestamp()
         thirty_days_ago = current_time - (30 * 24 * 60 * 60)
 
-        for filename in os.listdir(state_dir):
-            if filename.startswith("security_warnings_state_") and filename.endswith(
-                ".json"
-            ):
-                file_path = os.path.join(state_dir, filename)
-                try:
-                    file_mtime = os.path.getmtime(file_path)
-                    if file_mtime < thirty_days_ago:
-                        os.remove(file_path)
-                except (OSError, IOError):
-                    pass  # Ignore errors for individual file cleanup
+        for file_path in glob.glob(pattern):
+            try:
+                if os.path.getmtime(file_path) < thirty_days_ago:
+                    os.remove(file_path)
+            except (OSError, IOError):
+                pass  # Ignore errors for individual file cleanup
     except Exception:
         pass  # Silently ignore cleanup errors
 
@@ -159,13 +152,11 @@ def cleanup_old_state_files():
 def load_state(session_id):
     """Load the state of shown warnings from file."""
     state_file = get_state_file(session_id)
-    if os.path.exists(state_file):
-        try:
-            with open(state_file, "r") as f:
-                return set(json.load(f))
-        except (json.JSONDecodeError, IOError):
-            return set()
-    return set()
+    try:
+        with open(state_file, "r") as f:
+            return set(json.load(f))
+    except (FileNotFoundError, json.JSONDecodeError, IOError):
+        return set()
 
 
 def save_state(session_id, shown_warnings):
@@ -217,10 +208,7 @@ def extract_content_from_input(tool_name, tool_input):
 def main():
     """Main hook function."""
     # Check if security reminders are enabled
-    security_reminder_enabled = os.environ.get("ENABLE_SECURITY_REMINDER", "1")
-
-    # Only run if security reminders are enabled
-    if security_reminder_enabled == "0":
+    if os.environ.get("ENABLE_SECURITY_REMINDER", "1").lower() in ("0", "false"):
         sys.exit(0)
 
     # Periodically clean up old state files (10% chance per run)
@@ -239,10 +227,6 @@ def main():
     session_id = input_data.get("session_id", "default")
     tool_name = input_data.get("tool_name", "")
     tool_input = input_data.get("tool_input", {})
-
-    # Check if this is a relevant tool
-    if tool_name not in ["Edit", "Write", "MultiEdit"]:
-        sys.exit(0)  # Allow non-file tools to proceed
 
     # Extract file path from tool_input
     file_path = tool_input.get("file_path", "")

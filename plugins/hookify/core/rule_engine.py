@@ -27,11 +27,6 @@ def compile_regex(pattern: str) -> re.Pattern:
 class RuleEngine:
     """Evaluates rules against hook input data."""
 
-    def __init__(self):
-        """Initialize rule engine."""
-        # No need for instance cache anymore - using global lru_cache
-        pass
-
     def evaluate_rules(self, rules: List[Rule], input_data: Dict[str, Any]) -> Dict[str, Any]:
         """Evaluate all rules and return combined results.
 
@@ -134,15 +129,10 @@ class RuleEngine:
         Returns:
             True if matches
         """
-        if matcher == '*':
-            return True
-
-        # Split on | for OR matching
-        patterns = matcher.split('|')
-        return tool_name in patterns
+        return matcher == '*' or tool_name in matcher.split('|')
 
     def _check_condition(self, condition: Condition, tool_name: str,
-                        tool_input: Dict[str, Any], input_data: Dict[str, Any] = None) -> bool:
+                        tool_input: Dict[str, Any], input_data: Optional[Dict[str, Any]] = None) -> bool:
         """Check if a single condition matches.
 
         Args:
@@ -180,7 +170,7 @@ class RuleEngine:
             return False
 
     def _extract_field(self, field: str, tool_name: str,
-                      tool_input: Dict[str, Any], input_data: Dict[str, Any] = None) -> Optional[str]:
+                      tool_input: Dict[str, Any], input_data: Optional[Dict[str, Any]] = None) -> Optional[str]:
         """Extract field value from tool input or hook input data.
 
         Args:
