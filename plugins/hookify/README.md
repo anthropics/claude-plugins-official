@@ -207,6 +207,50 @@ Before stopping, please run tests to verify your changes work correctly.
 
 **This blocks Claude from stopping** if no test commands appear in the session transcript. Enable only when you want strict enforcement.
 
+## Global Rules
+
+Rules in `~/.claude/` apply across all projects — useful for universal standards like tool preferences and safety rules.
+
+### Setup
+
+Place rule files in your home `.claude` directory:
+
+```
+~/.claude/hookify.enforce-rg.local.md
+~/.claude/hookify.block-force-push.local.md
+```
+
+Global rules use the exact same format as project rules.
+
+### Override Behavior
+
+Project-local rules take priority over global rules with the same `name`:
+
+| Scenario | Result |
+|----------|--------|
+| Global rule only | Rule applies |
+| Project rule only | Rule applies |
+| Both exist (same name) | Project rule wins |
+| Project rule `enabled: false` | Global rule is also suppressed |
+
+This lets projects customize or disable global rules without modifying them.
+
+### Example: Universal Tool Preference
+
+`~/.claude/hookify.enforce-rg-over-grep.local.md`:
+```markdown
+---
+name: enforce-rg-over-grep
+enabled: true
+event: bash
+pattern: \bgrep\s+-r\b
+---
+
+Use `rg` (ripgrep) instead of `grep -r`. It respects .gitignore and is faster.
+```
+
+This rule will apply in every project unless a project defines its own `enforce-rg-over-grep` rule.
+
 ## Advanced Usage
 
 ### Multiple Conditions
@@ -303,11 +347,12 @@ cc --plugin-dir /path/to/hookify
 ## Troubleshooting
 
 **Rule not triggering:**
-1. Check rule file exists in `.claude/` directory (in project root, not plugin directory)
+1. Check rule file exists in `.claude/` directory (project root or `~/.claude/` for global rules)
 2. Verify `enabled: true` in frontmatter
 3. Test regex pattern separately
 4. Rules should work immediately - no restart needed
 5. Try `/hookify:list` to see if rule is loaded
+6. For global rules, check that no project rule with the same name is overriding it
 
 **Import errors:**
 - Ensure Python 3 is available: `python3 --version`

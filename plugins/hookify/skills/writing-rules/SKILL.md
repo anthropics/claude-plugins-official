@@ -282,9 +282,14 @@ Better: `rm\s+-rf`
 
 ## File Organization
 
-**Location:** All rules in `.claude/` directory
-**Naming:** `.claude/hookify.{descriptive-name}.local.md`
+**Locations:**
+- **Project rules:** `.claude/hookify.{name}.local.md` — apply to this project only
+- **Global rules:** `~/.claude/hookify.{name}.local.md` — apply to all projects
+
+**Naming:** `hookify.{descriptive-name}.local.md`
 **Gitignore:** Add `.claude/*.local.md` to `.gitignore`
+
+**Override behavior:** Project rules take priority over global rules with the same `name`. A project rule with `enabled: false` suppresses the matching global rule.
 
 **Good names:**
 - `hookify.dangerous-rm.local.md`
@@ -305,7 +310,9 @@ Better: `rm\s+-rf`
 2. Determine which tool is involved (Bash, Edit, etc.)
 3. Choose event type (bash, file, stop, etc.)
 4. Write regex pattern
-5. Create `.claude/hookify.{name}.local.md` file in project root
+5. Create rule file:
+   - **Project rule:** `.claude/hookify.{name}.local.md` in project root
+   - **Global rule:** `~/.claude/hookify.{name}.local.md` for all projects
 6. Test immediately - rules are read dynamically on next tool use
 
 ### Refining a Rule

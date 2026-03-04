@@ -196,7 +196,13 @@ def extract_frontmatter(content: str) -> tuple[Dict[str, Any], str]:
 
 
 def load_rules(event: Optional[str] = None) -> List[Rule]:
-    """Load all hookify rules from .claude directory.
+    """Load all hookify rules from project-local and global directories.
+
+    Searches two locations for hookify rule files:
+    1. Project-local: .claude/hookify.*.local.md (takes priority)
+    2. Global: ~/.claude/hookify.*.local.md (user-wide defaults)
+
+    Project-local rules override global rules with the same name.
 
     Args:
         event: Optional event filter ("bash", "file", "stop", etc.)
@@ -205,38 +211,62 @@ def load_rules(event: Optional[str] = None) -> List[Rule]:
         List of enabled Rule objects matching the event.
     """
     rules = []
+    seen_names = set()
 
-    # Find all hookify.*.local.md files
-    pattern = os.path.join('.claude', 'hookify.*.local.md')
-    files = glob.glob(pattern)
+    # Search paths: project-local first (higher priority), then global
+    search_dirs = []
 
-    for file_path in files:
-        try:
-            rule = load_rule_file(file_path)
-            if not rule:
-                continue
+    # Project-local rules
+    local_dir = os.path.join('.claude')
+    if os.path.isdir(local_dir):
+        search_dirs.append(local_dir)
 
-            # Filter by event if specified
-            if event:
-                if rule.event != 'all' and rule.event != event:
+    # Global rules from user home
+    home = os.path.expanduser('~')
+    global_dir = os.path.join(home, '.claude')
+    # Avoid searching the same directory twice (e.g. when CWD is ~)
+    if os.path.isdir(global_dir) and os.path.realpath(global_dir) != os.path.realpath(local_dir if os.path.isdir(local_dir) else ''):
+        search_dirs.append(global_dir)
+
+    for search_dir in search_dirs:
+        file_pattern = os.path.join(search_dir, 'hookify.*.local.md')
+        files = glob.glob(file_pattern)
+
+        for file_path in files:
+            try:
+                rule = load_rule_file(file_path)
+                if not rule:
                     continue
 
-            # Only include enabled rules
-            if rule.enabled:
-                rules.append(rule)
+                # Skip global rules that share a name with an already-loaded project rule
+                if rule.name in seen_names:
+                    continue
 
-        except (IOError, OSError, PermissionError) as e:
-            # File I/O errors - log and continue
-            print(f"Warning: Failed to read {file_path}: {e}", file=sys.stderr)
-            continue
-        except (ValueError, KeyError, AttributeError, TypeError) as e:
-            # Parsing errors - log and continue
-            print(f"Warning: Failed to parse {file_path}: {e}", file=sys.stderr)
-            continue
-        except Exception as e:
-            # Unexpected errors - log with type details
-            print(f"Warning: Unexpected error loading {file_path} ({type(e).__name__}): {e}", file=sys.stderr)
-            continue
+                # Filter by event if specified
+                if event:
+                    if rule.event != 'all' and rule.event != event:
+                        continue
+
+                # Only include enabled rules
+                if rule.enabled:
+                    rules.append(rule)
+
+                # Track name regardless of enabled/event filtering so
+                # a disabled project rule still suppresses its global counterpart
+                seen_names.add(rule.name)
+
+            except (IOError, OSError, PermissionError) as e:
+                # File I/O errors - log and continue
+                print(f"Warning: Failed to read {file_path}: {e}", file=sys.stderr)
+                continue
+            except (ValueError, KeyError, AttributeError, TypeError) as e:
+                # Parsing errors - log and continue
+                print(f"Warning: Failed to parse {file_path}: {e}", file=sys.stderr)
+                continue
+            except Exception as e:
+                # Unexpected errors - log with type details
+                print(f"Warning: Unexpected error loading {file_path} ({type(e).__name__}): {e}", file=sys.stderr)
+                continue
 
     return rules
 
