@@ -196,7 +196,14 @@ def extract_frontmatter(content: str) -> tuple[Dict[str, Any], str]:
 
 
 def load_rules(event: Optional[str] = None) -> List[Rule]:
-    """Load all hookify rules from .claude directory.
+    """Load all hookify rules from .claude directories.
+
+    Searches two locations (project-level first, then user-level):
+    1. ./.claude/hookify.*.local.md  — project-specific rules (CWD)
+    2. ~/.claude/hookify.*.local.md  — user-level global rules
+
+    Files that resolve to the same real path (e.g., via symlinks) are
+    only loaded once. Project-level files are processed first.
 
     Args:
         event: Optional event filter ("bash", "file", "stop", etc.)
@@ -206,9 +213,20 @@ def load_rules(event: Optional[str] = None) -> List[Rule]:
     """
     rules = []
 
-    # Find all hookify.*.local.md files
-    pattern = os.path.join('.claude', 'hookify.*.local.md')
-    files = glob.glob(pattern)
+    # Find all hookify.*.local.md files from project-level and user-level directories.
+    # Use realpath deduplication to avoid loading the same file twice via symlinks.
+    search_patterns = [
+        os.path.join('.claude', 'hookify.*.local.md'),                             # project-level (CWD)
+        os.path.join(os.path.expanduser('~'), '.claude', 'hookify.*.local.md'),    # user-level (~/.claude/)
+    ]
+    seen_real_paths: set = set()
+    files = []
+    for pattern in search_patterns:
+        for file_path in glob.glob(pattern):
+            real_path = os.path.realpath(file_path)
+            if real_path not in seen_real_paths:
+                seen_real_paths.add(real_path)
+                files.append(file_path)
 
     for file_path in files:
         try:

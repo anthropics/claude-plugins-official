@@ -258,6 +258,17 @@ Use environment variables instead of hardcoded values.
 **For stop events:**
 - Use general matching on session state
 
+## Rule Scope
+
+Hookify loads rules from two locations:
+
+| Scope | Location | When to use |
+|-------|----------|-------------|
+| **Project-level** | `.claude/hookify.{name}.local.md` | Rules specific to one project |
+| **User-level** | `~/.claude/hookify.{name}.local.md` | Rules that apply to all projects |
+
+Project-level rules are loaded first. If a file in `~/.claude/` resolves to the same path as one in `.claude/` (e.g., via symlinks), it is only loaded once.
+
 ## Management
 
 ### Enable/Disable Rules
