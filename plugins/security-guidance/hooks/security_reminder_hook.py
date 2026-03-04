@@ -67,6 +67,11 @@ Other risky inputs to be careful with:
 - github.head_ref""",
     },
     {
+        "ruleName": "pull_request_target",
+        "substrings": ["pull_request_target"],
+        "reminder": "⚠️ Security Warning: pull_request_target runs with write permissions and secrets access, even for fork PRs. Never checkout and run fork code (actions/checkout with PR head ref) in this context — attackers can execute arbitrary code with your repo's secrets. Use 'pull_request' trigger instead unless you specifically need write access, and never run untrusted code.",
+    },
+    {
         "ruleName": "child_process_exec",
         "substrings": ["child_process.exec", "exec(", "execSync("],
         "reminder": """⚠️ Security Warning: Using child_process.exec() can lead to command injection vulnerabilities.
