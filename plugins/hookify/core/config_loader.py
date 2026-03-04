@@ -198,6 +198,10 @@ def extract_frontmatter(content: str) -> tuple[Dict[str, Any], str]:
 def load_rules(event: Optional[str] = None) -> List[Rule]:
     """Load all hookify rules from .claude directory.
 
+    Loads rules from two locations:
+    1. ./.claude/hookify.*.local.md — project-level
+    2. ~/.claude/hookify.*.local.md — user-level (global)
+
     Args:
         event: Optional event filter ("bash", "file", "stop", etc.)
 
@@ -206,9 +210,17 @@ def load_rules(event: Optional[str] = None) -> List[Rule]:
     """
     rules = []
 
-    # Find all hookify.*.local.md files
-    pattern = os.path.join('.claude', 'hookify.*.local.md')
-    files = glob.glob(pattern)
+    # Find all hookify.*.local.md files in project directory
+    project_pattern = os.path.join('.claude', 'hookify.*.local.md')
+    project_files = glob.glob(project_pattern)
+
+    # Also check user home directory for global rules
+    home_dir = os.path.expanduser("~")
+    user_pattern = os.path.join(home_dir, '.claude', 'hookify.*.local.md')
+    user_files = glob.glob(user_pattern)
+
+    # Combine both project and user files
+    files = project_files + user_files
 
     for file_path in files:
         try:
