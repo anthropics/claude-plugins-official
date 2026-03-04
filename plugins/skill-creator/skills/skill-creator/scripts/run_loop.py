@@ -56,10 +56,12 @@ def run_loop(
     runs_per_query: int,
     trigger_threshold: float,
     holdout: float,
-    model: str,
+    eval_model: str,
+    improve_model: str,
     verbose: bool,
     live_report_path: Path | None = None,
     log_dir: Path | None = None,
+    model: str | None = None,  # Deprecated: kept for backward compat
 ) -> dict:
     """Run the eval + improvement loop."""
     project_root = find_project_root()
@@ -98,7 +100,7 @@ def run_loop(
             project_root=project_root,
             runs_per_query=runs_per_query,
             trigger_threshold=trigger_threshold,
-            model=model,
+            model=eval_model,
         )
         eval_elapsed = time.time() - t0
 
@@ -206,7 +208,7 @@ def run_loop(
             current_description=current_description,
             eval_results=train_results,
             history=blinded_history,
-            model=model,
+            model=improve_model,
             log_dir=log_dir,
             iteration=iteration,
         )
@@ -256,7 +258,9 @@ def main():
     parser.add_argument("--runs-per-query", type=int, default=3, help="Number of runs per query")
     parser.add_argument("--trigger-threshold", type=float, default=0.5, help="Trigger rate threshold")
     parser.add_argument("--holdout", type=float, default=0.4, help="Fraction of eval set to hold out for testing (0 to disable)")
-    parser.add_argument("--model", required=True, help="Model for improvement")
+    parser.add_argument("--model", default=None, help="Deprecated: use --eval-model and --improve-model instead. If set, used as fallback for both.")
+    parser.add_argument("--eval-model", default=None, help="Model for triggering eval runs (default: claude-haiku-4-5-20251001). Triggering is a binary check that doesn't need expensive models.")
+    parser.add_argument("--improve-model", default=None, help="Model for description improvement reasoning (default: claude-sonnet-4-6).")
     parser.add_argument("--verbose", action="store_true", help="Print progress to stderr")
     parser.add_argument("--report", default="auto", help="Generate HTML report at this path (default: 'auto' for temp file, 'none' to disable)")
     parser.add_argument("--results-dir", default=None, help="Save all outputs (results.json, report.html, log.txt) to a timestamped subdirectory here")
@@ -294,6 +298,14 @@ def main():
 
     log_dir = results_dir / "logs" if results_dir else None
 
+    # Resolve model flags: explicit --eval-model/--improve-model take precedence,
+    # then --model as legacy fallback, then hardcoded defaults.
+    EVAL_MODEL_DEFAULT = "claude-haiku-4-5-20251001"
+    IMPROVE_MODEL_DEFAULT = "claude-sonnet-4-6"
+
+    eval_model = args.eval_model or (args.model if args.model else EVAL_MODEL_DEFAULT)
+    improve_model = args.improve_model or (args.model if args.model else IMPROVE_MODEL_DEFAULT)
+
     output = run_loop(
         eval_set=eval_set,
         skill_path=skill_path,
@@ -304,7 +316,8 @@ def main():
         runs_per_query=args.runs_per_query,
         trigger_threshold=args.trigger_threshold,
         holdout=args.holdout,
-        model=args.model,
+        eval_model=eval_model,
+        improve_model=improve_model,
         verbose=args.verbose,
         live_report_path=live_report_path,
         log_dir=log_dir,

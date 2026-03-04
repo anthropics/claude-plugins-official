@@ -382,12 +382,17 @@ Save the eval set to the workspace, then run in the background:
 python -m scripts.run_loop \
   --eval-set <path-to-trigger-eval.json> \
   --skill-path <path-to-skill> \
-  --model <model-id-powering-this-session> \
+  --eval-model claude-haiku-4-5-20251001 \
+  --improve-model claude-sonnet-4-6 \
   --max-iterations 5 \
   --verbose
 ```
 
-Use the model ID from your system prompt (the one powering the current session) so the triggering test matches what the user actually experiences.
+The loop uses two separate models for cost efficiency:
+- `--eval-model` (default: `claude-haiku-4-5-20251001`): Used for triggering eval runs. Triggering is a binary yes/no check (did Claude call the Skill tool?) that doesn't benefit from expensive models. A 20-query eval with 3 runs each spawns 60 `claude -p` sessions -- at Opus pricing, this would consume the majority of a user's time-block quota.
+- `--improve-model` (default: `claude-sonnet-4-6`): Used for reasoning about description improvements between iterations. This benefits from a smarter model.
+
+The legacy `--model` flag still works as a fallback for both if the new flags aren't set.
 
 While it runs, periodically tail the output to give the user updates on which iteration it's on and what the scores look like.
 
