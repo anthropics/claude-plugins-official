@@ -1,0 +1,16 @@
+{
+  "name": "nmd-social-suite",
+  "version": "1.0.0",
+  "description": "One-command social media content engine. Creates fully branded content for Instagram, Facebook, X/Twitter, LinkedIn, blog, email newsletter, and credit/finance forums simultaneously — then auto-posts via browser. Pulls from a saved brand profile so output always matches your voice. Run /social-setup once, then /social to blast every platform.",
+  "author": {
+    "name": "nmdzaza",
+    "email": "camjohn816@gmail.com",
+    "url": "https://github.com/nmdzaza/nmd-plugins"
+  },
+  "homepage": "https://nmdzaza.github.io/nmd-newsletters/nmd-plugins.html",
+  "repository": "https://github.com/nmdzaza/nmd-plugins",
+  "keywords": ["social media", "content creation", "instagram", "twitter", "linkedin", "newsletter", "automation", "marketing"],
+  "skills": ["social-setup", "social"],
+  "requires_setup": true,
+  "setup_skill": "social-setup"
+}
