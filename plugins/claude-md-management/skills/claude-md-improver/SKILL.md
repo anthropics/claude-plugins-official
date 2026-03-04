@@ -26,7 +26,7 @@ find . -name "CLAUDE.md" -o -name ".claude.md" -o -name ".claude.local.md" 2>/de
 |------|----------|---------|
 | Project root | `./CLAUDE.md` | Primary project context (checked into git, shared with team) |
 | Local overrides | `./.claude.local.md` | Personal/local settings (gitignored, not shared) |
-| Global defaults | `~/.claude/CLAUDE.md` | User-wide defaults across all projects |
+| Global defaults | `$CLAUDE_CONFIG_DIR/CLAUDE.md` (defaults to `~/.claude/CLAUDE.md`) | User-wide defaults across all projects |
 | Package-specific | `./packages/*/CLAUDE.md` | Module-level context in monorepos |
 | Subdirectory | Any nested location | Feature/domain-specific context |
 
@@ -158,7 +158,7 @@ When presenting recommendations, remind users:
 - **Keep it concise**: CLAUDE.md should be human-readable; dense is better than verbose
 - **Actionable commands**: All documented commands should be copy-paste ready
 - **Use `.claude.local.md`**: For personal preferences not shared with team (add to `.gitignore`)
-- **Global defaults**: Put user-wide preferences in `~/.claude/CLAUDE.md`
+- **Global defaults**: Put user-wide preferences in your Claude config directory's `CLAUDE.md` (check `$CLAUDE_CONFIG_DIR`, defaults to `~/.claude/`)
 
 ## What Makes a Great CLAUDE.md
 
