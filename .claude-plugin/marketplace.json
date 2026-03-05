@@ -684,6 +684,17 @@
         "url": "https://github.com/semgrep/mcp-marketplace.git"
       },
       "homepage": "https://github.com/semgrep/mcp-marketplace.git"
+    },
+    {
+      "name": "github-reuse-assistant",
+      "description": "ML/DL GitHub project reuse assistant. Structured 6-phase workflow from git clone to successful training with deep research via DeepWiki, automated environment detection, dataset validation with visualization, and auto batch size optimization targeting 95% GPU utilization.",
+      "category": "development",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/lidapengpeng/github-reuse-assistant.git"
+      },
+      "homepage": "https://github.com/lidapengpeng/github-reuse-assistant",
+      "tags": ["community-managed"]
     }
   ]
 }
