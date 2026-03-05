@@ -6,6 +6,20 @@
 
 set -euo pipefail
 
+# Helper: read JSON from stdin, extract a top-level field, output raw string.
+# Uses node (always available — Claude Code is Node.js). Replaces jq dependency.
+# Usage: echo "$JSON" | _json_field "field_name" [default_value]
+_json_field() {
+  node -e "
+    let d='';
+    process.stdin.on('data',c=>d+=c);
+    process.stdin.on('end',()=>{
+      try{const v=JSON.parse(d)[process.argv[1]];process.stdout.write(String(v??process.argv[2]??''))}
+      catch{process.stdout.write(process.argv[2]??'')}
+    });
+  " "$@"
+}
+
 # Read hook input from stdin (advanced stop hook API)
 HOOK_INPUT=$(cat)
 
@@ -29,7 +43,7 @@ COMPLETION_PROMISE=$(echo "$FRONTMATTER" | grep '^completion_promise:' | sed 's/
 # started the loop, this session must not block (or touch the state file).
 # Legacy state files without session_id fall through (preserves old behavior).
 STATE_SESSION=$(echo "$FRONTMATTER" | grep '^session_id:' | sed 's/session_id: *//' || true)
-HOOK_SESSION=$(echo "$HOOK_INPUT" | jq -r '.session_id // ""')
+HOOK_SESSION=$(echo "$HOOK_INPUT" | _json_field session_id "")
 if [[ -n "$STATE_SESSION" ]] && [[ "$STATE_SESSION" != "$HOOK_SESSION" ]]; then
   exit 0
 fi
@@ -65,7 +79,7 @@ if [[ $MAX_ITERATIONS -gt 0 ]] && [[ $ITERATION -ge $MAX_ITERATIONS ]]; then
 fi
 
 # Get transcript path from hook input
-TRANSCRIPT_PATH=$(echo "$HOOK_INPUT" | jq -r '.transcript_path')
+TRANSCRIPT_PATH=$(echo "$HOOK_INPUT" | _json_field transcript_path)
 
 if [[ ! -f "$TRANSCRIPT_PATH" ]]; then
   echo "⚠️  Ralph loop: Transcript file not found" >&2
@@ -93,7 +107,7 @@ fi
 # JSONL line, all with role=assistant. So slurp the last N assistant lines,
 # flatten to text blocks only, and take the last one.
 #
-# Capped at the last 100 assistant lines to keep jq's slurp input bounded
+# Capped at the last 100 assistant lines to keep node's input bounded
 # for long-running sessions.
 LAST_LINES=$(grep '"role":"assistant"' "$TRANSCRIPT_PATH" | tail -n 100)
 if [[ -z "$LAST_LINES" ]]; then
@@ -107,16 +121,24 @@ fi
 # `last // ""` yields empty string when no text blocks exist (e.g. a turn
 # that is all tool calls). That's fine: empty text means no <promise> tag,
 # so the loop simply continues.
-# (Briefly disable errexit so a jq failure can be caught by the $? check.)
+# (Briefly disable errexit so a node failure can be caught by the $? check.)
 set +e
-LAST_OUTPUT=$(echo "$LAST_LINES" | jq -rs '
-  map(.message.content[]? | select(.type == "text") | .text) | last // ""
-' 2>&1)
-JQ_EXIT=$?
+LAST_OUTPUT=$(echo "$LAST_LINES" | node -e "
+  let d='';
+  process.stdin.on('data',c=>d+=c);
+  process.stdin.on('end',()=>{
+    try{
+      const lines=d.trim().split('\\n').map(l=>JSON.parse(l));
+      const texts=lines.flatMap(l=>(l.message?.content||[]).filter(c=>c.type==='text').map(c=>c.text));
+      process.stdout.write(texts[texts.length-1]||'');
+    }catch(e){process.stderr.write(e.message);process.exit(1)}
+  });
+" 2>&1)
+NODE_EXIT=$?
 set -e
 
-# Check if jq succeeded
-if [[ $JQ_EXIT -ne 0 ]]; then
+# Check if node JSON parsing succeeded
+if [[ $NODE_EXIT -ne 0 ]]; then
   echo "⚠️  Ralph loop: Failed to parse assistant message JSON" >&2
   echo "   Error: $LAST_OUTPUT" >&2
   echo "   This may indicate a transcript format issue." >&2
@@ -178,14 +200,13 @@ fi
 
 # Output JSON to block the stop and feed prompt back
 # The "reason" field contains the prompt that will be sent back to Claude
-jq -n \
-  --arg prompt "$PROMPT_TEXT" \
-  --arg msg "$SYSTEM_MSG" \
-  '{
-    "decision": "block",
-    "reason": $prompt,
-    "systemMessage": $msg
-  }'
+node -e "
+  console.log(JSON.stringify({
+    decision: 'block',
+    reason: process.argv[1],
+    systemMessage: process.argv[2]
+  }));
+" "$PROMPT_TEXT" "$SYSTEM_MSG"
 
 # Exit 0 for successful hook execution
 exit 0
