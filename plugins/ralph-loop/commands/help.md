@@ -38,15 +38,17 @@ Start a Ralph loop in your current session.
 **Usage:**
 ```
 /ralph-loop "Refactor the cache layer" --max-iterations 20
+/ralph-loop --file prompts/task.md --max-iterations 20
 /ralph-loop "Add tests" --completion-promise "TESTS COMPLETE"
 ```
 
 **Options:**
+- `--file <path>` - Read prompt from a markdown file (mutually exclusive with inline prompt)
 - `--max-iterations <n>` - Max iterations before auto-stop
 - `--completion-promise <text>` - Promise phrase to signal completion
 
 **How it works:**
-1. Creates `.claude/.ralph-loop.local.md` state file
+1. Creates `.claude/.ralph-loop.local.md` state file (prompt from inline text or `--file`)
 2. You work on the task
 3. When you try to exit, stop hook intercepts
 4. Same prompt fed back

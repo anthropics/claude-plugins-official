@@ -9,6 +9,7 @@ set -euo pipefail
 PROMPT_PARTS=()
 MAX_ITERATIONS=0
 COMPLETION_PROMISE="null"
+FILE_PATH=""
 
 # Parse options and positional arguments
 while [[ $# -gt 0 ]]; do
@@ -19,11 +20,13 @@ Ralph Loop - Interactive self-referential development loop
 
 USAGE:
   /ralph-loop [PROMPT...] [OPTIONS]
+  /ralph-loop --file <path> [OPTIONS]
 
 ARGUMENTS:
   PROMPT...    Initial prompt to start the loop (can be multiple words without quotes)
 
 OPTIONS:
+  --file <path>                  Read prompt from a markdown file (mutually exclusive with inline PROMPT)
   --max-iterations <n>           Maximum iterations before auto-stop (default: unlimited)
   --completion-promise '<text>'  Promise phrase (USE QUOTES for multi-word)
   -h, --help                     Show this help message
@@ -41,6 +44,7 @@ DESCRIPTION:
 
 EXAMPLES:
   /ralph-loop Build a todo API --completion-promise 'DONE' --max-iterations 20
+  /ralph-loop --file prompts/task.md --max-iterations 20
   /ralph-loop --max-iterations 10 Fix the auth bug
   /ralph-loop Refactor cache layer  (runs forever)
   /ralph-loop --completion-promise 'TASK COMPLETE' Create a REST API
@@ -101,6 +105,18 @@ HELP_EOF
       COMPLETION_PROMISE="$2"
       shift 2
       ;;
+    --file)
+      if [[ -z "${2:-}" ]] || [[ "${2:-}" == --* ]]; then
+        echo "Error: --file requires a file path argument" >&2
+        exit 1
+      fi
+      FILE_PATH="$2"
+      shift 2
+      ;;
+    --file=*)
+      FILE_PATH="${1#--file=}"
+      shift
+      ;;
     *)
       # Non-option argument - collect all as prompt parts
       PROMPT_PARTS+=("$1")
@@ -111,6 +127,35 @@ done
 
 # Join all prompt parts with spaces
 PROMPT="${PROMPT_PARTS[*]}"
+
+# Mutual exclusion: --file and inline prompt
+if [[ -n "$FILE_PATH" ]] && [[ -n "$PROMPT" ]]; then
+  echo "Error: Cannot use both --file and inline prompt" >&2
+  exit 1
+fi
+
+# Read prompt from file
+if [[ -n "$FILE_PATH" ]]; then
+  [[ "$FILE_PATH" = /* ]] || FILE_PATH="$(pwd)/$FILE_PATH"
+  if [[ ! -f "$FILE_PATH" ]]; then
+    echo "Error: File not found: $FILE_PATH" >&2
+    exit 1
+  fi
+  if [[ ! -r "$FILE_PATH" ]]; then
+    echo "Error: File not readable: $FILE_PATH" >&2
+    exit 1
+  fi
+  # Strip leading YAML frontmatter if present (prevents nested --- corruption)
+  if head -1 "$FILE_PATH" | grep -q '^---$'; then
+    PROMPT=$(awk '/^---$/{i++; next} i>=2' "$FILE_PATH")
+  else
+    PROMPT=$(cat "$FILE_PATH")
+  fi
+  if [[ -z "$PROMPT" ]]; then
+    echo "Error: File is empty (or contains only frontmatter): $FILE_PATH" >&2
+    exit 1
+  fi
+fi
 
 # Validate prompt is non-empty
 if [[ -z "$PROMPT" ]]; then
@@ -173,7 +218,17 @@ EOF
 # Output the initial prompt if provided
 if [[ -n "$PROMPT" ]]; then
   echo ""
-  echo "$PROMPT"
+  if [[ -n "$FILE_PATH" ]]; then
+    LINE_COUNT=$(echo "$PROMPT" | wc -l | tr -d ' ')
+    echo "Prompt loaded from: $FILE_PATH ($LINE_COUNT lines)"
+    echo ""
+    echo "$PROMPT" | head -5
+    if [[ $LINE_COUNT -gt 5 ]]; then
+      echo "  ... ($((LINE_COUNT - 5)) more lines)"
+    fi
+  else
+    echo "$PROMPT"
+  fi
 fi
 
 # Display completion promise requirements if set
