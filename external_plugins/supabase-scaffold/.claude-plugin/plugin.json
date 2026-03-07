@@ -1,0 +1,6 @@
+{
+  "name": "supabase-scaffold",
+  "description": "Full-stack Supabase project scaffolding. Generates SQL migrations with RLS policies, TypeScript types, Next.js API routes, Zod schemas, and Auth config from natural language data model descriptions.",
+  "author": { "name": "showkkd133" },
+  "homepage": "https://github.com/showkkd133/supabase-scaffold-skill"
+}
