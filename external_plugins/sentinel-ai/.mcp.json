@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "sentinel-ai": {
+      "command": "python",
+      "args": ["-m", "sentinel.mcp_server"],
+      "description": "Safety scanning tools: scan text for prompt injection, PII, harmful content, toxicity, hallucination. Also scans tool calls for dangerous operations."
+    }
+  }
+}
