@@ -1,0 +1,6 @@
+{
+  "name": "docker-gen",
+  "description": "Smart Dockerfile and docker-compose generator. Auto-detects tech stack, generates multi-stage builds, dev/prod configs, health checks, and security-hardened containers for Node/Bun, Python, Go, Rust, Java.",
+  "author": { "name": "showkkd133" },
+  "homepage": "https://github.com/showkkd133/docker-gen-skill"
+}
