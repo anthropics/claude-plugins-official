@@ -1,0 +1,6 @@
+{
+  "name": "cicd-gen",
+  "description": "Smart CI/CD pipeline generator. Auto-detects project type and generates GitHub Actions workflows with caching, deployment targets (Vercel, Docker, npm), monorepo support, and security best practices.",
+  "author": { "name": "showkkd133" },
+  "homepage": "https://github.com/showkkd133/cicd-gen-skill"
+}
