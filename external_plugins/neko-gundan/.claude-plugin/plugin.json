@@ -1,0 +1,7 @@
+{
+  "name": "neko-gundan",
+  "description": "Multi-agent orchestration framework with hierarchical team structure (4 agent roles), auto-scaling, quality gates with evidence requirements, bidirectional objection protocols, and cross-agent knowledge sharing via whiteboards.",
+  "author": {
+    "name": "aliksir"
+  }
+}
