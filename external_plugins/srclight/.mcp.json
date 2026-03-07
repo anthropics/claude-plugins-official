@@ -1,0 +1,6 @@
+{
+  "srclight": {
+    "command": "uvx",
+    "args": ["srclight", "serve", "--transport", "stdio"]
+  }
+}

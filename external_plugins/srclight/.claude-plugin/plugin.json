@@ -1,0 +1,8 @@
+{
+  "name": "srclight",
+  "description": "Deep code indexing for AI agents. Search symbols, navigate call graphs, explore type hierarchies, and understand codebases with SQLite FTS5 + tree-sitter + embeddings.",
+  "author": {
+    "name": "srclight",
+    "url": "https://srclight.dev"
+  }
+}
