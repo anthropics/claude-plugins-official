@@ -27,9 +27,20 @@ COMPLETION_PROMISE=$(echo "$FRONTMATTER" | grep '^completion_promise:' | sed 's/
 # Session isolation: the state file is project-scoped, but the Stop hook
 # fires in every Claude Code session in that project. If another session
 # started the loop, this session must not block (or touch the state file).
-# Legacy state files without session_id fall through (preserves old behavior).
 STATE_SESSION=$(echo "$FRONTMATTER" | grep '^session_id:' | sed 's/session_id: *//' || true)
 HOOK_SESSION=$(echo "$HOOK_INPUT" | jq -r '.session_id // ""')
+
+# Auto-claim: CLAUDE_CODE_SESSION_ID is not exposed as an env var to the Bash
+# tool, so setup-ralph-loop.sh always writes an empty session_id. On the first
+# Stop hook invocation, claim the loop for this session. This is safe because
+# the setup script and first stop hook always fire in the same session.
+if [[ -z "$STATE_SESSION" ]] && [[ -n "$HOOK_SESSION" ]]; then
+  TEMP_FILE="${RALPH_STATE_FILE}.tmp.$$"
+  sed "s/^session_id: .*/session_id: $HOOK_SESSION/" "$RALPH_STATE_FILE" > "$TEMP_FILE"
+  mv "$TEMP_FILE" "$RALPH_STATE_FILE"
+  STATE_SESSION="$HOOK_SESSION"
+fi
+
 if [[ -n "$STATE_SESSION" ]] && [[ "$STATE_SESSION" != "$HOOK_SESSION" ]]; then
   exit 0
 fi
