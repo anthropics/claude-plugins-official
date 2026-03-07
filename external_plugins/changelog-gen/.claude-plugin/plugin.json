@@ -1,0 +1,8 @@
+{
+  "name": "changelog-gen",
+  "description": "Intelligent CHANGELOG generator from git history. Classifies commits by conventional commits spec, generates human-readable entries in Keep a Changelog format, detects breaking changes, and auto-detects version numbers.",
+  "author": {
+    "name": "showkkd133"
+  },
+  "homepage": "https://github.com/showkkd133/changelog-gen-skill"
+}
