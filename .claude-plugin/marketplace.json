@@ -626,13 +626,14 @@
     },
     {
       "name": "posthog",
-      "description": "Connect Claude Code to your PostHog analytics platform. Query insights, manage feature flags, run A/B experiments, track errors, and analyze LLM costs all through natural language. The plugin provides 10 slash commands for common workflows and full access to PostHog's MCP tools. Ask questions like \"What are my top errors?\" or \"Create a feature flag for 50% of users\" and Claude handles the API calls. Supports OAuth authentication, EU and US cloud regions, and self-hosted instances.",
+      "description": "Access PostHog analytics, feature flags, experiments, error tracking, and insights directly from Claude Code.",
       "category": "monitoring",
       "source": {
         "source": "url",
-        "url": "https://github.com/PostHog/posthog-for-claude.git"
+        "url": "https://github.com/PostHog/ai-plugin.git",
+        "sha": "f2f37954ecef9f1afce4fa81b6a612454a96c410"
       },
-      "homepage": "https://github.com/PostHog/posthog-for-claude.git"
+      "homepage": "https://posthog.com/docs/model-context-protocol"
     },
     {
       "name": "coderabbit",
