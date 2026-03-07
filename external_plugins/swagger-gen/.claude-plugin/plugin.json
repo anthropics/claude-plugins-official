@@ -1,0 +1,8 @@
+{
+  "name": "swagger-gen",
+  "description": "Auto-generate Swagger/OpenAPI 3.0 documentation from source code. Detects Express, FastAPI, Gin, Spring Boot, Next.js and more. Scans routes, extracts types, and produces validated openapi.yaml.",
+  "author": {
+    "name": "showkkd133"
+  },
+  "homepage": "https://github.com/showkkd133/swagger-gen-skill"
+}
