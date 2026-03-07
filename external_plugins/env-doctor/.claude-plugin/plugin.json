@@ -1,0 +1,8 @@
+{
+  "name": "env-doctor",
+  "description": "Environment variable health checker. Scans code for env var references, detects missing variables, hardcoded secrets, and format issues. Supports JS/TS, Python, and Go projects.",
+  "author": {
+    "name": "showkkd133"
+  },
+  "homepage": "https://github.com/showkkd133/env-doctor-skill"
+}
