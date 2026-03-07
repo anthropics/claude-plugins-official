@@ -1,0 +1,6 @@
+{
+  "name": "api-client-gen",
+  "description": "Generate TypeScript API client from OpenAPI/Swagger spec. Produces fetch/axios client, type definitions, React Query hooks, and SWR hooks with auth handling and project style adaptation.",
+  "author": { "name": "showkkd133" },
+  "homepage": "https://github.com/showkkd133/api-client-gen-skill"
+}
