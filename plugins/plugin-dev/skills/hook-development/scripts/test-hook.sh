@@ -76,7 +76,7 @@ EOF
   "cwd": "/tmp/test-project",
   "permission_mode": "ask",
   "hook_event_name": "UserPromptSubmit",
-  "user_prompt": "Test user prompt"
+  "prompt": "Test user prompt"
 }
 EOF
       ;;
