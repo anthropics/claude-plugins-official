@@ -1,0 +1,6 @@
+{
+  "name": "regex-builder",
+  "description": "Build, explain, and test regular expressions from natural language. Supports JS/Python/Go/Java syntax variants with common pattern library and edge case warnings.",
+  "author": { "name": "showkkd133" },
+  "homepage": "https://github.com/showkkd133/regex-builder-skill"
+}
