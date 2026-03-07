@@ -1,0 +1,6 @@
+{
+  "name": "db-doc",
+  "description": "Auto-generate database documentation and Mermaid ERD diagrams from migration files. Supports Prisma, Drizzle, TypeORM, Supabase, Knex, Django, Alembic, Go migrate, and raw SQL DDL.",
+  "author": { "name": "showkkd133" },
+  "homepage": "https://github.com/showkkd133/db-doc-skill"
+}
