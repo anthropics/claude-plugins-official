@@ -1,0 +1,10 @@
+{
+  "name": "sentinel-ai",
+  "description": "Real-time AI safety guardrails: scan for prompt injection, PII leaks, harmful content, toxicity, hallucinations, and dangerous tool calls with sub-millisecond latency. Includes adversarial red-teaming and multi-turn conversation safety tracking.",
+  "author": {
+    "name": "Maxwell Calkin",
+    "url": "https://github.com/MaxwellCalkin"
+  },
+  "homepage": "https://github.com/MaxwellCalkin/sentinel-ai",
+  "keywords": ["safety", "guardrails", "security", "prompt-injection", "pii", "ai-safety", "red-teaming"]
+}

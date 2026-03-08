@@ -1,0 +1,6 @@
+{
+  "sentinel-ai": {
+    "command": "python",
+    "args": ["-m", "sentinel.mcp_server"]
+  }
+}
