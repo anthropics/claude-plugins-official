@@ -1,0 +1,7 @@
+{
+  "name": "unity-world-creator",
+  "description": "Gaia-like world creation tool for Unity. Generate terrain, place prefabs, configure lighting, paint textures, create water bodies, spawn enemies, and build entire worlds via slash commands.",
+  "author": {
+    "name": "ForestGatherz"
+  }
+}
