@@ -12,6 +12,8 @@ This command demonstrates slash command structure and frontmatter options.
 
 The user invoked this command with: $ARGUMENTS
 
+`$ARGUMENTS` is a template variable that Claude Code automatically replaces with whatever the user typed after the command name. For example, if the user runs `/example-command src/app.ts --verbose`, then `$ARGUMENTS` becomes `src/app.ts --verbose`.
+
 ## Instructions
 
 When this command is invoked:
@@ -34,4 +36,16 @@ Commands support these frontmatter fields:
 ```
 /example-command my-argument
 /example-command arg1 arg2
+```
+
+### How arguments flow
+
+Given this command definition:
+```markdown
+The user wants to search for: $ARGUMENTS
+```
+
+When the user runs `/example-command login bug`, Claude sees:
+```markdown
+The user wants to search for: login bug
 ```
