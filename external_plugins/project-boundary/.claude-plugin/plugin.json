@@ -1,0 +1,19 @@
+{
+  "name": "project-boundary",
+  "version": "1.0.0",
+  "description": "Scope-aware protection: allows destructive operations within the project directory but blocks them outside. Built for dangerouslySkipPermissions mode.",
+  "author": {
+    "name": "Justyna",
+    "url": "https://github.com/justi"
+  },
+  "repository": "https://github.com/justi/claude-code-project-boundary",
+  "license": "MIT",
+  "keywords": [
+    "safety",
+    "boundary",
+    "protection",
+    "destructive-commands",
+    "project-scope",
+    "dangerously-skip-permissions"
+  ]
+}

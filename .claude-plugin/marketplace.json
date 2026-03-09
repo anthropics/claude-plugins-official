@@ -684,6 +684,17 @@
         "url": "https://github.com/semgrep/mcp-marketplace.git"
       },
       "homepage": "https://github.com/semgrep/mcp-marketplace.git"
+    },
+    {
+      "name": "project-boundary",
+      "description": "Scope-aware protection for destructive commands. Allows rm, mv, chmod within the project directory (for refactoring and cleanup) but blocks them outside it. Also blocks git push --force, DROP TABLE, and other dangerous operations everywhere. Built for developers using dangerouslySkipPermissions mode.",
+      "category": "security",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/justi/claude-code-project-boundary.git"
+      },
+      "homepage": "https://github.com/justi/claude-code-project-boundary",
+      "tags": ["community-managed"]
     }
   ]
 }
