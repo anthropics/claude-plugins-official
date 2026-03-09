@@ -441,6 +441,10 @@
     {
       "name": "greptile",
       "description": "AI-powered codebase search and understanding. Query your repositories using natural language to find relevant code, understand dependencies, and get contextual answers about your codebase architecture.",
+      "author": {
+        "name": "Greptile",
+        "url": "https://greptile.com"
+      },
       "category": "development",
       "source": "./external_plugins/greptile",
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/greptile"
@@ -448,6 +452,9 @@
     {
       "name": "serena",
       "description": "Semantic code analysis MCP server providing intelligent code understanding, refactoring suggestions, and codebase navigation through language server protocol integration.",
+      "author": {
+        "name": "Oraios"
+      },
       "category": "development",
       "source": "./external_plugins/serena",
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/serena",
@@ -456,6 +463,9 @@
     {
       "name": "playwright",
       "description": "Browser automation and end-to-end testing MCP server by Microsoft. Enables Claude to interact with web pages, take screenshots, fill forms, click elements, and perform automated browser testing workflows.",
+      "author": {
+        "name": "Microsoft"
+      },
       "category": "testing",
       "source": "./external_plugins/playwright",
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/playwright"
@@ -463,6 +473,9 @@
     {
       "name": "github",
       "description": "Official GitHub MCP server for repository management. Create issues, manage pull requests, review code, search repositories, and interact with GitHub's full API directly from Claude Code.",
+      "author": {
+        "name": "GitHub"
+      },
       "category": "productivity",
       "source": "./external_plugins/github",
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/github"
@@ -470,6 +483,9 @@
     {
       "name": "supabase",
       "description": "Supabase MCP integration for database operations, authentication, storage, and real-time subscriptions. Manage your Supabase projects, run SQL queries, and interact with your backend directly.",
+      "author": {
+        "name": "Supabase"
+      },
       "category": "database",
       "source": "./external_plugins/supabase",
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/supabase"
@@ -477,6 +493,9 @@
     {
       "name": "atlassian",
       "description": "Connect to Atlassian products including Jira and Confluence. Search and create issues, access documentation, manage sprints, and integrate your development workflow with Atlassian's collaboration tools.",
+      "author": {
+        "name": "Atlassian"
+      },
       "category": "productivity",
       "source": {
         "source": "url",
@@ -487,6 +506,9 @@
     {
       "name": "laravel-boost",
       "description": "Laravel development toolkit MCP server. Provides intelligent assistance for Laravel applications including Artisan commands, Eloquent queries, routing, migrations, and framework-specific code generation.",
+      "author": {
+        "name": "Laravel"
+      },
       "category": "development",
       "source": "./external_plugins/laravel-boost",
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/laravel-boost"
@@ -494,6 +516,9 @@
     {
       "name": "figma",
       "description": "Figma design platform integration. Access design files, extract component information, read design tokens, and translate designs into code. Bridge the gap between design and development workflows.",
+      "author": {
+        "name": "Figma"
+      },
       "category": "design",
       "source": {
         "source": "url",
@@ -504,6 +529,9 @@
     {
       "name": "asana",
       "description": "Asana project management integration. Create and manage tasks, search projects, update assignments, track progress, and integrate your development workflow with Asana's work management platform.",
+      "author": {
+        "name": "Asana"
+      },
       "category": "productivity",
       "source": "./external_plugins/asana",
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/asana"
@@ -511,6 +539,9 @@
     {
       "name": "linear",
       "description": "Linear issue tracking integration. Create issues, manage projects, update statuses, search across workspaces, and streamline your software development workflow with Linear's modern issue tracker.",
+      "author": {
+        "name": "Linear"
+      },
       "category": "productivity",
       "source": "./external_plugins/linear",
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/linear"
@@ -518,6 +549,10 @@
     {
       "name": "Notion",
       "description": "Notion workspace integration. Search pages, create and update documents, manage databases, and access your team's knowledge base directly from Claude Code for seamless documentation workflows.",
+      "author": {
+        "name": "Notion Labs",
+        "url": "https://www.notion.so"
+      },
       "category": "productivity",
       "source": {
         "source": "url",
@@ -528,6 +563,9 @@
     {
       "name": "gitlab",
       "description": "GitLab DevOps platform integration. Manage repositories, merge requests, CI/CD pipelines, issues, and wikis. Full access to GitLab's comprehensive DevOps lifecycle tools.",
+      "author": {
+        "name": "GitLab"
+      },
       "category": "productivity",
       "source": "./external_plugins/gitlab",
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/gitlab"
@@ -535,6 +573,9 @@
     {
       "name": "sentry",
       "description": "Sentry error monitoring integration. Access error reports, analyze stack traces, search issues by fingerprint, and debug production errors directly from your development environment.",
+      "author": {
+        "name": "Sentry"
+      },
       "category": "monitoring",
       "source": {
         "source": "url",
@@ -545,6 +586,10 @@
     {
       "name": "slack",
       "description": "Slack workspace integration. Search messages, access channels, read threads, and stay connected with your team's communications while coding. Find relevant discussions and context quickly.",
+      "author": {
+        "name": "Slack",
+        "url": "https://slack.com"
+      },
       "category": "productivity",
       "source": {
         "source": "url",
@@ -555,6 +600,9 @@
     {
       "name": "vercel",
       "description": "Vercel deployment platform integration. Manage deployments, check build status, access logs, configure domains, and control your frontend infrastructure directly from Claude Code.",
+      "author": {
+        "name": "Vercel"
+      },
       "category": "deployment",
       "source": {
         "source": "url",
@@ -565,6 +613,10 @@
         {
       "name": "stripe",
       "description": "Stripe development plugin for Claude",
+      "author": {
+        "name": "Stripe",
+        "url": "https://stripe.com"
+      },
       "category": "development",
       "source": "./external_plugins/stripe",
       "homepage": "https://github.com/stripe/ai/tree/main/providers/claude/plugin"
@@ -572,6 +624,9 @@
     {
       "name": "firebase",
       "description": "Google Firebase MCP integration. Manage Firestore databases, authentication, cloud functions, hosting, and storage. Build and manage your Firebase backend directly from your development workflow.",
+      "author": {
+        "name": "Google"
+      },
       "category": "database",
       "source": "./external_plugins/firebase",
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/firebase"
@@ -579,6 +634,9 @@
     {
       "name": "context7",
       "description": "Upstash Context7 MCP server for up-to-date documentation lookup. Pull version-specific documentation and code examples directly from source repositories into your LLM context.",
+      "author": {
+        "name": "Upstash"
+      },
       "category": "development",
       "source": "./external_plugins/context7",
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/context7",
@@ -587,6 +645,9 @@
     {
       "name": "pinecone",
       "description": "Pinecone vector database integration. Streamline your Pinecone development with powerful tools for managing vector indexes, querying data, and rapid prototyping. Use slash commands like /quickstart to generate AGENTS.md files and initialize Python projects and /query to quickly explore indexes. Access the Pinecone MCP server for creating, describing, upserting and querying indexes with Claude. Perfect for developers building semantic search, RAG applications, recommendation systems, and other vector-based applications with Pinecone.",
+      "author": {
+        "name": "Pinecone"
+      },
       "category": "database",
       "source": {
         "source": "url",
@@ -597,6 +658,9 @@
     {
       "name": "huggingface-skills",
       "description": "Build, train, evaluate, and use open source AI models, datasets, and spaces.",
+      "author": {
+        "name": "Hugging Face"
+      },
       "category": "development",
       "source": {
         "source": "url",
@@ -607,6 +671,9 @@
     {
       "name": "circleback",
       "description": "Circleback conversational context integration. Search and access meetings, emails, calendar events, and more.",
+      "author": {
+        "name": "Circleback"
+      },
       "category": "productivity",
       "source": {
         "source": "url",
@@ -617,6 +684,10 @@
     {
       "name": "superpowers",
       "description": "Superpowers teaches Claude brainstorming, subagent driven development with built in code review, systematic debugging, and red/green TDD. Additionally, it teaches Claude how to author and test new skills.",
+      "author": {
+        "name": "Jesse Vincent",
+        "email": "jesse@fsck.com"
+      },
       "category": "development",
       "source": {
         "source": "url",
@@ -627,6 +698,11 @@
     {
       "name": "posthog",
       "description": "Connect Claude Code to your PostHog analytics platform. Query insights, manage feature flags, run A/B experiments, track errors, and analyze LLM costs all through natural language. The plugin provides 10 slash commands for common workflows and full access to PostHog's MCP tools. Ask questions like \"What are my top errors?\" or \"Create a feature flag for 50% of users\" and Claude handles the API calls. Supports OAuth authentication, EU and US cloud regions, and self-hosted instances.",
+      "author": {
+        "name": "PostHog",
+        "email": "hey@posthog.com",
+        "url": "https://posthog.com"
+      },
       "category": "monitoring",
       "source": {
         "source": "url",
@@ -637,6 +713,11 @@
     {
       "name": "coderabbit",
       "description": "Your code review partner. CodeRabbit provides external validation using a specialized AI architecture and 40+ integrated static analyzers—offering a different perspective that catches bugs, security vulnerabilities, logic errors, and edge cases. Context-aware analysis via AST parsing and codegraph relationships. Automatically incorporates CLAUDE.md and project coding guidelines into reviews. Useful after writing or modifying code, before commits, when implementing complex or security-sensitive logic, or when a second opinion would increase confidence in the changes. Returns specific findings with suggested fixes that can be applied immediately. Free to use.",
+      "author": {
+        "name": "CodeRabbit AI",
+        "email": "support@coderabbit.ai",
+        "url": "https://coderabbit.ai"
+      },
       "category": "productivity",
       "source": {
         "source": "url",
@@ -647,6 +728,9 @@
     {
       "name": "sonatype-guide",
       "description": "Sonatype Guide MCP server for software supply chain intelligence and dependency security. Analyze dependencies for vulnerabilities, get secure version recommendations, and check component quality metrics.",
+      "author": {
+        "name": "Sonatype"
+      },
       "category": "security",
       "source": {
         "source": "url",
@@ -657,6 +741,9 @@
     {
       "name": "firecrawl",
       "description": "Web scraping and crawling powered by Firecrawl. Turn any website into clean, LLM-ready markdown or structured data. Scrape single pages, crawl entire sites, search the web, and extract structured information. Includes an AI agent for autonomous multi-source data gathering - just describe what you need and it finds, navigates, and extracts automatically.",
+      "author": {
+        "name": "Firecrawl"
+      },
       "category": "development",
       "source": {
         "source": "url",
@@ -667,6 +754,10 @@
     {
       "name": "qodo-skills",
       "description": "Qodo Skills provides a curated library of reusable AI agent capabilities that extend Claude's functionality for software development workflows. Each skill is designed to integrate seamlessly into your development process, enabling tasks like code quality checks, automated testing, security scanning, and compliance validation. Skills operate across your entire SDLC—from IDE to CI/CD—ensuring consistent standards and catching issues early.",
+      "author": {
+        "name": "Qodo.ai",
+        "email": "support@qodo.ai"
+      },
       "category": "development",
       "source": {
         "source": "url",
@@ -678,6 +769,9 @@
     {
       "name": "semgrep",
       "description": "Semgrep catches security vulnerabilities in real-time and guides Claude to write secure code from the start.",
+      "author": {
+        "name": "Semgrep"
+      },
       "category": "security",
       "source": {
         "source": "url",
