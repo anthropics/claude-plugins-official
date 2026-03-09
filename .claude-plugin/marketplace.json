@@ -684,6 +684,16 @@
         "url": "https://github.com/semgrep/mcp-marketplace.git"
       },
       "homepage": "https://github.com/semgrep/mcp-marketplace.git"
+    },
+    {
+      "name": "design-with-claude",
+      "description": "29 specialized design agents as slash commands — accessibility, motion design, color theory, checkout flows, dashboards, typography, and more. Expert-level design guidance directly in your coding workflow.",
+      "category": "design",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/imsaif/design-with-claude.git"
+      },
+      "homepage": "https://github.com/imsaif/design-with-claude"
     }
   ]
 }
