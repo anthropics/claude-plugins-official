@@ -1,0 +1,16 @@
+{
+  "description": "Migration safety hook that warns about dangerous database operations when creating or editing migration files",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/migration_safety_hook.py"
+          }
+        ],
+        "matcher": "Edit|Write|MultiEdit"
+      }
+    ]
+  }
+}

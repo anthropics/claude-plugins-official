@@ -1,0 +1,7 @@
+{
+  "name": "db-migration-guard",
+  "description": "Database migration safety plugin that detects dangerous schema changes, warns about locking risks, and suggests zero-downtime migration patterns across Rails, Django, Laravel, and Prisma",
+  "author": {
+    "name": "Ahmed"
+  }
+}
