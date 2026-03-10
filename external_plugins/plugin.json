@@ -1,0 +1,19 @@
+{                                                                                                                                    "name": "claude-library",                                                                                                          "version": "1.0.0",                                                                                                            
+    "description": "23 reusable skills, 2 agents, and smart hooks for architecture mapping, code review, safe refactoring,
+  learning, and quality gates — works in any project.",
+    "author": {
+      "name": "delacruzribadenc",
+      "url": "https://github.com/tabers77"
+    },
+    "homepage": "https://github.com/tabers77/claude_experiments",
+    "repository": "https://github.com/tabers77/claude_experiments",
+    "license": "MIT",
+    "keywords": [
+      "skills", "agents", "hooks", "code-review", "architecture",
+      "refactoring", "learning", "quality", "security", "planning"
+    ],
+    "source": {
+      "type": "github",
+      "repo": "tabers77/claude_experiments"
+    }
+  }
