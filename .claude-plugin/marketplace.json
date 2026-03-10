@@ -252,6 +252,28 @@
       }
     },
     {
+      "name": "bash-lsp",
+      "description": "Bash language server for code intelligence",
+      "version": "1.0.0",
+      "author": {
+        "name": "Anthropic",
+        "email": "support@anthropic.com"
+      },
+      "source": "./plugins/bash-lsp",
+      "category": "development",
+      "strict": false,
+      "lspServers": {
+        "bash": {
+          "command": "bash-language-server",
+          "args": ["start"],
+          "extensionToLanguage": {
+            ".sh": "bash",
+            ".bash": "bash"
+          }
+        }
+      }
+    },
+    {
       "name": "agent-sdk-dev",
       "description": "Development kit for working with the Claude Agent SDK",
       "author": {
