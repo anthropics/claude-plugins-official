@@ -704,7 +704,7 @@
       "description": "Semgrep catches security vulnerabilities in real-time and guides Claude to write secure code from the start.",
       "category": "security",
       "source": {
-        "source": "git-subdir",
+        "source": "url",
         "url": "https://github.com/semgrep/mcp-marketplace.git",
         "path": "plugin"
       },
