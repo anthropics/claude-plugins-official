@@ -1,7 +1,12 @@
 {
   "name": "sap-fiori",
+  "version": "0.6.41",
   "description": "SAP Fiori MCP server. Generate and adapt SAP Fiori elements applications with AI coding assistants. Supports List Report, Object Page, and Flexible Column layouts.",
   "author": {
     "name": "SAP SE"
-  }
+  },
+  "homepage": "https://github.com/SAP/open-ux-tools",
+  "repository": "https://github.com/SAP/open-ux-tools",
+  "license": "Apache-2.0",
+  "keywords": ["sap", "fiori", "ui5", "mcp"]
 }

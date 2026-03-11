@@ -1,7 +1,12 @@
 {
   "name": "sap-cap",
+  "version": "0.0.4",
   "description": "SAP Cloud Application Programming Model (CAP) MCP server. Search CDS model definitions, query CAP documentation, and get AI-assisted development support for CAP applications.",
   "author": {
     "name": "SAP SE"
-  }
+  },
+  "homepage": "https://cap.cloud.sap/",
+  "repository": "https://github.com/cap-js/mcp-server",
+  "license": "Apache-2.0",
+  "keywords": ["sap", "cap", "cds", "mcp"]
 }

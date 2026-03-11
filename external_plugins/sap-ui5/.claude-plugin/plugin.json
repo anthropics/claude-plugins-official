@@ -1,7 +1,12 @@
 {
   "name": "sap-ui5",
+  "version": "0.2.8",
   "description": "SAPUI5/OpenUI5 MCP server. Create and validate UI5 apps, access API documentation, run UI5 linter, get development guidelines and best practices for UI5 development.",
   "author": {
     "name": "SAP SE"
-  }
+  },
+  "homepage": "https://github.com/UI5/mcp-server",
+  "repository": "https://github.com/UI5/mcp-server",
+  "license": "Apache-2.0",
+  "keywords": ["sap", "ui5", "sapui5", "openui5", "mcp"]
 }
