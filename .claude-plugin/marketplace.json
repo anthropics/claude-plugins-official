@@ -720,6 +720,17 @@
         "sha": "0714280351c1a137e79aad465a66730511ffbd57"
       },
       "homepage": "https://learning.postman.com/docs/developer/postman-mcp-server/"
+    },
+    {
+      "name": "fabric-sdlc",
+      "description": "The Fabric — autonomous 8-agent SDLC team that transforms a business objective into a working application with full documentation, testing, security review, and deployment setup.",
+      "version": "1.0.0",
+      "author": {
+        "name": "Massimo"
+      },
+      "source": "./plugins/fabric-sdlc",
+      "category": "development",
+      "homepage": "https://github.com/mac8005/fabric-sdlc"
     }
   ]
 }
