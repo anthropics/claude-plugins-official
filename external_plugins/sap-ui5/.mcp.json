@@ -1,0 +1,6 @@
+{
+  "ui5-mcp": {
+    "command": "npx",
+    "args": ["-y", "@ui5/mcp-server"]
+  }
+}

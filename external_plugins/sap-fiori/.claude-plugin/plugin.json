@@ -1,0 +1,7 @@
+{
+  "name": "sap-fiori",
+  "description": "SAP Fiori MCP server. Generate and adapt SAP Fiori elements applications with AI coding assistants. Supports List Report, Object Page, and Flexible Column layouts.",
+  "author": {
+    "name": "SAP SE"
+  }
+}

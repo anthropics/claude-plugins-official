@@ -720,6 +720,27 @@
         "sha": "0714280351c1a137e79aad465a66730511ffbd57"
       },
       "homepage": "https://learning.postman.com/docs/developer/postman-mcp-server/"
+    },
+    {
+      "name": "sap-cap",
+      "description": "SAP Cloud Application Programming Model (CAP) MCP server. Search CDS model definitions, query CAP documentation, and get AI-assisted development support for CAP applications.",
+      "category": "development",
+      "source": "./external_plugins/sap-cap",
+      "homepage": "https://github.com/cap-js/mcp-server"
+    },
+    {
+      "name": "sap-fiori",
+      "description": "SAP Fiori MCP server. Generate and adapt SAP Fiori elements applications with AI coding assistants. Supports List Report, Object Page, and Flexible Column layouts.",
+      "category": "development",
+      "source": "./external_plugins/sap-fiori",
+      "homepage": "https://github.com/SAP/open-ux-tools/tree/main/packages/fiori-mcp-server"
+    },
+    {
+      "name": "sap-ui5",
+      "description": "SAPUI5/OpenUI5 MCP server. Create and validate UI5 apps, access API documentation, run UI5 linter, get development guidelines and best practices for UI5 development.",
+      "category": "development",
+      "source": "./external_plugins/sap-ui5",
+      "homepage": "https://github.com/UI5/mcp-server"
     }
   ]
 }

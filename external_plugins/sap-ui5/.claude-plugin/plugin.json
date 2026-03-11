@@ -1,0 +1,7 @@
+{
+  "name": "sap-ui5",
+  "description": "SAPUI5/OpenUI5 MCP server. Create and validate UI5 apps, access API documentation, run UI5 linter, get development guidelines and best practices for UI5 development.",
+  "author": {
+    "name": "SAP SE"
+  }
+}

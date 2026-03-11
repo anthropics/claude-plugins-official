@@ -1,0 +1,7 @@
+{
+  "name": "sap-cap",
+  "description": "SAP Cloud Application Programming Model (CAP) MCP server. Search CDS model definitions, query CAP documentation, and get AI-assisted development support for CAP applications.",
+  "author": {
+    "name": "SAP SE"
+  }
+}
