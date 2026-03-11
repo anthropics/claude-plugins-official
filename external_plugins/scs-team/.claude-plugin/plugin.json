@@ -1,0 +1,23 @@
+{
+  "name": "scs-team",
+  "description": "Transform PRDs, architecture docs, and compliance requirements into structured context Claude actually uses. Dual-layer output with built-in HIPAA, SOC2, PCI DSS, CHAI, and GDPR standards.",
+  "author": {
+    "name": "Tim McCrimmon",
+    "url": "https://structuredcontext.dev"
+  },
+  "homepage": "https://structuredcontext.dev",
+  "repository": "https://github.com/tim-mccrimmon/scs-team",
+  "license": "Apache-2.0",
+  "keywords": [
+    "structured-context",
+    "scs",
+    "governance",
+    "compliance",
+    "architecture",
+    "teams",
+    "enterprise",
+    "hipaa",
+    "soc2",
+    "context"
+  ]
+}

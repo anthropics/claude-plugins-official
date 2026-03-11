@@ -1,0 +1,19 @@
+{
+  "name": "scs-vibe",
+  "description": "Stop Claude from coding you into corners. Quick, conversational setup that generates structured architectural context for solo devs and vibe coders in 15 minutes.",
+  "author": {
+    "name": "Tim McCrimmon",
+    "url": "https://structuredcontext.dev"
+  },
+  "homepage": "https://structuredcontext.dev",
+  "repository": "https://github.com/tim-mccrimmon/scs-vibe",
+  "license": "Apache-2.0",
+  "keywords": [
+    "context",
+    "architecture",
+    "vibe-coding",
+    "solo-dev",
+    "claude-md",
+    "structured-context"
+  ]
+}
