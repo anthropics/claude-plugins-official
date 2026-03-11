@@ -1,0 +1,11 @@
+{
+  "name": "sspdf",
+  "version": "1.0.0",
+  "description": "Generate publication-ready PDF documents — financial reports, tear sheets, invoices, and branded deliverables — directly from Claude with deterministic, math-first rendering. No LibreOffice, no browser, no pixel nudging.",
+  "author": {
+    "name": "Hugo Palma"
+  },
+  "repository": "https://github.com/hugopalma17/sspdf",
+  "license": "Apache-2.0",
+  "keywords": ["pdf", "document-generation", "financial-reports", "invoices", "charts", "tables"]
+}
