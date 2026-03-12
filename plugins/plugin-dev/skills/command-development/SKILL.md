@@ -760,7 +760,7 @@ description: Deploy with validation
 argument-hint: [environment]
 ---
 
-Validate environment: !`echo "$1" | grep -E "^(dev|staging|prod)$" || echo "INVALID"`
+Validate environment: \!echo "$1" | grep -E "^(dev|staging|prod)$" || echo "INVALID"
 
 If $1 is valid environment:
   Deploy to $1
