@@ -150,6 +150,12 @@ started_at: "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 $PROMPT
 EOF
 
+# Warn if session isolation may not work at setup time
+if [[ -z "${CLAUDE_CODE_SESSION_ID:-}" ]]; then
+  echo "⚠️  Note: CLAUDE_CODE_SESSION_ID not available at setup time." >&2
+  echo "   Session isolation will activate on first stop-hook trigger." >&2
+fi
+
 # Output setup message
 cat <<EOF
 🔄 Ralph loop activated in this session!

@@ -69,6 +69,14 @@ Cancel the active Ralph loop.
 /cancel-ralph
 ```
 
+## Session Isolation
+
+Ralph Loop state is stored in `.claude/ralph-loop.local.md` in the project root. When `CLAUDE_CODE_SESSION_ID` is available, only the session that started the loop will be blocked by the stop hook. Other sessions in the same project are unaffected.
+
+If the session ID is not available at setup time, the first session to trigger the stop hook will automatically claim the loop by writing its session ID to the state file.
+
+**Tip**: Use `/cancel-ralph` from any session to remove the state file and stop the loop entirely.
+
 ## Prompt Writing Best Practices
 
 ### 1. Clear Completion Criteria
