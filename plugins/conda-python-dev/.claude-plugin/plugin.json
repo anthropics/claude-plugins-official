@@ -1,0 +1,9 @@
+{
+  "name": "conda-python-dev",
+  "description": "Python development workflow using Conda: environment setup, linting with flake8, and testing with pytest.",
+  "version": "1.0.0",
+  "author": {
+    "name": "Douglas-Consultancy"
+  },
+  "repository": "https://github.com/Douglas-Consultancy/claude-plugins-official"
+}
