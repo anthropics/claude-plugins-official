@@ -1,0 +1,9 @@
+{
+  "name": "history",
+  "description": "Search everything you've ever typed to Claude Code, across all projects and sessions. Find past prompts by keyword and jump straight back into any session.",
+  "author": {
+    "name": "Amy Zheng",
+    "url": "https://github.com/amy-zheng-grow"
+  },
+  "homepage": "https://github.com/amy-zheng-grow/claude-plugins-official/tree/main/external_plugins/history"
+}
