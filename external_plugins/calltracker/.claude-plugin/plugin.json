@@ -1,0 +1,13 @@
+{
+  "name": "calltracker",
+  "description": "Call tracking & analytics - track calls, recordings, marketing attribution",
+  "version": "1.0.0",
+  "author": {
+    "name": "GetPlatform",
+    "url": "https://getplatform.co"
+  },
+  "homepage": "https://calltracker.dev",
+  "repository": "https://github.com/getplatform/getplatform-plugins",
+  "license": "MIT",
+  "keywords": ["call-tracking", "analytics", "phone", "attribution", "sales", "marketing"]
+}

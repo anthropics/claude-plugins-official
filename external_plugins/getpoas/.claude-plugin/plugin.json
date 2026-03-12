@@ -1,0 +1,13 @@
+{
+  "name": "getpoas",
+  "description": "Profit on Ad Spend tracking - calculate true profitability of ad campaigns",
+  "version": "1.0.0",
+  "author": {
+    "name": "GetPlatform",
+    "url": "https://getplatform.co"
+  },
+  "homepage": "https://getpoas.com",
+  "repository": "https://github.com/getplatform/getplatform-plugins",
+  "license": "MIT",
+  "keywords": ["poas", "roas", "analytics", "profitability", "ecommerce", "advertising"]
+}
