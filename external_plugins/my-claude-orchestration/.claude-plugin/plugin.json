@@ -1,0 +1,9 @@
+{
+  "name": "my-claude-orchestration",
+  "description": "Multi-agent orchestration for Claude Code. 9 specialist agents (Sisyphus orchestrator, Hephaestus autonomous worker, and 7 more), 3 behavioral correction hooks, and 3 MCP servers. Sisyphus auto-classifies intent and delegates to optimal subagents with model-optimized routing (Opus/Sonnet).",
+  "author": {
+    "name": "sehoon787"
+  },
+  "homepage": "https://github.com/sehoon787/my-claude",
+  "repository": "https://github.com/sehoon787/my-claude"
+}
