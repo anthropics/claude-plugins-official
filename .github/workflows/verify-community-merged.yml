@@ -1,0 +1,160 @@
+name: Verify community scan merged
+
+# Enforces the invariant: any external plugin entry added to this repo's
+# marketplace.json must already exist (same name, same SHA) on
+# claude-plugins-community main.
+#
+# claude-plugins-community is the security scan gate. This repo has no
+# scan — the merge click here is a mirror, not an approval. If an entry
+# isn't on community main, either the scan hasn't run, hasn't passed,
+# or someone is trying to bypass the gate.
+#
+# Vendored entries (source: "./path") are skipped — they're authored
+# in-repo and reviewed here directly.
+
+on:
+  pull_request:
+    paths:
+      - '.claude-plugin/marketplace.json'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          # Need base ref too, to diff and find what's new
+          fetch-depth: 0
+
+      - name: Find added external entries
+        id: diff
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          base="${{ github.event.pull_request.base.sha }}"
+          head="${{ github.event.pull_request.head.sha }}"
+
+          # Pull both versions of marketplace.json
+          git show "$base:.claude-plugin/marketplace.json" > /tmp/base.json
+          git show "$head:.claude-plugin/marketplace.json" > /tmp/head.json
+
+          # An "external" entry is one whose .source is an object (url-kind
+          # or git-subdir). Vendored entries have .source as a string path.
+          # Key each by name+sha — that pair is what the community scan
+          # pinned its result to.
+          jq -c '.plugins[]
+                 | select(.source | type == "object")
+                 | {name, sha: .source.sha}' /tmp/base.json | sort > /tmp/base-ext.jsonl
+          jq -c '.plugins[]
+                 | select(.source | type == "object")
+                 | {name, sha: .source.sha}' /tmp/head.json | sort > /tmp/head-ext.jsonl
+
+          # Added = in head but not in base. This catches:
+          #   - brand new entries
+          #   - SHA bumps on existing entries (new sha = new scan needed)
+          #   - name changes (new name = new identity)
+          # It deliberately does NOT catch:
+          #   - removals (no scan needed to delete)
+          #   - description/category/homepage edits (cosmetic, scan irrelevant)
+          comm -13 /tmp/base-ext.jsonl /tmp/head-ext.jsonl > /tmp/added.jsonl
+
+          count=$(wc -l < /tmp/added.jsonl)
+          echo "Found $count added/changed external entries:"
+          cat /tmp/added.jsonl
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+
+      - name: Fetch community main marketplace
+        if: steps.diff.outputs.count != '0'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # gh api uses the workflow's GITHUB_TOKEN — works whether
+          # the community repo is public or private (as long as this
+          # repo's Actions have read access, which same-org repos do
+          # by default). More reliable than raw.githubusercontent.com
+          # which occasionally flakes with curl exit 56.
+          gh api \
+            -H "Accept: application/vnd.github.raw" \
+            "repos/anthropics/claude-plugins-community/contents/.claude-plugin/marketplace.json?ref=main" \
+            > /tmp/community.json
+          echo "Community main has $(jq '.plugins | length' /tmp/community.json) entries"
+
+      - name: Check each added entry exists in community main
+        if: steps.diff.outputs.count != '0'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Build the same name+sha keyset for community
+          jq -c '.plugins[]
+                 | select(.source | type == "object")
+                 | {name, sha: .source.sha}' /tmp/community.json | sort > /tmp/community-ext.jsonl
+
+          fail=0
+          while IFS= read -r entry; do
+            name=$(jq -r .name <<< "$entry")
+            sha=$(jq -r '.sha // "∅"' <<< "$entry")
+            short=${sha:0:8}
+
+            # Reject new entries without a SHA pin outright. The scan
+            # result is meaningless if it isn't anchored to a commit.
+            # (Old pre-invariant entries won't hit this — they're in
+            # base too, so they don't show up in the added diff.)
+            if [[ "$sha" == "∅" || "$sha" == "null" ]]; then
+              echo "::error title=Community::'$name' has no source.sha. External entries must be SHA-pinned so the scan result is anchored to a commit."
+              fail=1
+              continue
+            fi
+
+            if grep -qxF "$entry" /tmp/community-ext.jsonl; then
+              echo "::notice title=Community::✓ '$name' @ $short found in community main"
+            else
+              # Give a precise diagnosis: is the name there with a
+              # different SHA (scan ran on a different commit), or
+              # is it entirely absent (scan never ran / PR not merged)?
+              alt_sha=$(jq -r --arg n "$name" \
+                '.plugins[] | select(.name == $n and (.source | type == "object")) | .source.sha // "∅"' \
+                /tmp/community.json)
+              if [[ -n "$alt_sha" && "$alt_sha" != "∅" ]]; then
+                echo "::error title=Community::'$name' exists in community main at SHA ${alt_sha:0:8}, not $short. The scan ran on a different commit — re-pin this entry to match, or open a new community PR with the new SHA."
+              else
+                echo "::error title=Community::'$name' @ $short not found in community main. Merge the community PR first, then re-run this check."
+              fi
+              fail=1
+            fi
+          done < /tmp/added.jsonl
+
+          if [[ $fail -eq 1 ]]; then
+            {
+              echo "### ❌ Community scan gate not satisfied"
+              echo ""
+              echo "One or more external plugin entries in this PR are not present"
+              echo "on [\`claude-plugins-community\` main](https://github.com/anthropics/claude-plugins-community/blob/main/.claude-plugin/marketplace.json)."
+              echo ""
+              echo "This repo does not run a security scan. The scan runs in"
+              echo "\`claude-plugins-community\` — entries must land there first."
+              echo ""
+              echo "**To fix:** merge the corresponding community PR, then re-run"
+              echo "this workflow."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+          {
+            echo "### ✓ Community scan gate satisfied"
+            echo ""
+            echo "All added external entries found in \`claude-plugins-community\` main."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: No external entries changed
+        if: steps.diff.outputs.count == '0'
+        run: |
+          echo "::notice::No external plugin entries added or changed — nothing to verify."
+          echo "### ✓ No external entries to verify" >> "$GITHUB_STEP_SUMMARY"
