@@ -137,8 +137,8 @@ def run_single_query(
                                 if tool_name in ("Skill", "Read"):
                                     pending_tool_name = tool_name
                                     accumulated_json = ""
-                                else:
-                                    return False
+                                # Don't return False here - continue scanning all tool calls
+                                # to handle cases where plugin skills fire before the test command
 
                         elif se_type == "content_block_delta" and pending_tool_name:
                             delta = se.get("delta", {})
@@ -149,9 +149,16 @@ def run_single_query(
 
                         elif se_type in ("content_block_stop", "message_stop"):
                             if pending_tool_name:
-                                return clean_name in accumulated_json
+                                # Check if this Skill call matches, but don't return yet -
+                                # continue scanning to find ALL Skill calls
+                                if clean_name in accumulated_json:
+                                    triggered = True
+                                # Reset for next potential tool call
+                                pending_tool_name = None
+                                accumulated_json = ""
                             if se_type == "message_stop":
-                                return False
+                                # Only return on message_stop after scanning all content blocks
+                                return triggered
 
                     # Fallback: full assistant message
                     elif event.get("type") == "assistant":
