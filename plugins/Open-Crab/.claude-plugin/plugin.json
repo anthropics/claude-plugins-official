@@ -1,0 +1,7 @@
+{
+  "name": "Open-Crab",
+  "description": "Self-maintaining system toolkit for Claude Code - daily patrol, disk cleanup, security scan, and self-evolution. Set up the ecosystem and it runs itself.",
+  "author": {
+    "name": "del"
+  }
+}
