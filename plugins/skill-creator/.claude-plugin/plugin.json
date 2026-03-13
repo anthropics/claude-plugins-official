@@ -4,5 +4,6 @@
   "author": {
     "name": "Anthropic",
     "email": "support@anthropic.com"
-  }
+  },
+  "version": "1.0.0"
 }
