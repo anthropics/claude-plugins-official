@@ -286,6 +286,29 @@
       }
     },
     {
+      "name": "liquid-lsp",
+      "description": "Shopify Liquid language server for theme development",
+      "version": "1.0.0",
+      "author": {
+        "name": "Shopify"
+      },
+      "source": "./plugins/liquid-lsp",
+      "category": "development",
+      "strict": false,
+      "lspServers": {
+        "theme-language-server": {
+          "command": "shopify",
+          "args": [
+            "theme",
+            "language-server"
+          ],
+          "extensionToLanguage": {
+            ".liquid": "liquid"
+          }
+        }
+      }
+    },
+    {
       "name": "agent-sdk-dev",
       "description": "Development kit for working with the Claude Agent SDK",
       "author": {
