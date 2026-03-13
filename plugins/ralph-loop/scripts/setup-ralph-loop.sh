@@ -109,8 +109,8 @@ HELP_EOF
   esac
 done
 
-# Join all prompt parts with spaces
-PROMPT="${PROMPT_PARTS[*]}"
+# Join all prompt parts with spaces (use ${var:+value} idiom for safe expansion under set -u)
+PROMPT="${PROMPT_PARTS[*]:+${PROMPT_PARTS[*]}}"
 
 # Validate prompt is non-empty
 if [[ -z "$PROMPT" ]]; then
