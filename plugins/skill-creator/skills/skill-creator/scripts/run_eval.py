@@ -8,9 +8,10 @@ for a set of queries. Outputs results as JSON.
 import argparse
 import json
 import os
-import select
+import queue
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -97,20 +98,40 @@ def run_single_query(
         pending_tool_name = None
         accumulated_json = ""
 
+        # Cross-platform non-blocking read via a reader thread.
+        # select.select() only works on socket objects on Windows — pipe handles
+        # from subprocess.PIPE cause WinError 10038. A daemon reader thread
+        # pushing chunks into a queue.Queue is portable across platforms.
+        out_queue: queue.Queue[bytes | None] = queue.Queue()
+
+        def _pipe_reader(pipe_fd: int, q: queue.Queue) -> None:
+            try:
+                while True:
+                    chunk = os.read(pipe_fd, 8192)
+                    if not chunk:
+                        break
+                    q.put(chunk)
+            except OSError:
+                pass
+            finally:
+                q.put(None)  # sentinel — signals EOF to the consumer
+
+        reader_thread = threading.Thread(
+            target=_pipe_reader,
+            args=(process.stdout.fileno(), out_queue),
+            daemon=True,
+        )
+        reader_thread.start()
+
         try:
             while time.time() - start_time < timeout:
-                if process.poll() is not None:
-                    remaining = process.stdout.read()
-                    if remaining:
-                        buffer += remaining.decode("utf-8", errors="replace")
-                    break
-
-                ready, _, _ = select.select([process.stdout], [], [], 1.0)
-                if not ready:
+                try:
+                    chunk = out_queue.get(timeout=1.0)
+                except queue.Empty:
+                    if process.poll() is not None:
+                        break
                     continue
-
-                chunk = os.read(process.stdout.fileno(), 8192)
-                if not chunk:
+                if chunk is None:
                     break
                 buffer += chunk.decode("utf-8", errors="replace")
 
