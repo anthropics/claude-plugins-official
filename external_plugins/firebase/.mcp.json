@@ -1,6 +1,9 @@
 {
   "firebase": {
     "command": "npx",
-    "args": ["-y", "firebase-tools@latest", "mcp"]
+    "args": ["-y", "firebase-tools@latest", "mcp"],
+    "env": {
+      "METADATA_SERVER_DETECTION": "bios-only"
+    }
   }
 }
