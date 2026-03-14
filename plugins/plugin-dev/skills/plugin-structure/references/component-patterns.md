@@ -306,10 +306,12 @@ hooks/
 **hooks.json**:
 ```json
 {
-  "PreToolUse": [...],
-  "PostToolUse": [...],
-  "Stop": [...],
-  "SessionStart": [...]
+  "hooks": {
+    "PreToolUse": [...],
+    "PostToolUse": [...],
+    "Stop": [...],
+    "SessionStart": [...]
+  }
 }
 ```
 
@@ -339,9 +341,11 @@ hooks/
 **hooks.json** (combines):
 ```json
 {
-  "PreToolUse": ${file:./pre-tool-use.json},
-  "PostToolUse": ${file:./post-tool-use.json},
-  "Stop": ${file:./stop.json}
+  "hooks": {
+    "PreToolUse": ${file:./pre-tool-use.json},
+    "PostToolUse": ${file:./post-tool-use.json},
+    "Stop": ${file:./stop.json}
+  }
 }
 ```
 
