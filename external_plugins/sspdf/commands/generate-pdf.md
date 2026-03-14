@@ -23,7 +23,7 @@ Ask the user what they need if not already clear from the argument. Identify:
 ### 2. Read Documentation
 
 ```bash
-SSPDF_DIR=$(node -e "console.log(require.resolve('h17-sspdf').replace('/index.js',''))")
+SSPDF_DIR=$(node -e "console.log(require('path').dirname(require.resolve('h17-sspdf')))")
 cat $SSPDF_DIR/DOCUMENTATION.md
 ```
 

@@ -30,7 +30,7 @@ The sspdf engine takes two inputs: a **theme** (styling) and a **source** (conte
 Resolve the package location:
 
 ```bash
-SSPDF_DIR=$(node -e "console.log(require.resolve('h17-sspdf').replace('/index.js',''))")
+SSPDF_DIR=$(node -e "console.log(require('path').dirname(require.resolve('h17-sspdf')))")
 ```
 
 ## Required Reading
@@ -158,6 +158,7 @@ renderDocument({ source, theme, outputPath: "output/my-doc.pdf" });
 
 ```js
 const { renderDocument, registerPlugin, plugins } = require("h17-sspdf");
+const theme = require("h17-sspdf/examples/themes/theme-default");
 
 registerPlugin("chart", plugins.chart);
 
@@ -183,7 +184,7 @@ After rendering, confirm the PDF exists and open it for the user:
 
 ```bash
 ls -la output/my-doc.pdf
-open output/my-doc.pdf
+if [[ "$OSTYPE" == "darwin"* ]]; then open output/my-doc.pdf; elif [[ "$OSTYPE" == "linux"* ]]; then xdg-open output/my-doc.pdf; else start output/my-doc.pdf; fi
 ```
 
 If something fails, check:

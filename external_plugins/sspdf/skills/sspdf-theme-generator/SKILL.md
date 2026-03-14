@@ -28,7 +28,7 @@ The sspdf engine takes two inputs: a theme (styling rules) and a source (content
 Resolve the package location:
 
 ```bash
-SSPDF_DIR=$(node -e "console.log(require.resolve('h17-sspdf').replace('/index.js',''))")
+SSPDF_DIR=$(node -e "console.log(require('path').dirname(require.resolve('h17-sspdf')))")
 ```
 
 ## Required Reading
