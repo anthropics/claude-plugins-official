@@ -235,6 +235,14 @@ def main():
         debug_log(f"JSON decode error: {e}")
         sys.exit(0)  # Allow tool to proceed if we can't parse input
 
+    # Skip blocking in subagent context — exit(2) hangs because there is
+    # no interactive session to confirm the warning.  The agent_id field
+    # is present in hook input when the tool call originates from a
+    # subagent (Claude Code >= v2.1.32, see issue #31939).
+    if input_data.get("agent_id"):
+        debug_log("Skipping security reminder in subagent context")
+        sys.exit(0)
+
     # Extract session ID and tool information from the hook input
     session_id = input_data.get("session_id", "default")
     tool_name = input_data.get("tool_name", "")
