@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Document Title</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --bg-card: #1a1d27;
+    --bg-code: #12141c;
+    --border: #2a2d3a;
+    --text: #e0e0e8;
+    --text-dim: #8b8fa3;
+    --accent: #6c9eff;
+    --accent2: #a78bfa;
+    --accent3: #34d399;
+    --accent4: #f59e0b;
+    --accent-red: #f87171;
+    --toc-w: 260px;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: -apple-system, "Segoe UI", Roboto, "Noto Sans SC", sans-serif;
+    background: var(--bg); color: var(--text);
+    line-height: 1.75; font-size: 15px;
+  }
+  /* --- TOC sidebar --- */
+  nav#toc {
+    position: fixed; top:0; left:0; width: var(--toc-w); height:100vh;
+    background: var(--bg-card); border-right: 1px solid var(--border);
+    overflow-y: auto; z-index: 100; padding: 20px 0;
+    transition: transform .3s;
+  }
+  nav#toc h2 {
+    font-size: 14px; color: var(--accent); padding: 0 20px 12px;
+    border-bottom: 1px solid var(--border); margin-bottom: 8px;
+    letter-spacing: 2px; text-transform: uppercase;
+  }
+  nav#toc a {
+    display: block; padding: 6px 20px; color: var(--text-dim);
+    text-decoration: none; font-size: 13px; border-left: 3px solid transparent;
+    transition: all .2s;
+  }
+  nav#toc a:hover, nav#toc a.active {
+    color: var(--accent); background: rgba(108,158,255,.07);
+    border-left-color: var(--accent);
+  }
+  nav#toc a.sub { padding-left: 36px; font-size: 12px; }
+  /* --- Main content --- */
+  main {
+    margin-left: var(--toc-w); padding: 40px 50px 80px;
+    max-width: 900px;
+  }
+  h1 {
+    font-size: 28px; margin-bottom: 8px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .subtitle { color: var(--text-dim); margin-bottom: 36px; font-size: 14px; }
+  h2 {
+    font-size: 20px; margin: 48px 0 16px; color: var(--accent);
+    padding-bottom: 8px; border-bottom: 1px solid var(--border);
+  }
+  h3 { font-size: 16px; margin: 28px 0 12px; color: var(--accent2); }
+  h4 { font-size: 15px; margin: 20px 0 10px; color: var(--accent3); }
+  p { margin: 10px 0; }
+  strong { color: #fff; }
+  /* --- Collapsible sections --- */
+  .section { margin-bottom: 12px; }
+  .section-toggle {
+    width: 100%; text-align: left; background: var(--bg-card);
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 14px 20px; color: var(--text); font-size: 16px;
+    cursor: pointer; display: flex; align-items: center; gap: 10px;
+    transition: all .2s; font-weight: 600;
+  }
+  .section-toggle:hover { border-color: var(--accent); }
+  .section-toggle .arrow {
+    display: inline-block; transition: transform .3s; font-size: 12px;
+    color: var(--accent);
+  }
+  .section-toggle.open .arrow { transform: rotate(90deg); }
+  .section-toggle .badge {
+    font-size: 11px; padding: 2px 8px; border-radius: 10px;
+    background: rgba(108,158,255,.15); color: var(--accent);
+    margin-left: auto; font-weight: 400;
+  }
+  .section-body {
+    max-height: 0; overflow: hidden; transition: max-height .4s ease;
+    padding: 0 8px;
+  }
+  .section-body.open { max-height: 8000px; padding: 16px 8px; }
+  /* --- Code blocks --- */
+  pre {
+    background: var(--bg-code); border: 1px solid var(--border);
+    border-radius: 6px; padding: 16px; overflow-x: auto;
+    font-size: 13px; line-height: 1.6; margin: 12px 0;
+  }
+  code {
+    font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", monospace;
+  }
+  :not(pre)>code {
+    background: rgba(108,158,255,.12); padding: 2px 6px;
+    border-radius: 4px; font-size: 13px; color: var(--accent);
+  }
+  .kw { color: #c792ea; }
+  .tp { color: #82aaff; }
+  .cm { color: #546e7a; }
+  .st { color: #c3e88d; }
+  .fn { color: #82aaff; }
+  /* --- Tables --- */
+  table {
+    width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 13px;
+  }
+  th {
+    background: rgba(108,158,255,.1); color: var(--accent);
+    padding: 10px 12px; text-align: left; font-weight: 600;
+    border-bottom: 2px solid var(--border);
+  }
+  td { padding: 8px 12px; border-bottom: 1px solid var(--border); }
+  tr:hover td { background: rgba(108,158,255,.04); }
+  /* --- Diagram container --- */
+  .diagram-box {
+    background: var(--bg-code); border: 1px solid var(--border);
+    border-radius: 8px; padding: 20px; margin: 16px 0; overflow-x: auto;
+  }
+  .diagram-box svg { display: block; margin: 0 auto; }
+  /* --- Step controls --- */
+  .step-controls {
+    display: flex; gap: 8px; align-items: center; margin: 12px 0; flex-wrap: wrap;
+  }
+  .step-btn {
+    padding: 6px 16px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--bg-card); color: var(--text); cursor: pointer;
+    font-size: 13px; transition: all .2s;
+  }
+  .step-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .step-btn.active {
+    background: var(--accent); color: #000; border-color: var(--accent);
+    font-weight: 600;
+  }
+  /* --- Tabs --- */
+  .tabs { display: flex; gap: 0; margin: 16px 0 0; }
+  .tab-btn {
+    padding: 8px 20px; border: 1px solid var(--border);
+    background: var(--bg); color: var(--text-dim); cursor: pointer;
+    font-size: 13px; transition: all .2s; border-bottom: none;
+  }
+  .tab-btn:first-child { border-radius: 6px 0 0 0; }
+  .tab-btn:last-child { border-radius: 0 6px 0 0; }
+  .tab-btn.active {
+    background: var(--bg-card); color: var(--accent);
+    border-bottom-color: var(--bg-card);
+  }
+  .tab-content {
+    display: none; background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 0 6px 6px 6px; padding: 16px;
+  }
+  .tab-content.active { display: block; }
+  /* --- Callout boxes --- */
+  .callout {
+    border-left: 3px solid var(--accent); background: rgba(108,158,255,.06);
+    padding: 12px 16px; border-radius: 0 6px 6px 0; margin: 14px 0;
+    font-size: 14px;
+  }
+  .callout.green { border-left-color: var(--accent3); background: rgba(52,211,153,.06); }
+  .callout.yellow { border-left-color: var(--accent4); background: rgba(245,158,11,.06); }
+  .callout.red { border-left-color: var(--accent-red); background: rgba(248,113,113,.06); }
+  /* --- Lists --- */
+  ol, ul { padding-left: 24px; margin: 8px 0; }
+  li { margin: 4px 0; }
+  /* --- Chips --- */
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
+  .chip {
+    font-size: 12px; padding: 4px 12px; border-radius: 20px;
+    border: 1px solid var(--border); color: var(--text-dim);
+  }
+  .chip.blue { border-color: var(--accent); color: var(--accent); }
+  .chip.purple { border-color: var(--accent2); color: var(--accent2); }
+  .chip.green { border-color: var(--accent3); color: var(--accent3); }
+  /* --- Highlights --- */
+  .hl-reuse { color: var(--accent3); font-weight: 600; }
+  .hl-noreuse { color: var(--accent-red); font-weight: 600; }
+  .hl-new { color: var(--accent4); font-weight: 600; }
+  /* --- Blockquote --- */
+  blockquote {
+    border-left: 3px solid var(--border); padding: 8px 16px;
+    color: var(--text-dim); margin: 12px 0; font-style: italic;
+  }
+  /* --- Mobile --- */
+  .hamburger {
+    display: none; position: fixed; top: 12px; left: 12px; z-index: 200;
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 6px; padding: 8px 10px; cursor: pointer; color: var(--text);
+    font-size: 18px;
+  }
+  .overlay {
+    display: none; position: fixed; inset:0; background: rgba(0,0,0,.5); z-index: 99;
+  }
+  @media (max-width: 840px) {
+    nav#toc { transform: translateX(-100%); }
+    nav#toc.open { transform: translateX(0); }
+    .overlay.open { display: block; }
+    .hamburger { display: block; }
+    main { margin-left: 0; padding: 60px 20px 60px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Mobile hamburger -->
+<button class="hamburger" onclick="toggleToc()">&#9776;</button>
+<div class="overlay" id="overlay" onclick="toggleToc()"></div>
+
+<!-- TOC Sidebar -->
+<nav id="toc">
+  <h2>目录</h2>
+  <a href="#sec1">1. Section Title</a>
+  <a href="#sec1-1" class="sub">1.1 Subsection</a>
+  <a href="#sec2">2. Section Title</a>
+</nav>
+
+<!-- Main Content -->
+<main>
+
+<h1>Document Title</h1>
+<p class="subtitle">Subtitle or description</p>
+
+<!-- Section 1 -->
+<h2 id="sec1">1. Section Title</h2>
+<p>Section content goes here.</p>
+
+<!-- Collapsible subsection example -->
+<div class="section" id="sec1-1">
+  <button class="section-toggle" onclick="toggleSection(this)">
+    <span class="arrow">&#9654;</span>
+    1.1 Collapsible Subsection
+  </button>
+  <div class="section-body">
+    <p>Hidden content revealed on click.</p>
+  </div>
+</div>
+
+<!-- Section 2 -->
+<h2 id="sec2">2. Section Title</h2>
+
+<!-- Callout example -->
+<div class="callout green">
+  <strong>Key point:</strong> Important information here.
+</div>
+
+<!-- Diagram example -->
+<div class="diagram-box">
+  <svg width="400" height="80" viewBox="0 0 400 80"
+       xmlns="http://www.w3.org/2000/svg" style="font-family:monospace;font-size:12px">
+    <rect x="50" y="20" width="120" height="40" rx="6"
+          fill="rgba(108,158,255,.08)" stroke="#6c9eff" stroke-width="1.5"/>
+    <text x="80" y="45" fill="#6c9eff" font-size="13">Box A</text>
+    <line x1="170" y1="40" x2="230" y2="40" stroke="#546e7a" stroke-width="1.5"
+          marker-end="url(#arr)"/>
+    <rect x="230" y="20" width="120" height="40" rx="6"
+          fill="rgba(167,139,250,.08)" stroke="#a78bfa" stroke-width="1.5"/>
+    <text x="260" y="45" fill="#a78bfa" font-size="13">Box B</text>
+    <defs>
+      <marker id="arr" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+        <path d="M0,0 L8,3 L0,6" fill="#546e7a"/>
+      </marker>
+    </defs>
+  </svg>
+</div>
+
+<!-- Tab example -->
+<div class="tabs">
+  <button class="tab-btn active" onclick="switchTab(event,'tabs1','tab1a')">Tab A</button>
+  <button class="tab-btn" onclick="switchTab(event,'tabs1','tab1b')">Tab B</button>
+</div>
+<div id="tabs1">
+  <div class="tab-content active" id="tab1a"><p>Content for Tab A.</p></div>
+  <div class="tab-content" id="tab1b"><p>Content for Tab B.</p></div>
+</div>
+
+</main>
+
+<script>
+function toggleSection(btn) {
+  btn.classList.toggle('open');
+  btn.nextElementSibling.classList.toggle('open');
+}
+function toggleToc() {
+  document.getElementById('toc').classList.toggle('open');
+  document.getElementById('overlay').classList.toggle('open');
+}
+document.querySelectorAll('#toc a').forEach(function(a) {
+  a.addEventListener('click', function() {
+    if (window.innerWidth <= 840) toggleToc();
+  });
+});
+function switchTab(e, groupId, tabId) {
+  var group = document.getElementById(groupId);
+  group.querySelectorAll('.tab-content').forEach(function(tc) { tc.classList.remove('active'); });
+  document.getElementById(tabId).classList.add('active');
+  e.target.parentElement.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
+  e.target.classList.add('active');
+}
+// Active TOC on scroll
+var tocLinks = document.querySelectorAll('#toc a');
+var sections = [];
+tocLinks.forEach(function(a) {
+  var href = a.getAttribute('href');
+  if (href && href.startsWith('#')) {
+    var el = document.getElementById(href.slice(1));
+    if (el) sections.push({ el: el, link: a });
+  }
+});
+function updateActiveToc() {
+  var scrollY = window.scrollY + 100;
+  var active = null;
+  for (var i = sections.length - 1; i >= 0; i--) {
+    if (sections[i].el.offsetTop <= scrollY) { active = sections[i].link; break; }
+  }
+  tocLinks.forEach(function(a) { a.classList.remove('active'); });
+  if (active) active.classList.add('active');
+}
+window.addEventListener('scroll', updateActiveToc);
+updateActiveToc();
+</script>
+</body>
+</html>
