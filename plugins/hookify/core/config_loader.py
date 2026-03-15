@@ -196,7 +196,10 @@ def extract_frontmatter(content: str) -> tuple[Dict[str, Any], str]:
 
 
 def load_rules(event: Optional[str] = None) -> List[Rule]:
-    """Load all hookify rules from .claude directory.
+    """Load all hookify rules from .claude directories.
+
+    Priority: Local (.claude/) overrides Global (~/.claude/) by rule name.
+    A local rule with enabled: false disables the global rule with same name.
 
     Args:
         event: Optional event filter ("bash", "file", "stop", etc.)
@@ -204,39 +207,37 @@ def load_rules(event: Optional[str] = None) -> List[Rule]:
     Returns:
         List of enabled Rule objects matching the event.
     """
+    # Load rules by scope: global first, then local (local overrides)
+    global_pattern = os.path.join(os.path.expanduser('~'), '.claude', 'hookify.*.local.md')
+    local_pattern = os.path.join('.claude', 'hookify.*.local.md')
+
+    # Dict to track rules by name (for override logic)
+    rules_by_name: Dict[str, Rule] = {}
+
+    # 1. Load global rules first
+    for file_path in glob.glob(global_pattern):
+        rule = load_rule_file(file_path)
+        if rule:
+            rules_by_name[rule.name] = rule
+
+    # 2. Load local rules (override global by name)
+    for file_path in glob.glob(local_pattern):
+        rule = load_rule_file(file_path)
+        if rule:
+            # Local overrides global with same name
+            rules_by_name[rule.name] = rule
+
+    # 3. Filter by event and enabled status
     rules = []
-
-    # Find all hookify.*.local.md files
-    pattern = os.path.join('.claude', 'hookify.*.local.md')
-    files = glob.glob(pattern)
-
-    for file_path in files:
-        try:
-            rule = load_rule_file(file_path)
-            if not rule:
+    for rule in rules_by_name.values():
+        # Filter by event if specified
+        if event:
+            if rule.event != 'all' and rule.event != event:
                 continue
 
-            # Filter by event if specified
-            if event:
-                if rule.event != 'all' and rule.event != event:
-                    continue
-
-            # Only include enabled rules
-            if rule.enabled:
-                rules.append(rule)
-
-        except (IOError, OSError, PermissionError) as e:
-            # File I/O errors - log and continue
-            print(f"Warning: Failed to read {file_path}: {e}", file=sys.stderr)
-            continue
-        except (ValueError, KeyError, AttributeError, TypeError) as e:
-            # Parsing errors - log and continue
-            print(f"Warning: Failed to parse {file_path}: {e}", file=sys.stderr)
-            continue
-        except Exception as e:
-            # Unexpected errors - log with type details
-            print(f"Warning: Unexpected error loading {file_path} ({type(e).__name__}): {e}", file=sys.stderr)
-            continue
+        # Only include enabled rules
+        if rule.enabled:
+            rules.append(rule)
 
     return rules
 

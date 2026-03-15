@@ -282,9 +282,42 @@ Better: `rm\s+-rf`
 
 ## File Organization
 
-**Location:** All rules in `.claude/` directory
-**Naming:** `.claude/hookify.{descriptive-name}.local.md`
-**Gitignore:** Add `.claude/*.local.md` to `.gitignore`
+### Rule Scopes
+
+**Local rules (project-specific):**
+- **Location:** `.claude/hookify.{name}.local.md` (in project root)
+- **Scope:** Only active in current project
+- **Use for:** Project-specific conventions, team standards
+
+**Global rules (user-wide):**
+- **Location:** `~/.claude/hookify.{name}.local.md` (in home directory)
+- **Scope:** Active in ALL projects
+- **Use for:** Personal preferences, security rules, universal patterns
+
+### Override Priority
+
+**Local rules override global rules by `name:` field**
+
+| Global Rule | Local Rule | Result |
+|-------------|------------|--------|
+| `my-rule` | — | Global active |
+| `my-rule` | `my-rule` | **Local replaces global** |
+| `my-rule` | `other-rule` | **Both active** |
+
+### Disabling a Global Rule Locally
+
+Create a local rule with same `name:` and `enabled: false`:
+
+```markdown
+# .claude/hookify.my-rule.local.md
+---
+name: my-rule
+enabled: false
+event: file
+---
+```
+
+### Naming Convention
 
 **Good names:**
 - `hookify.dangerous-rm.local.md`
@@ -296,6 +329,8 @@ Better: `rm\s+-rf`
 - `hookify.rule1.local.md` (not descriptive)
 - `hookify.md` (missing .local)
 - `danger.local.md` (missing hookify prefix)
+
+**Gitignore:** Add `.claude/*.local.md` to `.gitignore`
 
 ## Workflow
 
