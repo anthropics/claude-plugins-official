@@ -1,0 +1,9 @@
+{
+  "name": "morpheus",
+  "description": "Autonomous development protocol for Claude Code. Structured markdown that orchestrates MCP intelligence servers (Sentinel, Seraph, Niobe, Merovingian) into a coherent development cycle. Zero code, zero dependencies — just a playbook.",
+  "author": {
+    "name": "Evolving Intelligence AI",
+    "url": "https://evolvingintelligence.ai"
+  },
+  "homepage": "https://github.com/evo-hydra/morpheus"
+}
