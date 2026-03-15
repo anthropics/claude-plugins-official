@@ -32,6 +32,12 @@ def find_project_root() -> Path:
     return current
 
 
+def _is_skill_installed(skill_name: str) -> bool:
+    """Check if a skill is already installed in ~/.claude/skills/."""
+    skill_dir = Path.home() / ".claude" / "skills" / skill_name
+    return (skill_dir / "SKILL.md").is_file()
+
+
 def run_single_query(
     query: str,
     skill_name: str,
@@ -42,30 +48,42 @@ def run_single_query(
 ) -> bool:
     """Run a single query and return whether the skill was triggered.
 
-    Creates a command file in .claude/commands/ so it appears in Claude's
-    available_skills list, then runs `claude -p` with the raw query.
+    For skills already installed in ~/.claude/skills/, uses the installed
+    skill directly and matches on the real skill name — no temp command
+    file needed. For uninstalled skills, creates a command file in
+    .claude/commands/ so it appears in Claude's available_skills list.
+
     Uses --include-partial-messages to detect triggering early from
     stream events (content_block_start) rather than waiting for the
     full assistant message, which only arrives after tool execution.
     """
-    unique_id = uuid.uuid4().hex[:8]
-    clean_name = f"{skill_name}-skill-{unique_id}"
-    project_commands_dir = Path(project_root) / ".claude" / "commands"
-    command_file = project_commands_dir / f"{clean_name}.md"
+    installed = _is_skill_installed(skill_name)
+
+    if installed:
+        # Skill is already installed — Claude will discover it naturally.
+        # Match on the real skill name; no temp command needed.
+        match_name = skill_name
+        command_file = None
+    else:
+        # Skill not installed — create a temp command so Claude can see it.
+        unique_id = uuid.uuid4().hex[:8]
+        match_name = f"{skill_name}-skill-{unique_id}"
+        project_commands_dir = Path(project_root) / ".claude" / "commands"
+        command_file = project_commands_dir / f"{match_name}.md"
 
     try:
-        project_commands_dir.mkdir(parents=True, exist_ok=True)
-        # Use YAML block scalar to avoid breaking on quotes in description
-        indented_desc = "\n  ".join(skill_description.split("\n"))
-        command_content = (
-            f"---\n"
-            f"description: |\n"
-            f"  {indented_desc}\n"
-            f"---\n\n"
-            f"# {skill_name}\n\n"
-            f"This skill handles: {skill_description}\n"
-        )
-        command_file.write_text(command_content)
+        if command_file is not None:
+            command_file.parent.mkdir(parents=True, exist_ok=True)
+            indented_desc = "\n  ".join(skill_description.split("\n"))
+            command_content = (
+                f"---\n"
+                f"description: |\n"
+                f"  {indented_desc}\n"
+                f"---\n\n"
+                f"# {skill_name}\n\n"
+                f"This skill handles: {skill_description}\n"
+            )
+            command_file.write_text(command_content)
 
         cmd = [
             "claude",
@@ -144,12 +162,12 @@ def run_single_query(
                             delta = se.get("delta", {})
                             if delta.get("type") == "input_json_delta":
                                 accumulated_json += delta.get("partial_json", "")
-                                if clean_name in accumulated_json:
+                                if match_name in accumulated_json:
                                     return True
 
                         elif se_type in ("content_block_stop", "message_stop"):
                             if pending_tool_name:
-                                return clean_name in accumulated_json
+                                return match_name in accumulated_json
                             if se_type == "message_stop":
                                 return False
 
@@ -161,9 +179,9 @@ def run_single_query(
                                 continue
                             tool_name = content_item.get("name", "")
                             tool_input = content_item.get("input", {})
-                            if tool_name == "Skill" and clean_name in tool_input.get("skill", ""):
+                            if tool_name == "Skill" and match_name in tool_input.get("skill", ""):
                                 triggered = True
-                            elif tool_name == "Read" and clean_name in tool_input.get("file_path", ""):
+                            elif tool_name == "Read" and match_name in tool_input.get("file_path", ""):
                                 triggered = True
                             return triggered
 
@@ -177,7 +195,7 @@ def run_single_query(
 
         return triggered
     finally:
-        if command_file.exists():
+        if command_file is not None and command_file.exists():
             command_file.unlink()
 
 
