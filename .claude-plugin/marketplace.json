@@ -946,6 +946,16 @@
         "sha": "b93007e9a726c6ee93c57a949e732744ef5acbfd"
       },
       "homepage": "https://github.com/zapier/zapier-mcp/tree/main/plugins/zapier"
+    },
+    {
+      "name": "autoresearch",
+      "description": "Autonomous goal-directed iteration engine inspired by Karpathy's autoresearch. Loops autonomously \u2014 modify, verify, keep/discard, repeat. Includes /autoresearch:plan (goal wizard), /autoresearch:security (STRIDE + OWASP audit), /autoresearch:ship (shipping workflow), /autoresearch:debug (autonomous bug hunter), and /autoresearch:fix (autonomous error fixer).",
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/uditgoenka/autoresearch.git"
+      },
+      "homepage": "https://github.com/uditgoenka/autoresearch"
     }
   ]
 }
