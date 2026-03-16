@@ -1,0 +1,22 @@
+{
+  "name": "claude-code-hooks",
+  "description": "Production safety hooks for autonomous Claude Code operation. Context monitoring, syntax checking, branch protection, activity logging, and session summaries from 140+ hours of real-world autonomous use.",
+  "version": "1.0.0",
+  "author": {
+    "name": "yurukusa",
+    "url": "https://github.com/yurukusa"
+  },
+  "homepage": "https://github.com/yurukusa/claude-code-hooks",
+  "repository": "https://github.com/yurukusa/claude-code-hooks",
+  "license": "MIT",
+  "keywords": [
+    "safety",
+    "hooks",
+    "autonomous",
+    "monitoring",
+    "production",
+    "context-window",
+    "syntax-check",
+    "branch-protection"
+  ]
+}

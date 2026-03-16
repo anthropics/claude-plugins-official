@@ -946,6 +946,17 @@
         "sha": "b93007e9a726c6ee93c57a949e732744ef5acbfd"
       },
       "homepage": "https://github.com/zapier/zapier-mcp/tree/main/plugins/zapier"
+    },
+    {
+      "name": "claude-code-hooks",
+      "description": "Production safety hooks for autonomous Claude Code operation. 10 hooks for context monitoring, syntax checking, branch protection, activity logging, and session summaries. Built from 140+ hours of real-world autonomous use.",
+      "category": "safety",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/yurukusa/claude-code-hooks.git",
+        "sha": "da238bfc95dcfd97485578c92f495b4becaba159"
+      },
+      "homepage": "https://github.com/yurukusa/claude-code-hooks"
     }
   ]
 }
