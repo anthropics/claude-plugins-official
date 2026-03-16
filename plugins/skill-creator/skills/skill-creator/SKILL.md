@@ -44,6 +44,16 @@ It's OK to briefly explain terms if you're in doubt, and feel free to clarify te
 
 ## Creating a skill
 
+### Skill types
+
+Before diving in, it helps to recognize which of two broad categories the skill falls into — this affects how you think about testing and maintenance:
+
+- **Capability uplift skills** enhance Claude's performance on tasks it can't do consistently today: complex data transforms, specialized file formats, domain-specific workflows that Claude gets wrong without guidance. These skills tend to need ongoing eval coverage because their value can shift as models improve — an upgrade might make the skill unnecessary, or might break behavior the skill was relying on.
+
+- **Encoded preference skills** capture a particular sequence of steps or style choices that already exist in someone's workflow: "always use our internal template", "follow this three-stage review process", "format output in this specific way". Claude could technically do these things without the skill, but the skill encodes *how* to do them according to the team's preferences. These skills need validation against actual workflows more than they need regression testing.
+
+Neither type is better. Many skills are a blend. The distinction helps with one question: **should we invest in evals designed to run on future model versions?** For uplift skills, yes — they're the ones most likely to regress or become redundant. For preference skills, the human review loop is usually enough.
+
 ### Capture Intent
 
 Start by understanding the user's intent. The current conversation might already contain a workflow the user wants to capture (e.g., they say "turn this into a skill"). If so, extract answers from the conversation history first — the tools used, the sequence of steps, corrections the user made, input/output formats observed. The user may need to fill the gaps, and should confirm before proceeding to the next step.
@@ -51,7 +61,8 @@ Start by understanding the user's intent. The current conversation might already
 1. What should this skill enable Claude to do?
 2. When should this skill trigger? (what user phrases/contexts)
 3. What's the expected output format?
-4. Should we set up test cases to verify the skill works? Skills with objectively verifiable outputs (file transforms, data extraction, code generation, fixed workflow steps) benefit from test cases. Skills with subjective outputs (writing style, art) often don't need them. Suggest the appropriate default based on the skill type, but let the user decide.
+4. Is this primarily a **capability uplift** skill (Claude struggles without it) or an **encoded preference** skill (capturing your team's workflow)? This shapes how much to invest in evals.
+5. Should we set up test cases to verify the skill works? Skills with objectively verifiable outputs (file transforms, data extraction, code generation, fixed workflow steps) benefit from test cases. Skills with subjective outputs (writing style, art) often don't need them. Suggest the appropriate default based on the skill type, but let the user decide.
 
 ### Interview and Research
 
@@ -327,6 +338,38 @@ Keep going until:
 For situations where you want a more rigorous comparison between two versions of a skill (e.g., the user asks "is the new version actually better?"), there's a blind comparison system. Read `agents/comparator.md` and `agents/analyzer.md` for the details. The basic idea is: give two outputs to an independent agent without telling it which is which, and let it judge quality. Then analyze why the winner won.
 
 This is optional, requires subagents, and most users won't need it. The human review loop is usually sufficient.
+
+---
+
+## Regression detection
+
+When a new Claude model ships, **capability uplift skills** are the ones most at risk: the model may handle the task differently now, or the skill may lean on behaviors that changed. Encoded preference skills are more stable since they're encoding choices, not patching gaps.
+
+To check a skill against a new model, re-run the existing evals with the new model ID and compare the results. The aggregation script and viewer support this directly:
+
+```bash
+# Re-run evals pointing at the new model
+# (add --model <new-model-id> when spawning executor subagents)
+
+# Aggregate and view
+python -m scripts.aggregate_benchmark <workspace>/regression-<model-version> --skill-name <name>
+nohup python <skill-creator-path>/eval-viewer/generate_review.py \
+  <workspace>/regression-<model-version> \
+  --skill-name "my-skill" \
+  --benchmark <workspace>/regression-<model-version>/benchmark.json \
+  --previous-workspace <workspace>/iteration-<last-N> \
+  > /dev/null 2>&1 &
+```
+
+What to watch for:
+
+- **Pass rate drops** on assertions that were stable before — the model changed behavior the skill was relying on.
+- **Pass rate improvements** on previously-failing assertions — the skill may no longer be needed for those cases, and you can simplify it.
+- **High variance** on individual assertions (was 100%, now 60%) — possibly a prompt sensitivity that's worth hardening.
+
+If the user reports "the skill stopped working after a model update", this is the workflow to follow. Ask them to re-run the evals and share the benchmark diff.
+
+Results can also be stored and checked automatically in a CI system by comparing the JSON benchmark output across runs — `benchmark.json` has a stable schema (see `references/schemas.md`).
 
 ---
 
