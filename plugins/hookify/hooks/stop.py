@@ -5,9 +5,15 @@ This script is called by Claude Code when agent wants to stop.
 It reads .claude/hookify.*.local.md files and evaluates stop rules.
 """
 
+import glob
 import os
 import sys
 import json
+
+# Early exit: skip if no hookify rule files exist
+if not glob.glob('.claude/hookify.*.local.md'):
+    print('{}')
+    sys.exit(0)
 
 # Add plugin root to Python path for imports
 PLUGIN_ROOT = os.environ.get('CLAUDE_PLUGIN_ROOT')
