@@ -684,6 +684,15 @@
         "url": "https://github.com/semgrep/mcp-marketplace.git"
       },
       "homepage": "https://github.com/semgrep/mcp-marketplace.git"
+    },
+    {
+      "name": "agent-dashboard",
+      "description": "Real-time visual dashboard for Agent Teams - shows agent status, tasks, messages, and token usage in browser",
+      "author": {
+        "name": "claude-code-user"
+      },
+      "source": "./plugins/agent-dashboard",
+      "category": "productivity"
     }
   ]
 }
