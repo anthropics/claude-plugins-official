@@ -594,9 +594,9 @@
       "category": "deployment",
       "source": {
         "source": "url",
-        "url": "https://github.com/vercel/vercel-deploy-claude-code-plugin.git"
+        "url": "https://github.com/vercel/vercel-plugin.git"
       },
-      "homepage": "https://github.com/vercel/vercel-deploy-claude-code-plugin"
+      "homepage": "https://github.com/vercel/vercel-plugin"
     },
     {
       "name": "stripe",
@@ -1015,6 +1015,19 @@
         "url": "https://github.com/MicrosoftDocs/mcp.git"
       },
       "homepage": "https://github.com/microsoftdocs/mcp"
+    },
+    {
+      "name": "neon",
+      "description": "Manage your Neon projects and databases with the neon-postgres agent skill and the Neon MCP Server.",
+      "category": "database",
+      "source": {
+        "source": "git-subdir",
+        "url": "neondatabase/agent-skills",
+        "path": "plugins/neon-postgres",
+        "ref": "main",
+        "sha": "54d7a9db2ddd476f84d5d1fd7bac323907858a8b"
+      },
+      "homepage": "https://github.com/neondatabase/agent-skills/tree/main/plugins/neon-postgres"
     },
     {
       "name": "intercom",
