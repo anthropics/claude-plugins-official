@@ -1,0 +1,8 @@
+{
+  "name": "fractal",
+  "description": "Recursive project management for Claude Code. Decomposes any goal into verifiable predicates, works on the riskiest unknown first. Includes /fractal:run (idempotent state machine), /fractal:init, /fractal:patch, dry run mode, and incremental decomposition with re-evaluation.",
+  "author": {
+    "name": "rmolines",
+    "url": "https://github.com/rmolines/fractal"
+  }
+}
