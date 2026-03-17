@@ -1,0 +1,11 @@
+{
+  "name": "okr-creator",
+  "description": "AI-powered OKR Creator — analyzes any project with six-dimension diagnosis, generates harness-driven OKR skill with PUA rhetoric, and deploys daily GitHub Action review with issue-based AI chat. A PUA-like project for project goal management.",
+  "author": {
+    "name": "chainreactors, M09ic",
+    "url": "https://github.com/chainreactors"
+  },
+  "homepage": "https://github.com/chainreactors/okr-creator",
+  "repository": "https://github.com/chainreactors/okr-creator",
+  "license": "MIT"
+}
