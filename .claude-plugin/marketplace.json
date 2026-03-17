@@ -1038,6 +1038,17 @@
         "sha": "eeef353eead2e3dc5f33f64dbaae54e1309e0d45"
       },
       "homepage": "https://github.com/intercom/claude-plugin-external"
+    },
+    {
+      "name": "paper-search",
+      "description": "Search 250M+ academic papers via OpenAlex. Find papers by keyword, look up by DOI or OpenAlex ID, sort by citations or date. No API key needed.",
+      "category": "research",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/ykdojo/paper-search.git"
+      },
+      "homepage": "https://github.com/ykdojo/paper-search",
+      "tags": ["community-managed"]
     }
   ]
 }
