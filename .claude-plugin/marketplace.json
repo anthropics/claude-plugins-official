@@ -1208,6 +1208,18 @@
         "sha": "d7fa8b8e192680d9a26c1a5dcaead7cf5cdb7139"
       },
       "homepage": "https://github.com/AikidoSec/aikido-claude-plugin"
+    },
+    {
+      "name": "helius",
+      "description": "Build on Solana with Helius — live blockchain tools, expert coding patterns, and autonomous account signup",
+      "source": {
+        "source": "git-subdir",
+        "url": "helius-labs/core-ai",
+        "path": "helius-plugin",
+        "ref": "main",
+        "sha": "05ea4d1128d46618266bbcc23a5e7019c57be0d6"
+      },
+      "homepage": "https://www.helius.dev/docs"
     }
   ]
 }
