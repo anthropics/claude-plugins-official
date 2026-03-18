@@ -397,7 +397,7 @@
     },
     {
       "name": "playground",
-      "description": "Creates interactive HTML playgrounds \u2014 self-contained single-file explorers with visual controls, live preview, and prompt output with copy button. Includes templates for design playgrounds, data explorers, concept maps, and document critique.",
+      "description": "Creates interactive HTML playgrounds — self-contained single-file explorers with visual controls, live preview, and prompt output with copy button. Includes templates for design playgrounds, data explorers, concept maps, and document critique.",
       "author": {
         "name": "Anthropic",
         "email": "support@anthropic.com"
@@ -675,7 +675,7 @@
     },
     {
       "name": "coderabbit",
-      "description": "Your code review partner. CodeRabbit provides external validation using a specialized AI architecture and 40+ integrated static analyzers\u2014offering a different perspective that catches bugs, security vulnerabilities, logic errors, and edge cases. Context-aware analysis via AST parsing and codegraph relationships. Automatically incorporates CLAUDE.md and project coding guidelines into reviews. Useful after writing or modifying code, before commits, when implementing complex or security-sensitive logic, or when a second opinion would increase confidence in the changes. Returns specific findings with suggested fixes that can be applied immediately. Free to use.",
+      "description": "Your code review partner. CodeRabbit provides external validation using a specialized AI architecture and 40+ integrated static analyzers—offering a different perspective that catches bugs, security vulnerabilities, logic errors, and edge cases. Context-aware analysis via AST parsing and codegraph relationships. Automatically incorporates CLAUDE.md and project coding guidelines into reviews. Useful after writing or modifying code, before commits, when implementing complex or security-sensitive logic, or when a second opinion would increase confidence in the changes. Returns specific findings with suggested fixes that can be applied immediately. Free to use.",
       "category": "productivity",
       "source": {
         "source": "url",
@@ -705,7 +705,7 @@
     },
     {
       "name": "qodo-skills",
-      "description": "Qodo Skills provides a curated library of reusable AI agent capabilities that extend Claude's functionality for software development workflows. Each skill is designed to integrate seamlessly into your development process, enabling tasks like code quality checks, automated testing, security scanning, and compliance validation. Skills operate across your entire SDLC\u2014from IDE to CI/CD\u2014ensuring consistent standards and catching issues early.",
+      "description": "Qodo Skills provides a curated library of reusable AI agent capabilities that extend Claude's functionality for software development workflows. Each skill is designed to integrate seamlessly into your development process, enabling tasks like code quality checks, automated testing, security scanning, and compliance validation. Skills operate across your entire SDLC—from IDE to CI/CD—ensuring consistent standards and catching issues early.",
       "category": "development",
       "source": {
         "source": "url",
@@ -769,7 +769,7 @@
       "homepage": "https://planetscale.com/"
     },
     {
-      "name": "rc",
+      "name": "revenuecat",
       "description": "Configure RevenueCat projects, apps, products, entitlements, and offerings directly from Claude Code. Manage your in-app purchase backend without leaving your development workflow.",
       "category": "development",
       "source": {
@@ -829,7 +829,7 @@
       "homepage": "https://www.sanity.io"
     },
     {
-      "name": "data",
+      "name": "astronomer-data-agents",
       "description": "Data engineering for Apache Airflow and Astronomer. Author DAGs with best practices, debug pipeline failures, trace data lineage, profile tables, migrate Airflow 2 to 3, and manage local and cloud deployments.",
       "category": "development",
       "source": {
@@ -1049,6 +1049,270 @@
         "sha": "0705316ef8a2d0c64f81e50d4612ccc6a74edf03"
       },
       "homepage": "https://zoominfo.com"
+    },
+    {
+      "name": "cockroachdb",
+      "description": "CockroachDB plugin for Claude Code — explore schemas, write optimized SQL, debug queries, and manage distributed database clusters directly from your AI coding agent.",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/cockroachdb/claude-plugin.git",
+        "sha": "a54566e03c852567589ef85bb449d1e4de229667"
+      },
+      "homepage": "https://github.com/cockroachdb/claude-plugin"
+    },
+    {
+      "name": "prisma",
+      "description": "Prisma MCP integration for Postgres database management, schema migrations, SQL queries, and connection string management. Provision Prisma Postgres databases, run migrations, and interact with your data directly.",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/prisma/claude-plugin.git",
+        "sha": "815dbc4a045a29e3b81510ba0e3ab806f1baaf0e"
+      },
+      "homepage": "https://prisma.io"
+    },
+    {
+      "name": "fastly-agent-toolkit",
+      "description": "Fastly development tools and platform skills",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/fastly/fastly-agent-toolkit.git",
+        "sha": "d9ba949011e725be55cae11acc741aa1f1f393d3"
+      },
+      "homepage": "https://github.com/fastly/fastly-agent-toolkit/blob/main/README.md"
+    },
+    {
+      "name": "cloudinary",
+      "description": "Use Cloudinary directly in Claude. Manage assets, apply transformations, optimize media, and more through natural conversation.",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/cloudinary-devs/cloudinary-plugin.git",
+        "sha": "137c5d7acd9c3f10e80cd2a400486971e1664f31"
+      },
+      "homepage": "https://cloudinary.com/documentation"
+    },
+    {
+      "name": "wordpress.com",
+      "description": "Uses Claude Code to create and edit WordPress sites with WordPress Studio before deploying changes to your WordPress.com site.",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/Automattic/claude-code-wordpress.com.git",
+        "sha": "e4d23c3bffdcdb7f70134ab6a1a110258ff75cfd"
+      },
+      "homepage": "https://developer.wordpress.com/wordpress-com-claude-code-plugin/"
+    },
+    {
+      "name": "nimble",
+      "description": "Nimble web data toolkit — search, extract, map, crawl the web and work with structured data agents",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/Nimbleway/agent-skills.git",
+        "sha": "cf391e95bd8ac009e3641f172434a1d130dde7fe"
+      },
+      "homepage": "https://docs.nimbleway.com/integrations/agent-skills/plugin-installation"
+    },
+    {
+      "name": "followrabbit",
+      "description": "Cloud cost optimization for GCP infrastructure. Review changes for cost impact and auto-apply savings recommendations using the followrabbit CLI.",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/followrabbit-ai/awesome-rabbit.git",
+        "sha": "f59ec3d1f6337a6ed825ef06836a221ed3d2ffb0"
+      },
+      "homepage": "https://subscriptions.agentic.followrabbit.ai/"
+    },
+    {
+      "name": "brightdata-plugin",
+      "description": "Web scraping, Google search, structured data extraction, and MCP server integration powered by Bright Data. Includes 7 skills: scrape any webpage as markdown (with bot detection/CAPTCHA bypass), search Google with structured JSON results, extract data from 40+ websites (Amazon, LinkedIn, Instagram, TikTok, YouTube, and more), orchestrate Bright Data's 60+ MCP tools, built-in best practices for Web Unlocker, SERP API, Web Scraper API, and Browser API, Python SDK best practices for the brightda...",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/brightdata/skills.git",
+        "sha": "e671da495f7ec0ed6be5e9fa71e260f886a1dc36"
+      },
+      "homepage": "https://docs.brightdata.com"
+    },
+    {
+      "name": "fiftyone",
+      "description": "Build high-quality datasets and computer vision models. Visualize datasets, analyze models, find duplicates, run inference, evaluate predictions, and develop custom plugins.",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/voxel51/fiftyone-skills.git",
+        "sha": "593e0553fc9fd94db52386ada2c9e2074a6ecf89"
+      },
+      "homepage": "https://docs.voxel51.com/"
+    },
+    {
+      "name": "data-engineering",
+      "description": "Data engineering plugin - warehouse exploration, pipeline authoring, Airflow integration",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/astronomer/agents.git",
+        "sha": "85d6053b1e21724f9cefb1e3f5219bd54fc77224"
+      },
+      "homepage": "https://github.com/astronomer/agents"
+    },
+    {
+      "name": "goodmem",
+      "description": "GoodMem memory infrastructure for AI agents. Use Python SDK skills to write code that manages embedders, spaces, and memories, or use MCP tools to perform GoodMem operations directly via natural language.",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/PAIR-Systems-Inc/goodmem-claude-code-plugin.git",
+        "sha": "215568baf203887b5d7f8245e0503dd4a81336c2"
+      },
+      "homepage": "https://github.com/PAIR-Systems-Inc/goodmem-claude-code-plugin"
+    },
+    {
+      "name": "elixir-ls-lsp",
+      "description": "Elixir language server (ElixirLS) for Claude Code — provides code intelligence and diagnostics for .ex, .exs, and .heex files.",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/MikaelFangel/claude-elixir-ls-lsp.git",
+        "sha": "806a6eeeb88b9a306a59b3212a1d5d88aa5c70af"
+      },
+      "homepage": "https://elixir-lsp.github.io/elixir-ls/"
+    },
+    {
+      "name": "optibot",
+      "description": "AI code review that catches production-breaking bugs, business logic issues, and security vulnerabilities — directly in Claude Code.",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/Optimal-AI/optibot-skill.git",
+        "sha": "981db1f630c3116d7df0a71e5967af55b08e813c"
+      },
+      "homepage": "https://getoptimal.ai"
+    },
+    {
+      "name": "firetiger",
+      "description": "Claude Code plugin for Firetiger observability workflows and MCP-powered investigations.",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/firetiger-oss/claude-plugin.git",
+        "sha": "51421ce20adc7c30eb014e6847c7087ed34cb879"
+      },
+      "homepage": "https://www.firetiger.com/"
+    },
+    {
+      "name": "opsera-devsecops",
+      "description": "Opsera DevSecOps Agent — AI-powered architecture analysis, security scanning, compliance auditing, and SQL security for your codebase. Free trial included.",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/opsera-agents/opsera-devsecops.git",
+        "sha": "e797228134ee7d3199594eb0ee5a659df40c91da"
+      },
+      "homepage": "https://opsera.ai/agents"
+    },
+    {
+      "name": "searchfit-seo",
+      "description": "Free AI-powered SEO toolkit — audit websites, plan content strategy, optimize pages, generate schema markup, cluster keywords, and track AI visibility. Works with any website or codebase.",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/searchfit/searchfit-seo.git",
+        "sha": "ced1a99a9fadfc10aa573a05829fc1bd357d4e4c"
+      },
+      "homepage": "https://searchfit.ai"
+    },
+    {
+      "name": "aikido",
+      "description": "Aikido Security scanning for Claude Code — SAST, secrets, and IaC vulnerability detection powered by the Aikido MCP server.",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/AikidoSec/aikido-claude-plugin.git",
+        "sha": "d7fa8b8e192680d9a26c1a5dcaead7cf5cdb7139"
+      },
+      "homepage": "https://github.com/AikidoSec/aikido-claude-plugin"
+    },
+    {
+      "name": "helius",
+      "description": "Build on Solana with Helius — live blockchain tools, expert coding patterns, and autonomous account signup",
+      "source": {
+        "source": "git-subdir",
+        "url": "helius-labs/core-ai",
+        "path": "helius-plugin",
+        "ref": "main",
+        "sha": "05ea4d1128d46618266bbcc23a5e7019c57be0d6"
+      },
+      "homepage": "https://www.helius.dev/docs"
+    },
+    {
+      "name": "atlan",
+      "description": "Atlan data catalog plugin for Claude Code. Search, explore, govern, and manage your data assets through natural language. Powered by the Atlan MCP server with semantic search, lineage traversal, glossary management, data quality rules, and more.",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/atlanhq/agent-toolkit.git",
+        "sha": "acdf284da6aa98b14f8dad90a9827006d8df425c"
+      },
+      "homepage": "https://docs.atlan.com/"
+    },
+    {
+      "name": "ai-firstify",
+      "description": "AI-first project auditor and re-engineer based on the 9 design principles and 7 design patterns from the TechWolf AI-First Bootcamp",
+      "source": {
+        "source": "git-subdir",
+        "url": "techwolf-ai/ai-first-toolkit",
+        "path": "plugins/ai-firstify",
+        "ref": "main",
+        "sha": "7f18e11d694b9ae62ea3009fbbc175f08ae913df"
+      },
+      "homepage": "https://ai-first.techwolf.ai"
+    },
+    {
+      "name": "product-tracking-skills",
+      "description": "AI agent skills that make SaaS products data-ready for product analytics — from codebase scan to tracking plan to working instrumentation code.",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/Accoil/product-tracking-skills.git",
+        "sha": "341f8cf47d8b5dda550222152377c50aee34c723"
+      },
+      "homepage": "https://www.accoil.com/product-tracking"
+    },
+    {
+      "name": "nightvision",
+      "description": "Skills for working with NightVision, a DAST and API Discovery platform that finds exploitable vulnerabilities in web applications and REST APIs",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/nvsecurity/nightvision-skills.git",
+        "sha": "7d7a3f342bbf4d02b6e012279800cf91ff0c1c97"
+      },
+      "homepage": "https://github.com/nvsecurity/nightvision-skills"
+    },
+    {
+      "name": "postiz",
+      "description": "Social media automation CLI for scheduling posts, managing integrations, uploading media, and tracking analytics across 28+ platforms including X, LinkedIn, Reddit, YouTube, TikTok, Instagram, and more",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/gitroomhq/postiz-agent.git",
+        "sha": "c5d1bf5f7e95a71e230fc19ae2150ddd9c549854"
+      },
+      "homepage": "https://postiz.com/agent"
+    },
+    {
+      "name": "voila-api",
+      "description": "Definitive guide for the Voila API. Covers shipment creation (Manual/Smart Shipping), real-time tracking, detailed history, manifesting, collections, webhooks, and third-party integrations (Sorted, Peoplevox, Mintsoft, Veeqo, JD).",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/TSedmanDC/Voila-API-Skill.git",
+        "sha": "b9cfcb860cb5ae4ece57d67422a6cdd92ef96739"
+      },
+      "homepage": "https://github.com/TSedmanDC/Voila-API-Skill"
+    },
+    {
+      "name": "remember",
+      "description": "Continuous memory for Claude Code. Extracts, summarizes, and compresses conversations into tiered daily logs. Claude remembers what you did yesterday.",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/Digital-Process-Tools/claude-remember.git",
+        "sha": "779ab61d8d412230eeec1840b8ca104bebea4358"
+      },
+      "homepage": "https://github.com/Digital-Process-Tools/claude-remember"
+    },
+    {
+      "name": "ai-plugins",
+      "description": "Set up endorctl and use Endor Labs to scan, prioritize, and fix security risks across your software supply chain",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/endorlabs/ai-plugins.git",
+        "sha": "a0f1d5632b6f9e6c26eaa9806f5d8d454ca5b06f"
+      },
+      "homepage": "https://www.endorlabs.com"
     }
   ]
 }
