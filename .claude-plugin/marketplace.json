@@ -1038,6 +1038,33 @@
         "sha": "eeef353eead2e3dc5f33f64dbaae54e1309e0d45"
       },
       "homepage": "https://github.com/intercom/claude-plugin-external"
+    },
+    {
+      "name": "engram",
+      "description": "Salience-gated memory for Claude Code. Captures what matters (SNARC scoring: Surprise, Novelty, Arousal, Reward, Conflict), forgets what doesn't (confidence decay), consolidates patterns while sleeping (dream cycles). Automatic context injection on session start, prompt submit, and post-compaction. Four-tier memory: buffer \u2192 observations \u2192 patterns \u2192 identity.",
+      "version": "0.3.0",
+      "author": {
+        "name": "dp-web4",
+        "email": "dp@metalinxx.io"
+      },
+      "source": {
+        "source": "github",
+        "repo": "dp-web4/engram"
+      },
+      "category": "productivity",
+      "keywords": [
+        "memory",
+        "persistence",
+        "salience",
+        "attention",
+        "context",
+        "SNARC",
+        "dream-cycle"
+      ],
+      "homepage": "https://github.com/dp-web4/engram",
+      "tags": [
+        "community-managed"
+      ]
     }
   ]
 }
