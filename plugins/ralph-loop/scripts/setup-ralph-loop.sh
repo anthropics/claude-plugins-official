@@ -112,19 +112,23 @@ done
 # Join all prompt parts with spaces (use ${var:+value} idiom for safe expansion under set -u)
 PROMPT="${PROMPT_PARTS[*]:+${PROMPT_PARTS[*]}}"
 
-# Validate prompt is non-empty
+# Validate prompt is non-empty, fall back to completion-promise if not provided
 if [[ -z "$PROMPT" ]]; then
-  echo "❌ Error: No prompt provided" >&2
-  echo "" >&2
-  echo "   Ralph needs a task description to work on." >&2
-  echo "" >&2
-  echo "   Examples:" >&2
-  echo "     /ralph-loop Build a REST API for todos" >&2
-  echo "     /ralph-loop Fix the auth bug --max-iterations 20" >&2
-  echo "     /ralph-loop --completion-promise 'DONE' Refactor code" >&2
-  echo "" >&2
-  echo "   For all options: /ralph-loop --help" >&2
-  exit 1
+  if [[ "$COMPLETION_PROMISE" != "null" ]]; then
+    PROMPT="$COMPLETION_PROMISE"
+  else
+    echo "❌ Error: No prompt provided" >&2
+    echo "" >&2
+    echo "   Ralph needs a task description to work on." >&2
+    echo "" >&2
+    echo "   Examples:" >&2
+    echo "     /ralph-loop Build a REST API for todos" >&2
+    echo "     /ralph-loop Fix the auth bug --max-iterations 20" >&2
+    echo "     /ralph-loop --completion-promise 'DONE' Refactor code" >&2
+    echo "" >&2
+    echo "   For all options: /ralph-loop --help" >&2
+    exit 1
+  fi
 fi
 
 # Create state file for stop hook (markdown with YAML frontmatter)
