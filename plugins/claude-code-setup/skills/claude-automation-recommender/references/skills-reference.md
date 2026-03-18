@@ -48,6 +48,16 @@ Some pre-built skills are available through official plugins (install via `/plug
 |-------|----------|
 | **feature-dev** | End-to-end feature development workflow |
 
+### Security (prism-scanner)
+
+| Skill | Best For |
+|-------|----------|
+| **prism-scanner** | Scanning agent skills, plugins, and MCP servers for malicious code before installation |
+
+**Value**: Detects data exfiltration, shell injection, persistence mechanisms, typo-squatting, and system residue with 39+ rules and A-F grading. Covers the full agent lifecycle: pre-install, runtime, and post-uninstall.
+
+**Install**: `pip install prism-scanner` or `npx prism-scanner`
+
 ---
 
 ## Quick Reference: Official Plugin Skills

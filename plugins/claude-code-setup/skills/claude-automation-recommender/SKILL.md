@@ -97,6 +97,7 @@ Create skills in `.claude/skills/<name>/SKILL.md`. Some are also available via p
 | React/Vue/Angular | frontend-design | frontend-design |
 | Automation rules | writing-rules | hookify |
 | Feature planning | feature-dev | feature-dev |
+| Agent skills / MCP servers / plugins | **prism-scanner** | — (`pip install prism-scanner`) |
 
 **Custom skills to create** (with templates, scripts, examples):
 
