@@ -171,9 +171,18 @@ Keep trying until success. The loop handles retry logic automatically.
 
 ## Windows Compatibility
 
-The stop hook uses a bash script that requires Git for Windows to run properly.
+The stop hook requires **Git for Windows** (for bash) and **jq** (for JSON parsing).
 
-**Issue**: On Windows, the `bash` command may resolve to WSL bash (often misconfigured) instead of Git Bash, causing the hook to fail with errors like:
+### Missing `jq`
+
+The hook depends on `jq` which is not bundled with Git Bash. If you see `jq: command not found`, install it:
+
+- `winget install jqlang.jq` (then restart your terminal)
+- Or download from https://stedolan.github.io/jq/download/
+
+### WSL bash conflict
+
+On Windows, the `bash` command may resolve to WSL bash (often misconfigured) instead of Git Bash, causing the hook to fail with errors like:
 - `wsl: Unknown key 'automount.crossDistro'`
 - `execvpe(/bin/bash) failed: No such file or directory`
 

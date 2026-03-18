@@ -17,6 +17,19 @@ if [[ ! -f "$RALPH_STATE_FILE" ]]; then
   exit 0
 fi
 
+# Verify jq is available (required for JSON parsing of hook input and transcript)
+if ! command -v jq > /dev/null 2>&1; then
+  echo "⚠️  Ralph loop: 'jq' is required but not found" >&2
+  echo "   Install jq: https://stedolan.github.io/jq/download/" >&2
+  echo "     macOS:   brew install jq" >&2
+  echo "     Linux:   sudo apt-get install jq" >&2
+  echo "     Windows: winget install jqlang.jq" >&2
+  echo "" >&2
+  echo "   Ralph loop is stopping." >&2
+  rm "$RALPH_STATE_FILE"
+  exit 0
+fi
+
 # Parse markdown frontmatter (YAML between ---) and extract values
 FRONTMATTER=$(sed -n '/^---$/,/^---$/{ /^---$/d; p; }' "$RALPH_STATE_FILE")
 ITERATION=$(echo "$FRONTMATTER" | grep '^iteration:' | sed 's/iteration: *//')
