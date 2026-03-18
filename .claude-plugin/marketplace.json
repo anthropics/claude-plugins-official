@@ -1038,6 +1038,82 @@
         "sha": "eeef353eead2e3dc5f33f64dbaae54e1309e0d45"
       },
       "homepage": "https://github.com/intercom/claude-plugin-external"
+    },
+    {
+      "name": "lean4-lake-lsp",
+      "description": "Lean 4 language server via Lake \u2014 for Lake projects with dependencies (e.g., Mathlib). Replaces the inefficient CLI-based lake build workflow with native LSP integration, giving Claude Code real-time diagnostics for interactive theorem proving.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Yingte Xu",
+        "email": "lucianoxu@foxmail.com"
+      },
+      "source": {
+        "source": "github",
+        "repo": "LucianoXu/claude-lean4-lsp",
+        "path": "plugins/lean4-lsp"
+      },
+      "category": "development",
+      "tags": [
+        "lean",
+        "lean4",
+        "theorem-proving",
+        "mathematics",
+        "formal-verification",
+        "lake"
+      ],
+      "homepage": "https://github.com/LucianoXu/claude-lean4-lsp",
+      "strict": false,
+      "lspServers": {
+        "lean": {
+          "command": "lake",
+          "args": [
+            "serve"
+          ],
+          "extensionToLanguage": {
+            ".lean": "lean"
+          },
+          "startupTimeout": 60000,
+          "maxRestarts": 3
+        }
+      }
+    },
+    {
+      "name": "lean4-lean-lsp",
+      "description": "Lean 4 language server via the lean binary \u2014 for standalone .lean files outside Lake projects. Replaces the inefficient CLI-based workflow with native LSP integration for interactive theorem proving.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Yingte Xu",
+        "email": "lucianoxu@foxmail.com"
+      },
+      "source": {
+        "source": "github",
+        "repo": "LucianoXu/claude-lean4-lsp",
+        "path": "plugins/lean4-lsp"
+      },
+      "category": "development",
+      "tags": [
+        "lean",
+        "lean4",
+        "theorem-proving",
+        "mathematics",
+        "formal-verification",
+        "standalone"
+      ],
+      "homepage": "https://github.com/LucianoXu/claude-lean4-lsp",
+      "strict": false,
+      "lspServers": {
+        "lean": {
+          "command": "lean",
+          "args": [
+            "--server"
+          ],
+          "extensionToLanguage": {
+            ".lean": "lean"
+          },
+          "startupTimeout": 60000,
+          "maxRestarts": 3
+        }
+      }
     }
   ]
 }
