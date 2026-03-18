@@ -62,6 +62,30 @@
       }
     },
     {
+      "name": "basedpyright-lsp",
+      "description": "Python language server (basedpyright) for stricter type checking and code intelligence",
+      "version": "1.0.0",
+      "author": {
+        "name": "Tyler Laprade",
+        "email": "tyler@tylerlaprade.com"
+      },
+      "source": "./plugins/basedpyright-lsp",
+      "category": "development",
+      "strict": false,
+      "lspServers": {
+        "basedpyright": {
+          "command": "basedpyright-langserver",
+          "args": [
+            "--stdio"
+          ],
+          "extensionToLanguage": {
+            ".py": "python",
+            ".pyi": "python"
+          }
+        }
+      }
+    },
+    {
       "name": "gopls-lsp",
       "description": "Go language server for code intelligence and refactoring",
       "version": "1.0.0",
