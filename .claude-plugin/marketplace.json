@@ -502,6 +502,17 @@
       }
     },
     {
+      "name": "memory-compactor",
+      "description": "Automatically monitors MEMORY.md size and warns Claude to compact it when it exceeds a configurable line threshold. Installs a PostToolUse hook on Write/Edit to memory directories.",
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/sharooncs/claude-memory-compactor.git",
+        "sha": "96098b64c7e8d76e8f338b0857a97821c103e546"
+      },
+      "homepage": "https://github.com/sharooncs/claude-memory-compactor"
+    },
+    {
       "name": "microsoft-docs",
       "description": "Access official Microsoft documentation, API references, and code samples for Azure, .NET, Windows, and more.",
       "category": "development",
@@ -1025,6 +1036,17 @@
         "sha": "15dda227e34959b1340e33bb9aede7e23a273f42"
       },
       "homepage": "https://dev.wix.com/docs/wix-cli/guides/development/about-wix-skills"
+    },
+    {
+      "name": "windows-screenshot-paste",
+      "description": "Enables Ctrl+V screenshot pasting in Claude Code terminal on Windows. Installs an AutoHotkey v2 script that saves clipboard images as PNG and types the file path into the terminal.",
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/sharooncs/claude-windows-screenshot-paste.git",
+        "sha": "1a33f0a9bf4ceb57080205a9641babc50706e0d0"
+      },
+      "homepage": "https://github.com/sharooncs/claude-windows-screenshot-paste"
     },
     {
       "name": "zapier",
