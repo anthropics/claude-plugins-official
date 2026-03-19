@@ -10,7 +10,53 @@ PROMPT_PARTS=()
 MAX_ITERATIONS=0
 COMPLETION_PROMISE="null"
 
-# Parse options and positional arguments
+# If RALPH_ARGS is set (passed via env var to avoid shell metacharacter expansion),
+# parse flags from it using safe string operations, then clear positional params.
+if [[ -n "${RALPH_ARGS+x}" ]]; then
+  _ralph_remaining="$RALPH_ARGS"
+  while [[ -n "$_ralph_remaining" ]]; do
+    case "$_ralph_remaining" in
+      --max-iterations\ *)
+        _ralph_remaining="${_ralph_remaining#--max-iterations }"
+        # Extract the next word (the number)
+        _ralph_val="${_ralph_remaining%% *}"
+        if [[ "$_ralph_remaining" == "$_ralph_val" ]]; then
+          _ralph_remaining=""
+        else
+          _ralph_remaining="${_ralph_remaining#"$_ralph_val" }"
+        fi
+        MAX_ITERATIONS="$_ralph_val"
+        ;;
+      --completion-promise\ \'*)
+        # Handle single-quoted value: --completion-promise 'some text'
+        _ralph_remaining="${_ralph_remaining#--completion-promise \'}"
+        COMPLETION_PROMISE="${_ralph_remaining%%\'*}"
+        _ralph_remaining="${_ralph_remaining#"$COMPLETION_PROMISE"}"
+        _ralph_remaining="${_ralph_remaining#\'}"
+        _ralph_remaining="${_ralph_remaining# }"
+        ;;
+      --completion-promise\ *)
+        _ralph_remaining="${_ralph_remaining#--completion-promise }"
+        _ralph_val="${_ralph_remaining%% *}"
+        if [[ "$_ralph_remaining" == "$_ralph_val" ]]; then
+          _ralph_remaining=""
+        else
+          _ralph_remaining="${_ralph_remaining#"$_ralph_val" }"
+        fi
+        COMPLETION_PROMISE="$_ralph_val"
+        ;;
+      *)
+        # Everything else is the prompt — take it all
+        PROMPT_PARTS+=("$_ralph_remaining")
+        _ralph_remaining=""
+        ;;
+    esac
+  done
+  # Clear positional params so the $@ loop below is skipped
+  set --
+fi
+
+# Parse options and positional arguments (used for direct script invocation)
 while [[ $# -gt 0 ]]; do
   case $1 in
     -h|--help)
