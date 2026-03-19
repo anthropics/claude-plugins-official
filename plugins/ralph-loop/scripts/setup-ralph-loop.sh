@@ -5,16 +5,8 @@
 
 set -euo pipefail
 
-# Parse arguments
-PROMPT_PARTS=()
-MAX_ITERATIONS=0
-COMPLETION_PROMISE="null"
-
-# Parse options and positional arguments
-while [[ $# -gt 0 ]]; do
-  case $1 in
-    -h|--help)
-      cat << 'HELP_EOF'
+show_help() {
+  cat << 'HELP_EOF'
 Ralph Loop - Interactive self-referential development loop
 
 USAGE:
@@ -56,61 +48,140 @@ MONITORING:
   # View full state:
   head -10 .claude/ralph-loop.local.md
 HELP_EOF
-      exit 0
-      ;;
-    --max-iterations)
-      if [[ -z "${2:-}" ]]; then
-        echo "❌ Error: --max-iterations requires a number argument" >&2
-        echo "" >&2
-        echo "   Valid examples:" >&2
-        echo "     --max-iterations 10" >&2
-        echo "     --max-iterations 50" >&2
-        echo "     --max-iterations 0  (unlimited)" >&2
-        echo "" >&2
-        echo "   You provided: --max-iterations (with no number)" >&2
-        exit 1
-      fi
-      if ! [[ "$2" =~ ^[0-9]+$ ]]; then
-        echo "❌ Error: --max-iterations must be a positive integer or 0, got: $2" >&2
-        echo "" >&2
-        echo "   Valid examples:" >&2
-        echo "     --max-iterations 10" >&2
-        echo "     --max-iterations 50" >&2
-        echo "     --max-iterations 0  (unlimited)" >&2
-        echo "" >&2
-        echo "   Invalid: decimals (10.5), negative numbers (-5), text" >&2
-        exit 1
-      fi
-      MAX_ITERATIONS="$2"
-      shift 2
-      ;;
-    --completion-promise)
-      if [[ -z "${2:-}" ]]; then
-        echo "❌ Error: --completion-promise requires a text argument" >&2
-        echo "" >&2
-        echo "   Valid examples:" >&2
-        echo "     --completion-promise 'DONE'" >&2
-        echo "     --completion-promise 'TASK COMPLETE'" >&2
-        echo "     --completion-promise 'All tests passing'" >&2
-        echo "" >&2
-        echo "   You provided: --completion-promise (with no text)" >&2
-        echo "" >&2
-        echo "   Note: Multi-word promises must be quoted!" >&2
-        exit 1
-      fi
-      COMPLETION_PROMISE="$2"
-      shift 2
-      ;;
-    *)
-      # Non-option argument - collect all as prompt parts
-      PROMPT_PARTS+=("$1")
-      shift
-      ;;
-  esac
-done
+  exit 0
+}
 
-# Join all prompt parts with spaces
-PROMPT="${PROMPT_PARTS[*]:-}"
+# Parse arguments
+MAX_ITERATIONS=0
+COMPLETION_PROMISE="null"
+PROMPT=""
+
+# RALPH_ARGS env var is used to safely pass arguments containing shell metacharacters.
+# The command template sets RALPH_ARGS="$ARGUMENTS" so that characters like ), (, ', etc.
+# are not interpreted as shell syntax.
+if [[ -n "${RALPH_ARGS:-}" ]]; then
+  # Parse from RALPH_ARGS env var (safe from shell metacharacter expansion)
+  TEMP_ARGS="$RALPH_ARGS"
+
+  # Check for --help
+  if [[ "$TEMP_ARGS" == "-h" ]] || [[ "$TEMP_ARGS" == "--help" ]] || [[ "$TEMP_ARGS" =~ (^|[[:space:]])(-h|--help)($|[[:space:]]) ]]; then
+    show_help
+  fi
+
+  # Check for --max-iterations at end of string without a value
+  if [[ "$TEMP_ARGS" =~ --max-iterations[[:space:]]*$ ]]; then
+    echo "❌ Error: --max-iterations requires a number argument" >&2
+    echo "" >&2
+    echo "   Valid examples:" >&2
+    echo "     --max-iterations 10" >&2
+    echo "     --max-iterations 50" >&2
+    echo "     --max-iterations 0  (unlimited)" >&2
+    exit 1
+  fi
+
+  # Check for --completion-promise at end of string without a value
+  if [[ "$TEMP_ARGS" =~ --completion-promise[[:space:]]*$ ]]; then
+    echo "❌ Error: --completion-promise requires a text argument" >&2
+    echo "" >&2
+    echo "   Valid examples:" >&2
+    echo "     --completion-promise 'DONE'" >&2
+    echo "     --completion-promise 'TASK COMPLETE'" >&2
+    exit 1
+  fi
+
+  # Extract --max-iterations N using regex, then remove with sed (avoids bash glob issues)
+  if [[ "$TEMP_ARGS" =~ --max-iterations[[:space:]]+([0-9]+) ]]; then
+    MAX_ITERATIONS="${BASH_REMATCH[1]}"
+    TEMP_ARGS="$(printf '%s' "$TEMP_ARGS" | sed "s/--max-iterations[[:space:]]*${BASH_REMATCH[1]}//")"
+  elif [[ "$TEMP_ARGS" =~ --max-iterations[[:space:]]+([^[:space:]]+) ]]; then
+    echo "❌ Error: --max-iterations must be a positive integer or 0, got: ${BASH_REMATCH[1]}" >&2
+    echo "" >&2
+    echo "   Valid examples:" >&2
+    echo "     --max-iterations 10" >&2
+    echo "     --max-iterations 50" >&2
+    echo "     --max-iterations 0  (unlimited)" >&2
+    exit 1
+  fi
+
+  # Extract --completion-promise with single-quoted, double-quoted, or bare value.
+  # Use sed for removal to avoid bash glob interpretation of captured values.
+  if [[ "$TEMP_ARGS" =~ --completion-promise[[:space:]]+\'([^\']*)\' ]]; then
+    COMPLETION_PROMISE="${BASH_REMATCH[1]}"
+    TEMP_ARGS="$(printf '%s' "$TEMP_ARGS" | sed "s/--completion-promise[[:space:]]*'[^']*'//")"
+  elif [[ "$TEMP_ARGS" =~ --completion-promise[[:space:]]+\"([^\"]*)\" ]]; then
+    COMPLETION_PROMISE="${BASH_REMATCH[1]}"
+    TEMP_ARGS="$(printf '%s' "$TEMP_ARGS" | sed 's/--completion-promise[[:space:]]*"[^"]*"//')"
+  elif [[ "$TEMP_ARGS" =~ --completion-promise[[:space:]]+([^[:space:]]+) ]]; then
+    COMPLETION_PROMISE="${BASH_REMATCH[1]}"
+    # Escape all sed BRE special chars in the captured value for safe removal
+    ESCAPED_VAL="$(printf '%s' "${BASH_REMATCH[1]}" | sed 's/[[\.*^$/&]/\\&/g')"
+    TEMP_ARGS="$(printf '%s' "$TEMP_ARGS" | sed "s/--completion-promise[[:space:]]*${ESCAPED_VAL}//")"
+  fi
+
+  # Remaining text is the prompt (trim leading/trailing whitespace, normalize internal spaces)
+  PROMPT="$(printf '%s' "$TEMP_ARGS" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//;s/[[:space:]]\{2,\}/ /g')"
+
+else
+  # Fallback: parse from positional args (for direct script invocation)
+  PROMPT_PARTS=()
+
+  while [[ $# -gt 0 ]]; do
+    case $1 in
+      -h|--help)
+        show_help
+        ;;
+      --max-iterations)
+        if [[ -z "${2:-}" ]]; then
+          echo "❌ Error: --max-iterations requires a number argument" >&2
+          echo "" >&2
+          echo "   Valid examples:" >&2
+          echo "     --max-iterations 10" >&2
+          echo "     --max-iterations 50" >&2
+          echo "     --max-iterations 0  (unlimited)" >&2
+          echo "" >&2
+          echo "   You provided: --max-iterations (with no number)" >&2
+          exit 1
+        fi
+        if ! [[ "$2" =~ ^[0-9]+$ ]]; then
+          echo "❌ Error: --max-iterations must be a positive integer or 0, got: $2" >&2
+          echo "" >&2
+          echo "   Valid examples:" >&2
+          echo "     --max-iterations 10" >&2
+          echo "     --max-iterations 50" >&2
+          echo "     --max-iterations 0  (unlimited)" >&2
+          echo "" >&2
+          echo "   Invalid: decimals (10.5), negative numbers (-5), text" >&2
+          exit 1
+        fi
+        MAX_ITERATIONS="$2"
+        shift 2
+        ;;
+      --completion-promise)
+        if [[ -z "${2:-}" ]]; then
+          echo "❌ Error: --completion-promise requires a text argument" >&2
+          echo "" >&2
+          echo "   Valid examples:" >&2
+          echo "     --completion-promise 'DONE'" >&2
+          echo "     --completion-promise 'TASK COMPLETE'" >&2
+          echo "     --completion-promise 'All tests passing'" >&2
+          echo "" >&2
+          echo "   You provided: --completion-promise (with no text)" >&2
+          echo "" >&2
+          echo "   Note: Multi-word promises must be quoted!" >&2
+          exit 1
+        fi
+        COMPLETION_PROMISE="$2"
+        shift 2
+        ;;
+      *)
+        PROMPT_PARTS+=("$1")
+        shift
+        ;;
+    esac
+  done
+
+  PROMPT="${PROMPT_PARTS[*]:-}"
+fi
 
 # Validate prompt is non-empty
 if [[ -z "$PROMPT" ]]; then
@@ -130,9 +201,11 @@ fi
 # Create state file for stop hook (markdown with YAML frontmatter)
 mkdir -p .claude
 
-# Quote completion promise for YAML if it contains special chars or is not null
+# Quote completion promise for YAML, escaping internal double quotes
 if [[ -n "$COMPLETION_PROMISE" ]] && [[ "$COMPLETION_PROMISE" != "null" ]]; then
-  COMPLETION_PROMISE_YAML="\"$COMPLETION_PROMISE\""
+  ESCAPED_PROMISE="${COMPLETION_PROMISE//\\/\\\\}"
+  ESCAPED_PROMISE="${ESCAPED_PROMISE//\"/\\\"}"
+  COMPLETION_PROMISE_YAML="\"$ESCAPED_PROMISE\""
 else
   COMPLETION_PROMISE_YAML="null"
 fi
