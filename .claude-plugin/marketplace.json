@@ -467,7 +467,7 @@
       "category": "productivity",
       "source": {
         "source": "git-subdir",
-        "url": "legalzoom/claude-plugins",
+        "url": "https://github.com/legalzoom/claude-plugins.git",
         "path": "plugins/legalzoom",
         "ref": "main",
         "sha": "f9fd8a0ca6e1421bc1aacb113a109663a7a6f6d8"
@@ -540,7 +540,7 @@
       "category": "database",
       "source": {
         "source": "git-subdir",
-        "url": "neondatabase/agent-skills",
+        "url": "https://github.com/neondatabase/agent-skills.git",
         "path": "plugins/neon-postgres",
         "ref": "main",
         "sha": "54d7a9db2ddd476f84d5d1fd7bac323907858a8b"
@@ -714,7 +714,7 @@
       "category": "deployment",
       "source": {
         "source": "git-subdir",
-        "url": "railwayapp/railway-skills",
+        "url": "https://github.com/railwayapp/railway-skills.git",
         "path": "plugins/railway",
         "ref": "main",
         "sha": "d52f3741a6a33a3191d6138eb3d6c3355cb970d1"
@@ -1032,7 +1032,7 @@
       "category": "productivity",
       "source": {
         "source": "git-subdir",
-        "url": "zapier/zapier-mcp",
+        "url": "https://github.com/zapier/zapier-mcp.git",
         "path": "plugins/zapier",
         "ref": "main",
         "sha": "b93007e9a726c6ee93c57a949e732744ef5acbfd"
