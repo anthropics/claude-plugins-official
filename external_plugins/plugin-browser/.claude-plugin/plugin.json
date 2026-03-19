@@ -1,0 +1,12 @@
+{
+  "name": "plugin-browser",
+  "description": "Local web UI for browsing the official Claude Code plugin marketplace. Shows install counts, installed status, and one-click copy of install commands.",
+  "author": {
+    "name": "Devyce Labs",
+    "url": "https://github.com/devycelabs"
+  },
+  "homepage": "https://github.com/devycelabs/claude-plugin-browser",
+  "repository": "https://github.com/devycelabs/claude-plugin-browser",
+  "license": "MIT",
+  "keywords": ["plugins", "marketplace", "browser", "discovery", "ui"]
+}
