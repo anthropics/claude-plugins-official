@@ -34,7 +34,7 @@
       "description": "Guide developers through adding maps, places search, geocoding, routing, and other geospatial features with Amazon Location Service, including authentication setup, SDK integration, and best practices.",
       "category": "location",
       "source": {
-        "source": "git-subdir",
+        "source": "url",
         "url": "https://github.com/awslabs/agent-plugins.git",
         "path": "plugins/amazon-location-service",
         "ref": "main"
@@ -87,7 +87,7 @@
       "description": "Design, build, deploy, test, and debug serverless applications with AWS Serverless services.",
       "category": "development",
       "source": {
-        "source": "git-subdir",
+        "source": "url",
         "url": "https://github.com/awslabs/agent-plugins.git",
         "path": "plugins/aws-serverless",
         "ref": "main"
@@ -257,7 +257,7 @@
       "description": "Deploy applications to AWS with architecture recommendations, cost estimates, and IaC deployment.",
       "category": "deployment",
       "source": {
-        "source": "git-subdir",
+        "source": "url",
         "url": "https://github.com/awslabs/agent-plugins.git",
         "path": "plugins/deploy-on-aws",
         "ref": "main"
@@ -478,8 +478,8 @@
       "description": "Attorney guidance and legal tools for business and personal needs. AI-powered document review identifies critical risks and important clauses, advises when to engage an attorney, and routes to LegalZoom's network when professional expertise is needed.",
       "category": "productivity",
       "source": {
-        "source": "git-subdir",
-        "url": "legalzoom/claude-plugins",
+        "source": "url",
+        "url": "https://github.com/legalzoom/claude-plugins.git",
         "path": "plugins/legalzoom",
         "ref": "main",
         "sha": "f9fd8a0ca6e1421bc1aacb113a109663a7a6f6d8"
@@ -528,7 +528,7 @@
       "description": "Assess current cloud provider usage and billing to estimate and compare AWS services and pricing, with recommendations for migration or continued use of current provider.",
       "category": "migration",
       "source": {
-        "source": "git-subdir",
+        "source": "url",
         "url": "https://github.com/awslabs/agent-plugins.git",
         "path": "plugins/migration-to-aws",
         "ref": "main"
@@ -551,8 +551,8 @@
       "description": "Manage your Neon projects and databases with the neon-postgres agent skill and the Neon MCP Server.",
       "category": "database",
       "source": {
-        "source": "git-subdir",
-        "url": "neondatabase/agent-skills",
+        "source": "url",
+        "url": "https://github.com/neondatabase/agent-skills.git",
         "path": "plugins/neon-postgres",
         "ref": "main",
         "sha": "54d7a9db2ddd476f84d5d1fd7bac323907858a8b"
@@ -725,8 +725,8 @@
       "description": "Deploy and manage apps, databases, and infrastructure on Railway. Covers project setup, deploys, environment configuration, networking, troubleshooting, and monitoring.",
       "category": "deployment",
       "source": {
-        "source": "git-subdir",
-        "url": "railwayapp/railway-skills",
+        "source": "url",
+        "url": "https://github.com/railwayapp/railway-skills.git",
         "path": "plugins/railway",
         "ref": "main",
         "sha": "d52f3741a6a33a3191d6138eb3d6c3355cb970d1"
@@ -829,7 +829,7 @@
       "description": "Semgrep catches security vulnerabilities in real-time and guides Claude to write secure code from the start.",
       "category": "security",
       "source": {
-        "source": "git-subdir",
+        "source": "url",
         "url": "https://github.com/semgrep/mcp-marketplace.git",
         "path": "plugin"
       },
@@ -905,8 +905,8 @@
         "name": "Browserbase"
       },
       "source": {
-        "source": "github",
-        "repo": "browserbase/agent-browse"
+        "source": "url",
+        "url": "https://github.com/browserbase/agent-browse.git"
       },
       "category": "automation",
       "keywords": [
@@ -1049,8 +1049,8 @@
       "description": "Connect 8,000+ apps to your AI workflow. Discover, enable, and execute Zapier actions directly from your client.",
       "category": "productivity",
       "source": {
-        "source": "git-subdir",
-        "url": "zapier/zapier-mcp",
+        "source": "url",
+        "url": "https://github.com/zapier/zapier-mcp.git",
         "path": "plugins/zapier",
         "ref": "main",
         "sha": "b93007e9a726c6ee93c57a949e732744ef5acbfd"

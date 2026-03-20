@@ -1,13 +1,68 @@
 #!/usr/bin/env bun
 /**
  * Validates marketplace.json: well-formed JSON, plugins array present,
- * each entry has required fields, and no duplicate plugin names.
+ * each entry has required fields, no duplicate plugin names, and valid source format.
  *
  * Usage:
  *   bun validate-marketplace.ts <path-to-marketplace.json>
  */
 
 import { readFile } from "fs/promises";
+
+const VALID_SOURCE_TYPES = ["url"] as const;
+const URL_PATTERN = /^https?:\/\/.+/;
+
+function validateSource(
+  source: unknown,
+  pluginIndex: number,
+  pluginName: string
+): string[] {
+  const errors: string[] = [];
+  const prefix = `plugins[${pluginIndex}] (${pluginName})`;
+
+  // source can be a string (local path) or an object (remote source)
+  if (typeof source === "string") {
+    // Local path like "./plugins/xxx" or "./external_plugins/xxx"
+    return errors;
+  }
+
+  if (!source || typeof source !== "object" || Array.isArray(source)) {
+    errors.push(`${prefix}: source must be a string or object`);
+    return errors;
+  }
+
+  const srcObj = source as Record<string, unknown>;
+  const srcType = srcObj.source;
+
+  // Validate source.source type
+  if (typeof srcType !== "string") {
+    errors.push(`${prefix}: source.source must be a string`);
+    return errors;
+  }
+
+  if (!VALID_SOURCE_TYPES.includes(srcType as typeof VALID_SOURCE_TYPES[number])) {
+    errors.push(
+      `${prefix}: source.source must be one of: ${VALID_SOURCE_TYPES.join(", ")}; got "${srcType}"`
+    );
+    return errors;
+  }
+
+  // Validate source.url
+  const url = srcObj.url;
+  if (typeof url !== "string") {
+    errors.push(`${prefix}: source.url is required when source.source is "${srcType}"`);
+    return errors;
+  }
+
+  if (!URL_PATTERN.test(url)) {
+    errors.push(
+      `${prefix}: source.url must be a full URL (https://...); got "${url}"`
+    );
+  }
+
+
+  return errors;
+}
 
 async function main() {
   const filePath = process.argv[2];
@@ -59,6 +114,11 @@ async function main() {
         errors.push(`plugins[${i}]: duplicate plugin name "${entry.name}"`);
       }
       seen.add(entry.name);
+    }
+
+    // Validate source format
+    if (entry.source) {
+      errors.push(...validateSource(entry.source, i, String(entry.name ?? "?")));
     }
   });
 
