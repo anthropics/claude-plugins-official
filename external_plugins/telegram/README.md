@@ -71,12 +71,21 @@ Quick reference: IDs are **numeric user IDs** (get yours from [@userinfobot](htt
 
 | Tool | Purpose |
 | --- | --- |
-| `reply` | Send to a chat. Takes `chat_id` + `text`, optionally `reply_to` (message ID) for native threading and `files` (absolute paths) for attachments. Images (`.jpg`/`.png`/`.gif`/`.webp`) send as photos with inline preview; other types send as documents. Max 50MB each. Auto-chunks text; files send as separate messages after the text. Returns the sent message ID(s). |
+| `reply` | Send to a chat. Takes `chat_id` + `text`, optionally `reply_to` (message ID) for native threading, `message_thread_id` for forum topics, and `files` (absolute paths) for attachments. Images (`.jpg`/`.png`/`.gif`/`.webp`) send as photos with inline preview; other types send as documents. Max 50MB each. Auto-chunks text; files send as separate messages after the text. Returns the sent message ID(s). |
 | `react` | Add an emoji reaction to a message by ID. **Only Telegram's fixed whitelist** is accepted (👍 👎 ❤ 🔥 👀 etc). |
 | `edit_message` | Edit a message the bot previously sent. Useful for "working…" → result progress updates. Only works on the bot's own messages. |
+| `create_forum_topic` | Create a new topic in a forum-enabled supergroup or private chat. The bot needs `can_manage_topics` admin rights in supergroups. Returns the topic info including `message_thread_id`. |
 
 Inbound messages trigger a typing indicator automatically — Telegram shows
 "botname is typing…" while the assistant works on a response.
+
+## Forum topics
+
+Telegram's [forum topics](https://telegram.org/blog/topics-in-groups-collectible-usernames) are supported. When a message arrives from a forum-enabled chat, the `<channel>` notification includes `message_thread_id` and `is_topic_message` attributes. Pass `message_thread_id` back to the `reply` tool so responses land in the correct topic.
+
+This works in both **supergroups** (Bot API 6.3+) and **private chats** with the bot's topic mode enabled (Bot API 9.3+). For supergroups, the bot must be an administrator with `can_manage_topics` rights to create topics; reading and replying within existing topics requires no special permissions.
+
+Use `create_forum_topic` to create new topics programmatically.
 
 ## Photos
 

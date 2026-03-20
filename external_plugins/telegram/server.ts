@@ -341,6 +341,8 @@ const mcp = new Server(
       '',
       'Messages from Telegram arrive as <channel source="telegram" chat_id="..." message_id="..." user="..." ts="...">. If the tag has an image_path attribute, Read that file — it is a photo the sender attached. Reply with the reply tool — pass chat_id back. Use reply_to (set to a message_id) only when replying to an earlier message; the latest message doesn\'t need a quote-reply, omit reply_to for normal responses.',
       '',
+      'Forum topics: messages from forum-enabled chats include message_thread_id and is_topic_message in the <channel> tag. When replying to a topic message, pass message_thread_id back to the reply tool so the response lands in the correct topic. Use create_forum_topic to create new topics in forum-enabled chats.',
+      '',
       'reply accepts file paths (files: ["/abs/path.png"]) for attachments. Use react to add emoji reactions, and edit_message to update a message you previously sent (e.g. progress → result).',
       '',
       "Telegram's Bot API exposes no history or search — you only see messages as they arrive. If you need earlier context, ask the user to paste it or summarize.",
@@ -355,7 +357,7 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: 'reply',
       description:
-        'Reply on Telegram. Pass chat_id from the inbound message. Optionally pass reply_to (message_id) for threading, and files (absolute paths) to attach images or documents.',
+        'Reply on Telegram. Pass chat_id from the inbound message. Optionally pass reply_to (message_id) for threading, message_thread_id for forum topics, and files (absolute paths) to attach images or documents.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -364,6 +366,10 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
           reply_to: {
             type: 'string',
             description: 'Message ID to thread under. Use message_id from the inbound <channel> block.',
+          },
+          message_thread_id: {
+            type: 'string',
+            description: 'Forum topic thread ID. Pass this from the inbound <channel> block to reply in the same topic. Required for forum-enabled chats.',
           },
           files: {
             type: 'array',
@@ -400,6 +406,29 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
         required: ['chat_id', 'message_id', 'text'],
       },
     },
+    {
+      name: 'create_forum_topic',
+      description: 'Create a new forum topic in a supergroup or private chat with topics enabled. The bot must be an administrator with can_manage_topics rights in supergroups. Returns the created topic info including message_thread_id.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          chat_id: { type: 'string' },
+          name: {
+            type: 'string',
+            description: 'Topic name, 1-128 characters.',
+          },
+          icon_color: {
+            type: 'number',
+            description: 'Color of the topic icon in RGB format. Must be one of: 7322096 (0x6FB9F0), 16766590 (0xFFD67E), 13338331 (0xCB86DB), 9367192 (0x8EEE98), 16749490 (0xFF93B2), or 16478047 (0xFB6F5F).',
+          },
+          icon_custom_emoji_id: {
+            type: 'string',
+            description: 'Custom emoji identifier for the topic icon.',
+          },
+        },
+        required: ['chat_id', 'name'],
+      },
+    },
   ],
 }))
 
@@ -411,6 +440,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         const chat_id = args.chat_id as string
         const text = args.text as string
         const reply_to = args.reply_to != null ? Number(args.reply_to) : undefined
+        const message_thread_id = args.message_thread_id != null ? Number(args.message_thread_id) : undefined
         const files = (args.files as string[] | undefined) ?? []
 
         assertAllowedChat(chat_id)
@@ -437,6 +467,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
               replyMode !== 'off' &&
               (replyMode === 'all' || i === 0)
             const sent = await bot.api.sendMessage(chat_id, chunks[i], {
+              ...(message_thread_id != null ? { message_thread_id } : {}),
               ...(shouldReplyTo ? { reply_parameters: { message_id: reply_to } } : {}),
             })
             sentIds.push(sent.message_id)
@@ -449,13 +480,16 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         }
 
         // Files go as separate messages (Telegram doesn't mix text+file in one
-        // sendMessage call). Thread under reply_to if present.
+        // sendMessage call). Thread under reply_to if present; route to topic.
         for (const f of files) {
           const ext = extname(f).toLowerCase()
           const input = new InputFile(f)
-          const opts = reply_to != null && replyMode !== 'off'
-            ? { reply_parameters: { message_id: reply_to } }
-            : undefined
+          const opts = {
+            ...(message_thread_id != null ? { message_thread_id } : {}),
+            ...(reply_to != null && replyMode !== 'off'
+              ? { reply_parameters: { message_id: reply_to } }
+              : {}),
+          }
           if (PHOTO_EXTS.has(ext)) {
             const sent = await bot.api.sendPhoto(chat_id, input, opts)
             sentIds.push(sent.message_id)
@@ -487,6 +521,18 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         )
         const id = typeof edited === 'object' ? edited.message_id : args.message_id
         return { content: [{ type: 'text', text: `edited (id: ${id})` }] }
+      }
+      case 'create_forum_topic': {
+        const chat_id = args.chat_id as string
+        const name = args.name as string
+        assertAllowedChat(chat_id)
+        const opts: Record<string, unknown> = {}
+        if (args.icon_color != null) opts.icon_color = Number(args.icon_color)
+        if (args.icon_custom_emoji_id != null) opts.icon_custom_emoji_id = args.icon_custom_emoji_id as string
+        const topic = await bot.api.createForumTopic(chat_id, name, opts)
+        return {
+          content: [{ type: 'text', text: `created topic "${name}" (message_thread_id: ${topic.message_thread_id})` }],
+        }
       }
       default:
         return {
@@ -556,9 +602,14 @@ async function handleInbound(
   const from = ctx.from!
   const chat_id = String(ctx.chat!.id)
   const msgId = ctx.message?.message_id
+  const threadId = ctx.message?.message_thread_id
+  const isTopicMessage = ctx.message?.is_topic_message
 
   // Typing indicator — signals "processing" until we reply (or ~5s elapses).
-  void bot.api.sendChatAction(chat_id, 'typing').catch(() => {})
+  // Pass message_thread_id so the indicator shows in the correct topic.
+  void bot.api.sendChatAction(chat_id, 'typing', {
+    ...(threadId != null ? { message_thread_id: threadId } : {}),
+  }).catch(() => {})
 
   // Ack reaction — lets the user know we're processing. Fire-and-forget.
   // Telegram only accepts a fixed emoji whitelist — if the user configures
@@ -582,6 +633,8 @@ async function handleInbound(
       meta: {
         chat_id,
         ...(msgId != null ? { message_id: String(msgId) } : {}),
+        ...(threadId != null ? { message_thread_id: String(threadId) } : {}),
+        ...(isTopicMessage ? { is_topic_message: 'true' } : {}),
         user: from.username ?? String(from.id),
         user_id: String(from.id),
         ts: new Date((ctx.message?.date ?? 0) * 1000).toISOString(),
