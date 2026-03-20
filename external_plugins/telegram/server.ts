@@ -52,6 +52,34 @@ const INBOX_DIR = join(STATE_DIR, 'inbox')
 const bot = new Bot(TOKEN)
 let botUsername = ''
 
+// --- Retry transformer for transient Telegram API failures ---
+bot.api.config.use(async (prev, method, payload, signal) => {
+  let lastError: unknown
+  for (let i = 0; i < 3; i++) {
+    try {
+      return await prev(method, payload, signal)
+    } catch (err: any) {
+      lastError = err
+      // Rate limited — respect retry_after
+      if (err?.error_code === 429) {
+        const wait = ((err?.parameters?.retry_after ?? 1) + 1) * 1000
+        process.stderr.write(`telegram channel: rate limited, waiting ${wait}ms\n`)
+        await new Promise(r => setTimeout(r, wait))
+        continue
+      }
+      // Transient network errors — retry with backoff
+      if (err?.message?.includes('ETIMEDOUT') || err?.message?.includes('ECONNRESET') || err?.message?.includes('fetch failed')) {
+        const wait = 1000 * (i + 1)
+        process.stderr.write(`telegram channel: transient error on ${method}, retry in ${wait}ms\n`)
+        await new Promise(r => setTimeout(r, wait))
+        continue
+      }
+      throw err // Non-transient — fail immediately
+    }
+  }
+  throw lastError
+})
+
 type PendingEntry = {
   senderId: string
   chatId: string
@@ -503,7 +531,15 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
   }
 })
 
-await mcp.connect(new StdioServerTransport())
+// --- Resilient MCP transport with error logging ---
+const transport = new StdioServerTransport()
+transport.onerror = (err) => {
+  process.stderr.write(`telegram channel: MCP transport error: ${err}\n`)
+}
+transport.onclose = () => {
+  process.stderr.write(`telegram channel: MCP transport closed — bot continues polling, awaiting reconnect\n`)
+}
+await mcp.connect(transport)
 
 bot.on('message:text', async ctx => {
   await handleInbound(ctx, ctx.message.text, undefined)
@@ -591,9 +627,32 @@ async function handleInbound(
   })
 }
 
-void bot.start({
-  onStart: info => {
-    botUsername = info.username
-    process.stderr.write(`telegram channel: polling as @${info.username}\n`)
-  },
+// --- Error handler to prevent crashes on Telegram API errors ---
+bot.catch((err) => {
+  process.stderr.write(`telegram channel: bot error: ${err.message ?? err}\n`)
 })
+
+// --- Start bot with retry logic ---
+async function startBotWithRetry(maxRetries = 10): Promise<void> {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      await bot.start({
+        onStart: info => {
+          botUsername = info.username
+          process.stderr.write(`telegram channel: polling as @${info.username}\n`)
+        },
+      })
+      return
+    } catch (err) {
+      const delay = Math.min(1000 * Math.pow(2, attempt - 1), 30000)
+      process.stderr.write(
+        `telegram channel: bot.start failed (attempt ${attempt}/${maxRetries}): ${err}\n` +
+        `  retrying in ${delay}ms...\n`
+      )
+      await new Promise(r => setTimeout(r, delay))
+    }
+  }
+  process.stderr.write(`telegram channel: bot.start failed after ${maxRetries} attempts, giving up\n`)
+}
+
+void startBotWithRetry()
