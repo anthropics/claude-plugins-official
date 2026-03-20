@@ -74,23 +74,28 @@ Quick reference: IDs are **numeric user IDs** (get yours from [@userinfobot](htt
 | `reply` | Send to a chat. Takes `chat_id` + `text`, optionally `reply_to` (message ID) for native threading and `files` (absolute paths) for attachments. Images (`.jpg`/`.png`/`.gif`/`.webp`) send as photos with inline preview; other types send as documents. Max 50MB each. Auto-chunks text; files send as separate messages after the text. Returns the sent message ID(s). |
 | `react` | Add an emoji reaction to a message by ID. **Only Telegram's fixed whitelist** is accepted (👍 👎 ❤ 🔥 👀 etc). |
 | `edit_message` | Edit a message the bot previously sent. Useful for "working…" → result progress updates. Only works on the bot's own messages. |
+| `fetch_messages` | Fetch recent messages from a chat. Returns oldest-first with message IDs. Telegram's Bot API has no server-side history — this returns messages buffered in memory since the bot started (up to 100 per chat). Includes both inbound and bot's own outbound messages. |
+| `download_attachment` | Download attachments (documents, voice, video, audio, video notes) from a message by ID. Photos auto-download on arrival; use this for other file types. Returns local file paths ready to `Read`. |
 
 Inbound messages trigger a typing indicator automatically — Telegram shows
 "botname is typing…" while the assistant works on a response.
 
-## Photos
+## Supported message types
 
-Inbound photos are downloaded to `~/.claude/channels/telegram/inbox/` and the
-local path is included in the `<channel>` notification so the assistant can
-`Read` it. Telegram compresses photos — if you need the original file, send it
-as a document instead (long-press → Send as File).
+| Type | Behavior |
+| --- | --- |
+| Text | Delivered directly |
+| Photos | Auto-downloaded to `~/.claude/channels/telegram/inbox/`, path in `<channel>` tag — assistant can `Read` it. Telegram compresses photos; send as document (long-press → Send as File) for originals. |
+| Documents | Metadata delivered (name/type/size). Assistant calls `download_attachment` to fetch on demand. |
+| Voice messages | Metadata delivered. Download via `download_attachment`. |
+| Video | Metadata delivered. Download via `download_attachment`. |
+| Video notes (circles) | Metadata delivered. Download via `download_attachment`. |
+| Audio | Metadata delivered. Download via `download_attachment`. |
+| Stickers | Emoji + set name delivered as text. |
 
-## No history or search
+## Message history
 
-Telegram's Bot API exposes **neither** message history nor search. The bot
-only sees messages as they arrive — no `fetch_messages` tool exists. If the
-assistant needs earlier context, it will ask you to paste or summarize.
-
-This also means there's no `download_attachment` tool for historical messages
-— photos are downloaded eagerly on arrival since there's no way to fetch them
-later.
+Telegram's Bot API has no server-side message history endpoint. The bot
+buffers messages in memory as they arrive (up to 100 per chat). Use
+`fetch_messages` to retrieve them — both inbound messages and the bot's own
+replies are included. The buffer resets when the bot restarts.
