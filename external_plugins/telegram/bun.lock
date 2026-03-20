@@ -6,7 +6,7 @@
       "name": "claude-channel-telegram",
       "dependencies": {
         "@modelcontextprotocol/sdk": "^1.0.0",
-        "grammy": "^1.21.0",
+        "grammy": "^1.39.0",
       },
     },
   },

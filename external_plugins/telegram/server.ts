@@ -341,7 +341,7 @@ const mcp = new Server(
       '',
       'Messages from Telegram arrive as <channel source="telegram" chat_id="..." message_id="..." user="..." ts="...">. If the tag has an image_path attribute, Read that file — it is a photo the sender attached. Reply with the reply tool — pass chat_id back. Use reply_to (set to a message_id) only when replying to an earlier message; the latest message doesn\'t need a quote-reply, omit reply_to for normal responses.',
       '',
-      'reply accepts file paths (files: ["/abs/path.png"]) for attachments. Use react to add emoji reactions, and edit_message to update a message you previously sent (e.g. progress → result).',
+      'reply accepts file paths (files: ["/abs/path.png"]) for attachments. Use react to add emoji reactions, and edit_message to update a message you previously sent (e.g. progress → result). For long responses, use send_message_draft to stream partial text as you generate it — call repeatedly with the same draft_id and growing text, then finalize with reply.',
       '',
       "Telegram's Bot API exposes no history or search — you only see messages as they arrive. If you need earlier context, ask the user to paste it or summarize.",
       '',
@@ -398,6 +398,29 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
           text: { type: 'string' },
         },
         required: ['chat_id', 'message_id', 'text'],
+      },
+    },
+    {
+      name: 'send_message_draft',
+      description:
+        'Stream a partial message to the user while generating a response. ' +
+        'Call repeatedly with the same draft_id and incrementally growing text — ' +
+        'each update animates smoothly on the client. Finalize with reply to send the completed message ' +
+        '(the draft disappears automatically). Requires Bot API 9.3+ (grammy ≥1.39).',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          chat_id: { type: 'string' },
+          draft_id: {
+            type: 'number',
+            description: 'Unique non-zero identifier for this draft. Reuse the same id across calls to animate updates.',
+          },
+          text: {
+            type: 'string',
+            description: 'Current accumulated text of the draft (1-4096 characters).',
+          },
+        },
+        required: ['chat_id', 'draft_id', 'text'],
       },
     },
   ],
@@ -487,6 +510,15 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         )
         const id = typeof edited === 'object' ? edited.message_id : args.message_id
         return { content: [{ type: 'text', text: `edited (id: ${id})` }] }
+      }
+      case 'send_message_draft': {
+        const chat_id = args.chat_id as string
+        const draft_id = Number(args.draft_id)
+        const text = args.text as string
+        assertAllowedChat(chat_id)
+        if (!draft_id) throw new Error('draft_id must be a non-zero number')
+        await bot.api.sendMessageDraft(Number(chat_id), draft_id, text)
+        return { content: [{ type: 'text', text: `draft updated (draft_id: ${draft_id}, length: ${text.length})` }] }
       }
       default:
         return {
