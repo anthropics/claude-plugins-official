@@ -51,6 +51,15 @@ if (!TOKEN) {
 }
 const INBOX_DIR = join(STATE_DIR, 'inbox')
 
+// Last-resort safety net — without these the process dies silently on any
+// unhandled promise rejection. With them it logs and keeps serving tools.
+process.on('unhandledRejection', err => {
+  process.stderr.write(`telegram channel: unhandled rejection: ${err}\n`)
+})
+process.on('uncaughtException', err => {
+  process.stderr.write(`telegram channel: uncaught exception: ${err}\n`)
+})
+
 const bot = new Bot(TOKEN)
 let botUsername = ''
 
@@ -577,7 +586,7 @@ async function handleInbound(
 
   // image_path goes in meta only — an in-content "[image attached — read: PATH]"
   // annotation is forgeable by any allowlisted sender typing that string.
-  void mcp.notification({
+  mcp.notification({
     method: 'notifications/claude/channel',
     params: {
       content: text,
@@ -590,12 +599,25 @@ async function handleInbound(
         ...(imagePath ? { image_path: imagePath } : {}),
       },
     },
+  }).catch(err => {
+    process.stderr.write(`telegram channel: failed to deliver inbound to Claude: ${err}\n`)
   })
 }
 
-void bot.start({
+// Without this, any throw in a message handler stops polling permanently
+// (grammy's default error handler calls bot.stop() and rethrows).
+bot.catch(err => {
+  process.stderr.write(`telegram channel: handler error (polling continues): ${err.error}\n`)
+})
+
+bot.start({
   onStart: info => {
     botUsername = info.username
     process.stderr.write(`telegram channel: polling as @${info.username}\n`)
   },
+}).catch(err => {
+  // bot.start() only rejects if polling can't begin or dies unrecoverably —
+  // bad token, 409 conflict, network gone. Log it so the user isn't left
+  // wondering why messages stopped arriving.
+  process.stderr.write(`telegram channel: polling stopped: ${err}\n`)
 })
