@@ -416,6 +416,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         const files = (args.files as string[] | undefined) ?? []
 
         assertAllowedChat(chat_id)
+        clearTyping(chat_id)
 
         for (const f of files) {
           assertSendable(f)
@@ -505,6 +506,18 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
   }
 })
 
+// Track active typing indicators per chat — cleared when a reply is sent.
+const activeTyping = new Map<string, ReturnType<typeof setInterval>>()
+const TYPING_TIMEOUT_MS = 5 * 60 * 1000 // Safety: stop after 5 min if no reply
+
+function clearTyping(chat_id: string): void {
+  const interval = activeTyping.get(chat_id)
+  if (interval) {
+    clearInterval(interval)
+    activeTyping.delete(chat_id)
+  }
+}
+
 await mcp.connect(new StdioServerTransport())
 
 bot.on('message:text', async ctx => {
@@ -559,8 +572,17 @@ async function handleInbound(
   const chat_id = String(ctx.chat!.id)
   const msgId = ctx.message?.message_id
 
-  // Typing indicator — signals "processing" until we reply (or ~5s elapses).
+  // Persistent typing indicator — Telegram's typing status expires after ~5s,
+  // so we repeat it every 4s until the reply tool sends a response.
+  // The interval is cleared when any outbound message targets this chat.
+  clearTyping(chat_id) // Clear any stale interval from a previous unanswered message
   void bot.api.sendChatAction(chat_id, 'typing').catch(() => {})
+  const typingInterval = setInterval(() => {
+    void bot.api.sendChatAction(chat_id, 'typing').catch(() => {})
+  }, 4000)
+  activeTyping.set(chat_id, typingInterval)
+  // Safety timeout — prevent runaway intervals if Claude never replies
+  setTimeout(() => clearTyping(chat_id), TYPING_TIMEOUT_MS)
 
   // Ack reaction — lets the user know we're processing. Fire-and-forget.
   // Telegram only accepts a fixed emoji whitelist — if the user configures
