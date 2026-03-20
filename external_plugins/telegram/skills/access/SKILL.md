@@ -35,7 +35,7 @@ Arguments passed: `$ARGUMENTS`
   "dmPolicy": "pairing",
   "allowFrom": ["<senderId>", ...],
   "groups": {
-    "<groupId>": { "requireMention": true, "allowFrom": [] }
+    "<groupId>": { "requireMention": true, "allowFrom": [], "threadId": 12345 }
   },
   "pending": {
     "<6-char-code>": {
@@ -46,6 +46,11 @@ Arguments passed: `$ARGUMENTS`
   "mentionPatterns": ["@mybot"]
 }
 ```
+
+`threadId` is optional. When set, only messages from that forum topic are
+delivered. When omitted, all messages (or just the General topic) are accepted.
+Replies to groups with a configured `threadId` are automatically sent to the
+correct topic.
 
 Missing file = `{dmPolicy:"pairing", allowFrom:[], groups:{}, pending:{}}`.
 
@@ -95,12 +100,23 @@ Parse `$ARGUMENTS` (space-separated). If empty or unrecognized, show status.
 1. Validate `<mode>` is one of `pairing`, `allowlist`, `disabled`.
 2. Read (create default if missing), set `dmPolicy`, write.
 
-### `group add <groupId>` (optional: `--no-mention`, `--allow id1,id2`)
+### `group add <groupId>` (optional: `--no-mention`, `--allow id1,id2`, `--topic <threadId>`)
 
 1. Read (create default if missing).
 2. Set `groups[<groupId>] = { requireMention: !hasFlag("--no-mention"),
-   allowFrom: parsedAllowList }`.
-3. Write.
+   allowFrom: parsedAllowList, ...(hasFlag("--topic") ? { threadId: Number(topicValue) } : {}) }`.
+3. If `--topic` is provided, set `threadId` to the numeric value. The thread
+   ID is visible in `t.me/c/<channelId>/<threadId>/<messageId>` links.
+4. Write.
+
+### `group topic <groupId> <threadId>`
+
+1. Read access.json.
+2. Look up `groups[<groupId>]`. If not found, tell the user to `group add` first.
+3. If `<threadId>` is `none` or `off`, delete the `threadId` field (accept all topics).
+4. Otherwise set `groups[<groupId>].threadId = Number(<threadId>)`.
+5. Write.
+6. Confirm: group ID, new threadId (or "all topics").
 
 ### `group rm <groupId>`
 

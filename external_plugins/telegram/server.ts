@@ -65,6 +65,8 @@ type PendingEntry = {
 type GroupPolicy = {
   requireMention: boolean
   allowFrom: string[]
+  /** For forum supergroups: restrict delivery to a single topic. Omit to accept all topics. */
+  threadId?: number
 }
 
 type Access = {
@@ -238,6 +240,10 @@ function gate(ctx: Context): GateResult {
     const groupId = String(ctx.chat!.id)
     const policy = access.groups[groupId]
     if (!policy) return { action: 'drop' }
+    if (policy.threadId != null) {
+      const msgThreadId = ctx.message?.message_thread_id
+      if (msgThreadId !== policy.threadId) return { action: 'drop' }
+    }
     const groupAllowFrom = policy.allowFrom ?? []
     const requireMention = policy.requireMention ?? true
     if (groupAllowFrom.length > 0 && !groupAllowFrom.includes(senderId)) {
@@ -429,6 +435,11 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         const limit = Math.max(1, Math.min(access.textChunkLimit ?? MAX_CHUNK_LIMIT, MAX_CHUNK_LIMIT))
         const mode = access.chunkMode ?? 'length'
         const replyMode = access.replyToMode ?? 'first'
+
+        // Auto-resolve message_thread_id for forum supergroups from the group's configured threadId.
+        const groupPolicy = access.groups[chat_id]
+        const threadId = groupPolicy?.threadId
+
         const chunks = chunk(text, limit, mode)
         const sentIds: number[] = []
 
@@ -440,6 +451,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
               (replyMode === 'all' || i === 0)
             const sent = await bot.api.sendMessage(chat_id, chunks[i], {
               ...(shouldReplyTo ? { reply_parameters: { message_id: reply_to } } : {}),
+              ...(threadId != null ? { message_thread_id: threadId } : {}),
             })
             sentIds.push(sent.message_id)
           }
@@ -455,9 +467,12 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         for (const f of files) {
           const ext = extname(f).toLowerCase()
           const input = new InputFile(f)
-          const opts = reply_to != null && replyMode !== 'off'
-            ? { reply_parameters: { message_id: reply_to } }
-            : undefined
+          const opts = {
+            ...(reply_to != null && replyMode !== 'off'
+              ? { reply_parameters: { message_id: reply_to } }
+              : undefined),
+            ...(threadId != null ? { message_thread_id: threadId } : {}),
+          }
           if (PHOTO_EXTS.has(ext)) {
             const sent = await bot.api.sendPhoto(chat_id, input, opts)
             sentIds.push(sent.message_id)
@@ -594,6 +609,7 @@ async function handleInbound(
 }
 
 void bot.start({
+  allowed_updates: ['message', 'message_reaction', 'edited_message'],
   onStart: info => {
     botUsername = info.username
     process.stderr.write(`telegram channel: polling as @${info.username}\n`)

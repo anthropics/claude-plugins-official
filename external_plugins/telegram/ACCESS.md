@@ -53,9 +53,20 @@ Supergroup IDs are negative numbers with a `-100` prefix, e.g. `-1001654782309`.
 
 With the default `requireMention: true`, the bot responds only when @mentioned or replied to. Pass `--no-mention` to process every message, or `--allow id1,id2` to restrict which members can trigger it.
 
+**Forum supergroups (topics).** If the group has forum mode enabled (`is_forum: true`), you can restrict the bot to a single topic with `--topic <threadId>`. When a `threadId` is configured, outbound replies are automatically sent to the correct topic. Omit `--topic` to accept messages from all topics. Use `group topic` to change or clear the topic on an existing group.
+
+To find the thread ID, right-click (or long-press on mobile) a message in the topic and copy the message link. The link format is `t.me/c/<channelId>/<threadId>/<messageId>`. The middle number is the thread ID. For example, in `t.me/c/2500394585/12569/12576`, the thread ID is `12569`.
+
+To get the group ID (the `-100…` number), you can prepend `-100` to the `<channelId>` from the same link. In the example above, the group ID would be `-1002500394585`. Alternatively, add [@RawDataBot](https://t.me/RawDataBot) to the group temporarily (it dumps a JSON blob including the chat ID), or message the group after adding your bot and check the bot's logs.
+
+Note: forum supergroups require the bot to have **admin rights** to receive messages across topics. Add the bot as an admin in the group settings (it doesn't need destructive permissions like deleting messages or banning users).
+
 ```
 /telegram:access group add -1001654782309 --no-mention
+/telegram:access group add -1001654782309 --no-mention --topic 12569
 /telegram:access group add -1001654782309 --allow 412587349,628194073
+/telegram:access group topic -1001654782309 54321
+/telegram:access group topic -1001654782309 none
 /telegram:access group rm -1001654782309
 ```
 
@@ -102,7 +113,8 @@ Configure outbound behavior with `/telegram:access set <key> <value>`.
 | `/telegram:access allow 412587349` | Add a user ID directly. |
 | `/telegram:access remove 412587349` | Remove from the allowlist. |
 | `/telegram:access policy allowlist` | Set `dmPolicy`. Values: `pairing`, `allowlist`, `disabled`. |
-| `/telegram:access group add -1001654782309` | Enable a group. Flags: `--no-mention` (also requires disabling privacy mode), `--allow id1,id2`. |
+| `/telegram:access group add -1001654782309` | Enable a group. Flags: `--no-mention` (also requires disabling privacy mode), `--allow id1,id2`, `--topic <threadId>`. |
+| `/telegram:access group topic -1001654782309 12569` | Set or change the topic filter for a forum supergroup. Use `none` to accept all topics. |
 | `/telegram:access group rm -1001654782309` | Disable a group. |
 | `/telegram:access set ackReaction 👀` | Set a config key: `ackReaction`, `replyToMode`, `textChunkLimit`, `chunkMode`, `mentionPatterns`. |
 
@@ -125,7 +137,10 @@ Configure outbound behavior with `/telegram:access set <key> <value>`.
       // false also requires disabling privacy mode via BotFather.
       "requireMention": true,
       // Restrict triggers to these senders. Empty = any member (subject to requireMention).
-      "allowFrom": []
+      "allowFrom": [],
+      // Optional: restrict to a single forum topic. Omit to accept all topics.
+      // Outbound replies auto-target this topic. Get from t.me/c/<channelId>/<threadId>/<messageId> links.
+      "threadId": 12569
     }
   },
 
