@@ -338,6 +338,7 @@ const mcp = new Server(
     capabilities: { tools: {}, experimental: { 'claude/channel': {} } },
     instructions: [
       'The sender reads Telegram, not this session. Anything you want them to see must go through the reply tool — your transcript output never reaches their chat.',
+      'When you need to ask the sender a clarifying question, use the reply tool — never use terminal output or interactive prompts. The sender cannot see your terminal. Wait for their next inbound message as the answer.',
       '',
       'Messages from Telegram arrive as <channel source="telegram" chat_id="..." message_id="..." user="..." ts="...">. If the tag has an image_path attribute, Read that file — it is a photo the sender attached. Reply with the reply tool — pass chat_id back. Use reply_to (set to a message_id) only when replying to an earlier message; the latest message doesn\'t need a quote-reply, omit reply_to for normal responses.',
       '',
@@ -355,7 +356,7 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: 'reply',
       description:
-        'Reply on Telegram. Pass chat_id from the inbound message. Optionally pass reply_to (message_id) for threading, and files (absolute paths) to attach images or documents.',
+        'Reply on Telegram. Pass chat_id from the inbound message. Optionally pass reply_to (message_id) for threading, and files (absolute paths) to attach images or documents. Use this for ALL communication with the sender, including clarifying questions.',
       inputSchema: {
         type: 'object',
         properties: {
