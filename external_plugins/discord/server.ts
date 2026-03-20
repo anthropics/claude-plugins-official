@@ -421,7 +421,7 @@ const mcp = new Server(
       '',
       'Messages from Discord arrive as <channel source="discord" chat_id="..." message_id="..." user="..." ts="...">. If the tag has attachment_count, the attachments attribute lists name/type/size — call download_attachment(chat_id, message_id) to fetch them. Reply with the reply tool — pass chat_id back. Use reply_to (set to a message_id) only when replying to an earlier message; the latest message doesn\'t need a quote-reply, omit reply_to for normal responses.',
       '',
-      'reply accepts file paths (files: ["/abs/path.png"]) for attachments. Use react to add emoji reactions, and edit_message to update a message you previously sent (e.g. progress → result).',
+      'reply accepts file paths (files: ["/abs/path.png"]) for attachments. Use react to add emoji reactions, edit_message to update a message you previously sent (e.g. progress → result), set_avatar to change the bot profile picture (file path or URL), and set_nickname to change the bot nickname in a server.',
       '',
       "fetch_messages pulls real Discord history. Discord's search API isn't available to bots — if the user asks you to find an old message, fetch more history or ask them roughly when it was.",
       '',
@@ -506,6 +506,40 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
           },
         },
         required: ['channel'],
+      },
+    },
+    {
+      name: 'set_avatar',
+      description:
+        "Change the bot's avatar (profile picture). Accepts an absolute file path to an image or a URL. Applies globally across all servers.",
+      inputSchema: {
+        type: 'object',
+        properties: {
+          image: {
+            type: 'string',
+            description: 'Absolute file path to an image or a URL.',
+          },
+        },
+        required: ['image'],
+      },
+    },
+    {
+      name: 'set_nickname',
+      description:
+        "Change the bot's nickname in a specific server (guild). Requires the chat_id of any channel in that server.",
+      inputSchema: {
+        type: 'object',
+        properties: {
+          chat_id: {
+            type: 'string',
+            description: 'Channel ID in the target server.',
+          },
+          nickname: {
+            type: 'string',
+            description: 'The new nickname. Empty string resets to the bot username.',
+          },
+        },
+        required: ['chat_id', 'nickname'],
       },
     },
   ],
@@ -601,6 +635,22 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         const msg = await ch.messages.fetch(args.message_id as string)
         const edited = await msg.edit(args.text as string)
         return { content: [{ type: 'text', text: `edited (id: ${edited.id})` }] }
+      }
+      case 'set_avatar': {
+        const image = args.image as string
+        if (!client.user) throw new Error('bot not logged in yet')
+        await client.user.setAvatar(image)
+        return { content: [{ type: 'text', text: 'avatar updated' }] }
+      }
+      case 'set_nickname': {
+        const chat_id = args.chat_id as string
+        const nickname = args.nickname as string
+        const ch = await fetchTextChannel(chat_id)
+        if (!('guild' in ch) || !ch.guild) throw new Error('not a guild channel')
+        const me = ch.guild.members.me
+        if (!me) throw new Error('bot is not a member of this guild')
+        await me.setNickname(nickname || null)
+        return { content: [{ type: 'text', text: `nickname ${nickname ? `set to "${nickname}"` : 'reset'}` }] }
       }
       case 'download_attachment': {
         const ch = await fetchAllowedChannel(args.chat_id as string)
