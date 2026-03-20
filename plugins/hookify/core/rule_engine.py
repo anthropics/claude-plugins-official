@@ -73,9 +73,9 @@ class RuleEngine:
                 return {
                     "hookSpecificOutput": {
                         "hookEventName": hook_event,
-                        "permissionDecision": "deny"
-                    },
-                    "systemMessage": combined_message
+                        "permissionDecision": "deny",
+                        "permissionDecisionReason": combined_message
+                    }
                 }
             else:
                 # For other events, just show message
