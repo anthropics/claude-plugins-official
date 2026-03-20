@@ -15,7 +15,7 @@ import {
   ListToolsRequestSchema,
   CallToolRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js'
-import { Bot, InputFile, type Context } from 'grammy'
+import { Bot, GrammyError, InputFile, type Context } from 'grammy'
 import type { ReactionTypeEmoji } from 'grammy/types'
 import { randomBytes } from 'crypto'
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, statSync, renameSync, realpathSync } from 'fs'
@@ -591,9 +591,28 @@ async function handleInbound(
   })
 }
 
-void bot.start({
-  onStart: info => {
-    botUsername = info.username
-    process.stderr.write(`telegram channel: polling as @${info.username}\n`)
-  },
-})
+async function startWithRetry(): Promise<void> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await bot.start({
+        onStart: info => {
+          botUsername = info.username
+          process.stderr.write(`telegram channel: polling as @${info.username}\n`)
+        },
+      })
+      return
+    } catch (err) {
+      if (err instanceof GrammyError && err.error_code === 409) {
+        const delay = Math.min(1000 * attempt, 15000)
+        process.stderr.write(
+          `telegram channel: 409 conflict (attempt ${attempt}), retrying in ${delay}ms\n`,
+        )
+        await new Promise(resolve => setTimeout(resolve, delay))
+      } else {
+        throw err
+      }
+    }
+  }
+}
+
+void startWithRetry()
