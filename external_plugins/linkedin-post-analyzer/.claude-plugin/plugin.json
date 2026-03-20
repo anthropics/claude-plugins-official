@@ -1,0 +1,10 @@
+{
+  "name": "linkedin-post-analyzer",
+  "description": "Evaluates LinkedIn post drafts using a 6-dimension weighted framework (Hook Power, Narrative & Retention, Authenticity, Viral Potential, Expert Status, Algorithm Compatibility) plus AI Generation Risk and Spam/Cringe penalty flags. Returns structured scores, diagnosis, and rewrites. Supports voice profiles for author-specific rewrites — includes a reference implementation and blank template.",
+  "author": {
+    "name": "Amit Mohod",
+    "url": "https://github.com/amitmohod"
+  },
+  "homepage": "https://github.com/amitmohod/linkedin-post-analyzer",
+  "keywords": ["linkedin", "content", "writing", "social-media", "post-quality", "personal-brand"]
+}
