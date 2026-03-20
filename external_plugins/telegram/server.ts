@@ -341,7 +341,7 @@ const mcp = new Server(
       '',
       'Messages from Telegram arrive as <channel source="telegram" chat_id="..." message_id="..." user="..." ts="...">. If the tag has an image_path attribute, Read that file — it is a photo the sender attached. Reply with the reply tool — pass chat_id back. Use reply_to (set to a message_id) only when replying to an earlier message; the latest message doesn\'t need a quote-reply, omit reply_to for normal responses.',
       '',
-      'reply accepts file paths (files: ["/abs/path.png"]) for attachments. Use react to add emoji reactions, and edit_message to update a message you previously sent (e.g. progress → result).',
+      'reply accepts file paths (files: ["/abs/path.png"]) for attachments, and inline_keyboard for interactive buttons. Use react to add emoji reactions, and edit_message to update a message you previously sent (e.g. progress → result).',
       '',
       "Telegram's Bot API exposes no history or search — you only see messages as they arrive. If you need earlier context, ask the user to paste it or summarize.",
       '',
@@ -355,7 +355,7 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: 'reply',
       description:
-        'Reply on Telegram. Pass chat_id from the inbound message. Optionally pass reply_to (message_id) for threading, and files (absolute paths) to attach images or documents.',
+        'Reply on Telegram. Pass chat_id from the inbound message. Optionally pass reply_to (message_id) for threading, files (absolute paths) to attach images or documents, and inline_keyboard for interactive buttons.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -369,6 +369,21 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
             type: 'array',
             items: { type: 'string' },
             description: 'Absolute file paths to attach. Images send as photos (inline preview); other types as documents. Max 50MB each.',
+          },
+          inline_keyboard: {
+            type: 'array',
+            description: 'Rows of inline keyboard buttons. Each row is an array of buttons. Each button has "text" (label) and "callback_data" (string sent back on press, max 64 bytes).',
+            items: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  text: { type: 'string', description: 'Button label' },
+                  callback_data: { type: 'string', description: 'Data sent back when pressed (max 64 bytes)' },
+                },
+                required: ['text', 'callback_data'],
+              },
+            },
           },
         },
         required: ['chat_id', 'text'],
@@ -412,6 +427,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         const text = args.text as string
         const reply_to = args.reply_to != null ? Number(args.reply_to) : undefined
         const files = (args.files as string[] | undefined) ?? []
+        const inline_keyboard = args.inline_keyboard as Array<Array<{ text: string; callback_data: string }>> | undefined
 
         assertAllowedChat(chat_id)
 
@@ -430,14 +446,21 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         const chunks = chunk(text, limit, mode)
         const sentIds: number[] = []
 
+        const replyMarkup = inline_keyboard
+          ? { reply_markup: { inline_keyboard } }
+          : {}
+
         try {
           for (let i = 0; i < chunks.length; i++) {
             const shouldReplyTo =
               reply_to != null &&
               replyMode !== 'off' &&
               (replyMode === 'all' || i === 0)
+            // Attach inline keyboard only to the last text chunk
+            const isLastChunk = i === chunks.length - 1
             const sent = await bot.api.sendMessage(chat_id, chunks[i], {
               ...(shouldReplyTo ? { reply_parameters: { message_id: reply_to } } : {}),
+              ...(isLastChunk ? replyMarkup : {}),
             })
             sentIds.push(sent.message_id)
           }
@@ -507,6 +530,40 @@ await mcp.connect(new StdioServerTransport())
 
 bot.on('message:text', async ctx => {
   await handleInbound(ctx, ctx.message.text, undefined)
+})
+
+bot.on('callback_query:data', async ctx => {
+  const from = ctx.from
+  const chatId = String(ctx.callbackQuery.message?.chat.id ?? from.id)
+  const msgId = ctx.callbackQuery.message?.message_id
+  const data = ctx.callbackQuery.data
+
+  // Gate check — only deliver from allowed chats
+  const access = loadAccess()
+  const senderId = String(from.id)
+  if (!access.allowFrom.includes(senderId) && !(chatId in access.groups)) {
+    await ctx.answerCallbackQuery({ text: 'Not authorized' })
+    return
+  }
+
+  // Acknowledge the button press (removes loading spinner)
+  await ctx.answerCallbackQuery()
+
+  // Forward callback data as a channel notification
+  void mcp.notification({
+    method: 'notifications/claude/channel',
+    params: {
+      content: data,
+      meta: {
+        chat_id: chatId,
+        ...(msgId != null ? { message_id: String(msgId) } : {}),
+        user: from.username ?? String(from.id),
+        user_id: senderId,
+        ts: new Date().toISOString(),
+        callback_query: 'true',
+      },
+    },
+  })
 })
 
 bot.on('message:photo', async ctx => {
@@ -591,7 +648,12 @@ async function handleInbound(
   })
 }
 
+bot.catch((err) => {
+  process.stderr.write(`telegram channel: unhandled bot error: ${err.message ?? err}\n`)
+})
+
 void bot.start({
+  allowed_updates: ['message', 'callback_query'],
   onStart: info => {
     botUsername = info.username
     process.stderr.write(`telegram channel: polling as @${info.username}\n`)
