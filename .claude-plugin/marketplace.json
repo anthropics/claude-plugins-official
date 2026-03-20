@@ -30,6 +30,24 @@
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/plugins/agent-sdk-dev"
     },
     {
+      "name": "agora-code",
+      "description": "Persistent memory + AST summarization for Claude Code. Auto-injects session context, intercepts large file reads with tree-sitter structural outlines (90%+ token reduction), recalls relevant learnings on every prompt, and digests conversations into searchable cross-session memory.",
+      "category": "development",
+      "source": {
+        "source": "github",
+        "repo": "thebnbrkr/agora-code"
+      },
+      "homepage": "https://github.com/thebnbrkr/agora-code",
+      "keywords": [
+        "memory",
+        "session",
+        "context",
+        "ast",
+        "hooks",
+        "persistence"
+      ]
+    },
+    {
       "name": "amazon-location-service",
       "description": "Guide developers through adding maps, places search, geocoding, routing, and other geospatial features with Amazon Location Service, including authentication setup, SDK integration, and best practices.",
       "category": "location",
@@ -192,7 +210,7 @@
     },
     {
       "name": "coderabbit",
-      "description": "Your code review partner. CodeRabbit provides external validation using a specialized AI architecture and 40+ integrated static analyzers—offering a different perspective that catches bugs, security vulnerabilities, logic errors, and edge cases. Context-aware analysis via AST parsing and codegraph relationships. Automatically incorporates CLAUDE.md and project coding guidelines into reviews. Useful after writing or modifying code, before commits, when implementing complex or security-sensitive logic, or when a second opinion would increase confidence in the changes. Returns specific findings with suggested fixes that can be applied immediately. Free to use.",
+      "description": "Your code review partner. CodeRabbit provides external validation using a specialized AI architecture and 40+ integrated static analyzers\u2014offering a different perspective that catches bugs, security vulnerabilities, logic errors, and edge cases. Context-aware analysis via AST parsing and codegraph relationships. Automatically incorporates CLAUDE.md and project coding guidelines into reviews. Useful after writing or modifying code, before commits, when implementing complex or security-sensitive logic, or when a second opinion would increase confidence in the changes. Returns specific findings with suggested fixes that can be applied immediately. Free to use.",
       "category": "productivity",
       "source": {
         "source": "url",
@@ -626,7 +644,7 @@
     },
     {
       "name": "playground",
-      "description": "Creates interactive HTML playgrounds — self-contained single-file explorers with visual controls, live preview, and prompt output with copy button. Includes templates for design playgrounds, data explorers, concept maps, and document critique.",
+      "description": "Creates interactive HTML playgrounds \u2014 self-contained single-file explorers with visual controls, live preview, and prompt output with copy button. Includes templates for design playgrounds, data explorers, concept maps, and document critique.",
       "author": {
         "name": "Anthropic",
         "email": "support@anthropic.com"
@@ -712,7 +730,7 @@
     },
     {
       "name": "qodo-skills",
-      "description": "Qodo Skills provides a curated library of reusable AI agent capabilities that extend Claude's functionality for software development workflows. Each skill is designed to integrate seamlessly into your development process, enabling tasks like code quality checks, automated testing, security scanning, and compliance validation. Skills operate across your entire SDLC—from IDE to CI/CD—ensuring consistent standards and catching issues early.",
+      "description": "Qodo Skills provides a curated library of reusable AI agent capabilities that extend Claude's functionality for software development workflows. Each skill is designed to integrate seamlessly into your development process, enabling tasks like code quality checks, automated testing, security scanning, and compliance validation. Skills operate across your entire SDLC\u2014from IDE to CI/CD\u2014ensuring consistent standards and catching issues early.",
       "category": "development",
       "source": {
         "source": "url",
