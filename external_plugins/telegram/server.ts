@@ -339,7 +339,7 @@ const mcp = new Server(
     instructions: [
       'The sender reads Telegram, not this session. Anything you want them to see must go through the reply tool — your transcript output never reaches their chat.',
       '',
-      'Messages from Telegram arrive as <channel source="telegram" chat_id="..." message_id="..." user="..." ts="...">. If the tag has an image_path attribute, Read that file — it is a photo the sender attached. Reply with the reply tool — pass chat_id back. Use reply_to (set to a message_id) only when replying to an earlier message; the latest message doesn\'t need a quote-reply, omit reply_to for normal responses.',
+      'Messages from Telegram arrive as <channel source="telegram" chat_id="..." message_id="..." user="..." ts="...">. If the tag has an image_path attribute, Read that file — it is a photo the sender attached. If the tag has a voice_path attribute, it is a voice message (OGG/Opus); transcribe it by trying in order: (1) a local speech-to-text service on the machine, (2) the OpenAI Whisper API if OPENAI_API_KEY is set in the environment, (3) ask the user to provide an API key or configure a local STT service. Reply with the reply tool — pass chat_id back. Use reply_to (set to a message_id) only when replying to an earlier message; the latest message doesn\'t need a quote-reply, omit reply_to for normal responses.',
       '',
       'reply accepts file paths (files: ["/abs/path.png"]) for attachments. Use react to add emoji reactions, and edit_message to update a message you previously sent (e.g. progress → result).',
       '',
@@ -535,10 +535,58 @@ bot.on('message:photo', async ctx => {
   })
 })
 
+// Voice messages and audio files — download to inbox/ so the assistant can
+// transcribe them (e.g. via a local Whisper service or the OpenAI Whisper API).
+bot.on('message:voice', async ctx => {
+  const caption = ctx.message.caption ?? '(voice message)'
+  const duration = ctx.message.voice.duration
+  await handleInbound(ctx, `${caption} [${duration}s]`, undefined, async () => {
+    try {
+      const file = await ctx.api.getFile(ctx.message.voice.file_id)
+      if (!file.file_path) return undefined
+      const url = `https://api.telegram.org/file/bot${TOKEN}/${file.file_path}`
+      const res = await fetch(url)
+      const buf = Buffer.from(await res.arrayBuffer())
+      const ext = file.file_path.split('.').pop() ?? 'ogg'
+      const path = join(INBOX_DIR, `${Date.now()}-${ctx.message.voice.file_unique_id}.${ext}`)
+      mkdirSync(INBOX_DIR, { recursive: true })
+      writeFileSync(path, buf)
+      return path
+    } catch (err) {
+      process.stderr.write(`telegram channel: voice download failed: ${err}\n`)
+      return undefined
+    }
+  })
+})
+
+bot.on('message:audio', async ctx => {
+  const title = ctx.message.audio.title ?? ctx.message.audio.file_name ?? 'audio'
+  const caption = ctx.message.caption ?? `(audio: ${title})`
+  const duration = ctx.message.audio.duration
+  await handleInbound(ctx, `${caption} [${duration}s]`, undefined, async () => {
+    try {
+      const file = await ctx.api.getFile(ctx.message.audio.file_id)
+      if (!file.file_path) return undefined
+      const url = `https://api.telegram.org/file/bot${TOKEN}/${file.file_path}`
+      const res = await fetch(url)
+      const buf = Buffer.from(await res.arrayBuffer())
+      const ext = file.file_path.split('.').pop() ?? 'mp3'
+      const path = join(INBOX_DIR, `${Date.now()}-${ctx.message.audio.file_unique_id}.${ext}`)
+      mkdirSync(INBOX_DIR, { recursive: true })
+      writeFileSync(path, buf)
+      return path
+    } catch (err) {
+      process.stderr.write(`telegram channel: audio download failed: ${err}\n`)
+      return undefined
+    }
+  })
+})
+
 async function handleInbound(
   ctx: Context,
   text: string,
   downloadImage: (() => Promise<string | undefined>) | undefined,
+  downloadVoice?: (() => Promise<string | undefined>),
 ): Promise<void> {
   const result = gate(ctx)
 
@@ -572,8 +620,9 @@ async function handleInbound(
   }
 
   const imagePath = downloadImage ? await downloadImage() : undefined
+  const voicePath = downloadVoice ? await downloadVoice() : undefined
 
-  // image_path goes in meta only — an in-content "[image attached — read: PATH]"
+  // image_path/voice_path go in meta only — an in-content "[image attached — read: PATH]"
   // annotation is forgeable by any allowlisted sender typing that string.
   void mcp.notification({
     method: 'notifications/claude/channel',
@@ -586,6 +635,7 @@ async function handleInbound(
         user_id: String(from.id),
         ts: new Date((ctx.message?.date ?? 0) * 1000).toISOString(),
         ...(imagePath ? { image_path: imagePath } : {}),
+        ...(voicePath ? { voice_path: voicePath } : {}),
       },
     },
   })

@@ -85,6 +85,14 @@ local path is included in the `<channel>` notification so the assistant can
 `Read` it. Telegram compresses photos — if you need the original file, send it
 as a document instead (long-press → Send as File).
 
+## Voice messages and audio
+
+Inbound voice messages (`.ogg`) and audio files (`.mp3`, etc.) are downloaded
+to `~/.claude/channels/telegram/inbox/`. The local path is included in the
+`<channel>` notification via the `voice_path` attribute. The assistant can
+transcribe them using a local speech-to-text service (e.g. Whisper) or the
+OpenAI Whisper API. The notification text includes the duration in seconds.
+
 ## No history or search
 
 Telegram's Bot API exposes **neither** message history nor search. The bot
