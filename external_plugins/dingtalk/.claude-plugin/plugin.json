@@ -1,0 +1,12 @@
+{
+  "name": "dingtalk",
+  "description": "DingTalk (钉钉) channel for Claude Code — messaging bridge with built-in access control via Stream Mode. Manage pairing, allowlists, and policy via /dingtalk:access.",
+  "version": "0.0.1",
+  "keywords": [
+    "dingtalk",
+    "messaging",
+    "channel",
+    "mcp",
+    "钉钉"
+  ]
+}
