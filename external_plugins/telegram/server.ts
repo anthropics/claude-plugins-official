@@ -575,7 +575,7 @@ async function handleInbound(
 
   // image_path goes in meta only — an in-content "[image attached — read: PATH]"
   // annotation is forgeable by any allowlisted sender typing that string.
-  void mcp.notification({
+  mcp.notification({
     method: 'notifications/claude/channel',
     params: {
       content: text,
@@ -588,10 +588,24 @@ async function handleInbound(
         ...(imagePath ? { image_path: imagePath } : {}),
       },
     },
+  }).catch(err => {
+    process.stderr.write(`telegram channel: notification failed: ${err}\n`)
   })
 }
 
-void bot.start({
+bot.catch((err) => {
+  process.stderr.write(`telegram channel: grammy error: ${err.message}\n`)
+})
+
+const shutdown = async () => {
+  process.stderr.write("telegram channel: shutting down...\n")
+  await bot.stop()
+  process.exit(0)
+}
+process.on('SIGINT', shutdown)
+process.on('SIGTERM', shutdown)
+
+await bot.start({
   onStart: info => {
     botUsername = info.username
     process.stderr.write(`telegram channel: polling as @${info.username}\n`)
