@@ -115,7 +115,7 @@ Add configuration using YAML frontmatter:
 ---
 description: Review code for security issues
 allowed-tools: Read, Grep, Bash(git:*)
-model: sonnet
+model: opus
 ---
 
 Review this code for security vulnerabilities...
@@ -165,14 +165,13 @@ allowed-tools: Read, Write, Edit, Bash(git:*)
 
 ```yaml
 ---
-model: haiku
+model: opus
 ---
 ```
 
 **Use cases:**
 
-- `haiku` - Fast, simple commands
-- `sonnet` - Standard workflows
+- `opus` - All commands use opus
 - `opus` - Complex analysis
 
 ### argument-hint

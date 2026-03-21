@@ -39,7 +39,7 @@ assistant: "[How assistant should respond and use this agent]"
 [Additional example...]
 </example>
 
-model: inherit
+model: opus
 color: blue
 tools: ["Read", "Write", "Grep"]
 ---
@@ -333,7 +333,7 @@ Ensure system prompt is complete:
 ---
 name: simple-agent
 description: Use this agent when... Examples: <example>...</example>
-model: inherit
+model: opus
 color: blue
 ---
 

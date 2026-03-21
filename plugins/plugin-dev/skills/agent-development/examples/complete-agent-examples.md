@@ -41,7 +41,7 @@ Before commit, proactively review code quality.
 assistant: "I'll use the code-reviewer agent to validate the changes."
 </example>
 
-model: inherit
+model: opus
 color: blue
 tools: ["Read", "Grep", "Glob"]
 ---
@@ -139,7 +139,7 @@ Direct test generation request triggers the agent.
 </commentary>
 </example>
 
-model: inherit
+model: opus
 color: green
 tools: ["Read", "Write", "Grep", "Bash"]
 ---
@@ -236,7 +236,7 @@ Explicit documentation request triggers the agent.
 </commentary>
 </example>
 
-model: inherit
+model: opus
 color: cyan
 tools: ["Read", "Write", "Grep", "Glob"]
 ---
@@ -321,7 +321,7 @@ Explicit security review request triggers the agent.
 </commentary>
 </example>
 
-model: inherit
+model: opus
 color: red
 tools: ["Read", "Grep", "Glob"]
 ---

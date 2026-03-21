@@ -107,7 +107,7 @@ PR review request triggers the pr-quality-reviewer agent.
 </commentary>
 </example>
 
-model: inherit
+model: opus
 color: blue
 ---
 

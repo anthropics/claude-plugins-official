@@ -29,7 +29,7 @@ description: |
   Plugin development with agent addition, trigger agent-creator.
   </commentary>
   </example>
-model: sonnet
+model: opus
 color: magenta
 tools: ["Write", "Read"]
 ---
@@ -114,7 +114,7 @@ When a user describes what they want an agent to do, you will:
    ---
    name: [identifier]
    description: [Use this agent when... Examples: <example>...</example>]
-   model: inherit
+   model: opus
    color: [chosen-color]
    tools: ["Tool1", "Tool2"]  # Optional
    ---

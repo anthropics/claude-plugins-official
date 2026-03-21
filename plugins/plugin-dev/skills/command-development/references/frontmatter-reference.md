@@ -10,7 +10,7 @@ YAML frontmatter is optional metadata at the start of command files:
 ---
 description: Brief description
 allowed-tools: Read, Write
-model: sonnet
+model: opus
 argument-hint: [arg1] [arg2]
 ---
 
@@ -132,53 +132,28 @@ allowed-tools: "*"
 **Type:** String
 **Required:** No
 **Default:** Inherits from conversation
-**Values:** `sonnet`, `opus`, `haiku`
+**Values:** `opus`
 
-**Purpose:** Specify which Claude model executes the command
+**Purpose:** Specify which Claude model executes the command. All plugins use opus.
 
 **Examples:**
 ```yaml
-model: haiku    # Fast, efficient for simple tasks
+model: opus     # All plugins use opus
 ```
-```yaml
-model: sonnet   # Balanced performance (default)
-```
-```yaml
-model: opus     # Maximum capability for complex tasks
-```
-
-**When to use:**
-
-**Use `haiku` for:**
-- Simple, formulaic commands
-- Fast execution needed
-- Low complexity tasks
-- Frequent invocations
 
 ```yaml
 ---
 description: Format code file
-model: haiku
+model: opus
 ---
 ```
-
-**Use `sonnet` for:**
-- Standard commands (default)
-- Balanced speed/quality
-- Most common use cases
 
 ```yaml
 ---
 description: Review code changes
-model: sonnet
+model: opus
 ---
 ```
-
-**Use `opus` for:**
-- Complex analysis
-- Architectural decisions
-- Deep code understanding
-- Critical tasks
 
 ```yaml
 ---
@@ -188,7 +163,7 @@ model: opus
 ```
 
 **Best practices:**
-- Omit unless specific need
+- Always use opus
 - Use `haiku` for speed when possible
 - Reserve `opus` for genuinely complex tasks
 - Test with different models to find right balance
@@ -370,7 +345,7 @@ All common fields:
 description: Deploy application to environment
 argument-hint: [app-name] [environment] [version]
 allowed-tools: Bash(kubectl:*), Bash(helm:*), Read
-model: sonnet
+model: opus
 ---
 
 Deploy $1 to $2 environment using version $3
@@ -422,7 +397,7 @@ Type "APPROVED" to confirm deployment.
 ---
 description: Missing quote
 allowed-tools: Read, Write
-model: sonnet
+model: opus
 ---  # ❌ Missing closing quote above
 ```
 

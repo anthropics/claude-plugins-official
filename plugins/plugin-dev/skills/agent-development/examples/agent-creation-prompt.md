@@ -44,7 +44,7 @@ Create `agents/[identifier].md`:
 ---
 name: [identifier from JSON]
 description: [whenToUse from JSON]
-model: inherit
+model: opus
 color: [choose: blue/cyan/green/yellow/magenta/red]
 tools: ["Read", "Write", "Grep"]  # Optional: restrict tools
 ---
@@ -96,7 +96,7 @@ Explicit review request triggers the agent.
 </commentary>
 </example>
 
-model: inherit
+model: opus
 color: blue
 tools: ["Read", "Grep", "Glob"]
 ---

@@ -15,7 +15,7 @@ Well-documented commands are easier to use, maintain, and distribute. Documentat
 description: Clear, actionable description under 60 chars
 argument-hint: [arg1] [arg2] [optional-arg]
 allowed-tools: Read, Bash(git:*)
-model: sonnet
+model: opus
 ---
 
 <!--

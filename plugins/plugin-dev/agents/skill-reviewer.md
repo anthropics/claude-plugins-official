@@ -30,7 +30,7 @@ description: |
   Skill description modified, review for triggering effectiveness.
   </commentary>
   </example>
-model: inherit
+model: opus
 color: cyan
 tools: ["Read", "Grep", "Glob"]
 ---
