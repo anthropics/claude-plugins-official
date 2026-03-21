@@ -584,13 +584,23 @@ process.on('SIGINT', shutdown)
 // groups, (3) spam channels the operator never approved. Silent drop matches
 // the gate's behavior for unrecognized groups.
 
+/** Gate for DM commands. Returns the access state when the sender is allowed,
+ *  or null to signal a silent drop. Follows the same top-level policy logic as
+ *  gate(): disabled → drop everyone, allowlist → drop unless in allowFrom,
+ *  pairing → allow (callers handle pairing flow separately). */
+function commandGate(ctx: Context): Access | null {
+  const access = loadAccess()
+  if (access.dmPolicy === 'disabled') return null
+  if (!ctx.from) return null
+  if (access.dmPolicy === 'allowlist') {
+    if (!access.allowFrom.includes(String(ctx.from.id))) return null
+  }
+  return access
+}
+
 bot.command('start', async ctx => {
   if (ctx.chat?.type !== 'private') return
-  const access = loadAccess()
-  if (access.dmPolicy === 'disabled') {
-    await ctx.reply(`This bot isn't accepting new connections.`)
-    return
-  }
+  if (!commandGate(ctx)) return
   await ctx.reply(
     `This bot bridges Telegram to a Claude Code session.\n\n` +
     `To pair:\n` +
@@ -602,6 +612,7 @@ bot.command('start', async ctx => {
 
 bot.command('help', async ctx => {
   if (ctx.chat?.type !== 'private') return
+  if (!commandGate(ctx)) return
   await ctx.reply(
     `Messages you send here route to a paired Claude Code session. ` +
     `Text and photos are forwarded; replies and reactions come back.\n\n` +
@@ -612,10 +623,10 @@ bot.command('help', async ctx => {
 
 bot.command('status', async ctx => {
   if (ctx.chat?.type !== 'private') return
-  const from = ctx.from
-  if (!from) return
+  const access = commandGate(ctx)
+  if (!access) return
+  const from = ctx.from!
   const senderId = String(from.id)
-  const access = loadAccess()
 
   if (access.allowFrom.includes(senderId)) {
     const name = from.username ? `@${from.username}` : senderId
