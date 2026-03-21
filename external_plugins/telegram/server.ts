@@ -40,6 +40,8 @@ try {
 
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN
 const STATIC = process.env.TELEGRAM_ACCESS_MODE === 'static'
+const STT_URL_LOADED = process.env.TELEGRAM_STT_URL
+if (STT_URL_LOADED) process.stderr.write(`telegram channel: STT enabled → ${STT_URL_LOADED}\n`)
 
 if (!TOKEN) {
   process.stderr.write(
@@ -680,13 +682,47 @@ bot.on('message:document', async ctx => {
 
 bot.on('message:voice', async ctx => {
   const voice = ctx.message.voice
-  const text = ctx.message.caption ?? '(voice message)'
-  await handleInbound(ctx, text, undefined, {
-    kind: 'voice',
-    file_id: voice.file_id,
-    size: voice.file_size,
-    mime: voice.mime_type,
-  })
+  const sttUrl = process.env.TELEGRAM_STT_URL
+
+  if (sttUrl) {
+    let transcript: string | undefined
+    try {
+      const file = await ctx.api.getFile(voice.file_id)
+      if (file.file_path) {
+        const url = `https://api.telegram.org/file/bot${TOKEN}/${file.file_path}`
+        const res = await fetch(url)
+        const buf = Buffer.from(await res.arrayBuffer())
+
+        mkdirSync(INBOX_DIR, { recursive: true })
+        writeFileSync(join(INBOX_DIR, `${Date.now()}-voice.oga`), buf)
+
+        const sttRes = await fetch(sttUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': voice.mime_type ?? 'audio/ogg' },
+          body: buf,
+        })
+        if (sttRes.ok) {
+          const sttJson = await sttRes.json() as { text?: string; ok?: boolean }
+          transcript = (sttJson.text ?? '').trim() || undefined
+        }
+      }
+    } catch (err) {
+      process.stderr.write(`telegram channel: voice transcription failed: ${err}\n`)
+    }
+
+    const text = transcript
+      ? `🎤 ${transcript}`
+      : ctx.message.caption ?? '(voice — transcription failed)'
+    await handleInbound(ctx, text, undefined)
+  } else {
+    const text = ctx.message.caption ?? '(voice message)'
+    await handleInbound(ctx, text, undefined, {
+      kind: 'voice',
+      file_id: voice.file_id,
+      size: voice.file_size,
+      mime: voice.mime_type,
+    })
+  }
 })
 
 bot.on('message:audio', async ctx => {

@@ -87,6 +87,29 @@ local path is included in the `<channel>` notification so the assistant can
 `Read` it. Telegram compresses photos — if you need the original file, send it
 as a document instead (long-press → Send as File).
 
+## Voice transcription (optional)
+
+Voice messages can be automatically transcribed to text using any
+Whisper-compatible STT endpoint. Add to `~/.claude/channels/telegram/.env`:
+
+```
+TELEGRAM_STT_URL=http://localhost:8877/transcribe
+```
+
+When set, voice messages are downloaded, sent to the STT endpoint as a
+multipart form upload, and the transcribed text is delivered as a regular
+channel message prefixed with 🎤. The audio file is saved to the inbox
+directory for audit.
+
+The STT endpoint must accept a `file` field (audio blob) and return
+`{"text": "transcribed content"}`. This is compatible with
+[faster-whisper-server](https://github.com/fedirz/faster-whisper-server),
+OpenAI's Whisper API, and similar services.
+
+If `TELEGRAM_STT_URL` is not set, voice messages fall through to the
+default attachment mode (file_id delivered for manual download via
+`download_attachment`).
+
 ## No history or search
 
 Telegram's Bot API exposes **neither** message history nor search. The bot
