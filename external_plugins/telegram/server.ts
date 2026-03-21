@@ -26,6 +26,7 @@ const STATE_DIR = process.env.TELEGRAM_STATE_DIR ?? join(homedir(), '.claude', '
 const ACCESS_FILE = join(STATE_DIR, 'access.json')
 const APPROVED_DIR = join(STATE_DIR, 'approved')
 const ENV_FILE = join(STATE_DIR, '.env')
+const INBOX_DIR = join(STATE_DIR, 'inbox')
 
 // Load ~/.claude/channels/telegram/.env into process.env. Real env wins.
 // Plugin-spawned servers don't get an env block — this is where the token lives.
@@ -586,6 +587,8 @@ process.on('SIGINT', shutdown)
 
 bot.command('start', async ctx => {
   if (ctx.chat?.type !== 'private') return
+  const result = gate(ctx)
+  if (result.action === 'drop') return
   const access = loadAccess()
   if (access.dmPolicy === 'disabled') {
     await ctx.reply(`This bot isn't accepting new connections.`)
@@ -602,6 +605,8 @@ bot.command('start', async ctx => {
 
 bot.command('help', async ctx => {
   if (ctx.chat?.type !== 'private') return
+  const result = gate(ctx)
+  if (result.action === 'drop') return
   await ctx.reply(
     `Messages you send here route to a paired Claude Code session. ` +
     `Text and photos are forwarded; replies and reactions come back.\n\n` +
@@ -615,6 +620,8 @@ bot.command('status', async ctx => {
   const from = ctx.from
   if (!from) return
   const senderId = String(from.id)
+  const result = gate(ctx)
+  if (result.action === 'drop') return
   const access = loadAccess()
 
   if (access.allowFrom.includes(senderId)) {
@@ -783,6 +790,9 @@ async function handleInbound(
         { type: 'emoji', emoji: access.ackReaction as ReactionTypeEmoji['emoji'] },
       ])
       .catch(() => {})
+  } else if (!access.ackReaction && msgId != null) {
+    // Default: show typing indicator if no reaction is configured
+    void bot.api.sendChatAction(chat_id, 'typing').catch(() => {})
   }
 
   const imagePath = downloadImage ? await downloadImage() : undefined
