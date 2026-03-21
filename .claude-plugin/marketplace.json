@@ -34,7 +34,7 @@
       "description": "AI-first project auditor and re-engineer based on the 9 design principles and 7 design patterns from the TechWolf AI-First Bootcamp",
       "source": {
         "source": "git-subdir",
-        "url": "techwolf-ai/ai-first-toolkit",
+        "url": "https://github.com/techwolf-ai/ai-first-toolkit.git",
         "path": "plugins/ai-firstify",
         "ref": "main",
         "sha": "7f18e11d694b9ae62ea3009fbbc175f08ae913df"
@@ -116,14 +116,13 @@
       "description": "Comprehensive development workflow for building AI agents with the Atomic Agents framework. Includes specialized agents for schema design, architecture planning, code review, and tool development. Features guided workflows, progressive-disclosure skills, and best practice validation.",
       "category": "development",
       "source": {
-        "source": "url",
+        "source": "git-subdir",
         "url": "https://github.com/BrainBlend-AI/atomic-agents.git",
-        "path": "claude-plugin/atomic-agents"
+        "path": "claude-plugin/atomic-agents",
+        "ref": "main"
       },
       "homepage": "https://github.com/BrainBlend-AI/atomic-agents",
-      "tags": [
-        "community-managed"
-      ]
+      "tags": ["community-managed"]
     },
     {
       "name": "autofix-bot",
@@ -192,9 +191,7 @@
       "lspServers": {
         "clangd": {
           "command": "clangd",
-          "args": [
-            "--background-index"
-          ],
+          "args": ["--background-index"],
           "extensionToLanguage": {
             ".c": "c",
             ".h": "c",
@@ -300,9 +297,7 @@
       "category": "development",
       "source": "./external_plugins/context7",
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/context7",
-      "tags": [
-        "community-managed"
-      ]
+      "tags": ["community-managed"]
     },
     {
       "name": "csharp-lsp",
@@ -535,7 +530,7 @@
       "description": "Build on Solana with Helius — live blockchain tools, expert coding patterns, and autonomous account signup",
       "source": {
         "source": "git-subdir",
-        "url": "helius-labs/core-ai",
+        "url": "https://github.com/helius-labs/core-ai.git",
         "path": "helius-plugin",
         "ref": "main",
         "sha": "05ea4d1128d46618266bbcc23a5e7019c57be0d6"
@@ -609,9 +604,7 @@
       "lspServers": {
         "kotlin-lsp": {
           "command": "kotlin-lsp",
-          "args": [
-            "--stdio"
-          ],
+          "args": ["--stdio"],
           "extensionToLanguage": {
             ".kt": "kotlin",
             ".kts": "kotlin"
@@ -644,7 +637,7 @@
       "category": "productivity",
       "source": {
         "source": "git-subdir",
-        "url": "legalzoom/claude-plugins",
+        "url": "https://github.com/legalzoom/claude-plugins.git",
         "path": "plugins/legalzoom",
         "ref": "main",
         "sha": "f9fd8a0ca6e1421bc1aacb113a109663a7a6f6d8"
@@ -728,7 +721,7 @@
       "category": "database",
       "source": {
         "source": "git-subdir",
-        "url": "neondatabase/agent-skills",
+        "url": "https://github.com/neondatabase/agent-skills.git",
         "path": "plugins/neon-postgres",
         "ref": "main",
         "sha": "54d7a9db2ddd476f84d5d1fd7bac323907858a8b"
@@ -820,9 +813,7 @@
       "lspServers": {
         "intelephense": {
           "command": "intelephense",
-          "args": [
-            "--stdio"
-          ],
+          "args": ["--stdio"],
           "extensionToLanguage": {
             ".php": "php"
           }
@@ -956,9 +947,7 @@
       "lspServers": {
         "pyright": {
           "command": "pyright-langserver",
-          "args": [
-            "--stdio"
-          ],
+          "args": ["--stdio"],
           "extensionToLanguage": {
             ".py": "python",
             ".pyi": "python"
@@ -982,7 +971,7 @@
       "category": "deployment",
       "source": {
         "source": "git-subdir",
-        "url": "railwayapp/railway-skills",
+        "url": "https://github.com/railwayapp/railway-skills.git",
         "path": "plugins/railway",
         "ref": "main",
         "sha": "d52f3741a6a33a3191d6138eb3d6c3355cb970d1"
@@ -1118,7 +1107,8 @@
       "source": {
         "source": "git-subdir",
         "url": "https://github.com/semgrep/mcp-marketplace.git",
-        "path": "plugin"
+        "path": "plugin",
+        "ref": "main"
       },
       "homepage": "https://github.com/semgrep/mcp-marketplace.git"
     },
@@ -1138,9 +1128,7 @@
       "category": "development",
       "source": "./external_plugins/serena",
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/serena",
-      "tags": [
-        "community-managed"
-      ]
+      "tags": ["community-managed"]
     },
     {
       "name": "skill-creator",
@@ -1192,21 +1180,14 @@
         "name": "Browserbase"
       },
       "source": {
-        "source": "github",
-        "repo": "browserbase/agent-browse"
+        "source": "url",
+        "url": "https://github.com/browserbase/agent-browse.git"
       },
       "category": "automation",
-      "keywords": [
-        "browser",
-        "automation",
-        "stagehand",
-        "web-scraping"
-      ],
+      "keywords": ["browser", "automation", "stagehand", "web-scraping"],
       "homepage": "https://github.com/browserbase/agent-browse",
       "strict": false,
-      "skills": [
-        "./.claude/skills/browser-automation"
-      ]
+      "skills": ["./.claude/skills/browser-automation"]
     },
     {
       "name": "stripe",
@@ -1214,7 +1195,7 @@
       "category": "development",
       "source": {
         "source": "git-subdir",
-        "url": "stripe/ai",
+        "url": "https://github.com/stripe/ai.git",
         "path": "providers/claude/plugin",
         "ref": "main"
       },
@@ -1299,9 +1280,7 @@
       "lspServers": {
         "typescript": {
           "command": "typescript-language-server",
-          "args": [
-            "--stdio"
-          ],
+          "args": ["--stdio"],
           "extensionToLanguage": {
             ".ts": "typescript",
             ".tsx": "typescriptreact",
@@ -1362,7 +1341,7 @@
       "category": "productivity",
       "source": {
         "source": "git-subdir",
-        "url": "zapier/zapier-mcp",
+        "url": "https://github.com/zapier/zapier-mcp.git",
         "path": "plugins/zapier",
         "ref": "main",
         "sha": "b93007e9a726c6ee93c57a949e732744ef5acbfd"
