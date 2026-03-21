@@ -30,19 +30,18 @@ COMPLETION_PROMISE=$(echo "$FRONTMATTER" | grep '^completion_promise:' | sed 's/
 # Legacy state files without session_id fall through (preserves old behavior).
 STATE_SESSION=$(echo "$FRONTMATTER" | grep '^session_id:' | sed 's/session_id: *//' || true)
 HOOK_SESSION=$(echo "$HOOK_INPUT" | jq -r '.session_id // ""')
-if [[ -n "$STATE_SESSION" ]] && [[ "$STATE_SESSION" != "$HOOK_SESSION" ]]; then
+
+# If no session_id is stored in the state file, treat it as an orphaned loop.
+# Remove the state file and allow the stop hook to exit immediately.
+if [[ -z "$STATE_SESSION" ]]; then
+  echo "⚠️  Ralph loop: Orphaned state file (no session_id). Removing." >&2
+  rm -f "$RALPH_STATE_FILE"
   exit 0
 fi
 
-# Validate numeric fields before arithmetic operations
-if [[ ! "$ITERATION" =~ ^[0-9]+$ ]]; then
-  echo "⚠️  Ralph loop: State file corrupted" >&2
-  echo "   File: $RALPH_STATE_FILE" >&2
-  echo "   Problem: 'iteration' field is not a valid number (got: '$ITERATION')" >&2
-  echo "" >&2
-  echo "   This usually means the state file was manually edited or corrupted." >&2
-  echo "   Ralph loop is stopping. Run /ralph-loop again to start fresh." >&2
-  rm "$RALPH_STATE_FILE"
+# If the stored session_id does not match the current hook session, do not block.
+# This prevents the loop from affecting other sessions in the same project directory.
+if [[ "$STATE_SESSION" != "$HOOK_SESSION" ]]; then
   exit 0
 fi
 

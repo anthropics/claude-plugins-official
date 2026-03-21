@@ -137,6 +137,12 @@ else
   COMPLETION_PROMISE_YAML="null"
 fi
 
+# Ensure a session ID is available
+if [[ -z "${CLAUDE_CODE_SESSION_ID:-}" ]]; then
+  echo "❌ Error: CLAUDE_CODE_SESSION_ID is not set." >&2
+  exit 1
+fi
+
 cat > .claude/ralph-loop.local.md <<EOF
 ---
 active: true
