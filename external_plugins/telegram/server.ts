@@ -432,6 +432,22 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
         required: ['chat_id', 'message_id', 'text'],
       },
     },
+    {
+      name: 'send_thought',
+      description: 'Send a "thought" or progress update that will be edited over time. This shows the user what you are doing without flooding the chat with multiple notifications. Use this for multi-step tasks like research or coding.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          chat_id: { type: 'string' },
+          text: { type: 'string' },
+          thought_id: {
+            type: 'string',
+            description: 'The message ID of a previous thought to update. Omit to start a new thought.',
+          },
+        },
+        required: ['chat_id', 'text'],
+      },
+    },
   ],
 }))
 
@@ -543,6 +559,27 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         )
         const id = typeof edited === 'object' ? edited.message_id : args.message_id
         return { content: [{ type: 'text', text: `edited (id: ${id})` }] }
+      }
+      case 'send_thought': {
+        const chat_id = args.chat_id as string
+        const text = args.text as string
+        const thought_id = args.thought_id as string | undefined
+        assertAllowedChat(chat_id)
+        const thoughtText = `💭 ${text}`
+        if (thought_id) {
+          try {
+            const edited = await bot.api.editMessageText(chat_id, Number(thought_id), thoughtText)
+            const id = typeof edited === 'object' ? edited.message_id : thought_id
+            return { content: [{ type: 'text', text: `thought updated (id: ${id})` }] }
+          } catch (err) {
+            // Fallback to new message if edit fails (e.g. message too old or deleted)
+            const sent = await bot.api.sendMessage(chat_id, thoughtText)
+            return { content: [{ type: 'text', text: `thought started (new id: ${sent.message_id})` }] }
+          }
+        } else {
+          const sent = await bot.api.sendMessage(chat_id, thoughtText)
+          return { content: [{ type: 'text', text: `thought started (id: ${sent.message_id})` }] }
+        }
       }
       default:
         return {

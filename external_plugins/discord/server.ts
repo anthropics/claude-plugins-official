@@ -492,6 +492,22 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
       },
     },
     {
+      name: 'send_thought',
+      description: 'Send a "thought" or progress update that will be edited over time. This shows the user what you are doing without flooding the chat with multiple notifications. Use this for multi-step tasks like research or coding.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          chat_id: { type: 'string' },
+          text: { type: 'string' },
+          thought_id: {
+            type: 'string',
+            description: 'The message ID of a previous thought to update. Omit to start a new thought.',
+          },
+        },
+        required: ['chat_id', 'text'],
+      },
+    },
+    {
       name: 'download_attachment',
       description: 'Download attachments from a specific Discord message to the local inbox. Use after fetch_messages shows a message has attachments (marked with +Natt). Returns file paths ready to Read.',
       inputSchema: {
@@ -612,6 +628,30 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         const msg = await ch.messages.fetch(args.message_id as string)
         const edited = await msg.edit(args.text as string)
         return { content: [{ type: 'text', text: `edited (id: ${edited.id})` }] }
+      }
+      case 'send_thought': {
+        const chat_id = args.chat_id as string
+        const text = args.text as string
+        const thought_id = args.thought_id as string | undefined
+        const ch = await fetchAllowedChannel(chat_id)
+        if (!('send' in ch)) throw new Error('channel is not sendable')
+        const thoughtText = `💭 ${text}`
+        if (thought_id) {
+          try {
+            const msg = await ch.messages.fetch(thought_id)
+            const edited = await msg.edit(thoughtText)
+            return { content: [{ type: 'text', text: `thought updated (id: ${edited.id})` }] }
+          } catch (err) {
+            // Fallback to new message if edit fails (e.g. message too old or deleted)
+            const sent = await ch.send(thoughtText)
+            noteSent(sent.id)
+            return { content: [{ type: 'text', text: `thought started (new id: ${sent.id})` }] }
+          }
+        } else {
+          const sent = await ch.send(thoughtText)
+          noteSent(sent.id)
+          return { content: [{ type: 'text', text: `thought started (id: ${sent.id})` }] }
+        }
       }
       case 'download_attachment': {
         const ch = await fetchAllowedChannel(args.chat_id as string)
