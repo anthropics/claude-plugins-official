@@ -158,6 +158,17 @@
       "homepage": "https://docs.brightdata.com"
     },
     {
+      "name": "chat-search",
+      "description": "Full-text search across all Claude Code conversations. Search through message content, tool results, and MCP outputs — not just titles.",
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/danutmitrut/claude-chat-search.git",
+        "sha": "b75501addb0c7027a8244030c1c8502f8464dfa0"
+      },
+      "homepage": "https://github.com/danutmitrut/claude-chat-search"
+    },
+    {
       "name": "chrome-devtools-mcp",
       "description": "Control and inspect a live Chrome browser from your coding agent. Record performance traces, analyze network requests, check console messages with source-mapped stack traces, and automate browser actions with Puppeteer.",
       "category": "development",
