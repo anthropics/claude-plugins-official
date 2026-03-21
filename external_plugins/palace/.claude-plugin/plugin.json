@@ -1,0 +1,8 @@
+{
+  "name": "palace",
+  "description": "Multi-agent decision-making system inspired by Tang Dynasty's Three Departments & Six Ministries (三省六部). 9 AI agents collaborate to analyze decisions from multiple perspectives, producing structured reports with execution plans. Users act as the Emperor (皇上) with final approval authority at key checkpoints.",
+  "author": {
+    "name": "Nathan",
+    "url": "https://github.com/zx12671/palace"
+  }
+}
