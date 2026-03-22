@@ -76,6 +76,7 @@ Quick reference: IDs are **numeric user IDs** (get yours from [@userinfobot](htt
 | `reply` | Send to a chat. Takes `chat_id` + `text`, optionally `reply_to` (message ID) for native threading and `files` (absolute paths) for attachments. Images (`.jpg`/`.png`/`.gif`/`.webp`) send as photos with inline preview; other types send as documents. Max 50MB each. Auto-chunks text; files send as separate messages after the text. Returns the sent message ID(s). |
 | `react` | Add an emoji reaction to a message by ID. **Only Telegram's fixed whitelist** is accepted (👍 👎 ❤ 🔥 👀 etc). |
 | `edit_message` | Edit a message the bot previously sent. Useful for "working…" → result progress updates. Only works on the bot's own messages. |
+| `download_attachment` | Download a file attachment (document, voice, audio, video, sticker) from an inbound message. Use when the `<channel>` notification includes `attachment_file_id`. Returns the local file path. Telegram caps bot downloads at 20MB. |
 
 Inbound messages trigger a typing indicator automatically — Telegram shows
 "botname is typing…" while the assistant works on a response.
@@ -93,6 +94,7 @@ Telegram's Bot API exposes **neither** message history nor search. The bot
 only sees messages as they arrive — no `fetch_messages` tool exists. If the
 assistant needs earlier context, it will ask you to paste or summarize.
 
-This also means there's no `download_attachment` tool for historical messages
-— photos are downloaded eagerly on arrival since there's no way to fetch them
-later.
+Photos are downloaded eagerly on arrival. Other attachment types (documents,
+voice, audio, video, stickers) are deferred — use `download_attachment` with
+the `attachment_file_id` from the inbound notification. Neither approach works
+for messages sent before the bot started; there is no history API.

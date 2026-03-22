@@ -458,7 +458,8 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         }
 
         const access = loadAccess()
-        const limit = Math.max(1, Math.min(access.textChunkLimit ?? MAX_CHUNK_LIMIT, MAX_CHUNK_LIMIT))
+        const rawLimit = Number(access.textChunkLimit)
+        const limit = Number.isFinite(rawLimit) ? Math.max(1, Math.min(rawLimit, MAX_CHUNK_LIMIT)) : MAX_CHUNK_LIMIT
         const mode = access.chunkMode ?? 'length'
         const replyMode = access.replyToMode ?? 'first'
         const chunks = chunk(text, limit, mode)
@@ -653,7 +654,8 @@ bot.on('message:photo', async ctx => {
       const url = `https://api.telegram.org/file/bot${TOKEN}/${file.file_path}`
       const res = await fetch(url)
       const buf = Buffer.from(await res.arrayBuffer())
-      const ext = file.file_path.split('.').pop() ?? 'jpg'
+      const rawExt = file.file_path.includes('.') ? file.file_path.split('.').pop()! : 'jpg'
+      const ext = rawExt.replace(/[^a-zA-Z0-9]/g, '') || 'jpg'
       const path = join(INBOX_DIR, `${Date.now()}-${best.file_unique_id}.${ext}`)
       mkdirSync(INBOX_DIR, { recursive: true })
       writeFileSync(path, buf)
@@ -745,7 +747,7 @@ type AttachmentMeta = {
 // notification — delimiter chars would let the uploader break out of the tag
 // or forge a second meta entry.
 function safeName(s: string | undefined): string | undefined {
-  return s?.replace(/[<>\[\]\r\n;]/g, '_')
+  return s?.replace(/[<>\[\]\r\n;"'&\\\/]/g, '_')
 }
 
 async function handleInbound(
