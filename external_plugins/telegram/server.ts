@@ -26,6 +26,27 @@ const STATE_DIR = process.env.TELEGRAM_STATE_DIR ?? join(homedir(), '.claude', '
 const ACCESS_FILE = join(STATE_DIR, 'access.json')
 const APPROVED_DIR = join(STATE_DIR, 'approved')
 const ENV_FILE = join(STATE_DIR, '.env')
+const PID_FILE = join(STATE_DIR, '.server.pid')
+
+// Kill any zombie server process from a previous session before starting.
+// Without this, the old process keeps polling getUpdates and consuming messages
+// meant for the current session — Telegram's Bot API is single-consumer.
+try {
+  const oldPid = parseInt(readFileSync(PID_FILE, 'utf8').trim(), 10)
+  if (oldPid && oldPid !== process.pid) {
+    try {
+      process.kill(oldPid, 'SIGTERM')
+      process.stderr.write(`telegram channel: killed previous server process (pid ${oldPid})\n`)
+    } catch {
+      // Process already dead — ignore
+    }
+  }
+} catch {
+  // No PID file — first run
+}
+try {
+  writeFileSync(PID_FILE, String(process.pid), { mode: 0o600 })
+} catch {}
 
 // Load ~/.claude/channels/telegram/.env into process.env. Real env wins.
 // Plugin-spawned servers don't get an env block — this is where the token lives.
@@ -569,6 +590,8 @@ function shutdown(): void {
   if (shuttingDown) return
   shuttingDown = true
   process.stderr.write('telegram channel: shutting down\n')
+  // Clean up PID file so the next session doesn't try to kill a recycled PID.
+  try { rmSync(PID_FILE, { force: true }) } catch {}
   // bot.stop() signals the poll loop to end; the current getUpdates request
   // may take up to its long-poll timeout to return. Force-exit after 2s.
   setTimeout(() => process.exit(0), 2000)
@@ -789,7 +812,7 @@ async function handleInbound(
 
   // image_path goes in meta only — an in-content "[image attached — read: PATH]"
   // annotation is forgeable by any allowlisted sender typing that string.
-  mcp.notification({
+  await mcp.notification({
     method: 'notifications/claude/channel',
     params: {
       content: text,
