@@ -58,6 +58,20 @@ With the default `requireMention: true`, the bot responds only when @mentioned o
 /discord:access group rm 846209781206941736
 ```
 
+## Bot messages
+
+Messages from other bots are dropped by default. In multi-agent setups — e.g. two Claude Code instances collaborating in the same channel — you can opt a channel in to receiving bot messages by setting `allowBots: true` on the group policy. The bot's own messages are always ignored regardless of this setting to prevent echo loops.
+
+```jsonc
+"groups": {
+  "846209781206941736": {
+    "requireMention": false,
+    "allowBots": true,
+    "allowFrom": []
+  }
+}
+```
+
 ## Mention detection
 
 In channels with `requireMention: true`, any of the following triggers the bot:
@@ -121,7 +135,9 @@ Configure outbound behavior with `/discord:access set <key> <value>`.
       // true: respond only to @mentions and replies.
       "requireMention": true,
       // Restrict triggers to these senders. Empty = any member (subject to requireMention).
-      "allowFrom": []
+      "allowFrom": [],
+      // true: deliver messages from other bots. Own messages are always ignored.
+      "allowBots": false
     }
   },
 

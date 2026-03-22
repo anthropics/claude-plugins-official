@@ -89,6 +89,8 @@ type PendingEntry = {
 type GroupPolicy = {
   requireMention: boolean
   allowFrom: string[]
+  /** When true, messages from other bots are delivered instead of silently dropped. Own messages are always ignored. */
+  allowBots?: boolean
 }
 
 type Access = {
@@ -666,7 +668,17 @@ client.on('error', err => {
 })
 
 client.on('messageCreate', msg => {
-  if (msg.author.bot) return
+  // Always ignore own messages to prevent echo loops.
+  if (msg.author.id === client.user?.id) return
+
+  // Drop other bots by default. Guild channels can opt in via allowBots.
+  if (msg.author.bot) {
+    if (msg.channel.type === ChannelType.DM) return
+    const access = loadAccess()
+    const group = access.groups[msg.channelId]
+    if (!group?.allowBots) return
+  }
+
   handleInbound(msg).catch(e => process.stderr.write(`discord: handleInbound failed: ${e}\n`))
 })
 
