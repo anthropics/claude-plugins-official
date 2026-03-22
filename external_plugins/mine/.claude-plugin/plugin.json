@@ -1,0 +1,11 @@
+{
+  "name": "mine",
+  "version": "2.0.0",
+  "description": "Mines every Claude Code session into a local SQLite database. Query your usage history — costs, tokens, tools, projects, errors, and full-text search across all conversations.",
+  "author": {
+    "name": "Ani Potts",
+    "url": "https://github.com/anipotts"
+  },
+  "repository": "https://github.com/anipotts/claude-code-tips",
+  "license": "MIT"
+}
