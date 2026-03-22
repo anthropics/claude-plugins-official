@@ -50,6 +50,51 @@ if (!TOKEN) {
   process.exit(1)
 }
 const INBOX_DIR = join(STATE_DIR, 'inbox')
+const RETRY_FILE = join(STATE_DIR, 'retry-queue.json')
+
+// --- Retry queue for failed notification deliveries ---
+// When the Claude session is busy (mid-response), mcp.notification() fails
+// silently and the inbound message is lost forever. This queue persists failed
+// deliveries to disk and retries every 5 seconds until the session is idle.
+
+function loadRetryQueue(): any[] {
+  try {
+    return JSON.parse(readFileSync(RETRY_FILE, 'utf8'))
+  } catch { return [] }
+}
+
+function saveRetryQueue(queue: any[]): void {
+  writeFileSync(RETRY_FILE, JSON.stringify(queue.slice(-50), null, 2))
+}
+
+function enqueueForRetry(params: any): void {
+  const queue = loadRetryQueue()
+  queue.push({ params, enqueuedAt: new Date().toISOString() })
+  saveRetryQueue(queue)
+  process.stderr.write(`telegram channel: notification queued for retry (${queue.length} pending)\n`)
+}
+
+async function retryPendingNotifications(): Promise<void> {
+  const queue = loadRetryQueue()
+  if (queue.length === 0) return
+
+  const remaining: any[] = []
+  for (const entry of queue) {
+    try {
+      await mcp.notification({
+        method: 'notifications/claude/channel',
+        params: entry.params,
+      })
+      process.stderr.write(`telegram channel: retry delivered message from ${entry.enqueuedAt}\n`)
+    } catch {
+      remaining.push(entry)
+    }
+  }
+  saveRetryQueue(remaining)
+}
+
+// Retry pending notifications every 5 seconds
+setInterval(() => { void retryPendingNotifications() }, 5000)
 
 // Last-resort safety net — without these the process dies silently on any
 // unhandled promise rejection. With them it logs and keeps serving tools.
@@ -789,28 +834,30 @@ async function handleInbound(
 
   // image_path goes in meta only — an in-content "[image attached — read: PATH]"
   // annotation is forgeable by any allowlisted sender typing that string.
+  const notifParams = {
+    content: text,
+    meta: {
+      chat_id,
+      ...(msgId != null ? { message_id: String(msgId) } : {}),
+      user: from.username ?? String(from.id),
+      user_id: String(from.id),
+      ts: new Date((ctx.message?.date ?? 0) * 1000).toISOString(),
+      ...(imagePath ? { image_path: imagePath } : {}),
+      ...(attachment ? {
+        attachment_kind: attachment.kind,
+        attachment_file_id: attachment.file_id,
+        ...(attachment.size != null ? { attachment_size: String(attachment.size) } : {}),
+        ...(attachment.mime ? { attachment_mime: attachment.mime } : {}),
+        ...(attachment.name ? { attachment_name: attachment.name } : {}),
+      } : {}),
+    },
+  }
   mcp.notification({
     method: 'notifications/claude/channel',
-    params: {
-      content: text,
-      meta: {
-        chat_id,
-        ...(msgId != null ? { message_id: String(msgId) } : {}),
-        user: from.username ?? String(from.id),
-        user_id: String(from.id),
-        ts: new Date((ctx.message?.date ?? 0) * 1000).toISOString(),
-        ...(imagePath ? { image_path: imagePath } : {}),
-        ...(attachment ? {
-          attachment_kind: attachment.kind,
-          attachment_file_id: attachment.file_id,
-          ...(attachment.size != null ? { attachment_size: String(attachment.size) } : {}),
-          ...(attachment.mime ? { attachment_mime: attachment.mime } : {}),
-          ...(attachment.name ? { attachment_name: attachment.name } : {}),
-        } : {}),
-      },
-    },
+    params: notifParams,
   }).catch(err => {
-    process.stderr.write(`telegram channel: failed to deliver inbound to Claude: ${err}\n`)
+    process.stderr.write(`telegram channel: notification failed, queuing for retry: ${err}\n`)
+    enqueueForRetry(notifParams)
   })
 }
 
