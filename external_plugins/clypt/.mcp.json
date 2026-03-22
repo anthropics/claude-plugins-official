@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "clypt": {
+      "command": "npx",
+      "args": ["-y", "clypt-mcp@latest"],
+      "env": {
+        "CLYPT_API_KEY": "${CLYPT_API_KEY}"
+      }
+    }
+  }
+}

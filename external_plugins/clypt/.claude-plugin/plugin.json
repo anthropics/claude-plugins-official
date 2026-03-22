@@ -1,0 +1,11 @@
+{
+  "name": "clypt",
+  "displayName": "Clypt — Link Intelligence",
+  "description": "Shorten, track, and optimize links without leaving Claude. Create campaign links, pull analytics, generate QR codes, and manage thousands of links through natural language.",
+  "icon": "https://clypt.io/icon.svg",
+  "author": "Bonsai Tech LLC",
+  "homepage": "https://clypt.io",
+  "repository": "https://github.com/Bonsai-Tech-LLC/clypt-mcp",
+  "license": "MIT",
+  "version": "1.0.0"
+}
