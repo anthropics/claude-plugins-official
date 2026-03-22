@@ -30,8 +30,6 @@ Install the plugin:
 /reload-plugins
 ```
 
-Check that `/telegram:configure` tab-completes. If not, restart your session.
-
 **3. Give the server the token.**
 
 ```

@@ -50,8 +50,6 @@ Install the plugin:
 /reload-plugins
 ```
 
-Check that `/discord:configure` tab-completes. If not, restart your session.
-
 **5. Give the server the token.**
 
 ```
