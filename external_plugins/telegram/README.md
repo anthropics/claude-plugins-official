@@ -27,7 +27,10 @@ These are Claude Code commands — run `claude` to start a session first.
 Install the plugin:
 ```
 /plugin install telegram@claude-plugins-official
+/reload-plugins
 ```
+
+Check that `/telegram:configure` tab-completes. If not, restart your session.
 
 **3. Give the server the token.**
 
