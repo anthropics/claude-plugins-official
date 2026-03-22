@@ -1,0 +1,10 @@
+{
+  "name": "train-prep",
+  "description": "Prepare AI consulting training materials for any industry. Research client pain points, map AI solutions, generate a Word report and interactive HTML presentation — all via multi-agent parallel workflows.",
+  "author": {
+    "name": "leeon",
+    "url": "https://github.com/gzleeon"
+  },
+  "homepage": "https://github.com/gzleeon/claude-train-prep",
+  "keywords": ["training", "consulting", "presentation", "word", "html", "multi-agent", "workflow"]
+}
