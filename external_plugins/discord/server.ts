@@ -89,6 +89,8 @@ type PendingEntry = {
 type GroupPolicy = {
   requireMention: boolean
   allowFrom: string[]
+  /** When true, messages from bots and webhooks in this channel are delivered. Default: false. */
+  allowBotMessages?: boolean
 }
 
 type Access = {
@@ -666,7 +668,17 @@ client.on('error', err => {
 })
 
 client.on('messageCreate', msg => {
-  if (msg.author.bot) return
+  if (msg.author.bot) {
+    // Allow bot messages in guild channels that have opted in via allowBotMessages.
+    // Bot DMs are always dropped — only configured channels can receive bot traffic.
+    if (!msg.guild) return
+    const channelId = msg.channel.isThread()
+      ? msg.channel.parentId ?? msg.channelId
+      : msg.channelId
+    const access = loadAccess()
+    const policy = access.groups[channelId]
+    if (!policy?.allowBotMessages) return
+  }
   handleInbound(msg).catch(e => process.stderr.write(`discord: handleInbound failed: ${e}\n`))
 })
 

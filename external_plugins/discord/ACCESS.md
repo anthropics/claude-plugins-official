@@ -52,9 +52,12 @@ Guild channels are off by default. Opt each one in individually, keyed on the **
 
 With the default `requireMention: true`, the bot responds only when @mentioned or replied to. Pass `--no-mention` to process every message in the channel, or `--allow id1,id2` to restrict which members can trigger it.
 
+By default, messages from bots and webhooks are ignored. Pass `--allow-bots` to receive messages from Discord bots, webhook integrations, and other applications in the channel. Useful for monitoring channels that receive automated notifications (alerts, CI/CD, pipelines).
+
 ```
 /discord:access group add 846209781206941736 --no-mention
 /discord:access group add 846209781206941736 --allow 184695080709324800,221773638772129792
+/discord:access group add 846209781206941736 --no-mention --allow-bots
 /discord:access group rm 846209781206941736
 ```
 
