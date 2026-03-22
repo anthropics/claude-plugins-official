@@ -29,6 +29,7 @@ Discord won't let you DM a bot unless you share a server with it.
 
 Navigate to **OAuth2** → **URL Generator**. Select the `bot` scope. Under **Bot Permissions**, enable:
 
+- Manage Channels *(required for session channel auto-creation)*
 - View Channels
 - Send Messages
 - Send Messages in Threads
@@ -80,6 +81,26 @@ Your next DM reaches the assistant.
 **8. Lock it down.**
 
 Pairing is for capturing IDs. Once you're in, switch to `allowlist` so strangers don't get pairing-code replies. Ask Claude to do it, or `/discord:access policy allowlist` directly.
+
+## Session channels
+
+When `DISCORD_GUILD_ID` is set, the bot automatically creates a dedicated text channel in that server on startup. If the channel already exists, it's reused. The session is bound exclusively to this channel — messages from other channels and DMs are ignored.
+
+**Setup:**
+
+Add to `~/.claude/channels/discord/.env`:
+
+```
+DISCORD_GUILD_ID=123456789012345678
+```
+
+The channel name defaults to `claude-session-<id>` where `<id>` is a persistent random identifier stored in `~/.claude/channels/discord/session_id`. Override it with:
+
+```
+DISCORD_SESSION_CHANNEL_NAME=my-claude-bot
+```
+
+The bot needs **Manage Channels** permission in the guild to create channels. The session channel is auto-registered in access groups with `requireMention: false`, so every message in it is delivered to Claude.
 
 ## Access control
 
