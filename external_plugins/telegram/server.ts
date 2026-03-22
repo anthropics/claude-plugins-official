@@ -748,6 +748,75 @@ function safeName(s: string | undefined): string | undefined {
   return s?.replace(/[<>\[\]\r\n;]/g, '_')
 }
 
+// ---------------------------------------------------------------------------
+// Message batching — collects messages arriving within BATCH_WINDOW_MS into a
+// single Claude turn. Primary use-case: forwarded message + user comment sent
+// as two rapid Telegram messages.
+// ---------------------------------------------------------------------------
+const BATCH_WINDOW_MS = 600
+
+type BatchEntry = {
+  text: string
+  imagePath: string | undefined
+  attachment: AttachmentMeta | undefined
+  message_id: string | undefined
+  ts: string
+}
+
+type BatchBuffer = {
+  entries: BatchEntry[]
+  timer: ReturnType<typeof setTimeout>
+  chat_id: string
+  user: string
+  user_id: string
+  access: Access
+}
+
+const batchBuffers = new Map<string, BatchBuffer>()
+
+function flushBatch(chat_id: string): void {
+  const buf = batchBuffers.get(chat_id)
+  if (!buf) return
+  batchBuffers.delete(chat_id)
+
+  const { entries, user, user_id, access } = buf
+
+  // Combine all text parts, skipping blanks between them
+  const combinedText = entries.map(e => e.text).filter(Boolean).join('\n')
+
+  // Use the first message_id and ts; pick the first image and attachment found
+  const first = entries[0]!
+  const imagePath = entries.find(e => e.imagePath)?.imagePath
+  const attachment = entries.find(e => e.attachment)?.attachment
+
+  mcp.notification({
+    method: 'notifications/claude/channel',
+    params: {
+      content: combinedText,
+      meta: {
+        chat_id,
+        ...(first.message_id != null ? { message_id: first.message_id } : {}),
+        user,
+        user_id,
+        ts: first.ts,
+        ...(imagePath ? { image_path: imagePath } : {}),
+        ...(attachment ? {
+          attachment_kind: attachment.kind,
+          attachment_file_id: attachment.file_id,
+          ...(attachment.size != null ? { attachment_size: String(attachment.size) } : {}),
+          ...(attachment.mime ? { attachment_mime: attachment.mime } : {}),
+          ...(attachment.name ? { attachment_name: attachment.name } : {}),
+        } : {}),
+      },
+    },
+  }).catch(err => {
+    process.stderr.write(`telegram channel: failed to deliver inbound to Claude: ${err}\n`)
+  })
+
+  // Re-send typing indicator so Claude's processing phase looks live
+  void bot.api.sendChatAction(chat_id, 'typing').catch(() => {})
+}
+
 async function handleInbound(
   ctx: Context,
   text: string,
@@ -787,31 +856,30 @@ async function handleInbound(
 
   const imagePath = downloadImage ? await downloadImage() : undefined
 
-  // image_path goes in meta only — an in-content "[image attached — read: PATH]"
-  // annotation is forgeable by any allowlisted sender typing that string.
-  mcp.notification({
-    method: 'notifications/claude/channel',
-    params: {
-      content: text,
-      meta: {
-        chat_id,
-        ...(msgId != null ? { message_id: String(msgId) } : {}),
-        user: from.username ?? String(from.id),
-        user_id: String(from.id),
-        ts: new Date((ctx.message?.date ?? 0) * 1000).toISOString(),
-        ...(imagePath ? { image_path: imagePath } : {}),
-        ...(attachment ? {
-          attachment_kind: attachment.kind,
-          attachment_file_id: attachment.file_id,
-          ...(attachment.size != null ? { attachment_size: String(attachment.size) } : {}),
-          ...(attachment.mime ? { attachment_mime: attachment.mime } : {}),
-          ...(attachment.name ? { attachment_name: attachment.name } : {}),
-        } : {}),
-      },
-    },
-  }).catch(err => {
-    process.stderr.write(`telegram channel: failed to deliver inbound to Claude: ${err}\n`)
-  })
+  const entry: BatchEntry = {
+    text,
+    imagePath,
+    attachment,
+    message_id: msgId != null ? String(msgId) : undefined,
+    ts: new Date((ctx.message?.date ?? 0) * 1000).toISOString(),
+  }
+
+  const existing = batchBuffers.get(chat_id)
+  if (existing) {
+    // Another message is already buffered — add to it and let the timer fire
+    existing.entries.push(entry)
+  } else {
+    // First message for this chat in this window — start the batch timer
+    const timer = setTimeout(() => flushBatch(chat_id), BATCH_WINDOW_MS)
+    batchBuffers.set(chat_id, {
+      entries: [entry],
+      timer,
+      chat_id,
+      user: from.username ?? String(from.id),
+      user_id: String(from.id),
+      access,
+    })
+  }
 }
 
 // Without this, any throw in a message handler stops polling permanently
