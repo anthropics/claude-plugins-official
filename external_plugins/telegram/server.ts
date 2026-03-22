@@ -39,6 +39,7 @@ try {
 } catch {}
 
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY
 const STATIC = process.env.TELEGRAM_ACCESS_MODE === 'static'
 
 if (!TOKEN) {
@@ -680,12 +681,23 @@ bot.on('message:document', async ctx => {
 
 bot.on('message:voice', async ctx => {
   const voice = ctx.message.voice
-  const text = ctx.message.caption ?? '(voice message)'
-  await handleInbound(ctx, text, undefined, {
+  const caption = ctx.message.caption
+  // Defer transcription until after the gate approves — don't burn Whisper API
+  // quota for dropped messages.
+  await handleInbound(ctx, caption ?? '(voice message)', undefined, {
     kind: 'voice',
     file_id: voice.file_id,
     size: voice.file_size,
     mime: voice.mime_type,
+  }, async () => {
+    const file = await ctx.api.getFile(voice.file_id)
+    if (!file.file_path) throw new Error('Telegram returned no file_path')
+    const url = `https://api.telegram.org/file/bot${TOKEN}/${file.file_path}`
+    const res = await fetch(url)
+    if (!res.ok) throw new Error(`voice download failed: HTTP ${res.status}`)
+    const buf = Buffer.from(await res.arrayBuffer())
+    const ext = file.file_path.split('.').pop() ?? 'oga'
+    return transcribeVoice(buf, `voice.${ext}`)
   })
 })
 
@@ -748,11 +760,32 @@ function safeName(s: string | undefined): string | undefined {
   return s?.replace(/[<>\[\]\r\n;]/g, '_')
 }
 
+async function transcribeVoice(buf: Buffer, filename: string): Promise<string> {
+  if (!OPENAI_API_KEY) {
+    throw new Error('OPENAI_API_KEY not set — add it to ' + ENV_FILE)
+  }
+  const form = new FormData()
+  form.append('file', new Blob([buf]), filename)
+  form.append('model', 'whisper-1')
+  const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${OPENAI_API_KEY}` },
+    body: form,
+  })
+  if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    throw new Error(`Whisper API ${res.status}: ${body.slice(0, 200)}`)
+  }
+  const json = (await res.json()) as { text?: string }
+  return json.text ?? ''
+}
+
 async function handleInbound(
   ctx: Context,
   text: string,
   downloadImage: (() => Promise<string | undefined>) | undefined,
   attachment?: AttachmentMeta,
+  transcribe?: () => Promise<string>,
 ): Promise<void> {
   const result = gate(ctx)
 
@@ -787,12 +820,30 @@ async function handleInbound(
 
   const imagePath = downloadImage ? await downloadImage() : undefined
 
+  // Voice transcription — runs after gate so we don't burn API calls on dropped messages.
+  let transcription: string | undefined
+  let transcriptionError: string | undefined
+  if (transcribe) {
+    try {
+      transcription = await transcribe()
+    } catch (err) {
+      transcriptionError = err instanceof Error ? err.message : String(err)
+      process.stderr.write(`telegram channel: voice transcription failed: ${transcriptionError}\n`)
+    }
+  }
+
+  const deliveredText = transcription
+    ? `[voice transcript] ${transcription}`
+    : transcriptionError
+      ? `(voice message — transcription failed: ${transcriptionError})`
+      : text
+
   // image_path goes in meta only — an in-content "[image attached — read: PATH]"
   // annotation is forgeable by any allowlisted sender typing that string.
   mcp.notification({
     method: 'notifications/claude/channel',
     params: {
-      content: text,
+      content: deliveredText,
       meta: {
         chat_id,
         ...(msgId != null ? { message_id: String(msgId) } : {}),

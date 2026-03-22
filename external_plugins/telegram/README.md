@@ -87,6 +87,21 @@ local path is included in the `<channel>` notification so the assistant can
 `Read` it. Telegram compresses photos — if you need the original file, send it
 as a document instead (long-press → Send as File).
 
+## Voice messages
+
+Voice messages are automatically transcribed using OpenAI's Whisper API when
+`OPENAI_API_KEY` is configured. Add it alongside the bot token:
+
+```
+OPENAI_API_KEY=sk-proj-...
+```
+
+in `~/.claude/channels/telegram/.env`, or set it in your shell environment.
+
+When transcription succeeds, Claude receives the spoken text directly. If it
+fails (missing key, network error, API issue), Claude sees the error inline and
+the original audio remains downloadable via `attachment_file_id`.
+
 ## No history or search
 
 Telegram's Bot API exposes **neither** message history nor search. The bot
