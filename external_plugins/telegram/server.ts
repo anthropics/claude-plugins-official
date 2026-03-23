@@ -15,7 +15,7 @@ import {
   ListToolsRequestSchema,
   CallToolRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js'
-import { Bot, GrammyError, InputFile, type Context } from 'grammy'
+import { Bot, GrammyError, InlineKeyboard, InputFile, type Context } from 'grammy'
 import type { ReactionTypeEmoji } from 'grammy/types'
 import { randomBytes } from 'crypto'
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, statSync, renameSync, realpathSync, chmodSync } from 'fs'
@@ -70,6 +70,12 @@ type ActiveSession = {
   progressMsgId?: number
 }
 const activeSessions = new Map<string, ActiveSession>()
+
+// Track the most recent inbound chat for permission prompts.
+let lastActiveChatId: string | undefined
+
+// Pending permission requests — maps request_id to the Telegram message.
+const pendingPermissions = new Map<string, { chat_id: string; msgId: number }>()
 
 type PendingEntry = {
   senderId: string
@@ -390,7 +396,7 @@ const PHOTO_EXTS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp'])
 const mcp = new Server(
   { name: 'telegram', version: '1.0.0' },
   {
-    capabilities: { tools: {}, experimental: { 'claude/channel': {} } },
+    capabilities: { tools: {}, experimental: { 'claude/channel': {}, 'claude/channel/permission': {} } },
     instructions: [
       'The sender reads Telegram, not this session. Anything you want them to see must go through the reply tool — your transcript output never reaches their chat.',
       '',
@@ -418,6 +424,20 @@ const mcp = new Server(
       '- Any other /command — check if it matches an available Skill (use the Skill tool). If not, treat the message as a normal request.',
       '',
       'For all commands: execute the action, then reply on Telegram with the result. Keep replies concise — Telegram messages should be short and readable.',
+      '',
+      '## Interactive Buttons',
+      '',
+      'The reply tool supports an optional `keyboard` parameter for inline buttons. Use it when presenting choices to the Telegram user:',
+      '- Each inner array in keyboard is one row of buttons. Each button has `text` (visible label) and `data` (callback identifier, max 64 bytes).',
+      '- When a user taps a button, the selection is delivered as a regular channel message with the button text.',
+      '- Use keyboard for yes/no questions, multiple-choice options, and confirmations.',
+      '- Example: keyboard: [[{"text":"Option A","data":"a"},{"text":"Option B","data":"b"}]]',
+      '',
+      '## Plan Mode & Status Updates',
+      '',
+      'When you enter plan mode or begin a multi-step operation, ALWAYS send a brief status message via the reply tool so the Telegram user knows what is happening.',
+      'When asking the user a question with multiple options, ALWAYS use the reply tool with the keyboard parameter to present choices as tappable buttons instead of numbered text lists.',
+      'When you have a plan ready, send the plan summary via the reply tool so the Telegram user can review it.',
     ].join('\n'),
   },
 )
@@ -446,6 +466,21 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
             type: 'string',
             enum: ['text', 'markdownv2'],
             description: "Rendering mode. 'markdownv2' enables Telegram formatting (bold, italic, code, links). Caller must escape special chars per MarkdownV2 rules. Default: 'text' (plain, no escaping needed).",
+          },
+          keyboard: {
+            type: 'array',
+            description: 'Inline keyboard rows. Each inner array is one row of buttons with text (label) and data (callback_data, max 64 bytes).',
+            items: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  text: { type: 'string', description: 'Button label shown to user' },
+                  data: { type: 'string', description: 'Callback data sent back when pressed' },
+                },
+                required: ['text', 'data'],
+              },
+            },
           },
         },
         required: ['chat_id', 'text'],
@@ -507,6 +542,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         const files = (args.files as string[] | undefined) ?? []
         const format = (args.format as string | undefined) ?? 'text'
         const parseMode = format === 'markdownv2' ? 'MarkdownV2' as const : undefined
+        const keyboardRows = args.keyboard as Array<Array<{ text: string; data: string }>> | undefined
 
         assertAllowedChat(chat_id)
 
@@ -519,6 +555,19 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
           if (st.size > MAX_ATTACHMENT_BYTES) {
             throw new Error(`file too large: ${f} (${(st.size / 1024 / 1024).toFixed(1)}MB, max 50MB)`)
           }
+        }
+
+        // Build inline keyboard if provided
+        let replyMarkup: InlineKeyboard | undefined
+        if (keyboardRows?.length) {
+          const kb = new InlineKeyboard()
+          for (let r = 0; r < keyboardRows.length; r++) {
+            for (const btn of keyboardRows[r]) {
+              kb.text(btn.text, btn.data.slice(0, 64))
+            }
+            if (r < keyboardRows.length - 1) kb.row()
+          }
+          replyMarkup = kb
         }
 
         const access = loadAccess()
@@ -534,9 +583,11 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
               reply_to != null &&
               replyMode !== 'off' &&
               (replyMode === 'all' || i === 0)
+            const isLastChunk = i === chunks.length - 1
             const sent = await bot.api.sendMessage(chat_id, chunks[i], {
               ...(shouldReplyTo ? { reply_parameters: { message_id: reply_to } } : {}),
               ...(parseMode ? { parse_mode: parseMode } : {}),
+              ...(replyMarkup && isLastChunk ? { reply_markup: replyMarkup } : {}),
             })
             sentIds.push(sent.message_id)
           }
@@ -624,6 +675,49 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
 })
 
 await mcp.connect(new StdioServerTransport())
+
+// Handle permission request notifications from Claude Code.
+mcp.fallbackNotificationHandler = async (notification) => {
+  if (notification.method === 'notifications/claude/channel/permission_request') {
+    const params = (notification as any).params ?? {}
+    const requestId = params.request_id as string
+    const toolName = params.tool_name as string ?? 'unknown'
+    const description = params.description as string ?? ''
+    const inputPreview = params.input_preview as string ?? ''
+
+    const targetChat = lastActiveChatId ?? loadAccess().allowFrom[0]
+    if (!targetChat) {
+      process.stderr.write('telegram channel: permission request but no active chat\n')
+      return
+    }
+
+    const preview = inputPreview.length > 200 ? inputPreview.slice(0, 200) + '...' : inputPreview
+    const text = [
+      `🔐 Permission needed: ${toolName}`,
+      description ? `\n${description}` : '',
+      preview ? `\n\n\`${preview}\`` : '',
+    ].join('')
+
+    const kb = new InlineKeyboard()
+      .text('✅ Yes', `perm:yes:${requestId}`)
+      .text('❌ No', `perm:no:${requestId}`)
+
+    try {
+      const sent = await bot.api.sendMessage(targetChat, text, { reply_markup: kb })
+      pendingPermissions.set(requestId, { chat_id: targetChat, msgId: sent.message_id })
+
+      setTimeout(() => {
+        if (pendingPermissions.has(requestId)) {
+          pendingPermissions.delete(requestId)
+          void bot.api.editMessageText(targetChat, sent.message_id, `${text}\n\n⏰ (expired)`).catch(() => {})
+        }
+      }, 120_000)
+    } catch (err) {
+      process.stderr.write(`telegram channel: failed to send permission prompt: ${err}\n`)
+    }
+    return
+  }
+}
 
 // When Claude Code closes the MCP connection, stdin gets EOF. Without this
 // the bot keeps polling forever as a zombie, holding the token and blocking
@@ -797,6 +891,69 @@ bot.on('message:sticker', async ctx => {
   })
 })
 
+bot.on('callback_query:data', async ctx => {
+  const data = ctx.callbackQuery.data
+  const from = ctx.from
+  const chatId = ctx.callbackQuery.message?.chat.id
+
+  await ctx.answerCallbackQuery()
+
+  if (!chatId || !from) return
+
+  const chat_id = String(chatId)
+  const senderId = String(from.id)
+
+  const access = loadAccess()
+  if (!access.allowFrom.includes(senderId) && !(chat_id in access.groups)) return
+
+  // Permission verdict buttons: perm:yes:<id> or perm:no:<id>
+  const permMatch = data.match(/^perm:(yes|no):(\w+)$/)
+  if (permMatch) {
+    const [, verdict, requestId] = permMatch
+    const pending = pendingPermissions.get(requestId)
+    if (!pending) return
+
+    pendingPermissions.delete(requestId)
+
+    try {
+      const label = verdict === 'yes' ? '✅ Approved' : '❌ Denied'
+      await bot.api.editMessageText(pending.chat_id, pending.msgId, `${label} by @${from.username ?? senderId}`)
+    } catch {}
+
+    void mcp.notification({
+      method: 'notifications/claude/channel/permission' as any,
+      params: { request_id: requestId, behavior: verdict === 'yes' ? 'allow' : 'deny' },
+    })
+    return
+  }
+
+  // Generic choice button — forward selection as channel message.
+  const buttonText = ctx.callbackQuery.message
+    ? (ctx.callbackQuery.message as any).reply_markup?.inline_keyboard
+        ?.flat()
+        ?.find((b: any) => b.callback_data === data)?.text ?? data
+    : data
+
+  if (ctx.callbackQuery.message) {
+    try {
+      const origText = (ctx.callbackQuery.message as any).text ?? ''
+      await bot.api.editMessageText(chat_id, ctx.callbackQuery.message.message_id, `${origText}\n\n✅ ${buttonText}`)
+    } catch {}
+  }
+
+  void startSession(chat_id)
+
+  mcp.notification({
+    method: 'notifications/claude/channel',
+    params: {
+      content: buttonText,
+      meta: { chat_id, user: from.username ?? senderId, user_id: senderId, ts: new Date().toISOString(), callback_data: data },
+    },
+  }).catch(err => {
+    process.stderr.write(`telegram channel: failed to deliver callback to Claude: ${err}\n`)
+  })
+})
+
 type AttachmentMeta = {
   kind: string
   file_id: string
@@ -834,6 +991,9 @@ async function handleInbound(
   const from = ctx.from!
   const chat_id = String(ctx.chat!.id)
   const msgId = ctx.message?.message_id
+
+  // Track the most recent chat for permission prompts.
+  lastActiveChatId = chat_id
 
   // Start persistent typing indicator + progress message.
   // Keeps "typing..." visible until Claude replies via the reply tool.
