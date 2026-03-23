@@ -4,7 +4,9 @@
  *
  * Self-contained MCP server with full access control: pairing, allowlists,
  * group support with mention-triggering. State lives in
- * ~/.claude/channels/telegram/access.json — managed by the /telegram:access skill.
+ * ~/.claude/channels/telegram/ by default, or per-project under
+ * ~/.claude/channels/telegram/projects/<id>/ when TELEGRAM_PROJECT_ID is set.
+ * Managed by the /telegram:access skill.
  *
  * Telegram's Bot API has no history or search. Reply-only tools.
  */
@@ -22,7 +24,30 @@ import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, statSync, 
 import { homedir } from 'os'
 import { join, extname, sep } from 'path'
 
-const STATE_DIR = join(homedir(), '.claude', 'channels', 'telegram')
+const GLOBAL_STATE_DIR = join(homedir(), '.claude', 'channels', 'telegram')
+
+function validateProjectId(id: string): void {
+  if (id.length > 64) {
+    process.stderr.write(`telegram channel: TELEGRAM_PROJECT_ID too long (${id.length} chars, max 64)\n`)
+    process.exit(1)
+  }
+  if (!/^[a-zA-Z0-9_-]+$/.test(id)) {
+    process.stderr.write(
+      `telegram channel: TELEGRAM_PROJECT_ID contains invalid characters: "${id}"\n` +
+      `  allowed: letters, digits, hyphens, underscores\n`,
+    )
+    process.exit(1)
+  }
+}
+
+const PROJECT_ID = process.env.TELEGRAM_PROJECT_ID
+
+if (PROJECT_ID) validateProjectId(PROJECT_ID)
+
+const STATE_DIR = PROJECT_ID
+  ? join(GLOBAL_STATE_DIR, 'projects', PROJECT_ID)
+  : GLOBAL_STATE_DIR
+
 const ACCESS_FILE = join(STATE_DIR, 'access.json')
 const APPROVED_DIR = join(STATE_DIR, 'approved')
 const ENV_FILE = join(STATE_DIR, '.env')
@@ -82,6 +107,8 @@ type Access = {
   textChunkLimit?: number
   /** Split on paragraph boundaries instead of hard char count. */
   chunkMode?: 'length' | 'newline'
+  /** Seconds to wait for a reply before sending a fallback message. 0 = disabled. Default: 45. */
+  responseTimeout?: number
 }
 
 function defaultAccess(): Access {
@@ -126,6 +153,7 @@ function readAccessFile(): Access {
       replyToMode: parsed.replyToMode,
       textChunkLimit: parsed.textChunkLimit,
       chunkMode: parsed.chunkMode,
+      responseTimeout: parsed.responseTimeout,
     }
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return defaultAccess()
@@ -153,6 +181,38 @@ const BOOT_ACCESS: Access | null = STATIC
       return a
     })()
   : null
+
+// Bootstrap per-project access from global allowlist on first run.
+// Note: saveAccess() is a hoisted function declaration defined below.
+if (PROJECT_ID && !STATIC) {
+  try {
+    readFileSync(ACCESS_FILE)
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      // Per-project access.json doesn't exist — bootstrap from global.
+      let initial = defaultAccess()
+      try {
+        const globalRaw = readFileSync(join(GLOBAL_STATE_DIR, 'access.json'), 'utf8')
+        const globalAccess = JSON.parse(globalRaw) as Partial<Access>
+        if (globalAccess.allowFrom?.length) {
+          initial.allowFrom = [...globalAccess.allowFrom]
+        }
+      } catch (globalErr) {
+        if ((globalErr as NodeJS.ErrnoException).code !== 'ENOENT') {
+          process.stderr.write(`telegram channel: could not read global access.json, skipping inheritance: ${globalErr}\n`)
+        }
+      }
+      mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 })
+      saveAccess(initial)
+      process.stderr.write(
+        `telegram channel: bootstrapped per-project access for "${PROJECT_ID}"` +
+        (initial.allowFrom.length ? ` with ${initial.allowFrom.length} inherited user(s)\n` : '\n'),
+      )
+    } else {
+      process.stderr.write(`telegram channel: could not check per-project access.json: ${err}\n`)
+    }
+  }
+}
 
 function loadAccess(): Access {
   return BOOT_ACCESS ?? readAccessFile()
@@ -306,6 +366,41 @@ function checkApprovals(): void {
 
 if (!STATIC) setInterval(checkApprovals, 5000)
 
+// Response timeout — if the assistant doesn't reply within the configured
+// window, send a fallback message so the Telegram user isn't left hanging.
+// Keyed by chat_id; new messages from the same chat reset the timer.
+const DEFAULT_RESPONSE_TIMEOUT_S = 45
+const pendingDeliveries = new Map<string, ReturnType<typeof setTimeout>>()
+
+function trackDelivery(chatId: string): void {
+  clearDeliveryTimeout(chatId)
+  const access = loadAccess()
+  const timeoutS = access.responseTimeout ?? DEFAULT_RESPONSE_TIMEOUT_S
+  if (timeoutS <= 0) return
+
+  const timer = setTimeout(() => {
+    pendingDeliveries.delete(chatId)
+    const projectNote = PROJECT_ID
+      ? ` for the "${PROJECT_ID}" project`
+      : ''
+    void bot.api.sendMessage(chatId,
+      `It looks like there's no active Claude Code session${projectNote} right now. ` +
+      `Make sure a session is running with:\n\n` +
+      `claude --channels plugin:telegram@claude-plugins-official`,
+    ).catch(() => {})
+  }, timeoutS * 1000)
+
+  pendingDeliveries.set(chatId, timer)
+}
+
+function clearDeliveryTimeout(chatId: string): void {
+  const existing = pendingDeliveries.get(chatId)
+  if (existing) {
+    clearTimeout(existing)
+    pendingDeliveries.delete(chatId)
+  }
+}
+
 // Telegram caps messages at 4096 chars. Split long replies, preferring
 // paragraph boundaries when chunkMode is 'newline'.
 
@@ -411,6 +506,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
     switch (req.params.name) {
       case 'reply': {
         const chat_id = args.chat_id as string
+        clearDeliveryTimeout(chat_id)
         const text = args.text as string
         const reply_to = args.reply_to != null ? Number(args.reply_to) : undefined
         const files = (args.files as string[] | undefined) ?? []
@@ -474,6 +570,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         return { content: [{ type: 'text', text: result }] }
       }
       case 'react': {
+        clearDeliveryTimeout(args.chat_id as string)
         assertAllowedChat(args.chat_id as string)
         await bot.api.setMessageReaction(args.chat_id as string, Number(args.message_id), [
           { type: 'emoji', emoji: args.emoji as ReactionTypeEmoji['emoji'] },
@@ -481,6 +578,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         return { content: [{ type: 'text', text: 'reacted' }] }
       }
       case 'edit_message': {
+        clearDeliveryTimeout(args.chat_id as string)
         assertAllowedChat(args.chat_id as string)
         const edited = await bot.api.editMessageText(
           args.chat_id as string,
@@ -591,6 +689,8 @@ async function handleInbound(
       },
     },
   })
+
+  trackDelivery(chat_id)
 }
 
 void bot.start({

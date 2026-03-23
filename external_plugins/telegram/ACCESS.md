@@ -16,6 +16,37 @@ All state lives in `~/.claude/channels/telegram/access.json`. The `/telegram:acc
 | `ackReaction` quirk | Fixed whitelist only; non-whitelisted emoji silently do nothing |
 | Config file | `~/.claude/channels/telegram/access.json` |
 
+## Per-project mode
+
+By default, all Claude Code sessions share one bot and one access config. Per-project mode gives each project its own bot, access policy, and message inbox.
+
+### Setup
+
+```
+/telegram:configure --project myproject 123456789:AAH...
+```
+
+This creates a project-scoped state directory and writes `TELEGRAM_PROJECT_ID` to the project's `.claude/settings.local.json`. The MCP server reads this at startup and uses the project-specific state.
+
+### How it works
+
+| | Global (default) | Per-project |
+| --- | --- | --- |
+| State dir | `~/.claude/channels/telegram/` | `~/.claude/channels/telegram/projects/<id>/` |
+| Bot token | Shared across sessions | One per project |
+| Access policy | Shared | Independent (bootstrapped from global on first run) |
+| Inbox | Shared | Separate per project |
+
+### Project ID rules
+
+- Allowed characters: letters, digits, hyphens, underscores (`[a-zA-Z0-9_-]`)
+- Maximum length: 64 characters
+- Used as a directory name — no path separators allowed
+
+### Access inheritance
+
+When a per-project `access.json` is created for the first time, it inherits the `allowFrom` list from the global config. After that, the per-project config is independent.
+
 ## DM policies
 
 `dmPolicy` controls how DMs from senders not on the allowlist are handled.
@@ -92,6 +123,13 @@ Configure outbound behavior with `/telegram:access set <key> <value>`.
 
 **`chunkMode`** chooses the split strategy: `length` cuts exactly at the limit; `newline` prefers paragraph boundaries.
 
+**`responseTimeout`** seconds to wait for the assistant to reply before sending a fallback message to the sender. Default: `45`. Set to `0` to disable. When the timeout fires, the bot sends a message explaining that no Claude Code session appears to be responding, with a hint on how to start one. Any outbound tool call (`reply`, `react`, `edit_message`) targeting the same chat cancels the timer.
+
+```
+/telegram:access set responseTimeout 60
+/telegram:access set responseTimeout 0
+```
+
 ## Skill reference
 
 | Command | Effect |
@@ -104,11 +142,11 @@ Configure outbound behavior with `/telegram:access set <key> <value>`.
 | `/telegram:access policy allowlist` | Set `dmPolicy`. Values: `pairing`, `allowlist`, `disabled`. |
 | `/telegram:access group add -1001654782309` | Enable a group. Flags: `--no-mention` (also requires disabling privacy mode), `--allow id1,id2`. |
 | `/telegram:access group rm -1001654782309` | Disable a group. |
-| `/telegram:access set ackReaction 👀` | Set a config key: `ackReaction`, `replyToMode`, `textChunkLimit`, `chunkMode`, `mentionPatterns`. |
+| `/telegram:access set ackReaction 👀` | Set a config key: `ackReaction`, `replyToMode`, `textChunkLimit`, `chunkMode`, `mentionPatterns`, `responseTimeout`. |
 
 ## Config file
 
-`~/.claude/channels/telegram/access.json`. Absent file is equivalent to `pairing` policy with empty lists, so the first DM triggers pairing.
+`~/.claude/channels/telegram/access.json` (or `~/.claude/channels/telegram/projects/<id>/access.json` in per-project mode). Absent file is equivalent to `pairing` policy with empty lists, so the first DM triggers pairing.
 
 ```jsonc
 {
@@ -142,6 +180,9 @@ Configure outbound behavior with `/telegram:access set <key> <value>`.
   "textChunkLimit": 4096,
 
   // length = cut at limit. newline = prefer paragraph boundaries.
-  "chunkMode": "newline"
+  "chunkMode": "newline",
+
+  // Seconds before sending "no session" fallback. 0 = disabled. Default: 45.
+  "responseTimeout": 45
 }
 ```

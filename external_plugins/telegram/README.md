@@ -35,7 +35,7 @@ Install the plugin:
 /telegram:configure 123456789:AAHfiqksKZ8...
 ```
 
-Writes `TELEGRAM_BOT_TOKEN=...` to `.claude/channels/telegram/.env` in your project. You can also write that file by hand, or set the variable in your shell environment — shell takes precedence.
+Writes `TELEGRAM_BOT_TOKEN=...` to `~/.claude/channels/telegram/.env`. You can also write that file by hand, or set the variable in your shell environment — shell takes precedence. For per-project bots, see the [Per-project bots](#per-project-bots) section below.
 
 **4. Relaunch with the channel flag.**
 
@@ -67,6 +67,124 @@ See **[ACCESS.md](./ACCESS.md)** for DM policies, groups, mention detection, del
 
 Quick reference: IDs are **numeric user IDs** (get yours from [@userinfobot](https://t.me/userinfobot)). Default policy is `pairing`. `ackReaction` only accepts Telegram's fixed emoji whitelist.
 
+## Per-project bots
+
+By default, all Claude Code sessions share one bot token and one access config (the "global" setup described above). Per-project mode gives each project its own Telegram bot, access policy, and message inbox — so messages to `@alpha_dev_bot` only arrive in the Alpha project session, never in Beta's.
+
+### How it works
+
+The MCP server reads the `TELEGRAM_PROJECT_ID` environment variable at startup. When set, it resolves all state to a project-scoped subdirectory instead of the global one:
+
+| | Global (default) | Per-project |
+| --- | --- | --- |
+| State dir | `~/.claude/channels/telegram/` | `~/.claude/channels/telegram/projects/<id>/` |
+| Bot token | Shared across all sessions | One token per project |
+| Access policy | Shared `access.json` | Independent per-project `access.json` |
+| Inbox | Shared | Separate per project |
+
+Each project-scoped state directory contains the same files as the global one:
+
+```
+~/.claude/channels/telegram/projects/<id>/
+├── .env              # TELEGRAM_BOT_TOKEN for this project's bot
+├── access.json       # per-project access policy
+├── inbox/            # downloaded photos
+└── approved/         # pairing approval signals
+```
+
+### Setting `TELEGRAM_PROJECT_ID`
+
+The project ID is passed to the MCP server via the `env` block in `.claude/settings.local.json` in your project root. The `/telegram:configure --project` command writes this automatically, but the resulting structure is:
+
+```json
+{
+  "env": {
+    "TELEGRAM_PROJECT_ID": "myproject"
+  }
+}
+```
+
+Claude Code's `env` is a flat `Record<string, string>` — all values must be strings, no nesting. These environment variables are passed to all MCP server processes at startup.
+
+**Important:** The `env` block does **not** support nested structures like `env.mcpServers.telegram`. The project ID must be a direct key in the `env` object.
+
+### Project ID rules
+
+- Allowed characters: letters, digits, hyphens, underscores (`[a-zA-Z0-9_-]`)
+- Maximum length: 64 characters
+- Used as a directory name — path separators (`/`, `\`, `..`) are rejected
+- Validated both by the configure skill and by `server.ts` at startup (fail-fast on invalid IDs)
+
+### Setup walkthrough
+
+**1. Create a bot per project** with [@BotFather](https://t.me/BotFather). Give each a descriptive username (e.g. `@myproject_dev_bot`). Note the exact username BotFather gives you — it may differ from what you requested.
+
+**2. Configure each project.** In the project's Claude Code session:
+
+```
+/telegram:configure --project myproject 123456789:AAH...
+```
+
+This does four things:
+1. Creates `~/.claude/channels/telegram/projects/myproject/`
+2. Saves the bot token to `projects/myproject/.env` (mode `0600`)
+3. Writes `TELEGRAM_PROJECT_ID=myproject` to the project's `.claude/settings.local.json`
+4. Copies `allowFrom` from the global `access.json` as the initial per-project access list (if the global config exists)
+
+**3. Restart** the Claude Code session. The MCP server reads `TELEGRAM_PROJECT_ID` from the environment at startup — it does not hot-reload. You can verify the server connected to the right bot by checking for `telegram channel: polling as @myproject_dev_bot` in the startup output.
+
+**4. Pair** by DMing the project's bot. If your user ID was already in the global allowlist, it carries over automatically and you can skip pairing. Otherwise, the bot replies with a pairing code — approve with `/telegram:access pair <code>` as usual.
+
+**5. Run multiple sessions** — each project directory launches its own bot:
+
+```sh
+# Terminal 1: Alpha project connects to @alpha_dev_bot
+cd ~/projects/alpha && claude --channels plugin:telegram@claude-plugins-official
+
+# Terminal 2: Beta project connects to @beta_dev_bot
+cd ~/projects/beta && claude --channels plugin:telegram@claude-plugins-official
+
+# Terminal 3: No project ID — connects to the global bot
+cd ~/projects/other && claude --channels plugin:telegram@claude-plugins-official
+```
+
+DM `@alpha_dev_bot` to reach Terminal 1, `@beta_dev_bot` to reach Terminal 2. Messages never cross between sessions.
+
+### Access inheritance
+
+When a per-project `access.json` is created for the first time (either by the configure skill or by the server's startup bootstrap), it inherits the `allowFrom` list from the global `~/.claude/channels/telegram/access.json`. After creation, the per-project config is fully independent — changes to the global config do not propagate, and vice versa.
+
+### Verifying your setup
+
+Check which mode a project is using:
+
+```
+/telegram:configure
+```
+
+This shows the active mode (global or per-project), the resolved state directory, token status, and access summary.
+
+To inspect the state directly:
+
+```bash
+# Check the project's settings
+cat ~/projects/myproject/.claude/settings.local.json | grep TELEGRAM_PROJECT_ID
+
+# Check the per-project state directory
+ls ~/.claude/channels/telegram/projects/myproject/
+cat ~/.claude/channels/telegram/projects/myproject/access.json
+```
+
+### Removing per-project configuration
+
+```
+/telegram:configure clear
+```
+
+In per-project mode, this removes the token from the per-project `.env` and removes `TELEGRAM_PROJECT_ID` from `.claude/settings.local.json`. After restarting, the session falls back to the global bot.
+
+See [ACCESS.md](./ACCESS.md) for the full per-project access control reference.
+
 ## Tools exposed to the assistant
 
 | Tool | Purpose |
@@ -80,7 +198,7 @@ Inbound messages trigger a typing indicator automatically — Telegram shows
 
 ## Photos
 
-Inbound photos are downloaded to `~/.claude/channels/telegram/inbox/` and the
+Inbound photos are downloaded to `~/.claude/channels/telegram/inbox/` (or the project-scoped inbox in per-project mode) and the
 local path is included in the `<channel>` notification so the assistant can
 `Read` it. Telegram compresses photos — if you need the original file, send it
 as a document instead (long-press → Send as File).
