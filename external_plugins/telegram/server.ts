@@ -62,6 +62,8 @@ process.on('uncaughtException', err => {
 
 const bot = new Bot(TOKEN)
 let botUsername = ''
+// Track consecutive MCP notification failures to detect a dead transport.
+let mcpFailures = 0
 
 type PendingEntry = {
   senderId: string
@@ -436,6 +438,8 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
 }))
 
 mcp.setRequestHandler(CallToolRequestSchema, async req => {
+  // A tool call arriving proves the MCP transport is alive — reset failure count.
+  mcpFailures = 0
   const args = (req.params.arguments ?? {}) as Record<string, unknown>
   try {
     switch (req.params.name) {
@@ -810,7 +814,16 @@ async function handleInbound(
       },
     },
   }).catch(err => {
-    process.stderr.write(`telegram channel: failed to deliver inbound to Claude: ${err}\n`)
+    mcpFailures++
+    process.stderr.write(
+      `telegram channel: failed to deliver inbound to Claude (${mcpFailures} consecutive): ${err}\n`,
+    )
+    // If the MCP transport is consistently broken, exit so Claude Code can
+    // restart us rather than silently dropping every message.
+    if (mcpFailures >= 3) {
+      process.stderr.write('telegram channel: MCP transport appears dead, exiting for restart\n')
+      shutdown()
+    }
   })
 }
 
@@ -820,14 +833,17 @@ bot.catch(err => {
   process.stderr.write(`telegram channel: handler error (polling continues): ${err.error}\n`)
 })
 
-// 409 Conflict = another getUpdates consumer is still active (zombie from a
-// previous session, or a second Claude Code instance). Retry with backoff
-// until the slot frees up instead of crashing on the first rejection.
+// Retry bot.start() on any transient error with exponential backoff.
+// 409 Conflict = another getUpdates consumer (zombie or second instance).
+// Network/DNS/timeout errors are transient and should also retry.
+// Only truly fatal errors (401 bad token, shutdown) stop the loop.
 void (async () => {
   for (let attempt = 1; ; attempt++) {
+    if (shuttingDown) return
     try {
       await bot.start({
         onStart: info => {
+          attempt = 1 // reset backoff on successful connection
           botUsername = info.username
           process.stderr.write(`telegram channel: polling as @${info.username}\n`)
           void bot.api.setMyCommands(
@@ -840,23 +856,28 @@ void (async () => {
           ).catch(() => {})
         },
       })
-      return // bot.stop() was called — clean exit from the loop
+      // bot.stop() was called — clean exit from the loop
+      if (shuttingDown) return
+      // Polling ended without shutdown (grammy internal stop) — reconnect
+      process.stderr.write('telegram channel: polling ended unexpectedly, reconnecting...\n')
     } catch (err) {
-      if (err instanceof GrammyError && err.error_code === 409) {
-        const delay = Math.min(1000 * attempt, 15000)
-        const detail = attempt === 1
-          ? ' — another instance is polling (zombie session, or a second Claude Code running?)'
-          : ''
-        process.stderr.write(
-          `telegram channel: 409 Conflict${detail}, retrying in ${delay / 1000}s\n`,
-        )
-        await new Promise(r => setTimeout(r, delay))
-        continue
-      }
       // bot.stop() mid-setup rejects with grammy's "Aborted delay" — expected, not an error.
-      if (err instanceof Error && err.message === 'Aborted delay') return
-      process.stderr.write(`telegram channel: polling failed: ${err}\n`)
-      return
+      if (shuttingDown || (err instanceof Error && err.message === 'Aborted delay')) return
+      // 401 = invalid token — fatal, no point retrying
+      if (err instanceof GrammyError && err.error_code === 401) {
+        process.stderr.write(`telegram channel: invalid bot token (401), stopping\n`)
+        return
+      }
+      const is409 = err instanceof GrammyError && err.error_code === 409
+      const detail = is409 && attempt === 1
+        ? ' (another instance is polling — zombie session, or a second Claude Code running?)'
+        : ''
+      process.stderr.write(
+        `telegram channel: polling failed: ${err}${detail}, reconnecting (attempt ${attempt})...\n`,
+      )
     }
+    // Exponential backoff: 1s, 2s, 4s, 8s, ... capped at 30s
+    const delay = Math.min(1000 * Math.pow(2, attempt - 1), 30000)
+    await new Promise(r => setTimeout(r, delay))
   }
 })()
