@@ -561,6 +561,21 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
 
 await mcp.connect(new StdioServerTransport())
 
+// Keep the stdio pipe alive during idle periods. Without periodic traffic,
+// Claude Code may drop the connection to the plugin. The MCP SDK already
+// supports ping/pong at the protocol level — this just ensures it's used.
+// Zero token cost: pings are handled at the transport layer, never reaching
+// the model.
+const KEEPALIVE_INTERVAL_MS = 30_000
+setInterval(async () => {
+  try {
+    await mcp.ping()
+  } catch {
+    process.stderr.write('telegram channel: keepalive ping failed, exiting\n')
+    process.exit(1)
+  }
+}, KEEPALIVE_INTERVAL_MS).unref()
+
 // When Claude Code closes the MCP connection, stdin gets EOF. Without this
 // the bot keeps polling forever as a zombie, holding the token and blocking
 // the next session with 409 Conflict.
@@ -820,15 +835,20 @@ bot.catch(err => {
   process.stderr.write(`telegram channel: handler error (polling continues): ${err.error}\n`)
 })
 
-// 409 Conflict = another getUpdates consumer is still active (zombie from a
-// previous session, or a second Claude Code instance). Retry with backoff
-// until the slot frees up instead of crashing on the first rejection.
+// Resilient polling loop. Retries on:
+//   - 409 Conflict: another getUpdates consumer is active (zombie session or
+//     second Claude Code instance). Back off until the slot frees.
+//   - Network errors / transient failures: grammy's bot.start() exits silently
+//     when the long-polling connection drops (e.g. network outage). The MCP
+//     process stays alive (keepalive pings still work) but no Telegram messages
+//     are received. Auto-restart after a short delay to recover.
 void (async () => {
   for (let attempt = 1; ; attempt++) {
     try {
       await bot.start({
         onStart: info => {
           botUsername = info.username
+          attempt = 0 // reset backoff on successful start
           process.stderr.write(`telegram channel: polling as @${info.username}\n`)
           void bot.api.setMyCommands(
             [
@@ -840,23 +860,35 @@ void (async () => {
           ).catch(() => {})
         },
       })
-      return // bot.stop() was called — clean exit from the loop
+      // bot.stop() was called — clean exit only if we're shutting down.
+      if (shuttingDown) return
+      // Polling ended without shutdown (grammy silently exits on network loss).
+      // Restart after a brief delay.
+      process.stderr.write('telegram channel: polling ended unexpectedly, restarting in 5s\n')
+      await new Promise(r => setTimeout(r, 5000))
+      continue
     } catch (err) {
+      // bot.stop() mid-setup rejects with grammy's "Aborted delay" — expected, not an error.
+      if (err instanceof Error && err.message === 'Aborted delay') return
+
+      const delay = err instanceof GrammyError && err.error_code === 409
+        ? Math.min(1000 * attempt, 15000)
+        : 5000
+
       if (err instanceof GrammyError && err.error_code === 409) {
-        const delay = Math.min(1000 * attempt, 15000)
         const detail = attempt === 1
           ? ' — another instance is polling (zombie session, or a second Claude Code running?)'
           : ''
         process.stderr.write(
           `telegram channel: 409 Conflict${detail}, retrying in ${delay / 1000}s\n`,
         )
-        await new Promise(r => setTimeout(r, delay))
-        continue
+      } else {
+        process.stderr.write(
+          `telegram channel: polling failed: ${err}, restarting in ${delay / 1000}s\n`,
+        )
       }
-      // bot.stop() mid-setup rejects with grammy's "Aborted delay" — expected, not an error.
-      if (err instanceof Error && err.message === 'Aborted delay') return
-      process.stderr.write(`telegram channel: polling failed: ${err}\n`)
-      return
+      await new Promise(r => setTimeout(r, delay))
+      continue
     }
   }
 })()
