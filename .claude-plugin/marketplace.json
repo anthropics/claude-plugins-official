@@ -126,6 +126,23 @@
       ]
     },
     {
+      "name": "audit-suite",
+      "description": "10 expert audit lenses + full-audit orchestrator + 5 bundled reference skills. Review plans and code through the eyes of Design, UX, Frontend, Backend, Structural, Repo, Production, DX, Performance, and Accessibility engineers.",
+      "author": {
+        "name": "Orbit"
+      },
+      "category": "development",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/Recusive/Orbit-plugin.git",
+        "sha": "1b0778969136397bb77310dffdd40903f851c08e"
+      },
+      "homepage": "https://github.com/Recusive/Orbit-plugin",
+      "tags": [
+        "community-managed"
+      ]
+    },
+    {
       "name": "autofix-bot",
       "description": "Code review agent that detects security vulnerabilities, code quality issues, and hardcoded secrets. Combines 5,000+ static analyzers to scan your code and dependencies for CVEs.",
       "author": {
