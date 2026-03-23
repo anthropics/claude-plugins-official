@@ -666,7 +666,9 @@ client.on('error', err => {
 })
 
 client.on('messageCreate', msg => {
-  if (msg.author.bot) return
+  // Only ignore our own messages. Other bots go through gate() which
+  // enforces allowFrom lists, channel policies, and mention requirements.
+  if (msg.author.id === client.user?.id) return
   handleInbound(msg).catch(e => process.stderr.write(`discord: handleInbound failed: ${e}\n`))
 })
 
