@@ -62,6 +62,29 @@ Pass `--output id1,id2` to route replies to different channels. Messages are sti
 /discord:access group rm 846209781206941736
 ```
 
+## Selective output routing
+
+For more control over which channel receives replies, use `outputRouting` in `access.json`. Each route has a `channelId` and optionally a `keyword` and/or `description`.
+
+**Keyword routing** is deterministic: when a message starts with the keyword (e.g. `/dev`), the reply goes only to that channel and the keyword is stripped from the message before processing.
+
+**Description routing** lets Claude pick the best channel based on message content. When no keyword matches, Claude reads the descriptions and routes accordingly.
+
+```jsonc
+"groups": {
+  "846209781206941736": {
+    "requireMention": false,
+    "allowFrom": [],
+    "outputRouting": [
+      { "channelId": "846209781206941737", "keyword": "/dev", "description": "Code reviews, bug fixes, development" },
+      { "channelId": "846209781206941738", "keyword": "/chat", "description": "General conversation, questions" }
+    ]
+  }
+}
+```
+
+Priority: keyword match → Claude picks by description → broadcast to all routing channels → `outputChannelIds` → input channel.
+
 ## Mention detection
 
 In channels with `requireMention: true`, any of the following triggers the bot:
@@ -127,7 +150,12 @@ Configure outbound behavior with `/discord:access set <key> <value>`.
       // Restrict triggers to these senders. Empty = any member (subject to requireMention).
       "allowFrom": [],
       // Route replies to other channels. Omit to reply in the same channel.
-      "outputChannelIds": ["846209781206941737", "846209781206941738"]
+      "outputChannelIds": ["846209781206941737", "846209781206941738"],
+      // Selective routing with keyword/description (takes priority over outputChannelIds).
+      "outputRouting": [
+        { "channelId": "846209781206941737", "keyword": "/dev", "description": "Code reviews, bug fixes" },
+        { "channelId": "846209781206941738", "keyword": "/chat", "description": "General conversation" }
+      ]
     }
   },
 

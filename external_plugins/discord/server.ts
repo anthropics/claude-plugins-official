@@ -86,11 +86,21 @@ type PendingEntry = {
   replies: number
 }
 
+type OutputRoute = {
+  channelId: string
+  /** Keyword prefix (e.g. "/dev"). When the inbound message starts with this, route to this channel only. */
+  keyword?: string
+  /** Description of what this channel is for. Claude uses this to pick the right channel when no keyword matches. */
+  description?: string
+}
+
 type GroupPolicy = {
   requireMention: boolean
   allowFrom: string[]
   /** When set, replies are broadcast to all listed channels instead of the input channel. */
   outputChannelIds?: string[]
+  /** Selective routing with keyword/description support. Takes priority over outputChannelIds. */
+  outputRouting?: OutputRoute[]
 }
 
 type Access = {
@@ -400,22 +410,60 @@ async function fetchAllowedChannel(id: string) {
   } else {
     const key = ch.isThread() ? ch.parentId ?? ch.id : ch.id
     if (key in access.groups) return ch
-    /* Allow sending to a channel that is referenced in outputChannelIds */
+    /* Allow sending to a channel referenced in outputChannelIds or outputRouting */
     for (const policy of Object.values(access.groups)) {
       if (policy.outputChannelIds?.includes(id)) return ch
+      if (policy.outputRouting?.some(r => r.channelId === id)) return ch
     }
   }
   throw new Error(`channel ${id} is not allowlisted — add via /discord:access`)
 }
 
+type RoutingResult = {
+  outputIds: string[]
+  /** When keyword matched, the message content with the keyword prefix stripped. */
+  strippedContent?: string
+  /** When outputRouting is configured but no keyword matched, Claude should pick based on descriptions. */
+  routingDescriptions?: Array<{ channelId: string; description: string }>
+}
+
 /**
  * Resolve the effective output channels for a reply.
- * If the inbound channel has outputChannelIds configured, return those; otherwise return the original chat_id.
+ * Priority: outputRouting keyword match → outputRouting (Claude picks) → outputChannelIds → input channel.
  */
-function resolveOutputChannels(chatId: string, access: Access): string[] {
-  const directPolicy = access.groups[chatId]
-  if (directPolicy?.outputChannelIds?.length) return directPolicy.outputChannelIds
-  return [chatId]
+function resolveRouting(chatId: string, messageContent: string, access: Access): RoutingResult {
+  const policy = access.groups[chatId]
+  if (!policy) return { outputIds: [chatId] }
+
+  /* outputRouting takes priority over outputChannelIds */
+  if (policy.outputRouting?.length) {
+    /* 1. Try keyword match — deterministic, no Claude involvement */
+    for (const route of policy.outputRouting) {
+      if (route.keyword && messageContent.startsWith(route.keyword)) {
+        const stripped = messageContent.slice(route.keyword.length).trimStart()
+        return { outputIds: [route.channelId], strippedContent: stripped || undefined }
+      }
+    }
+
+    /* 2. No keyword matched — let Claude decide based on descriptions */
+    const descriptions = policy.outputRouting
+      .filter(r => r.description)
+      .map(r => ({ channelId: r.channelId, description: r.description! }))
+    if (descriptions.length) {
+      return {
+        outputIds: policy.outputRouting.map(r => r.channelId),
+        routingDescriptions: descriptions,
+      }
+    }
+
+    /* 3. No descriptions either — broadcast to all routing channels */
+    return { outputIds: policy.outputRouting.map(r => r.channelId) }
+  }
+
+  /* Fallback to outputChannelIds broadcast */
+  if (policy.outputChannelIds?.length) return { outputIds: policy.outputChannelIds }
+
+  return { outputIds: [chatId] }
 }
 
 async function downloadAttachment(att: Attachment): Promise<string> {
@@ -450,6 +498,8 @@ const mcp = new Server(
       'Messages from Discord arrive as <channel source="discord" chat_id="..." message_id="..." user="..." ts="...">. If the tag has attachment_count, the attachments attribute lists name/type/size — call download_attachment(chat_id, message_id) to fetch them. Reply with the reply tool — pass chat_id back. Use reply_to (set to a message_id) only when replying to an earlier message; the latest message doesn\'t need a quote-reply, omit reply_to for normal responses.',
       '',
       'reply accepts file paths (files: ["/abs/path.png"]) for attachments. Use react to add emoji reactions, and edit_message for interim progress updates. Edits don\'t trigger push notifications — when a long task completes, send a new reply so the user\'s device pings. If a group channel has outputChannelIds configured, replies are automatically broadcast to those channels — just pass the original chat_id as usual.',
+      '',
+      'Output routing: when a message has a routed_to attribute, reply to that channel ID instead of chat_id. When a message has output_routing (format: "channelId: description | channelId: description"), pick the most appropriate channel based on the descriptions and reply to that channel ID. If no description matches well, reply to the first channel listed.',
       '',
       "fetch_messages pulls real Discord history. Discord's search API isn't available to bots — if the user asks you to find an old message, fetch more history or ask them roughly when it was.",
       '',
@@ -550,7 +600,12 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         const files = (args.files as string[] | undefined) ?? []
 
         const access = loadAccess()
-        const outputIds = resolveOutputChannels(chat_id, access)
+        /* Reply routing uses the same resolution as inbound, but without keyword stripping
+         * (the reply text is Claude's response, not the user's message).
+         * When routed_to is set in the inbound meta, Claude should pass that as chat_id.
+         * Otherwise fall back to outputRouting channels → outputChannelIds → input channel. */
+        const routing = resolveRouting(chat_id, '', access)
+        const outputIds = routing.outputIds
 
         for (const f of files) {
           assertSendable(f)
@@ -738,7 +793,23 @@ async function handleInbound(msg: Message): Promise<void> {
 
   // Attachment listing goes in meta only — an in-content annotation is
   // forgeable by any allowlisted sender typing that string.
-  const content = msg.content || (atts.length > 0 ? '(attachment)' : '')
+  const rawContent = msg.content || (atts.length > 0 ? '(attachment)' : '')
+
+  /* Resolve routing — keyword match strips the prefix from content */
+  const routing = resolveRouting(chat_id, rawContent, access)
+  const content = routing.strippedContent ?? rawContent
+
+  /* Build routing meta for Claude when description-based selection is needed */
+  const routingMeta: Record<string, string> = {}
+  if (routing.routingDescriptions?.length) {
+    routingMeta.output_routing = routing.routingDescriptions
+      .map(r => `${r.channelId}: ${r.description}`)
+      .join(' | ')
+  }
+  if (routing.outputIds.length === 1 && routing.strippedContent !== undefined) {
+    /* Keyword matched — tell Claude which channel to target */
+    routingMeta.routed_to = routing.outputIds[0]
+  }
 
   mcp.notification({
     method: 'notifications/claude/channel',
@@ -751,6 +822,7 @@ async function handleInbound(msg: Message): Promise<void> {
         user_id: msg.author.id,
         ts: msg.createdAt.toISOString(),
         ...(atts.length > 0 ? { attachment_count: String(atts.length), attachments: atts.join('; ') } : {}),
+        ...routingMeta,
       },
     },
   }).catch(err => {

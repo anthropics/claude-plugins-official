@@ -35,7 +35,14 @@ Arguments passed: `$ARGUMENTS`
   "dmPolicy": "pairing",
   "allowFrom": ["<senderId>", ...],
   "groups": {
-    "<channelId>": { "requireMention": true, "allowFrom": [], "outputChannelIds": ["<channelId>", ...] }
+    "<channelId>": {
+      "requireMention": true,
+      "allowFrom": [],
+      "outputChannelIds": ["<channelId>", ...],
+      "outputRouting": [
+        { "channelId": "<channelId>", "keyword": "/cmd", "description": "channel purpose" }
+      ]
+    }
   },
   "pending": {
     "<6-char-code>": {
@@ -108,6 +115,30 @@ Parse `$ARGUMENTS` (space-separated). If empty or unrecognized, show status.
 When `--output` is set, replies to messages from `<channelId>` are
 automatically broadcast to all listed output channels.
 When `--output` is omitted, any existing `outputChannelIds` is removed.
+
+### `group routing <inputChannelId> add <outputChannelId>` (optional: `--keyword /cmd`, `--description "text"`)
+
+1. Read access.json.
+2. Find `groups[<inputChannelId>]`. If it does not exist, stop and tell the user to add the group first.
+3. Find or create `outputRouting` array on that group entry.
+4. Add or update the route: `{ channelId: outputChannelId, ...(keyword ? { keyword } : {}), ...(description ? { description } : {}) }`.
+   If a route with the same `channelId` already exists, replace it.
+5. Write.
+
+`outputRouting` takes priority over `outputChannelIds`.
+
+### `group routing <inputChannelId> rm <outputChannelId>`
+
+1. Read access.json.
+2. Remove the route with matching `channelId` from `groups[<inputChannelId>].outputRouting`.
+3. If `outputRouting` is now empty, remove the `outputRouting` key entirely.
+4. Write.
+
+### `group routing <inputChannelId> clear`
+
+1. Read access.json.
+2. Remove the `outputRouting` key from `groups[<inputChannelId>]`.
+3. Write.
 
 ### `group rm <channelId>`
 
