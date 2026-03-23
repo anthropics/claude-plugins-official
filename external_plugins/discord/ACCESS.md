@@ -52,9 +52,13 @@ Guild channels are off by default. Opt each one in individually, keyed on the **
 
 With the default `requireMention: true`, the bot responds only when @mentioned or replied to. Pass `--no-mention` to process every message in the channel, or `--allow id1,id2` to restrict which members can trigger it.
 
+Pass `--output id1,id2` to route replies to different channels. Messages are still received from the input channel, but all replies are broadcast to the listed output channels. This is useful for separating input and output into dedicated channels.
+
 ```
 /discord:access group add 846209781206941736 --no-mention
 /discord:access group add 846209781206941736 --allow 184695080709324800,221773638772129792
+/discord:access group add 846209781206941736 --output 846209781206941737
+/discord:access group add 846209781206941736 --output 846209781206941737,846209781206941738
 /discord:access group rm 846209781206941736
 ```
 
@@ -99,7 +103,7 @@ Configure outbound behavior with `/discord:access set <key> <value>`.
 | `/discord:access allow 184695080709324800` | Add a user snowflake directly. |
 | `/discord:access remove 184695080709324800` | Remove from the allowlist. |
 | `/discord:access policy allowlist` | Set `dmPolicy`. Values: `pairing`, `allowlist`, `disabled`. |
-| `/discord:access group add 846209781206941736` | Enable a guild channel. Flags: `--no-mention`, `--allow id1,id2`. |
+| `/discord:access group add 846209781206941736` | Enable a guild channel. Flags: `--no-mention`, `--allow id1,id2`, `--output id1,id2`. |
 | `/discord:access group rm 846209781206941736` | Disable a guild channel. |
 | `/discord:access set ackReaction 🔨` | Set a config key: `ackReaction`, `replyToMode`, `textChunkLimit`, `chunkMode`, `mentionPatterns`. |
 
@@ -121,7 +125,9 @@ Configure outbound behavior with `/discord:access set <key> <value>`.
       // true: respond only to @mentions and replies.
       "requireMention": true,
       // Restrict triggers to these senders. Empty = any member (subject to requireMention).
-      "allowFrom": []
+      "allowFrom": [],
+      // Route replies to other channels. Omit to reply in the same channel.
+      "outputChannelIds": ["846209781206941737", "846209781206941738"]
     }
   },
 

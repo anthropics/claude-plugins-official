@@ -89,6 +89,8 @@ type PendingEntry = {
 type GroupPolicy = {
   requireMention: boolean
   allowFrom: string[]
+  /** When set, replies are broadcast to all listed channels instead of the input channel. */
+  outputChannelIds?: string[]
 }
 
 type Access = {
@@ -389,6 +391,7 @@ async function fetchTextChannel(id: string) {
 // Outbound gate — tools can only target chats the inbound gate would deliver
 // from. DM channel ID ≠ user ID, so we inspect the fetched channel's type.
 // Thread → parent lookup mirrors the inbound gate.
+// Also allows output channels configured via outputChannelIds.
 async function fetchAllowedChannel(id: string) {
   const ch = await fetchTextChannel(id)
   const access = loadAccess()
@@ -397,8 +400,22 @@ async function fetchAllowedChannel(id: string) {
   } else {
     const key = ch.isThread() ? ch.parentId ?? ch.id : ch.id
     if (key in access.groups) return ch
+    /* Allow sending to a channel that is referenced in outputChannelIds */
+    for (const policy of Object.values(access.groups)) {
+      if (policy.outputChannelIds?.includes(id)) return ch
+    }
   }
   throw new Error(`channel ${id} is not allowlisted — add via /discord:access`)
+}
+
+/**
+ * Resolve the effective output channels for a reply.
+ * If the inbound channel has outputChannelIds configured, return those; otherwise return the original chat_id.
+ */
+function resolveOutputChannels(chatId: string, access: Access): string[] {
+  const directPolicy = access.groups[chatId]
+  if (directPolicy?.outputChannelIds?.length) return directPolicy.outputChannelIds
+  return [chatId]
 }
 
 async function downloadAttachment(att: Attachment): Promise<string> {
@@ -432,7 +449,7 @@ const mcp = new Server(
       '',
       'Messages from Discord arrive as <channel source="discord" chat_id="..." message_id="..." user="..." ts="...">. If the tag has attachment_count, the attachments attribute lists name/type/size — call download_attachment(chat_id, message_id) to fetch them. Reply with the reply tool — pass chat_id back. Use reply_to (set to a message_id) only when replying to an earlier message; the latest message doesn\'t need a quote-reply, omit reply_to for normal responses.',
       '',
-      'reply accepts file paths (files: ["/abs/path.png"]) for attachments. Use react to add emoji reactions, and edit_message for interim progress updates. Edits don\'t trigger push notifications — when a long task completes, send a new reply so the user\'s device pings.',
+      'reply accepts file paths (files: ["/abs/path.png"]) for attachments. Use react to add emoji reactions, and edit_message for interim progress updates. Edits don\'t trigger push notifications — when a long task completes, send a new reply so the user\'s device pings. If a group channel has outputChannelIds configured, replies are automatically broadcast to those channels — just pass the original chat_id as usual.',
       '',
       "fetch_messages pulls real Discord history. Discord's search API isn't available to bots — if the user asks you to find an old message, fetch more history or ask them roughly when it was.",
       '',
@@ -532,8 +549,8 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         const reply_to = args.reply_to as string | undefined
         const files = (args.files as string[] | undefined) ?? []
 
-        const ch = await fetchAllowedChannel(chat_id)
-        if (!('send' in ch)) throw new Error('channel is not sendable')
+        const access = loadAccess()
+        const outputIds = resolveOutputChannels(chat_id, access)
 
         for (const f of files) {
           assertSendable(f)
@@ -544,38 +561,48 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         }
         if (files.length > 10) throw new Error('Discord allows max 10 attachments per message')
 
-        const access = loadAccess()
         const limit = Math.max(1, Math.min(access.textChunkLimit ?? MAX_CHUNK_LIMIT, MAX_CHUNK_LIMIT))
         const mode = access.chunkMode ?? 'length'
         const replyMode = access.replyToMode ?? 'first'
         const chunks = chunk(text, limit, mode)
-        const sentIds: string[] = []
+        const allSentIds: string[] = []
 
-        try {
-          for (let i = 0; i < chunks.length; i++) {
-            const shouldReplyTo =
-              reply_to != null &&
-              replyMode !== 'off' &&
-              (replyMode === 'all' || i === 0)
-            const sent = await ch.send({
-              content: chunks[i],
-              ...(i === 0 && files.length > 0 ? { files } : {}),
-              ...(shouldReplyTo
-                ? { reply: { messageReference: reply_to, failIfNotExists: false } }
-                : {}),
-            })
-            noteSent(sent.id)
-            sentIds.push(sent.id)
+        for (const outputId of outputIds) {
+          const ch = await fetchAllowedChannel(outputId)
+          if (!('send' in ch)) throw new Error(`channel ${outputId} is not sendable`)
+
+          /* When output is redirected to a different channel, reply_to references
+           * a message in the input channel — threading would fail. Disable it. */
+          const effectiveReplyTo = outputId !== chat_id ? undefined : reply_to
+
+          try {
+            for (let i = 0; i < chunks.length; i++) {
+              const shouldReplyTo =
+                effectiveReplyTo != null &&
+                replyMode !== 'off' &&
+                (replyMode === 'all' || i === 0)
+              const sent = await ch.send({
+                content: chunks[i],
+                ...(i === 0 && files.length > 0 ? { files } : {}),
+                ...(shouldReplyTo
+                  ? { reply: { messageReference: effectiveReplyTo, failIfNotExists: false } }
+                  : {}),
+              })
+              noteSent(sent.id)
+              allSentIds.push(sent.id)
+            }
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err)
+            throw new Error(`reply to ${outputId} failed after ${allSentIds.length} chunk(s) sent: ${msg}`)
           }
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err)
-          throw new Error(`reply failed after ${sentIds.length} of ${chunks.length} chunk(s) sent: ${msg}`)
         }
 
         const result =
-          sentIds.length === 1
-            ? `sent (id: ${sentIds[0]})`
-            : `sent ${sentIds.length} parts (ids: ${sentIds.join(', ')})`
+          outputIds.length === 1
+            ? allSentIds.length === 1
+              ? `sent (id: ${allSentIds[0]})`
+              : `sent ${allSentIds.length} parts (ids: ${allSentIds.join(', ')})`
+            : `broadcast to ${outputIds.length} channels (${allSentIds.length} messages total)`
         return { content: [{ type: 'text', text: result }] }
       }
       case 'fetch_messages': {
