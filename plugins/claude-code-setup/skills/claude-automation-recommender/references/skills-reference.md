@@ -89,6 +89,9 @@ user-invocable: false           # Only Claude can invoke (for background knowled
 allowed-tools: Read, Grep, Glob # Restrict tool access
 context: fork                   # Run in isolated subagent
 agent: Explore                  # Which agent type when forked
+model: opus                    # Model override (sonnet/opus/haiku)
+effort: high                   # Effort level override (low/medium/high/max)
+hooks: ...                     # Hooks scoped to this skill's lifecycle
 ---
 ```
 
