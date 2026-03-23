@@ -4,7 +4,12 @@
 # Prevents session exit when a ralph-loop is active
 # Feeds Claude's output back as input to continue the loop
 
-set -euo pipefail
+set -uo pipefail
+# NOTE: Do NOT use set -e here. The jq calls below can fail when stdin is
+# empty or malformed (e.g., Claude Code passes no JSON to the Stop hook in
+# some exit paths). With set -e, jq failure causes an immediate silent exit
+# with a non-zero code, producing "Failed with non-blocking status code: No
+# stderr output" in Claude Code. Removing -e lets the || fallbacks work.
 
 # Read hook input from stdin (advanced stop hook API)
 HOOK_INPUT=$(cat)
@@ -29,7 +34,7 @@ COMPLETION_PROMISE=$(echo "$FRONTMATTER" | grep '^completion_promise:' | sed 's/
 # started the loop, this session must not block (or touch the state file).
 # Legacy state files without session_id fall through (preserves old behavior).
 STATE_SESSION=$(echo "$FRONTMATTER" | grep '^session_id:' | sed 's/session_id: *//' || true)
-HOOK_SESSION=$(echo "$HOOK_INPUT" | jq -r '.session_id // ""')
+HOOK_SESSION=$(echo "$HOOK_INPUT" | jq -r '.session_id // ""' 2>/dev/null || echo "")
 if [[ -n "$STATE_SESSION" ]] && [[ "$STATE_SESSION" != "$HOOK_SESSION" ]]; then
   exit 0
 fi
@@ -65,7 +70,7 @@ if [[ $MAX_ITERATIONS -gt 0 ]] && [[ $ITERATION -ge $MAX_ITERATIONS ]]; then
 fi
 
 # Get transcript path from hook input
-TRANSCRIPT_PATH=$(echo "$HOOK_INPUT" | jq -r '.transcript_path')
+TRANSCRIPT_PATH=$(echo "$HOOK_INPUT" | jq -r '.transcript_path' 2>/dev/null || echo "")
 
 if [[ ! -f "$TRANSCRIPT_PATH" ]]; then
   echo "⚠️  Ralph loop: Transcript file not found" >&2
