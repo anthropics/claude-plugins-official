@@ -1,0 +1,23 @@
+[
+  {"query": "Solve this IMO problem: Let n ≥ 2 be an integer. Prove that...", "should_trigger": true},
+  {"query": "Is this Putnam proof correct? Here's my attempt at B3...", "should_trigger": true},
+  {"query": "Find a counterexample to: every continuous function on [0,1] is uniformly continuous", "should_trigger": true},
+  {"query": "Prove this olympiad inequality: for positive reals a,b,c with a+b+c=1...", "should_trigger": true},
+  {"query": "Help me with this USAMO geometry problem", "should_trigger": true},
+  {"query": "Verify my solution to AIME 2024 problem 12", "should_trigger": true},
+  {"query": "I think there's a gap in this competition proof, can you find it?", "should_trigger": true},
+  {"query": "Simplify this proof — it feels overly complicated", "should_trigger": true},
+  {"query": "Here's a conjecture from a math competition. Is it true?", "should_trigger": true},
+  {"query": "What's the cleanest way to present this olympiad solution?", "should_trigger": true},
+
+  {"query": "Help me verify the time complexity of this sorting algorithm", "should_trigger": false},
+  {"query": "Write a Python function that checks if a number is prime", "should_trigger": false},
+  {"query": "I'm doing research on the Riemann Hypothesis, where should I start reading?", "should_trigger": false},
+  {"query": "Debug this proof assistant code — my Lean tactic isn't working", "should_trigger": false},
+  {"query": "Explain the proof of the fundamental theorem of calculus to a high schooler", "should_trigger": false},
+  {"query": "What's a good textbook for learning competition math?", "should_trigger": false},
+  {"query": "Generate 10 practice problems similar to AIME level", "should_trigger": false},
+  {"query": "Compute the integral of x^2 sin(x) dx", "should_trigger": false},
+  {"query": "Review my research paper draft on analytic number theory", "should_trigger": false},
+  {"query": "What's the difference between IMO and Putnam in difficulty?", "should_trigger": false}
+]

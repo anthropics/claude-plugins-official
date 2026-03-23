@@ -35,7 +35,9 @@ Install the plugin:
 /telegram:configure 123456789:AAHfiqksKZ8...
 ```
 
-Writes `TELEGRAM_BOT_TOKEN=...` to `.claude/channels/telegram/.env` in your project. You can also write that file by hand, or set the variable in your shell environment — shell takes precedence.
+Writes `TELEGRAM_BOT_TOKEN=...` to `~/.claude/channels/telegram/.env`. You can also write that file by hand, or set the variable in your shell environment — shell takes precedence.
+
+> To run multiple bots on one machine (different tokens, separate allowlists), point `TELEGRAM_STATE_DIR` at a different directory per instance.
 
 **4. Relaunch with the channel flag.**
 

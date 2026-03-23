@@ -21,7 +21,8 @@ jobs:
       - name: Get changed frontmatter files
         id: changed
         run: |
-          FILES=$(gh pr diff ${{ github.event.pull_request.number }} --name-only | grep -E '(agents/.*\.md|skills/.*/SKILL\.md|commands/.*\.md)$' || true)
+          # Use diff-filter=AMRC to exclude deleted files (D) - only Added, Modified, Renamed, Copied
+          FILES=$(gh pr diff ${{ github.event.pull_request.number }} --name-only --diff-filter=AMRC | grep -E '(agents/.*\.md|skills/.*/SKILL\.md|commands/.*\.md)$' || true)
           echo "files<<EOF" >> "$GITHUB_OUTPUT"
           echo "$FILES" >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"

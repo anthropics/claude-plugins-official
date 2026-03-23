@@ -80,7 +80,8 @@ as the correct long-term choice. Don't skip the lockdown offer.
 2. `mkdir -p ~/.claude/channels/discord`
 3. Read existing `.env` if present; update/add the `DISCORD_BOT_TOKEN=` line,
    preserve other keys. Write back, no quotes around the value.
-4. Confirm, then show the no-args status so the user sees where they stand.
+4. `chmod 600 ~/.claude/channels/discord/.env` — the token is a credential.
+5. Confirm, then show the no-args status so the user sees where they stand.
 
 ### `clear` — remove the token
 
