@@ -76,6 +76,7 @@ Quick reference: IDs are **numeric user IDs** (get yours from [@userinfobot](htt
 | `reply` | Send to a chat. Takes `chat_id` + `text`, optionally `reply_to` (message ID) for native threading and `files` (absolute paths) for attachments. Images (`.jpg`/`.png`/`.gif`/`.webp`) send as photos with inline preview; other types send as documents. Max 50MB each. Auto-chunks text; files send as separate messages after the text. Returns the sent message ID(s). |
 | `react` | Add an emoji reaction to a message by ID. **Only Telegram's fixed whitelist** is accepted (👍 👎 ❤ 🔥 👀 etc). |
 | `edit_message` | Edit a message the bot previously sent. Useful for "working…" → result progress updates. Only works on the bot's own messages. |
+| `request_permission` | Ask the Telegram user for permission before a destructive action. Sends inline Allow/Deny buttons and waits for the response. Returns `"allow"` or `"deny"`. Times out after 2 minutes (defaults to deny). |
 
 Inbound messages trigger a typing indicator automatically — Telegram shows
 "botname is typing…" while the assistant works on a response.
@@ -86,6 +87,26 @@ Inbound photos are downloaded to `~/.claude/channels/telegram/inbox/` and the
 local path is included in the `<channel>` notification so the assistant can
 `Read` it. Telegram compresses photos — if you need the original file, send it
 as a document instead (long-press → Send as File).
+
+## Remote permissions
+
+When a Telegram user asks Claude to do something destructive (delete files,
+push to git, etc.), Claude calls `request_permission` before executing. The
+user sees inline Allow/Deny buttons in Telegram and can approve or reject
+without being at the terminal.
+
+A `PreToolUse` hook auto-approves the next tool call when the user taps
+Allow, so the terminal permission prompt never appears.
+
+**Bypass mode.** If you're running with `--dangerously-skip-permissions` and
+don't want the Telegram permission prompts either, add to your `.env`:
+
+```
+TELEGRAM_SKIP_PERMISSION_PROMPT=true
+```
+
+This makes `request_permission` return `"allow"` immediately and the hook
+auto-approves all tool calls.
 
 ## No history or search
 
