@@ -723,6 +723,13 @@
       "homepage": "https://www.mintlify.com/"
     },
     {
+      "name": "monocle",
+      "description": "Terminal-based code review companion for Claude Code. Review diffs, leave structured feedback, and submit reviews — all from a TUI running alongside Claude.",
+      "category": "development",
+      "source": "./external_plugins/monocle",
+      "homepage": "https://github.com/josephschmitt/monocle"
+    },
+    {
       "name": "neon",
       "description": "Manage your Neon projects and databases with the neon-postgres agent skill and the Neon MCP Server.",
       "category": "database",
