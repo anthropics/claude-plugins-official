@@ -1385,6 +1385,21 @@
         "sha": "0705316ef8a2d0c64f81e50d4612ccc6a74edf03"
       },
       "homepage": "https://zoominfo.com"
+    },
+    {
+      "name": "shannon-pentester",
+      "description": "Autonomous AI-powered penetration testing for web applications using Shannon by Keygraph. Launch white-box security assessments, configure authentication (2FA, SSO), monitor progress, and analyze vulnerability reports — all from Claude Code.",
+      "author": {
+        "name": "Aïssa BELKOUSSA",
+        "email": "contact@aissabelkoussa.fr"
+      },
+      "category": "security",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/aissablk1/shannon-pentester-skill.git",
+        "sha": "8752e87bbee845ea294c2c2a90a08475e3c35f35"
+      },
+      "homepage": "https://github.com/aissablk1/shannon-pentester-skill"
     }
   ]
 }
