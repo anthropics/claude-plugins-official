@@ -1385,6 +1385,17 @@
         "sha": "0705316ef8a2d0c64f81e50d4612ccc6a74edf03"
       },
       "homepage": "https://zoominfo.com"
+    },
+    {
+      "name": "port-saver",
+      "description": "Detects port conflicts before server startup and config file writes. Supports 44+ server frameworks, 16+ config file types, and automatic alternative port suggestion.",
+      "category": "development",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/gtpgg1013/port-saver.git",
+        "sha": "ba889a33420f321a69c1fa33ab46c4a9850bdfdc"
+      },
+      "homepage": "https://github.com/gtpgg1013/port-saver"
     }
   ]
 }
