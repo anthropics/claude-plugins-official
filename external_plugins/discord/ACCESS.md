@@ -89,6 +89,16 @@ Configure outbound behavior with `/discord:access set <key> <value>`.
 
 **`chunkMode`** chooses the split strategy: `length` cuts exactly at the limit; `newline` prefers paragraph boundaries.
 
+**`permissionMode`** controls where permission requests (Allow / Deny prompts from Claude Code) are delivered.
+
+| Mode | Behavior |
+| --- | --- |
+| `dm` (default) | DMs only — original behavior. |
+| `channel` | Guild channels registered in `groups` only — no DMs. |
+| `both` | DMs + guild channels. |
+
+> ⚠️ `channel` and `both` expose permission prompts to anyone who can read and interact in the guild channel. Only use on servers you fully control. Note: only users listed in `allowFrom` can actually approve or deny — the buttons are visible to everyone in the channel but unauthorized clicks are rejected.
+
 ## Skill reference
 
 | Command | Effect |
@@ -101,7 +111,8 @@ Configure outbound behavior with `/discord:access set <key> <value>`.
 | `/discord:access policy allowlist` | Set `dmPolicy`. Values: `pairing`, `allowlist`, `disabled`. |
 | `/discord:access group add 846209781206941736` | Enable a guild channel. Flags: `--no-mention`, `--allow id1,id2`. |
 | `/discord:access group rm 846209781206941736` | Disable a guild channel. |
-| `/discord:access set ackReaction 🔨` | Set a config key: `ackReaction`, `replyToMode`, `textChunkLimit`, `chunkMode`, `mentionPatterns`. |
+| `/discord:access set ackReaction 🔨` | Set a config key: `ackReaction`, `replyToMode`, `textChunkLimit`, `chunkMode`, `mentionPatterns`, `permissionMode`. |
+| `/discord:access set permissionMode channel` | Set where permission requests are delivered: `dm`, `channel`, `both`. |
 
 ## Config file
 
@@ -138,6 +149,9 @@ Configure outbound behavior with `/discord:access set <key> <value>`.
   "textChunkLimit": 2000,
 
   // length = cut at limit. newline = prefer paragraph boundaries.
-  "chunkMode": "newline"
+  "chunkMode": "newline",
+
+  // Where to deliver permission requests: dm | channel | both
+  "permissionMode": "dm"
 }
 ```

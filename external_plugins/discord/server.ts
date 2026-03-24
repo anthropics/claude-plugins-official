@@ -118,6 +118,13 @@ type Access = {
   textChunkLimit?: number
   /** Split on paragraph boundaries instead of hard char count. */
   chunkMode?: 'length' | 'newline'
+  /** Controls where permission requests (Allow/Deny) are delivered.
+   *  - 'dm' (default): DMs only — original behavior.
+   *  - 'channel': guild channels only (registered in access.groups) — no DMs.
+   *  - 'both': DMs + guild channels.
+   *  ⚠️  'channel' and 'both' expose permission prompts to anyone who can read
+   *  the guild channel. Only use on servers you fully control. */
+  permissionMode?: 'dm' | 'channel' | 'both'
 }
 
 function defaultAccess(): Access {
@@ -162,6 +169,7 @@ function readAccessFile(): Access {
       replyToMode: parsed.replyToMode,
       textChunkLimit: parsed.textChunkLimit,
       chunkMode: parsed.chunkMode,
+      permissionMode: parsed.permissionMode,
     }
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return defaultAccess()
@@ -466,10 +474,10 @@ const mcp = new Server(
 // Stores full permission details for "See more" expansion keyed by request_id.
 const pendingPermissions = new Map<string, { tool_name: string; description: string; input_preview: string }>()
 
-// Receive permission_request from CC → format → send to all allowlisted DMs.
-// Groups are intentionally excluded — the security thread resolution was
-// "single-user mode for official plugins." Anyone in access.allowFrom
-// already passed explicit pairing; group members haven't.
+// Receive permission_request from CC → format → send to allowlisted DMs
+// and/or guild channels, depending on access.permissionMode.
+// Note: buttons are visible wherever the message lands, but the interaction
+// handler only accepts clicks from access.allowFrom users.
 mcp.setNotificationHandler(
   z.object({
     method: z.literal('notifications/claude/channel/permission_request'),
@@ -501,15 +509,36 @@ mcp.setNotificationHandler(
         .setEmoji('❌')
         .setStyle(ButtonStyle.Danger),
     )
-    for (const userId of access.allowFrom) {
-      void (async () => {
-        try {
-          const user = await client.users.fetch(userId)
-          await user.send({ content: text, components: [row] })
-        } catch (e) {
-          process.stderr.write(`permission_request send to ${userId} failed: ${e}\n`)
-        }
-      })()
+    let mode = access.permissionMode ?? 'dm'
+    if (mode !== 'dm' && mode !== 'channel' && mode !== 'both') {
+      process.stderr.write(`discord: invalid permissionMode "${mode}", falling back to "dm"\n`)
+      mode = 'dm'
+    }
+    if (mode === 'dm' || mode === 'both') {
+      for (const userId of access.allowFrom) {
+        void (async () => {
+          try {
+            const user = await client.users.fetch(userId)
+            await user.send({ content: text, components: [row] })
+          } catch (e) {
+            process.stderr.write(`permission_request send to ${userId} failed: ${e}\n`)
+          }
+        })()
+      }
+    }
+    if (mode === 'channel' || mode === 'both') {
+      for (const channelId of Object.keys(access.groups ?? {})) {
+        void (async () => {
+          try {
+            const channel = await client.channels.fetch(channelId)
+            if (channel?.isTextBased()) {
+              await channel.send({ content: text, components: [row] })
+            }
+          } catch (e) {
+            process.stderr.write(`permission_request to channel ${channelId} failed: ${e}\n`)
+          }
+        })()
+      }
     }
   },
 )
