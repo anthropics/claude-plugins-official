@@ -350,3 +350,4 @@ The `sleep` keeps stdin open long enough to collect all responses. Parse the jso
 - `references/iframe-sandbox.md` — CSP/sandbox constraints, the bundle-inlining pattern, image handling
 - `references/widget-templates.md` — reusable HTML scaffolds for picker / confirm / progress / display
 - `references/apps-sdk-messages.md` — the `App` class API: widget ↔ host ↔ server messaging
+- `references/app-architecture-patterns.md` — multi-view app patterns: action dispatch, model context, build pipeline, dual transport
