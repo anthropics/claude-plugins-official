@@ -390,7 +390,7 @@ function chunk(text: string, limit: number, mode: 'length' | 'newline'): string[
 }
 
 async function fetchTextChannel(id: string) {
-  const ch = await client.channels.fetch(id)
+  const ch = await client.channels.fetch(id, { force: true })
   if (!ch || !ch.isTextBased()) {
     throw new Error(`channel ${id} not found or not text-based`)
   }
@@ -404,7 +404,10 @@ async function fetchAllowedChannel(id: string) {
   const ch = await fetchTextChannel(id)
   const access = loadAccess()
   if (ch.type === ChannelType.DM) {
-    if (access.allowFrom.includes(ch.recipientId)) return ch
+    // recipientId may be null when the DM channel was cached as a partial
+    // (Partials.Channel is required for DM delivery). Force-fetch above
+    // resolves most cases; guard against null for any remaining edge cases.
+    if (ch.recipientId && access.allowFrom.includes(ch.recipientId)) return ch
   } else {
     const key = ch.isThread() ? ch.parentId ?? ch.id : ch.id
     if (key in access.groups) return ch
