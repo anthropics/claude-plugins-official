@@ -692,7 +692,16 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
                   // adjacent rows. History includes ungated senders (no-@mention
                   // messages in an opted-in channel never hit the gate but
                   // still live in channel history).
-                  const text = m.content.replace(/[\r\n]+/g, ' ⏎ ')
+                  let text = m.content.replace(/[\r\n]+/g, ' ⏎ ')
+                  if (!text && m.embeds.length > 0) {
+                    const ep: string[] = []
+                    for (const e of m.embeds) {
+                      if (e.title) ep.push(e.title)
+                      if (e.description) ep.push(e.description)
+                      for (const f of e.fields) ep.push(`${f.name}: ${f.value}`)
+                    }
+                    text = ep.join(' | ').replace(/[\r\n]+/g, ' ⏎ ')
+                  }
                   return `[${m.createdAt.toISOString()}] ${who}: ${text}  (id: ${m.id}${atts})`
                 })
                 .join('\n')
@@ -837,7 +846,25 @@ async function handleInbound(msg: Message): Promise<void> {
 
   // Attachment listing goes in meta only — an in-content annotation is
   // forgeable by any allowlisted sender typing that string.
-  const content = msg.content || (atts.length > 0 ? '(attachment)' : '')
+
+  // When msg.content is empty but embeds exist, serialize embed text so the
+  // agent can see it.  Without this, embed-only messages (common in bot-to-bot
+  // and webhook posts) are invisible to the model.
+  let embedText = ''
+  if (!msg.content && msg.embeds.length > 0) {
+    const parts: string[] = []
+    for (const e of msg.embeds) {
+      if (e.title) parts.push(e.title)
+      if (e.description) parts.push(e.description)
+      for (const f of e.fields) {
+        parts.push(`${f.name}: ${f.value}`)
+      }
+      if (e.footer?.text) parts.push(e.footer.text)
+    }
+    embedText = parts.join('\n')
+  }
+
+  const content = msg.content || embedText || (atts.length > 0 ? '(attachment)' : '')
 
   mcp.notification({
     method: 'notifications/claude/channel',
