@@ -1,0 +1,6 @@
+{
+  "arcade": {
+    "type": "http",
+    "url": "https://ctl.arcade.dev/mcp"
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "name": "arcade",
+  "description": "Arcade MCP Gateway Assistant. Create and manage MCP gateways using natural language to connect tools like Gmail, Google Calendar, GitHub, Slack, and more from Arcade's tool catalog.",
+  "author": {
+    "name": "Arcade AI"
+  }
+}
