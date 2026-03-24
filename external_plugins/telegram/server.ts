@@ -352,6 +352,8 @@ const mcp = new Server(
       '',
       'Messages from Telegram arrive as <channel source="telegram" chat_id="..." message_id="..." user="..." ts="...">. If the tag has an image_path attribute, Read that file — it is a photo the sender attached. If the tag has attachment_file_id, call download_attachment with that file_id to fetch the file, then Read the returned path. Reply with the reply tool — pass chat_id back. Use reply_to (set to a message_id) only when replying to an earlier message; the latest message doesn\'t need a quote-reply, omit reply_to for normal responses.',
       '',
+      'When the inbound <channel> block contains reply_to_message_id, the user is quoting a prior message. The reply_to_snippet (up to 100 chars) and reply_to_user fields give you the quoted context — use them to give a contextually accurate response.',
+      '',
       'reply accepts file paths (files: ["/abs/path.png"]) for attachments. Use react to add emoji reactions, and edit_message for interim progress updates. Edits don\'t trigger push notifications — when a long task completes, send a new reply so the user\'s device pings.',
       '',
       "Telegram's Bot API exposes no history or search — you only see messages as they arrive. If you need earlier context, ask the user to paste it or summarize.",
@@ -787,12 +789,31 @@ async function handleInbound(
 
   const imagePath = downloadImage ? await downloadImage() : undefined
 
+  // If the user is quoting/replying to a prior message, extract the context
+  // and surface it in both the content prefix and the meta block so Claude
+  // can give a contextually accurate response.
+  const replyTo = ctx.message?.reply_to_message
+  let contentWithQuote = text
+  const replyMeta = replyTo != null ? (() => {
+    const replyText = replyTo.text ?? replyTo.caption
+    const replyUser = replyTo.from?.username ?? (replyTo.from ? String(replyTo.from.id) : undefined)
+    const replyPreview = replyText ? replyText.slice(0, 200) : '[media]'
+    // Prepend a human-readable quote header so the model understands the
+    // conversational thread even when no other history is available.
+    contentWithQuote = `[Quoted message #${replyTo.message_id} from @${replyUser ?? 'unknown'}: ${replyPreview}]\n${text}`
+    return {
+      reply_to_message_id: String(replyTo.message_id),
+      ...(replyText ? { reply_to_snippet: replyText.slice(0, 100) } : {}),
+      ...(replyUser ? { reply_to_user: replyUser } : {}),
+    }
+  })() : {}
+
   // image_path goes in meta only — an in-content "[image attached — read: PATH]"
   // annotation is forgeable by any allowlisted sender typing that string.
   mcp.notification({
     method: 'notifications/claude/channel',
     params: {
-      content: text,
+      content: contentWithQuote,
       meta: {
         chat_id,
         ...(msgId != null ? { message_id: String(msgId) } : {}),
@@ -807,6 +828,7 @@ async function handleInbound(
           ...(attachment.mime ? { attachment_mime: attachment.mime } : {}),
           ...(attachment.name ? { attachment_name: attachment.name } : {}),
         } : {}),
+        ...replyMeta,
       },
     },
   }).catch(err => {
