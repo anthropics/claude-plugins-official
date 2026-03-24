@@ -564,6 +564,12 @@
       "homepage": "https://github.com/huggingface/skills.git"
     },
     {
+      "name": "imessage",
+      "description": "iMessage messaging bridge with built-in access control. Reads chat.db directly, sends via AppleScript. Manage pairing, allowlists, and policy via /imessage:access.",
+      "category": "productivity",
+      "source": "./external_plugins/imessage"
+    },
+    {
       "name": "intercom",
       "description": "Intercom integration for Claude Code. Search conversations, analyze customer support patterns, look up contacts and companies, and install the Intercom Messenger. Connect your Intercom workspace to get real-time insights from customer data.",
       "category": "productivity",
