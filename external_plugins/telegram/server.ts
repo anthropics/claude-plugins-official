@@ -370,7 +370,7 @@ const mcp = new Server(
       '',
       'Messages from Telegram arrive as <channel source="telegram" chat_id="..." message_id="..." user="..." ts="...">. If the tag has an image_path attribute, Read that file — it is a photo the sender attached. If the tag has attachment_file_id, call download_attachment with that file_id to fetch the file, then Read the returned path. Reply with the reply tool — pass chat_id back. Use reply_to (set to a message_id) only when replying to an earlier message; the latest message doesn\'t need a quote-reply, omit reply_to for normal responses.',
       '',
-      'reply accepts file paths (files: ["/abs/path.png"]) for attachments. Use react to add emoji reactions, and edit_message for interim progress updates. Edits don\'t trigger push notifications — when a long task completes, send a new reply so the user\'s device pings.',
+      'reply accepts file paths (files: ["/abs/path.png"]) for attachments. Set spoiler: true to send photos with spoiler animation (blurred until tapped). Use react to add emoji reactions, and edit_message for interim progress updates. Edits don\'t trigger push notifications — when a long task completes, send a new reply so the user\'s device pings.',
       '',
       "Telegram's Bot API exposes no history or search — you only see messages as they arrive. If you need earlier context, ask the user to paste it or summarize.",
       '',
@@ -436,6 +436,10 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
             enum: ['text', 'markdownv2'],
             description: "Rendering mode. 'markdownv2' enables Telegram formatting (bold, italic, code, links). Caller must escape special chars per MarkdownV2 rules. Default: 'text' (plain, no escaping needed).",
           },
+          spoiler: {
+            type: 'boolean',
+            description: 'Send photo/video attachments with spoiler animation (blurred until tapped). Only applies to files sent as photos or videos. Default: false.',
+          },
         },
         required: ['chat_id', 'text'],
       },
@@ -495,6 +499,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         const reply_to = args.reply_to != null ? Number(args.reply_to) : undefined
         const files = (args.files as string[] | undefined) ?? []
         const format = (args.format as string | undefined) ?? 'text'
+        const spoiler = (args.spoiler as boolean | undefined) ?? false
         const parseMode = format === 'markdownv2' ? 'MarkdownV2' as const : undefined
 
         assertAllowedChat(chat_id)
@@ -538,14 +543,14 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         for (const f of files) {
           const ext = extname(f).toLowerCase()
           const input = new InputFile(f)
-          const opts = reply_to != null && replyMode !== 'off'
+          const replyOpts = reply_to != null && replyMode !== 'off'
             ? { reply_parameters: { message_id: reply_to } }
-            : undefined
+            : {}
           if (PHOTO_EXTS.has(ext)) {
-            const sent = await bot.api.sendPhoto(chat_id, input, opts)
+            const sent = await bot.api.sendPhoto(chat_id, input, { ...replyOpts, ...(spoiler ? { has_spoiler: true } : {}) })
             sentIds.push(sent.message_id)
           } else {
-            const sent = await bot.api.sendDocument(chat_id, input, opts)
+            const sent = await bot.api.sendDocument(chat_id, input, replyOpts)
             sentIds.push(sent.message_id)
           }
         }
