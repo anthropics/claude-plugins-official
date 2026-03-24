@@ -236,12 +236,11 @@ async function gate(msg: Message): Promise<GateResult> {
   const pruned = pruneExpired(access)
   if (pruned) saveAccess(access)
 
-  if (access.dmPolicy === 'disabled') return { action: 'drop' }
-
   const senderId = msg.author.id
   const isDM = msg.channel.type === ChannelType.DM
 
   if (isDM) {
+    if (access.dmPolicy === 'disabled') return { action: 'drop' }
     if (access.allowFrom.includes(senderId)) return { action: 'deliver', access }
     if (access.dmPolicy === 'allowlist') return { action: 'drop' }
 
