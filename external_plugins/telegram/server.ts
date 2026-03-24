@@ -382,10 +382,10 @@ const mcp = new Server(
 // Stores full permission details for "See more" expansion keyed by request_id.
 const pendingPermissions = new Map<string, { tool_name: string; description: string; input_preview: string }>()
 
-// Receive permission_request from CC → format → send to all allowlisted DMs.
-// Groups are intentionally excluded — the security thread resolution was
-// "single-user mode for official plugins." Anyone in access.allowFrom
-// already passed explicit pairing; group members haven't.
+// Receive permission_request from CC → format → send to allowlisted DMs and
+// registered groups. Groups in access.groups were explicitly added by the
+// session owner via /telegram:access, so they carry the same trust level as
+// allowFrom entries for permission relay purposes.
 mcp.setNotificationHandler(
   z.object({
     method: z.literal('notifications/claude/channel/permission_request'),
@@ -408,6 +408,11 @@ mcp.setNotificationHandler(
     for (const chat_id of access.allowFrom) {
       void bot.api.sendMessage(chat_id, text, { reply_markup: keyboard }).catch(e => {
         process.stderr.write(`permission_request send to ${chat_id} failed: ${e}\n`)
+      })
+    }
+    for (const group_id of Object.keys(access.groups ?? {})) {
+      void bot.api.sendMessage(group_id, text, { reply_markup: keyboard }).catch(e => {
+        process.stderr.write(`permission_request send to group ${group_id} failed: ${e}\n`)
       })
     }
   },
@@ -689,7 +694,8 @@ bot.command('status', async ctx => {
 
 // Inline-button handler for permission requests. Callback data is
 // `perm:allow:<id>`, `perm:deny:<id>`, or `perm:more:<id>`.
-// Security mirrors the text-reply path: allowFrom must contain the sender.
+// Security: sender must be in allowFrom, OR the callback must originate
+// from a registered group (the session owner added it via /telegram:access).
 bot.on('callback_query:data', async ctx => {
   const data = ctx.callbackQuery.data
   const m = /^perm:(allow|deny|more):([a-km-z]{5})$/.exec(data)
@@ -699,7 +705,10 @@ bot.on('callback_query:data', async ctx => {
   }
   const access = loadAccess()
   const senderId = String(ctx.from.id)
-  if (!access.allowFrom.includes(senderId)) {
+  const chatId = String(ctx.callbackQuery.message?.chat?.id ?? '')
+  const isAllowedUser = access.allowFrom.includes(senderId)
+  const isAllowedGroup = chatId in (access.groups ?? {})
+  if (!isAllowedUser && !isAllowedGroup) {
     await ctx.answerCallbackQuery({ text: 'Not authorized.' }).catch(() => {})
     return
   }
