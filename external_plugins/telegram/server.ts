@@ -83,10 +83,15 @@ type GroupPolicy = {
   allowFrom: string[]
 }
 
+type ChannelPolicy = {
+  allowFrom: string[]
+}
+
 type Access = {
   dmPolicy: 'pairing' | 'allowlist' | 'disabled'
   allowFrom: string[]
   groups: Record<string, GroupPolicy>
+  channels: Record<string, ChannelPolicy>
   pending: Record<string, PendingEntry>
   mentionPatterns?: string[]
   // delivery/UX config — optional, defaults live in the reply handler
@@ -105,6 +110,7 @@ function defaultAccess(): Access {
     dmPolicy: 'pairing',
     allowFrom: [],
     groups: {},
+    channels: {},
     pending: {},
   }
 }
@@ -136,6 +142,7 @@ function readAccessFile(): Access {
       dmPolicy: parsed.dmPolicy ?? 'pairing',
       allowFrom: parsed.allowFrom ?? [],
       groups: parsed.groups ?? {},
+      channels: parsed.channels ?? {},
       pending: parsed.pending ?? {},
       mentionPatterns: parsed.mentionPatterns,
       ackReaction: parsed.ackReaction,
@@ -180,6 +187,7 @@ function assertAllowedChat(chat_id: string): void {
   const access = loadAccess()
   if (access.allowFrom.includes(chat_id)) return
   if (chat_id in access.groups) return
+  if (chat_id in access.channels) return
   throw new Error(`chat ${chat_id} is not allowlisted — add via /telegram:access`)
 }
 
@@ -215,10 +223,24 @@ function gate(ctx: Context): GateResult {
 
   if (access.dmPolicy === 'disabled') return { action: 'drop' }
 
+  const chatType = ctx.chat?.type
+
+  // Channel posts may lack ctx.from — handle before the from check.
+  if (chatType === 'channel') {
+    const channelId = String(ctx.chat!.id)
+    const policy = access.channels[channelId]
+    if (!policy) return { action: 'drop' }
+    const from = ctx.from
+    const channelAllowFrom = policy.allowFrom ?? []
+    if (from && channelAllowFrom.length > 0 && !channelAllowFrom.includes(String(from.id))) {
+      return { action: 'drop' }
+    }
+    return { action: 'deliver', access }
+  }
+
   const from = ctx.from
   if (!from) return { action: 'drop' }
   const senderId = String(from.id)
-  const chatType = ctx.chat?.type
 
   if (chatType === 'private') {
     if (access.allowFrom.includes(senderId)) return { action: 'deliver', access }
@@ -844,6 +866,86 @@ bot.on('message:sticker', async ctx => {
   })
 })
 
+// Channel post handlers — mirror message handlers for channel_post updates.
+// Bots can see other bots' messages in channels (unlike groups), so these
+// enable bot-to-bot communication via a private Telegram channel.
+
+bot.on('channel_post:text', async ctx => {
+  await handleInbound(ctx, ctx.channelPost.text, undefined)
+})
+
+bot.on('channel_post:photo', async ctx => {
+  const caption = ctx.channelPost.caption ?? '(photo)'
+  await handleInbound(ctx, caption, async () => {
+    const photos = ctx.channelPost.photo
+    const best = photos[photos.length - 1]
+    try {
+      const file = await ctx.api.getFile(best.file_id)
+      if (!file.file_path) return undefined
+      const url = `https://api.telegram.org/file/bot${TOKEN}/${file.file_path}`
+      const res = await fetch(url)
+      const buf = Buffer.from(await res.arrayBuffer())
+      const ext = file.file_path.split('.').pop() ?? 'jpg'
+      const path = join(INBOX_DIR, `${Date.now()}-${best.file_unique_id}.${ext}`)
+      mkdirSync(INBOX_DIR, { recursive: true })
+      writeFileSync(path, buf)
+      return path
+    } catch (err) {
+      process.stderr.write(`telegram channel: channel photo download failed: ${err}\n`)
+      return undefined
+    }
+  })
+})
+
+bot.on('channel_post:document', async ctx => {
+  const doc = ctx.channelPost.document
+  const name = safeName(doc.file_name)
+  const text = ctx.channelPost.caption ?? `(document: ${name ?? 'file'})`
+  await handleInbound(ctx, text, undefined, {
+    kind: 'document',
+    file_id: doc.file_id,
+    size: doc.file_size,
+    mime: doc.mime_type,
+    name,
+  })
+})
+
+bot.on('channel_post:voice', async ctx => {
+  const voice = ctx.channelPost.voice
+  const text = ctx.channelPost.caption ?? '(voice message)'
+  await handleInbound(ctx, text, undefined, {
+    kind: 'voice',
+    file_id: voice.file_id,
+    size: voice.file_size,
+    mime: voice.mime_type,
+  })
+})
+
+bot.on('channel_post:audio', async ctx => {
+  const audio = ctx.channelPost.audio
+  const name = safeName(audio.file_name)
+  const text = ctx.channelPost.caption ?? `(audio: ${safeName(audio.title) ?? name ?? 'audio'})`
+  await handleInbound(ctx, text, undefined, {
+    kind: 'audio',
+    file_id: audio.file_id,
+    size: audio.file_size,
+    mime: audio.mime_type,
+    name,
+  })
+})
+
+bot.on('channel_post:video', async ctx => {
+  const video = ctx.channelPost.video
+  const text = ctx.channelPost.caption ?? '(video)'
+  await handleInbound(ctx, text, undefined, {
+    kind: 'video',
+    file_id: video.file_id,
+    size: video.file_size,
+    mime: video.mime_type,
+    name: safeName(video.file_name),
+  })
+})
+
 type AttachmentMeta = {
   kind: string
   file_id: string
@@ -878,9 +980,10 @@ async function handleInbound(
   }
 
   const access = result.access
-  const from = ctx.from!
+  const from = ctx.from // may be undefined for channel posts
   const chat_id = String(ctx.chat!.id)
-  const msgId = ctx.message?.message_id
+  const msg = ctx.message ?? ctx.channelPost
+  const msgId = msg?.message_id
 
   // Permission-reply intercept: if this looks like "yes xxxxx" for a
   // pending permission request, emit the structured event instead of
@@ -929,9 +1032,9 @@ async function handleInbound(
       meta: {
         chat_id,
         ...(msgId != null ? { message_id: String(msgId) } : {}),
-        user: from.username ?? String(from.id),
-        user_id: String(from.id),
-        ts: new Date((ctx.message?.date ?? 0) * 1000).toISOString(),
+        user: from?.username ?? (from ? String(from.id) : `channel:${chat_id}`),
+        ...(from ? { user_id: String(from.id) } : {}),
+        ts: new Date((msg?.date ?? 0) * 1000).toISOString(),
         ...(imagePath ? { image_path: imagePath } : {}),
         ...(attachment ? {
           attachment_kind: attachment.kind,
