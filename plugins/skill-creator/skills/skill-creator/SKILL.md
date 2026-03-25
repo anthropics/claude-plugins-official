@@ -463,6 +463,90 @@ The references/ directory has additional documentation:
 
 ---
 
+## Deploying the finished skill
+
+After iteration is complete and the user is satisfied, the skill needs to be placed where Claude Code will actually discover it. This is the most important step — a skill that isn't in a discovery path won't trigger.
+
+### Where skills live
+
+| Location | Path | Applies to |
+|---|---|---|
+| Enterprise | See managed settings | All users in your organization |
+| Personal | `~/.claude/skills/<skill-name>/SKILL.md` | All your projects |
+| Project | `.claude/skills/<skill-name>/SKILL.md` (at project root) | This project only |
+| Plugin | `<plugin>/skills/<skill-name>/SKILL.md` | Where plugin is enabled |
+
+When skills share the same name across levels, higher-priority locations win: enterprise > personal > project. Plugin skills use a `plugin-name:skill-name` namespace, so they don't conflict with other levels.
+
+**Default to personal** (`~/.claude/skills/`) unless the user specifies otherwise. Personal skills are durable — they survive plugin updates and work across all projects.
+
+**Project skills** (`.claude/skills/`) live at the project root (same level as `./CLAUDE.md`) and are good for team conventions committed to version control.
+
+**Monorepo note:** Claude Code automatically discovers skills from nested `.claude/skills/` directories. If you're editing files in `packages/frontend/`, it also looks in `packages/frontend/.claude/skills/`. Multiple `.claude/` directories at different levels are additive — they don't conflict; CLAUDE.md files from parent directories are loaded at launch, while CLAUDE.md files in subdirectories load on demand when Claude reads files in those directories.
+
+### Naming
+
+The `name` field in frontmatter is optional — if omitted, Claude Code uses the directory name. If you do set it, it becomes the display name and `/slash-command` identifier. To avoid confusion, it's a good idea to keep the name and directory consistent, though Claude Code does not enforce a match.
+
+### Deployment checklist
+
+1. Copy the finished skill directory to the target location (e.g., `~/.claude/skills/<skill-name>/`)
+2. Verify the description includes specific trigger phrases
+3. Test by asking Claude something that should trigger the skill
+4. Clean up workspace directories (`<skill-name>-workspace/`) if they're in a skill discovery path
+
+### All supported frontmatter fields
+
+The skill-creator workflow uses `name`, `description`, and `compatibility`. Claude Code supports additional fields that may be useful depending on the skill:
+
+| Field | Description |
+|---|---|
+| `name` | Skill identifier (lowercase, hyphens, max 64 chars) |
+| `description` | When to trigger and what it does (max 1024 chars) |
+| `argument-hint` | Autocomplete hint, e.g., `[issue-number]` |
+| `disable-model-invocation` | `true` to prevent auto-triggering (manual `/name` only) |
+| `user-invocable` | `false` to hide from `/` menu (Claude-only background knowledge) |
+| `allowed-tools` | Tools Claude can use without permission when skill is active |
+| `model` | Model override when skill is active |
+| `effort` | Effort level override: `low`, `medium`, `high`, `max` (`max` is Opus 4.6 only) |
+| `context` | `fork` to run in an isolated subagent — the skill body becomes the subagent's task prompt and won't have conversation history. Only suits skills with actionable instructions, not reference guidelines. |
+| `agent` | Subagent type when `context: fork` is set (`Explore`, `Plan`, `general-purpose`, or custom agents from `.claude/agents/`) |
+| `hooks` | Hooks scoped to this skill's lifecycle. See the [Claude Code hooks docs](https://code.claude.com/docs/en/hooks) for configuration format. |
+
+### String substitutions in skill content
+
+Skills support dynamic values that get replaced at invocation time:
+
+| Variable | Description |
+|---|---|
+| `$ARGUMENTS` | All arguments passed when invoking the skill |
+| `$ARGUMENTS[N]` or `$N` | Specific argument by 0-based index |
+| `${CLAUDE_SESSION_ID}` | Current session ID |
+| `${CLAUDE_SKILL_DIR}` | Directory containing the skill's SKILL.md |
+
+### Dynamic context injection
+
+The `` !`<command>` `` syntax runs shell commands before skill content reaches Claude:
+
+```yaml
+---
+name: pr-summary
+description: Summarize changes in a pull request
+context: fork
+agent: Explore
+---
+
+## Pull request context
+- PR diff: !`gh pr diff`
+- Changed files: !`gh pr diff --name-only`
+
+Summarize this pull request...
+```
+
+Each `` !`<command>` `` executes immediately and its output replaces the placeholder. Claude sees the rendered result, not the command.
+
+---
+
 Repeating one more time the core loop here for emphasis:
 
 - Figure out what the skill is about
@@ -472,6 +556,7 @@ Repeating one more time the core loop here for emphasis:
   - Create benchmark.json and run `eval-viewer/generate_review.py` to help the user review them
   - Run quantitative evals
 - Repeat until you and the user are satisfied
+- **Deploy the skill** to a discovery path (`~/.claude/skills/` or `.claude/skills/`)
 - Package the final skill and return it to the user.
 
 Please add steps to your TodoList, if you have such a thing, to make sure you don't forget. If you're in Cowork, please specifically put "Create evals JSON and run `eval-viewer/generate_review.py` so human can review test cases" in your TodoList to make sure it happens.
