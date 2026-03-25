@@ -755,15 +755,24 @@ bot.on('message:photo', async ctx => {
   // Defer download until after the gate approves — any user can send photos,
   // and we don't want to burn API quota or fill the inbox for dropped messages.
   await handleInbound(ctx, caption, async () => {
-    // Largest size is last in the array.
     const photos = ctx.message.photo
+    if (!photos || photos.length === 0) return undefined
+    // Largest size is last in the array.
     const best = photos[photos.length - 1]
     try {
       const file = await ctx.api.getFile(best.file_id)
       if (!file.file_path) return undefined
       const url = `https://api.telegram.org/file/bot${TOKEN}/${file.file_path}`
       const res = await fetch(url)
+      if (!res.ok) {
+        process.stderr.write(`telegram channel: photo download HTTP ${res.status}\n`)
+        return undefined
+      }
       const buf = Buffer.from(await res.arrayBuffer())
+      if (buf.length > MAX_ATTACHMENT_BYTES) {
+        process.stderr.write(`telegram channel: photo too large (${(buf.length / 1024 / 1024).toFixed(1)}MB)\n`)
+        return undefined
+      }
       const ext = file.file_path.split('.').pop() ?? 'jpg'
       const path = join(INBOX_DIR, `${Date.now()}-${best.file_unique_id}.${ext}`)
       mkdirSync(INBOX_DIR, { recursive: true })
