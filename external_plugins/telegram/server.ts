@@ -639,10 +639,15 @@ process.on('SIGINT', shutdown)
 bot.command('start', async ctx => {
   if (ctx.chat?.type !== 'private') return
   const access = loadAccess()
-  if (access.dmPolicy === 'disabled') {
-    await ctx.reply(`This bot isn't accepting new connections.`)
-    return
+  const senderId = String(ctx.from?.id ?? '')
+  // Allowlisted users get the full help text. In pairing mode, unknown users
+  // also get it — that's the expected flow (they need to know how to pair).
+  // In allowlist/disabled mode, non-allowlisted users are silently dropped
+  // to avoid confirming the bot is active.
+  if (!access.allowFrom.includes(senderId)) {
+    if (access.dmPolicy !== 'pairing') return
   }
+  if (access.dmPolicy === 'disabled') return
   await ctx.reply(
     `This bot bridges Telegram to a Claude Code session.\n\n` +
     `To pair:\n` +
@@ -654,6 +659,9 @@ bot.command('start', async ctx => {
 
 bot.command('help', async ctx => {
   if (ctx.chat?.type !== 'private') return
+  const access = loadAccess()
+  const senderId = String(ctx.from?.id ?? '')
+  if (!access.allowFrom.includes(senderId)) return
   await ctx.reply(
     `Messages you send here route to a paired Claude Code session. ` +
     `Text and photos are forwarded; replies and reactions come back.\n\n` +
@@ -668,23 +676,12 @@ bot.command('status', async ctx => {
   if (!from) return
   const senderId = String(from.id)
   const access = loadAccess()
+  // Only allowlisted users can check status — prevents non-allowlisted users
+  // from probing pairing state or confirming the bot is active.
+  if (!access.allowFrom.includes(senderId)) return
 
-  if (access.allowFrom.includes(senderId)) {
-    const name = from.username ? `@${from.username}` : senderId
-    await ctx.reply(`Paired as ${name}.`)
-    return
-  }
-
-  for (const [code, p] of Object.entries(access.pending)) {
-    if (p.senderId === senderId) {
-      await ctx.reply(
-        `Pending pairing — run in Claude Code:\n\n/telegram:access pair ${code}`
-      )
-      return
-    }
-  }
-
-  await ctx.reply(`Not paired. Send me a message to get a pairing code.`)
+  const name = from.username ? `@${from.username}` : senderId
+  await ctx.reply(`Paired as ${name}.`)
 })
 
 // Inline-button handler for permission requests. Callback data is
