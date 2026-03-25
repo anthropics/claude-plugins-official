@@ -404,11 +404,12 @@ async function fetchAllowedChannel(id: string) {
   const ch = await fetchTextChannel(id)
   const access = loadAccess()
   if (ch.type === ChannelType.DM) {
-    if (access.allowFrom.includes(ch.recipientId)) return ch
-  } else {
-    const key = ch.isThread() ? ch.parentId ?? ch.id : ch.id
-    if (key in access.groups) return ch
+    if (ch.recipientId && access.allowFrom.includes(ch.recipientId)) return ch
   }
+  // For non-DM channels, or as a fallback when DM recipientId is unavailable
+  // (Discord.js may not always populate recipientId from cache), check groups.
+  const key = ch.isThread() ? ch.parentId ?? ch.id : ch.id
+  if (key in access.groups) return ch
   throw new Error(`channel ${id} is not allowlisted — add via /discord:access`)
 }
 
