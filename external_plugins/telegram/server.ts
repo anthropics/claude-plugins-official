@@ -1063,6 +1063,7 @@ void (async () => {
   for (let attempt = 1; ; attempt++) {
     try {
       await bot.start({
+        allowed_updates: ['message', 'message_reaction', 'channel_post'],
         onStart: info => {
           botUsername = info.username
           process.stderr.write(`telegram channel: polling as @${info.username}\n`)
