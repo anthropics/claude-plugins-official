@@ -865,22 +865,42 @@ async function handleInbound(msg: Message): Promise<void> {
   // forgeable by any allowlisted sender typing that string.
   const content = msg.content || (atts.length > 0 ? '(attachment)' : '')
 
-  mcp.notification({
-    method: 'notifications/claude/channel',
-    params: {
-      content,
-      meta: {
-        chat_id,
-        message_id: msg.id,
-        user: msg.author.username,
-        user_id: msg.author.id,
-        ts: msg.createdAt.toISOString(),
-        ...(atts.length > 0 ? { attachment_count: String(atts.length), attachments: atts.join('; ') } : {}),
-      },
-    },
-  }).catch(err => {
-    process.stderr.write(`discord channel: failed to deliver inbound to Claude: ${err}\n`)
-  })
+  // Retry notification with exponential backoff. Attachment metadata can
+  // cause transient failures; retrying gives the notification path a chance
+  // to recover before giving up. Without this, a single failure leaves the
+  // MCP server running but Claude Code never wakes up for subsequent messages.
+  void (async () => {
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        await mcp.notification({
+          method: 'notifications/claude/channel',
+          params: {
+            content,
+            meta: {
+              chat_id,
+              message_id: msg.id,
+              user: msg.author.username,
+              user_id: msg.author.id,
+              ts: msg.createdAt.toISOString(),
+              ...(atts.length > 0 ? { attachment_count: String(atts.length), attachments: atts.join('; ') } : {}),
+            },
+          },
+        })
+        return
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err)
+        process.stderr.write(`discord channel: notification attempt ${attempt}/3 failed: ${errMsg}\n`)
+        if (attempt < 3) {
+          const delay = 500 * attempt
+          process.stderr.write(`discord channel: retrying in ${delay}ms...\n`)
+          await new Promise(r => setTimeout(r, delay))
+        } else {
+          process.stderr.write(`discord channel: notification failed after 3 attempts for message ${msg.id}\n`)
+          void msg.react('❌').catch(() => {})
+        }
+      }
+    }
+  })()
 }
 
 client.once('ready', c => {
