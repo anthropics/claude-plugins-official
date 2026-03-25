@@ -953,15 +953,17 @@ bot.catch(err => {
   process.stderr.write(`telegram channel: handler error (polling continues): ${err.error}\n`)
 })
 
-// 409 Conflict = another getUpdates consumer is still active (zombie from a
-// previous session, or a second Claude Code instance). Retry with backoff
-// until the slot frees up instead of crashing on the first rejection.
+// Retry polling on 409 Conflict (zombie session) and transient network errors
+// (ECONNRESET, ETIMEDOUT, EAI_AGAIN, fetch failures). Without this, a single
+// network hiccup kills the polling loop permanently — the bot stops receiving
+// messages and the user has to restart Claude Code.
 void (async () => {
   for (let attempt = 1; ; attempt++) {
     try {
       await bot.start({
         onStart: info => {
           botUsername = info.username
+          attempt = 0 // reset backoff after successful connection
           process.stderr.write(`telegram channel: polling as @${info.username}\n`)
           void bot.api.setMyCommands(
             [
@@ -975,21 +977,50 @@ void (async () => {
       })
       return // bot.stop() was called — clean exit from the loop
     } catch (err) {
-      if (err instanceof GrammyError && err.error_code === 409) {
-        const delay = Math.min(1000 * attempt, 15000)
-        const detail = attempt === 1
+      // bot.stop() mid-setup rejects with grammy's "Aborted delay" — expected, not an error.
+      if (err instanceof Error && err.message === 'Aborted delay') return
+
+      // Shutting down — don't retry.
+      if (shuttingDown) return
+
+      const isConflict = err instanceof GrammyError && err.error_code === 409
+      const isTransient = !isConflict && isTransientError(err)
+
+      if (!isConflict && !isTransient) {
+        // Permanent error (e.g. 401 Unauthorized, invalid token) — exit.
+        process.stderr.write(`telegram channel: polling failed (permanent): ${err}\n`)
+        return
+      }
+
+      const delay = Math.min(1000 * Math.max(attempt, 1), 30000)
+      if (isConflict) {
+        const detail = attempt <= 1
           ? ' — another instance is polling (zombie session, or a second Claude Code running?)'
           : ''
         process.stderr.write(
           `telegram channel: 409 Conflict${detail}, retrying in ${delay / 1000}s\n`,
         )
-        await new Promise(r => setTimeout(r, delay))
-        continue
+      } else {
+        process.stderr.write(
+          `telegram channel: transient error (attempt ${attempt}), retrying in ${delay / 1000}s: ${err}\n`,
+        )
       }
-      // bot.stop() mid-setup rejects with grammy's "Aborted delay" — expected, not an error.
-      if (err instanceof Error && err.message === 'Aborted delay') return
-      process.stderr.write(`telegram channel: polling failed: ${err}\n`)
-      return
+      await new Promise(r => setTimeout(r, delay))
     }
   }
 })()
+
+function isTransientError(err: unknown): boolean {
+  if (err instanceof GrammyError) {
+    // 5xx = server errors, always transient
+    return err.error_code >= 500
+  }
+  if (err instanceof Error) {
+    const msg = err.message
+    // Node.js network error codes
+    if (/ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENETUNREACH|EAI_AGAIN|EPIPE|EHOSTUNREACH|socket hang up/i.test(msg)) return true
+    // fetch/TLS failures
+    if (/fetch failed|network|TLS|certificate/i.test(msg)) return true
+  }
+  return false
+}
