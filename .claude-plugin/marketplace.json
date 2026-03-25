@@ -1352,6 +1352,17 @@
       "homepage": "https://github.com/TSedmanDC/Voila-API-Skill"
     },
     {
+      "name": "wecom",
+      "description": "WeCom (Enterprise WeChat) channel for Claude Code — messaging bridge with built-in access control and pairing.",
+      "category": "channel",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/yangsjt/claude-channel-wecom.git",
+        "sha": "34810a2d11f433191fe9e7b15ecd5196f8fc920d"
+      },
+      "homepage": "https://github.com/yangsjt/claude-channel-wecom"
+    },
+    {
       "name": "wix",
       "description": "Build, manage, and deploy Wix sites and apps. CLI development skills for dashboard extensions, backend APIs, site widgets, and service plugins with the Wix Design System, plus MCP server for site management.",
       "category": "development",
