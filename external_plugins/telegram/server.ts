@@ -52,6 +52,29 @@ if (!TOKEN) {
 }
 const INBOX_DIR = join(STATE_DIR, 'inbox')
 
+// Typing indicator intervals — keyed by chat_id. Started when an inbound
+// message is received, cleared when the reply tool sends a response.
+// Telegram's typing indicator expires after ~5s, so we re-send every 4s.
+const typingIntervals = new Map<string, ReturnType<typeof setInterval>>()
+
+function startTyping(chat_id: string): void {
+  stopTyping(chat_id)
+  // Send immediately, then repeat every 4s
+  void bot.api.sendChatAction(chat_id, 'typing').catch(() => {})
+  const interval = setInterval(() => {
+    void bot.api.sendChatAction(chat_id, 'typing').catch(() => {})
+  }, 4000)
+  typingIntervals.set(chat_id, interval)
+}
+
+function stopTyping(chat_id: string): void {
+  const interval = typingIntervals.get(chat_id)
+  if (interval) {
+    clearInterval(interval)
+    typingIntervals.delete(chat_id)
+  }
+}
+
 // Last-resort safety net — without these the process dies silently on any
 // unhandled promise rejection. With them it logs and keeps serving tools.
 process.on('unhandledRejection', err => {
@@ -500,6 +523,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         const parseMode = format === 'markdownv2' ? 'MarkdownV2' as const : undefined
 
         assertAllowedChat(chat_id)
+        stopTyping(chat_id)
 
         for (const f of files) {
           assertSendable(f)
@@ -585,6 +609,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
       }
       case 'edit_message': {
         assertAllowedChat(args.chat_id as string)
+        stopTyping(args.chat_id as string)
         const editFormat = (args.format as string | undefined) ?? 'text'
         const editParseMode = editFormat === 'markdownv2' ? 'MarkdownV2' as const : undefined
         const edited = await bot.api.editMessageText(
@@ -904,8 +929,8 @@ async function handleInbound(
     return
   }
 
-  // Typing indicator — signals "processing" until we reply (or ~5s elapses).
-  void bot.api.sendChatAction(chat_id, 'typing').catch(() => {})
+  // Continuous typing indicator — re-sends every 4s until reply clears it.
+  startTyping(chat_id)
 
   // Ack reaction — lets the user know we're processing. Fire-and-forget.
   // Telegram only accepts a fixed emoji whitelist — if the user configures
