@@ -526,24 +526,9 @@ Skills support dynamic values that get replaced at invocation time:
 
 ### Dynamic context injection
 
-The `` !`<command>` `` syntax runs shell commands before skill content reaches Claude:
+Skills support a preprocessing syntax where a `!` followed by a backtick-wrapped command runs that shell command before the skill content reaches Claude. The command output replaces the placeholder inline. For example, a skill could include a line like "PR diff: " followed by `!` and a backticked `gh pr diff` — Claude would see the actual diff output, not the command.
 
-```yaml
----
-name: pr-summary
-description: Summarize changes in a pull request
-context: fork
-agent: Explore
----
-
-## Pull request context
-- PR diff: !`gh pr diff`
-- Changed files: !`gh pr diff --name-only`
-
-Summarize this pull request...
-```
-
-Each `` !`<command>` `` executes immediately and its output replaces the placeholder. Claude sees the rendered result, not the command.
+This is useful for injecting live data (git state, API responses, file contents) into a skill's prompt at invocation time. See the official Claude Code docs at code.claude.com/docs/en/skills for full syntax and examples.
 
 ---
 
