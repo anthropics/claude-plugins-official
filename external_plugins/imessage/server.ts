@@ -412,11 +412,20 @@ end run`
 // Normalise aggressively: macOS Messages can mangle whitespace, smart-quote,
 // or round-trip through attributedBody — so we trim, collapse runs of
 // whitespace, and cap length so minor trailing diffs don't break the match.
-const ECHO_WINDOW_MS = 15000
+const ECHO_WINDOW_MS = 60000
 const echo = new Map<string, number>()
 
 function echoKey(raw: string): string {
-  return raw.trim().replace(/\s+/g, ' ').slice(0, 120)
+  // Strip the "Sent by Claude" signature BEFORE collapsing whitespace,
+  // otherwise the \n→space collapse makes the signature regex unmatchable.
+  let s = raw.replace(/\s*Sent by Claude\s*$/i, '')
+  s = s.replace(/[\s\u00a0]+/g, ' ').trim()
+  // Normalise smart quotes so osascript-sent text matches chat.db readback
+  s = s.replace(/[\u2018\u2019\u0060\u00b4]/g, "'").replace(/[\u201C\u201D]/g, '"')
+  // Strip emoji variation selectors & ZWJ so emoji compare equal
+  // regardless of encoding differences between send and chat.db storage
+  s = s.replace(/[\uFE00-\uFE0F\u200D]/g, '')
+  return s.slice(0, 200).toLowerCase()
 }
 
 function trackEcho(chatGuid: string, key: string): void {
