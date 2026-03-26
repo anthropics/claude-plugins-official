@@ -497,7 +497,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         const reply_to = args.reply_to != null ? Number(args.reply_to) : undefined
         const files = (args.files as string[] | undefined) ?? []
         const format = (args.format as string | undefined) ?? 'text'
-        const parseMode = format === 'markdownv2' ? 'MarkdownV2' as const : undefined
+        const parseMode = format === 'markdownv2' ? 'MarkdownV2' as const : 'HTML' as const
 
         assertAllowedChat(chat_id)
 
@@ -586,7 +586,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
       case 'edit_message': {
         assertAllowedChat(args.chat_id as string)
         const editFormat = (args.format as string | undefined) ?? 'text'
-        const editParseMode = editFormat === 'markdownv2' ? 'MarkdownV2' as const : undefined
+        const editParseMode = editFormat === 'markdownv2' ? 'MarkdownV2' as const : 'HTML' as const
         const edited = await bot.api.editMessageText(
           args.chat_id as string,
           Number(args.message_id),
