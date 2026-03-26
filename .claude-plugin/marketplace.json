@@ -739,6 +739,17 @@
       "homepage": "https://www.mintlify.com/"
     },
     {
+      "name": "nelson",
+      "description": "Royal Navy agent coordination framework for Claude Code — sailing orders, battle plans, action stations, and a captain's log for multi-agent work.",
+      "category": "workflow",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/harrymunro/nelson.git",
+        "sha": "cec0f80a26a356a33346cff0771ca0ab761d6b1a"
+      },
+      "homepage": "https://github.com/harrymunro/nelson"
+    },
+    {
       "name": "neon",
       "description": "Manage your Neon projects and databases with the neon-postgres agent skill and the Neon MCP Server.",
       "category": "database",
