@@ -202,6 +202,8 @@ Don't just wait for the runs to finish — you can use this time productively. D
 
 Good assertions are objectively verifiable and have descriptive names — they should read clearly in the benchmark viewer so someone glancing at the results immediately understands what each one checks. Subjective skills (writing style, design quality) are better evaluated qualitatively — don't force assertions onto things that need human judgment.
 
+**Baseline validity**: A `without_skill` baseline is only meaningful when the baseline agent can understand *what* is being asked — it just lacks the skill's specific guidance on *how* to do it. If an eval tests a behavior that only makes sense within the skill's internal protocol (e.g., "write a `pipeline_status.md` file" or "detect a sentinel file in Step 0"), the baseline won't even attempt the right task, making the comparison noise rather than signal. In those cases, prefer one of these alternatives: (a) skip the baseline and treat it as a with-skill-only correctness check; (b) give the baseline prompt enough context to frame the task, so it's testing the same thing just without skill guidance; or (c) compare against an `old_skill` baseline instead of `without_skill`.
+
 Update the `eval_metadata.json` files and `evals/evals.json` with the assertions once drafted. Also explain to the user what they'll see in the viewer — both the qualitative outputs and the quantitative benchmark.
 
 ### Step 3: As runs complete, capture timing data
