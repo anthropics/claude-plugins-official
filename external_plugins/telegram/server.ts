@@ -51,6 +51,77 @@ if (!TOKEN) {
   process.exit(1)
 }
 const INBOX_DIR = join(STATE_DIR, 'inbox')
+const PENDING_DIR = join(STATE_DIR, 'pending')
+
+// --- Notification queue with persistence and retry ---
+// Text messages are persisted to PENDING_DIR before delivery so they survive
+// busy-session drops and zombie-window losses. Successfully delivered messages
+// are removed; failures are retried on a short interval.
+
+type PendingNotification = {
+  file: string
+  params: { content: string; meta: Record<string, string> }
+}
+
+let notifQueue: PendingNotification[] = []
+let draining = false
+
+function persistPending(params: PendingNotification['params']): string {
+  mkdirSync(PENDING_DIR, { recursive: true })
+  const file = join(PENDING_DIR, `${Date.now()}-${randomBytes(4).toString('hex')}.json`)
+  writeFileSync(file, JSON.stringify(params) + '\n', { mode: 0o600 })
+  return file
+}
+
+function removePending(file: string): void {
+  try { rmSync(file) } catch {}
+}
+
+function loadPendingFromDisk(): void {
+  try {
+    const files = readdirSync(PENDING_DIR).filter(f => f.endsWith('.json')).sort()
+    for (const f of files) {
+      const full = join(PENDING_DIR, f)
+      try {
+        const params = JSON.parse(readFileSync(full, 'utf8'))
+        notifQueue.push({ file: full, params })
+      } catch {
+        rmSync(full, { force: true })
+      }
+    }
+    if (notifQueue.length > 0) {
+      process.stderr.write(`telegram channel: recovered ${notifQueue.length} pending message(s) from disk\n`)
+    }
+  } catch {}
+}
+
+async function drainQueue(): Promise<void> {
+  if (draining) return
+  draining = true
+  try {
+    while (notifQueue.length > 0) {
+      const item = notifQueue[0]!
+      try {
+        await mcp.notification({
+          method: 'notifications/claude/channel',
+          params: item.params,
+        })
+        removePending(item.file)
+        notifQueue.shift()
+      } catch (err) {
+        process.stderr.write(`telegram channel: delivery retry failed, will retry in 2s: ${err}\n`)
+        await new Promise(r => setTimeout(r, 2000))
+      }
+    }
+  } finally {
+    draining = false
+  }
+}
+
+// Recover any messages that were persisted but not delivered (e.g. from a crash).
+loadPendingFromDisk()
+// Start draining recovered messages (runs in background, non-blocking).
+void drainQueue()
 
 // Last-resort safety net — without these the process dies silently on any
 // unhandled promise rejection. With them it logs and keeps serving tools.
@@ -922,29 +993,30 @@ async function handleInbound(
 
   // image_path goes in meta only — an in-content "[image attached — read: PATH]"
   // annotation is forgeable by any allowlisted sender typing that string.
-  mcp.notification({
-    method: 'notifications/claude/channel',
-    params: {
-      content: text,
-      meta: {
-        chat_id,
-        ...(msgId != null ? { message_id: String(msgId) } : {}),
-        user: from.username ?? String(from.id),
-        user_id: String(from.id),
-        ts: new Date((ctx.message?.date ?? 0) * 1000).toISOString(),
-        ...(imagePath ? { image_path: imagePath } : {}),
-        ...(attachment ? {
-          attachment_kind: attachment.kind,
-          attachment_file_id: attachment.file_id,
-          ...(attachment.size != null ? { attachment_size: String(attachment.size) } : {}),
-          ...(attachment.mime ? { attachment_mime: attachment.mime } : {}),
-          ...(attachment.name ? { attachment_name: attachment.name } : {}),
-        } : {}),
-      },
+  const notifParams = {
+    content: text,
+    meta: {
+      chat_id,
+      ...(msgId != null ? { message_id: String(msgId) } : {}),
+      user: from.username ?? String(from.id),
+      user_id: String(from.id),
+      ts: new Date((ctx.message?.date ?? 0) * 1000).toISOString(),
+      ...(imagePath ? { image_path: imagePath } : {}),
+      ...(attachment ? {
+        attachment_kind: attachment.kind,
+        attachment_file_id: attachment.file_id,
+        ...(attachment.size != null ? { attachment_size: String(attachment.size) } : {}),
+        ...(attachment.mime ? { attachment_mime: attachment.mime } : {}),
+        ...(attachment.name ? { attachment_name: attachment.name } : {}),
+      } : {}),
     },
-  }).catch(err => {
-    process.stderr.write(`telegram channel: failed to deliver inbound to Claude: ${err}\n`)
-  })
+  }
+
+  // Persist first, then attempt delivery. On failure the queued item stays
+  // on disk and will be retried (or recovered on next startup).
+  const pendingFile = persistPending(notifParams)
+  notifQueue.push({ file: pendingFile, params: notifParams })
+  void drainQueue()
 }
 
 // Without this, any throw in a message handler stops polling permanently
