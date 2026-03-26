@@ -107,13 +107,28 @@ type Row = {
   handle_id: string | null
   chat_guid: string
   chat_style: number | null
+  associated_message_type: number | null
+  associated_message_guid: string | null
 }
+
+// Tapback type mapping: associated_message_type → human-readable name
+const TAPBACK_MAP: Record<number, string> = {
+  2000: 'love',
+  2001: 'like',
+  2002: 'dislike',
+  2003: 'laugh',
+  2004: 'emphasis',
+  2005: 'question',
+}
+// 3000-3005 = removal of the corresponding tapback
+const TAPBACK_REMOVE_OFFSET = 1000
 
 const qWatermark = db.query<{ max: number | null }, []>('SELECT MAX(ROWID) AS max FROM message')
 
 const qPoll = db.query<Row, [number]>(`
   SELECT m.ROWID AS rowid, m.guid, m.text, m.attributedBody, m.date, m.is_from_me,
-         m.cache_has_attachments, h.id AS handle_id, c.guid AS chat_guid, c.style AS chat_style
+         m.cache_has_attachments, h.id AS handle_id, c.guid AS chat_guid, c.style AS chat_style,
+         m.associated_message_type, m.associated_message_guid
   FROM message m
   JOIN chat_message_join cmj ON cmj.message_id = m.ROWID
   JOIN chat c ON c.ROWID = cmj.chat_id
@@ -124,7 +139,8 @@ const qPoll = db.query<Row, [number]>(`
 
 const qHistory = db.query<Row, [string, number]>(`
   SELECT m.ROWID AS rowid, m.guid, m.text, m.attributedBody, m.date, m.is_from_me,
-         m.cache_has_attachments, h.id AS handle_id, c.guid AS chat_guid, c.style AS chat_style
+         m.cache_has_attachments, h.id AS handle_id, c.guid AS chat_guid, c.style AS chat_style,
+         m.associated_message_type, m.associated_message_guid
   FROM message m
   JOIN chat_message_join cmj ON cmj.message_id = m.ROWID
   JOIN chat c ON c.ROWID = cmj.chat_id
@@ -507,7 +523,7 @@ const mcp = new Server(
     instructions: [
       'The sender reads iMessage, not this session. Anything you want them to see must go through the reply tool — your transcript output never reaches their chat.',
       '',
-      'Messages from iMessage arrive as <channel source="imessage" chat_id="..." message_id="..." user="..." ts="...">. If the tag has an image_path attribute, Read that file — it is an image the sender attached. Reply with the reply tool — pass chat_id back.',
+      'Messages from iMessage arrive as <channel source="imessage" chat_id="..." message_id="..." user="..." ts="...">. If the tag has an image_path attribute, Read that file — it is an image the sender attached. If the tag has a reaction attribute, it is a tapback (like, love, laugh, dislike, emphasis, question) on a previous message identified by reaction_to. Reply with the reply tool — pass chat_id back.',
       '',
       'reply accepts file paths (files: ["/abs/path.png"]) for attachments.',
       '',
@@ -717,6 +733,55 @@ function handleInbound(r: Row): void {
     return
   }
   const isGroup = r.chat_style === 43
+
+  // --- Tapback detection ---------------------------------------------------
+  // Tapbacks have associated_message_type 2000-2005 (add) or 3000-3005 (remove).
+  // Emit them as structured channel notifications with reaction metadata instead
+  // of the auto-generated "Liked ..." text, so the assistant can distinguish
+  // a reaction from a regular message.
+  if (r.associated_message_type != null && r.associated_message_type >= 2000) {
+    const isRemoval = r.associated_message_type >= 3000
+    const typeKey = isRemoval
+      ? r.associated_message_type - TAPBACK_REMOVE_OFFSET
+      : r.associated_message_type
+    const reaction = TAPBACK_MAP[typeKey]
+    if (!reaction) return // unknown tapback type — skip
+
+    // associated_message_guid format: "p:0/<message-guid>" or "bp:<message-guid>"
+    // Strip the prefix to get the original message GUID.
+    const rawGuid = r.associated_message_guid ?? ''
+    const originalGuid = rawGuid.replace(/^(p:\d+\/|bp:)/, '')
+
+    if (r.is_from_me) return
+    if (!r.handle_id) return
+    const sender = r.handle_id
+
+    // Self-chat tapbacks bypass access control
+    const isSelfChat = !isGroup && SELF.has(sender.toLowerCase())
+    if (!isSelfChat) {
+      const result = gate({ senderId: sender, chatGuid: r.chat_guid, isGroup, text: '' })
+      if (result.action === 'drop') return
+    }
+
+    void mcp.notification({
+      method: 'notifications/claude/channel',
+      params: {
+        content: isRemoval
+          ? `Removed ${reaction} reaction`
+          : `${reaction.charAt(0).toUpperCase() + reaction.slice(1)} reaction`,
+        meta: {
+          chat_id: r.chat_guid,
+          message_id: r.guid,
+          user: sender,
+          ts: appleDate(r.date).toISOString(),
+          reaction,
+          reaction_removed: isRemoval ? 'true' : undefined,
+          reaction_to: originalGuid || undefined,
+        },
+      },
+    })
+    return
+  }
 
   const text = messageText(r)
   const hasAttachments = r.cache_has_attachments === 1
