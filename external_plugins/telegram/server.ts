@@ -1063,7 +1063,7 @@ function handleInbound(
   void (async () => {
     const extra: Record<string, string> = {}
     if (media?.kind === 'photo' && media.file_unique_id) {
-      const path = await downloadPhoto(media.file_id, media.file_unique_id)
+      const path = await downloadFile(media.file_id, media.file_unique_id, 'jpg')
       if (path) extra.image_path = path
     } else if (media) {
       extra.attachment_kind = media.kind
