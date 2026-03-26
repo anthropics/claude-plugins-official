@@ -1,0 +1,8 @@
+{
+  "name": "beyga-git-commands",
+  "description": "Opinionated git workflow commands for branching, committing, and opening pull requests with enforced naming conventions, logical commit splitting, and smart base branch detection",
+  "author": {
+    "name": "Beyga",
+    "url": "https://github.com/Beyga"
+  }
+}
