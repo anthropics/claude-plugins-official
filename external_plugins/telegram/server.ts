@@ -811,9 +811,10 @@ function safeName(s: string | undefined): string | undefined {
 // batch flushes.  This guarantees that Grammy's concurrent handler dispatch
 // cannot break message ordering or cause partial batches.
 //
-// On flush: consecutive text-only messages are merged into one notification.
-// Media messages are emitted individually (each needs its own image_path or
-// attachment_* metadata).  Photos are downloaded from Telegram at flush time.
+// On flush: the entire batch is emitted as a single MCP notification.
+// Text messages are merged with newline joins.  Photos, voice, and small
+// files (<5MB) are downloaded and inlined as [image:], [voice:], [file:].
+// Large files stay as [attachment: file_id=...] for on-demand download.
 // ---------------------------------------------------------------------------
 
 type MediaRef = {
@@ -908,12 +909,12 @@ async function flushBatch(chatId: string): Promise<void> {
   if (!batch) return
   pendingBatches.delete(chatId)
 
-  // Build a single notification from the entire batch.  Text messages are
-  // joined with newlines.  Photos are downloaded and their local paths are
-  // inlined as [image: /path] so Claude can Read them.  Attachments (voice,
-  // docs, etc.) are referenced by file_id for download_attachment.  The meta
-  // of the first message is used (preserving message_id for reply threading),
-  // with ts updated to the latest.
+  // Build a single notification from the entire batch.  Text is joined with
+  // newlines.  Photos, voice, and small files are downloaded and inlined as
+  // [image: /path], [voice: /path], [file: /path].  Large files (>5MB) are
+  // kept as [attachment: file_id=...] for on-demand download_attachment.
+  // Meta uses the first message's message_id (for reply threading) and the
+  // latest timestamp.
   const parts: string[] = []
   const meta = buildMeta(batch.messages[0])
   const attachments: { kind: string; file_id: string; size?: number; mime?: string; name?: string }[] = []
