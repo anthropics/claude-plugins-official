@@ -772,7 +772,7 @@ bot.on('message:document', ctx => {
 
 bot.on('message:voice', ctx => {
   const voice = ctx.message.voice
-  handleInbound(ctx, ctx.message.caption ?? '(voice message)', { kind: 'voice', file_id: voice.file_id, size: voice.file_size, mime: voice.mime_type })
+  handleInbound(ctx, ctx.message.caption ?? '(voice message)', { kind: 'voice', file_id: voice.file_id, file_unique_id: voice.file_unique_id, size: voice.file_size, mime: voice.mime_type })
 })
 
 bot.on('message:audio', ctx => {
@@ -794,7 +794,7 @@ bot.on('message:video_note', ctx => {
 bot.on('message:sticker', ctx => {
   const sticker = ctx.message.sticker
   const emoji = sticker.emoji ? ` ${sticker.emoji}` : ''
-  handleInbound(ctx, `(sticker${emoji})`, { kind: 'sticker', file_id: sticker.file_id, size: sticker.file_size })
+  handleInbound(ctx, `(sticker${emoji})`, { kind: 'sticker', file_id: sticker.file_id, file_unique_id: sticker.file_unique_id, size: sticker.file_size })
 })
 
 // Filenames and titles are uploader-controlled. They land inside the <channel>
@@ -864,23 +864,33 @@ function debounceMessage(msg: BufferedMessage, delayMs: number): void {
   }
 }
 
-async function downloadPhoto(fileId: string, fileUniqueId: string): Promise<string | undefined> {
+// Download any small file (photos, voice messages) from Telegram at flush time.
+// Returns the local path or undefined on failure.  Large files (videos, docs)
+// are left as file_id references for on-demand download_attachment.
+async function downloadFile(fileId: string, fileUniqueId: string, defaultExt: string): Promise<string | undefined> {
   try {
     const file = await bot.api.getFile(fileId)
     if (!file.file_path) return undefined
     const url = `https://api.telegram.org/file/bot${TOKEN}/${file.file_path}`
     const res = await fetch(url)
     const buf = Buffer.from(await res.arrayBuffer())
-    const ext = file.file_path.split('.').pop() ?? 'jpg'
+    const ext = file.file_path.split('.').pop() ?? defaultExt
     const path = join(INBOX_DIR, `${Date.now()}-${fileUniqueId}.${ext}`)
     mkdirSync(INBOX_DIR, { recursive: true })
     writeFileSync(path, buf)
     return path
   } catch (err) {
-    process.stderr.write(`telegram channel: photo download failed: ${err}\n`)
+    process.stderr.write(`telegram channel: file download failed: ${err}\n`)
     return undefined
   }
 }
+
+// Photos, voice messages, and stickers are always auto-downloaded (they're
+// small).  Other media types (documents, audio, video, video notes) are
+// auto-downloaded only if their size is known and below this threshold.
+// Files above this limit stay as file_id references for on-demand download.
+const ALWAYS_DOWNLOAD_KINDS = new Set(['photo', 'voice', 'sticker'])
+const AUTO_DOWNLOAD_MAX_BYTES = 5 * 1024 * 1024 // 5 MB
 
 function buildMeta(msg: BufferedMessage, extra?: Record<string, string>): Record<string, string> {
   return {
@@ -912,16 +922,36 @@ async function flushBatch(chatId: string): Promise<void> {
     meta.ts = msg.ts  // always keep latest timestamp
 
     if (msg.media) {
-      if (msg.media.kind === 'photo' && msg.media.file_unique_id) {
-        const path = await downloadPhoto(msg.media.file_id, msg.media.file_unique_id)
-        if (msg.text && msg.text !== '(photo)') parts.push(msg.text)
+      const kind = msg.media.kind
+      const alwaysDl = ALWAYS_DOWNLOAD_KINDS.has(kind)
+      const smallEnough = msg.media.size != null && msg.media.size <= AUTO_DOWNLOAD_MAX_BYTES
+      const canDownload = !!msg.media.file_unique_id || !!msg.media.file_id
+      const autoDownload = canDownload && (alwaysDl || smallEnough)
+
+      if (autoDownload) {
+        const uid = msg.media.file_unique_id ?? msg.media.file_id
+        const defaultExt = kind === 'photo' ? 'jpg' : kind === 'voice' ? 'oga'
+          : kind === 'sticker' ? 'webp' : kind === 'audio' ? 'mp3'
+          : kind === 'video' ? 'mp4' : kind === 'video_note' ? 'mp4'
+          : msg.media.name?.split('.').pop() ?? 'bin'
+        const path = await downloadFile(msg.media.file_id, uid, defaultExt)
+        // Skip generic placeholder captions like "(photo)", "(voice message)" etc.
+        const placeholder = /^\((photo|voice message|video|video note|audio|sticker.*|document.*)\)$/i
+        if (msg.text && !placeholder.test(msg.text)) parts.push(msg.text)
         if (path) {
-          parts.push(`[image: ${path}]`)
-          // Set first photo as image_path in meta for auto-display
-          if (!meta.image_path) meta.image_path = path
+          if (kind === 'photo') {
+            parts.push(`[image: ${path}]`)
+            if (!meta.image_path) meta.image_path = path
+          } else if (kind === 'voice') {
+            parts.push(`[voice: ${path}]`)
+          } else {
+            parts.push(`[file: ${path}]`)
+          }
         }
       } else {
+        // Large files: keep as file_id reference for on-demand download.
         if (msg.text) parts.push(msg.text)
+        parts.push(`[attachment: kind=${kind} file_id=${msg.media.file_id}${msg.media.mime ? ' mime=' + msg.media.mime : ''}${msg.media.name ? ' name=' + msg.media.name : ''}${msg.media.size != null ? ' size=' + msg.media.size : ''}]`)
         attachments.push({
           kind: msg.media.kind,
           file_id: msg.media.file_id,
