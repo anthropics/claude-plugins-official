@@ -156,6 +156,7 @@ function readAccessFile(): Access {
       dmPolicy: parsed.dmPolicy ?? 'pairing',
       allowFrom: parsed.allowFrom ?? [],
       groups: parsed.groups ?? {},
+      dmChannels: parsed.dmChannels ?? {},
       pending: parsed.pending ?? {},
       mentionPatterns: parsed.mentionPatterns,
       ackReaction: parsed.ackReaction,
