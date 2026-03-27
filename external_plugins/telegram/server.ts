@@ -402,9 +402,9 @@ mcp.setNotificationHandler(
     const access = loadAccess()
     const text = `🔐 Permission: ${tool_name}`
     const keyboard = new InlineKeyboard()
-      .text('See more', `perm:more:${request_id}`)
-      .text('✅ Allow', `perm:allow:${request_id}`)
-      .text('❌ Deny', `perm:deny:${request_id}`)
+      .text('See more', `perm:more:${request_id}`).icon("5960714428394507968").row()
+      .text('Deny', `perm:deny:${request_id}`).icon("5985346521103604145").danger()
+      .text('Allow', `perm:allow:${request_id}`).icon("5985596818912712352").success()
     for (const chat_id of access.allowFrom) {
       void bot.api.sendMessage(chat_id, text, { reply_markup: keyboard }).catch(e => {
         process.stderr.write(`permission_request send to ${chat_id} failed: ${e}\n`)
@@ -724,8 +724,8 @@ bot.on('callback_query:data', async ctx => {
       `description: ${description}\n` +
       `input_preview:\n${prettyInput}`
     const keyboard = new InlineKeyboard()
-      .text('✅ Allow', `perm:allow:${request_id}`)
-      .text('❌ Deny', `perm:deny:${request_id}`)
+      .text('Deny', `perm:deny:${request_id}`).icon("5985346521103604145").danger()
+      .text('Allow', `perm:allow:${request_id}`).icon("5985596818912712352").success()
     await ctx.editMessageText(expanded, { reply_markup: keyboard }).catch(() => {})
     await ctx.answerCallbackQuery().catch(() => {})
     return
