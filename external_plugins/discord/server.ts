@@ -466,10 +466,7 @@ const mcp = new Server(
 // Stores full permission details for "See more" expansion keyed by request_id.
 const pendingPermissions = new Map<string, { tool_name: string; description: string; input_preview: string }>()
 
-// Receive permission_request from CC → format → send to all allowlisted DMs.
-// Groups are intentionally excluded — the security thread resolution was
-// "single-user mode for official plugins." Anyone in access.allowFrom
-// already passed explicit pairing; group members haven't.
+// Receive permission_request from CC → format → send to all allowlisted DMs and configured guild channels.
 mcp.setNotificationHandler(
   z.object({
     method: z.literal('notifications/claude/channel/permission_request'),
@@ -508,6 +505,16 @@ mcp.setNotificationHandler(
           await user.send({ content: text, components: [row] })
         } catch (e) {
           process.stderr.write(`permission_request send to ${userId} failed: ${e}\n`)
+        }
+      })()
+    }
+    for (const channelId of Object.keys(access.groups)) {
+      void (async () => {
+        try {
+          const ch = await fetchTextChannel(channelId)
+          if ('send' in ch) await ch.send({ content: text, components: [row] })
+        } catch (e) {
+          process.stderr.write(`permission_request send to channel ${channelId} failed: ${e}\n`)
         }
       })()
     }
