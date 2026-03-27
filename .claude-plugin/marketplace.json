@@ -1049,6 +1049,17 @@
       "homepage": "https://www.revenuecat.com"
     },
     {
+      "name": "rkstack",
+      "description": "Complete AI development workflow: 22 skills covering brainstorming, planning, TDD, debugging, code review, security audit, and safety guardrails. Detects your stack via scc and adapts automatically. Includes humanizer for natural writing and three-pass verification.",
+      "category": "development",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/mrkhachaturov/rkstack.git",
+        "sha": "e0c278ed4ef49b146976d74b59ee81a0ac039aad"
+      },
+      "homepage": "https://github.com/mrkhachaturov/rkstack"
+    },
+    {
       "name": "ruby-lsp",
       "description": "Ruby language server for code intelligence and analysis",
       "version": "1.0.0",
