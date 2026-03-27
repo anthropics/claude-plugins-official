@@ -465,6 +465,7 @@ const mcp = new Server(
 
 // Stores full permission details for "See more" expansion keyed by request_id.
 const pendingPermissions = new Map<string, { tool_name: string; description: string; input_preview: string }>()
+const typingIntervals = new Map<string, ReturnType<typeof setInterval>>()
 
 // Receive permission_request from CC → format → send to all allowlisted DMs.
 // Groups are intentionally excluded — the security thread resolution was
@@ -604,6 +605,13 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         const text = args.text as string
         const reply_to = args.reply_to as string | undefined
         const files = (args.files as string[] | undefined) ?? []
+
+        // Clear the typing indicator refresh loop for this channel.
+        const typingInterval = typingIntervals.get(chat_id)
+        if (typingInterval != null) {
+          clearInterval(typingInterval)
+          typingIntervals.delete(chat_id)
+        }
 
         const ch = await fetchAllowedChannel(chat_id)
         if (!('send' in ch)) throw new Error('channel is not sendable')
@@ -841,9 +849,14 @@ async function handleInbound(msg: Message): Promise<void> {
     return
   }
 
-  // Typing indicator — signals "processing" until we reply (or ~10s elapses).
+  // Typing indicator — refresh every 8s so "is typing…" stays alive until we reply.
   if ('sendTyping' in msg.channel) {
-    void msg.channel.sendTyping().catch(() => {})
+    const channel = msg.channel
+    void channel.sendTyping().catch(() => {})
+    const interval = setInterval(() => {
+      void channel.sendTyping().catch(() => {})
+    }, 8_000)
+    typingIntervals.set(chat_id, interval)
   }
 
   // Ack reaction — lets the user know we're processing. Fire-and-forget.
