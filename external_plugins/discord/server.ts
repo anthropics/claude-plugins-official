@@ -412,34 +412,13 @@ async function fetchAllowedChannel(id: string) {
   // Gateway events (e.g. INTERACTION_CREATE for permission buttons) can
   // patch the cached channel with partial data, dropping recipientId on
   // DM channels. Force-fetch from the Discord API and retry once.
-  const cachedType = ch.type
-  const cachedRid = ch.type === ChannelType.DM ? (ch as any).recipientId : undefined
-  const cachedKey = ch.type !== ChannelType.DM ? (ch.isThread() ? ch.parentId ?? ch.id : ch.id) : undefined
   ch = await fetchTextChannel(id, true)
   if (ch.type === ChannelType.DM) {
-    if (access.allowFrom.includes(ch.recipientId)) {
-      process.stderr.write(
-        `discord: allowlist cache miss for ${id} — cached recipientId=${cachedRid}, ` +
-        `fresh recipientId=${ch.recipientId}. Force-fetch resolved it.\n`,
-      )
-      return ch
-    }
+    if (access.allowFrom.includes(ch.recipientId)) return ch
   } else {
     const key = ch.isThread() ? ch.parentId ?? ch.id : ch.id
-    if (key in access.groups) {
-      process.stderr.write(
-        `discord: allowlist cache miss for ${id} — cached type=${cachedType} key=${cachedKey}, ` +
-        `fresh type=${ch.type} key=${key}. Force-fetch resolved it.\n`,
-      )
-      return ch
-    }
+    if (key in access.groups) return ch
   }
-  process.stderr.write(
-    `discord: fetchAllowedChannel(${id}) failed even after force-fetch — ` +
-    `type=${ch.type}, recipientId=${ch.type === ChannelType.DM ? (ch as any).recipientId : 'N/A'}, ` +
-    `key=${ch.type !== ChannelType.DM ? (ch.isThread() ? ch.parentId ?? ch.id : ch.id) : 'N/A'}, ` +
-    `allowFrom=${JSON.stringify(access.allowFrom)}, groups=${JSON.stringify(Object.keys(access.groups))}\n`,
-  )
   throw new Error(`channel ${id} is not allowlisted — add via /discord:access`)
 }
 
