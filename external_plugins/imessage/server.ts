@@ -571,14 +571,15 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
         type: 'object',
         properties: {
           chat_id: { type: 'string' },
-          text: { type: 'string' },
+          text: { type: 'string', description: 'The message text to send.' },
+          message: { type: 'string', description: 'Alias for text (for compatibility).' },
           files: {
             type: 'array',
             items: { type: 'string' },
             description: 'Absolute file paths to attach. Sent as separate messages after the text.',
           },
         },
-        required: ['chat_id', 'text'],
+        required: ['chat_id'],
       },
     },
     {
@@ -603,8 +604,13 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
     switch (req.params.name) {
       case 'reply': {
         const chat_id = args.chat_id as string
-        const text = args.text as string
+        // Accept both 'text' and 'message' for compatibility — Claude Code may use either name.
+        const text = (args.text ?? args.message) as string | undefined
         const files = (args.files as string[] | undefined) ?? []
+
+        if (!text) {
+          throw new Error('missing required parameter: text (or message)')
+        }
 
         if (!allowedChatGuids().has(chat_id)) {
           throw new Error(`chat ${chat_id} is not allowlisted — add via /imessage:access`)
