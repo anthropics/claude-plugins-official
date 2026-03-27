@@ -19,7 +19,7 @@ import { z } from 'zod'
 import { Bot, GrammyError, InlineKeyboard, InputFile, type Context } from 'grammy'
 import type { ReactionTypeEmoji } from 'grammy/types'
 import { randomBytes } from 'crypto'
-import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, statSync, renameSync, realpathSync, chmodSync } from 'fs'
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, statSync, renameSync, realpathSync, chmodSync, existsSync, unlinkSync } from 'fs'
 import { homedir } from 'os'
 import { join, extname, sep } from 'path'
 
@@ -51,6 +51,39 @@ if (!TOKEN) {
   process.exit(1)
 }
 const INBOX_DIR = join(STATE_DIR, 'inbox')
+const POLL_LOCK = join(STATE_DIR, 'poll.lock')
+
+// Single-instance polling lock. Only one bun process should call getUpdates
+// at a time. Others still serve MCP tools (reply/react/edit) but skip polling.
+// Without this, every Claude Code session that loads the plugin competes for
+// the getUpdates slot, causing message delivery to bounce between sessions.
+function acquirePollLock(): boolean {
+  try {
+    mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 })
+    if (existsSync(POLL_LOCK)) {
+      const pid = parseInt(readFileSync(POLL_LOCK, 'utf8').trim(), 10)
+      if (pid && !isNaN(pid)) {
+        try {
+          process.kill(pid, 0) // signal 0 = alive check
+          return false         // another live process holds the lock
+        } catch {
+          // Stale lock from dead process — take it
+        }
+      }
+    }
+    writeFileSync(POLL_LOCK, String(process.pid) + '\n', { mode: 0o600 })
+    return true
+  } catch {
+    return false
+  }
+}
+
+function releasePollLock(): void {
+  try {
+    const content = readFileSync(POLL_LOCK, 'utf8').trim()
+    if (parseInt(content, 10) === process.pid) unlinkSync(POLL_LOCK)
+  } catch {}
+}
 
 // Last-resort safety net — without these the process dies silently on any
 // unhandled promise rejection. With them it logs and keeps serving tools.
@@ -621,6 +654,7 @@ function shutdown(): void {
   if (shuttingDown) return
   shuttingDown = true
   process.stderr.write('telegram channel: shutting down\n')
+  releasePollLock()
   // bot.stop() signals the poll loop to end; the current getUpdates request
   // may take up to its long-poll timeout to return. Force-exit after 2s.
   setTimeout(() => process.exit(0), 2000)
@@ -953,43 +987,52 @@ bot.catch(err => {
   process.stderr.write(`telegram channel: handler error (polling continues): ${err.error}\n`)
 })
 
-// 409 Conflict = another getUpdates consumer is still active (zombie from a
-// previous session, or a second Claude Code instance). Retry with backoff
-// until the slot frees up instead of crashing on the first rejection.
-void (async () => {
-  for (let attempt = 1; ; attempt++) {
-    try {
-      await bot.start({
-        onStart: info => {
-          botUsername = info.username
-          process.stderr.write(`telegram channel: polling as @${info.username}\n`)
-          void bot.api.setMyCommands(
-            [
-              { command: 'start', description: 'Welcome and setup guide' },
-              { command: 'help', description: 'What this bot can do' },
-              { command: 'status', description: 'Check your pairing status' },
-            ],
-            { scope: { type: 'all_private_chats' } },
-          ).catch(() => {})
-        },
-      })
-      return // bot.stop() was called — clean exit from the loop
-    } catch (err) {
-      if (err instanceof GrammyError && err.error_code === 409) {
-        const delay = Math.min(1000 * attempt, 15000)
-        const detail = attempt === 1
-          ? ' — another instance is polling (zombie session, or a second Claude Code running?)'
-          : ''
-        process.stderr.write(
-          `telegram channel: 409 Conflict${detail}, retrying in ${delay / 1000}s\n`,
-        )
-        await new Promise(r => setTimeout(r, delay))
-        continue
+// Single-instance guard: only one process polls getUpdates. Others serve
+// tools only (reply/react/edit still work — they're direct API calls).
+const holdsPollLock = acquirePollLock()
+if (!holdsPollLock) {
+  process.stderr.write(
+    'telegram channel: another instance is polling — this instance serves tools only (no getUpdates)\n',
+  )
+} else {
+  // 409 Conflict = another getUpdates consumer is still active (zombie from a
+  // previous session, or a second Claude Code instance). Retry with backoff
+  // until the slot frees up instead of crashing on the first rejection.
+  void (async () => {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await bot.start({
+          onStart: info => {
+            botUsername = info.username
+            process.stderr.write(`telegram channel: polling as @${info.username}\n`)
+            void bot.api.setMyCommands(
+              [
+                { command: 'start', description: 'Welcome and setup guide' },
+                { command: 'help', description: 'What this bot can do' },
+                { command: 'status', description: 'Check your pairing status' },
+              ],
+              { scope: { type: 'all_private_chats' } },
+            ).catch(() => {})
+          },
+        })
+        return // bot.stop() was called — clean exit from the loop
+      } catch (err) {
+        if (err instanceof GrammyError && err.error_code === 409) {
+          const delay = Math.min(1000 * attempt, 15000)
+          const detail = attempt === 1
+            ? ' — another instance is polling (zombie session, or a second Claude Code running?)'
+            : ''
+          process.stderr.write(
+            `telegram channel: 409 Conflict${detail}, retrying in ${delay / 1000}s\n`,
+          )
+          await new Promise(r => setTimeout(r, delay))
+          continue
+        }
+        // bot.stop() mid-setup rejects with grammy's "Aborted delay" — expected, not an error.
+        if (err instanceof Error && err.message === 'Aborted delay') return
+        process.stderr.write(`telegram channel: polling failed: ${err}\n`)
+        return
       }
-      // bot.stop() mid-setup rejects with grammy's "Aborted delay" — expected, not an error.
-      if (err instanceof Error && err.message === 'Aborted delay') return
-      process.stderr.write(`telegram channel: polling failed: ${err}\n`)
-      return
     }
-  }
-})()
+  })()
+}
