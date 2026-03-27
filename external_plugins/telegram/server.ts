@@ -400,13 +400,13 @@ mcp.setNotificationHandler(
     const { request_id, tool_name, description, input_preview } = params
     pendingPermissions.set(request_id, { tool_name, description, input_preview })
     const access = loadAccess()
-    const text = `🔐 Permission: ${tool_name}`
+    const text = `![🔐](tg://emoji?id=5472308992514464048) Permission: ${tool_name}`
     const keyboard = new InlineKeyboard()
       .text('See more', `perm:more:${request_id}`).icon("5960714428394507968").row()
       .text('Deny', `perm:deny:${request_id}`).icon("5985346521103604145").danger()
       .text('Allow', `perm:allow:${request_id}`).icon("5985596818912712352").success()
     for (const chat_id of access.allowFrom) {
-      void bot.api.sendMessage(chat_id, text, { reply_markup: keyboard }).catch(e => {
+      void bot.api.sendMessage(chat_id, text, { parse_mode: 'MarkdownV2', reply_markup: keyboard }).catch(e => {
         process.stderr.write(`permission_request send to ${chat_id} failed: ${e}\n`)
       })
     }
@@ -719,14 +719,14 @@ bot.on('callback_query:data', async ctx => {
       prettyInput = input_preview
     }
     const expanded =
-      `🔐 Permission: ${tool_name}\n\n` +
+      `![🔐](tg://emoji?id=5472308992514464048) Permission: ${tool_name}\n\n` +
       `tool_name: ${tool_name}\n` +
       `description: ${description}\n` +
       `input_preview:\n${prettyInput}`
     const keyboard = new InlineKeyboard()
       .text('Deny', `perm:deny:${request_id}`).icon("5985346521103604145").danger()
       .text('Allow', `perm:allow:${request_id}`).icon("5985596818912712352").success()
-    await ctx.editMessageText(expanded, { reply_markup: keyboard }).catch(() => {})
+    await ctx.editMessageText(expanded, { parse_mode: 'MarkdownV2', reply_markup: keyboard }).catch(() => {})
     await ctx.answerCallbackQuery().catch(() => {})
     return
   }
@@ -736,13 +736,13 @@ bot.on('callback_query:data', async ctx => {
     params: { request_id, behavior },
   })
   pendingPermissions.delete(request_id)
-  const label = behavior === 'allow' ? '✅ Allowed' : '❌ Denied'
-  await ctx.answerCallbackQuery({ text: label }).catch(() => {})
+  const label = behavior === 'allow' ? { answer_callback_query: '✅ Allowed', edit_message_text: '![✅](tg://emoji?id=5427009714745517609) Allowed' } : { answer_callback_query: '❌ Denied', edit_message_text: '![❌](tg://emoji?id=5465665476971471368) Denied' }
+  await ctx.answerCallbackQuery({ text: label.answer_callback_query }).catch(() => {})
   // Replace buttons with the outcome so the same request can't be answered
   // twice and the chat history shows what was chosen.
   const msg = ctx.callbackQuery.message
   if (msg && 'text' in msg && msg.text) {
-    await ctx.editMessageText(`${msg.text}\n\n${label}`).catch(() => {})
+    await ctx.editMessageText(`${msg.text}\n\n${label.edit_message_text}`, { parse_mode: 'MarkdownV2' }).catch(() => {})
   }
 })
 
