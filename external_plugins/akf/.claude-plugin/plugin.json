@@ -1,0 +1,12 @@
+{
+  "name": "akf",
+  "description": "The AI native file format. EXIF for AI — stamps every file with trust scores, source provenance, and compliance metadata. Embeds into 20+ formats.",
+  "author": {
+    "name": "HMAKT99"
+  },
+  "homepage": "https://akf.dev",
+  "repository": "https://github.com/HMAKT99/AKF",
+  "license": "MIT",
+  "keywords": ["trust", "metadata", "provenance", "compliance", "ai-native", "file-format"],
+  "skills": "./skills/"
+}
