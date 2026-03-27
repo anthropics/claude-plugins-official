@@ -675,6 +675,17 @@
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/linear"
     },
     {
+      "name": "lseg-financial-analytics",
+      "description": "LSEG financial data and analytics workflows for bond valuation, FX trading evaluation, equity research, rates strategy, options analysis, and portfolio management. Orchestrates multiple API calls into cohesive analytical workflows.",
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/LSEG-API-Samples/lseg-claude-plugin.git",
+        "sha": "44422c8ad8366d27d872363981b459912b0db2f4"
+      },
+      "homepage": "https://github.com/LSEG-API-Samples/lseg-claude-plugin"
+    },
+    {
       "name": "lua-lsp",
       "description": "Lua language server for code intelligence",
       "version": "1.0.0",
