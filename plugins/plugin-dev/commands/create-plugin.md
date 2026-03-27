@@ -160,8 +160,22 @@ Guide the user through creating a complete, high-quality Claude Code plugin from
    }
    ```
 5. Create README.md template
-6. Create .gitignore if needed (for .claude/\*.local.md, etc.)
-7. Initialize git repo if creating new directory
+6. **Register in marketplace.json** (required for plugin discovery):
+   - Locate the parent marketplace manifest at `../.claude-plugin/marketplace.json`
+   - Add an entry to the `plugins` array:
+     ```json
+     {
+       "name": "plugin-name",
+       "source": "./plugin-name",
+       "description": "[from plugin.json]",
+       "version": "[from plugin.json]",
+       "category": "[determined in Phase 1]",
+       "tags": ["[relevant tags]"]
+     }
+     ```
+   - **This step is required.** Plugins not registered in marketplace.json are not discoverable by Claude Code, regardless of directory structure
+7. Create .gitignore if needed (for .claude/\*.local.md, etc.)
+8. Initialize git repo if creating new directory
 
 **Output**: Plugin directory structure created and ready for components
 
@@ -268,31 +282,36 @@ Guide the user through creating a complete, high-quality Claude Code plugin from
    - Check: manifest, structure, naming, components, security
    - Review validation report
 
-2. **Fix critical issues**:
+2. **Verify marketplace registration**:
+   - Check that the plugin name appears in the parent marketplace's `.claude-plugin/marketplace.json`
+   - If missing: **critical error** — plugin will not be discoverable by Claude Code
+   - If version mismatch between marketplace.json and plugin.json: **warning**
+
+3. **Fix critical issues**:
    - Address any critical errors from validation
    - Fix any warnings that indicate real problems
 
-3. **Review with skill-reviewer** (if plugin has skills):
+4. **Review with skill-reviewer** (if plugin has skills):
    - For each skill, use skill-reviewer agent
    - Check description quality, progressive disclosure, writing style
    - Apply recommendations
 
-4. **Test agent triggering** (if plugin has agents):
+5. **Test agent triggering** (if plugin has agents):
    - For each agent, verify <example> blocks are clear
    - Check triggering conditions are specific
    - Run validate-agent.sh on agent files
 
-5. **Test hook configuration** (if plugin has hooks):
+6. **Test hook configuration** (if plugin has hooks):
    - Run validate-hook-schema.sh on hooks/hooks.json
    - Test hook scripts with test-hook.sh
    - Verify ${CLAUDE_PLUGIN_ROOT} usage
 
-6. **Present findings**:
+7. **Present findings**:
    - Summary of validation results
    - Any remaining issues
    - Overall quality assessment
 
-7. **Ask user**: "Validation complete. Issues found: [count critical], [count warnings]. Would you like me to fix them now, or proceed to testing?"
+8. **Ask user**: "Validation complete. Issues found: [count critical], [count warnings]. Would you like me to fix them now, or proceed to testing?"
 
 **Output**: Plugin validated and ready for testing
 
@@ -346,10 +365,9 @@ Guide the user through creating a complete, high-quality Claude Code plugin from
    - For hook plugins: Explain hook activation
    - For settings: Provide configuration templates
 
-2. **Add marketplace entry** (if publishing):
-   - Show user how to add to marketplace.json
-   - Help draft marketplace description
-   - Suggest category and tags
+2. **Verify marketplace entry is current**:
+   - Confirm version in marketplace.json matches plugin.json (may have been bumped during development)
+   - Review description and tags for accuracy
 
 3. **Create summary**:
    - Mark all todos complete
