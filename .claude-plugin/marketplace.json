@@ -449,6 +449,13 @@
       "homepage": "https://github.com/firecrawl/firecrawl-claude-plugin.git"
     },
     {
+      "name": "finmap",
+      "description": "Financial market data from finmap.org. Access historical stock data from NYSE, NASDAQ, LSE, HKEX, and more. Query sectors, tickers, company profiles, market cap, volume, and visualize market treemaps and histograms.",
+      "category": "finance",
+      "source": "./external_plugins/finmap",
+      "homepage": "https://finmap.org"
+    },
+    {
       "name": "firetiger",
       "description": "Claude Code plugin for Firetiger observability workflows and MCP-powered investigations.",
       "source": {

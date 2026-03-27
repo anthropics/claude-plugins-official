@@ -1,0 +1,8 @@
+{
+  "name": "finmap",
+  "description": "Financial market data from finmap.org. Access historical stock data from NYSE, NASDAQ, LSE, HKEX, and more. Query sectors, tickers, company profiles, market cap, volume, and visualize market treemaps and histograms.",
+  "author": {
+    "name": "finmap.org",
+    "email": "contact@finmap.org"
+  }
+}
