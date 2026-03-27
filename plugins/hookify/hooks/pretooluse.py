@@ -40,6 +40,14 @@ def main():
         elif tool_name in ['Edit', 'Write', 'MultiEdit']:
             event = 'file'
 
+        # Only evaluate rules for known tool types (bash, file).
+        # Unknown tools (ToolSearch, Read, Glob, etc.) should pass through
+        # without evaluation to avoid stop-event rules accidentally matching
+        # via empty field values.
+        if event is None:
+            print(json.dumps({}), file=sys.stdout)
+            sys.exit(0)
+
         # Load rules
         rules = load_rules(event=event)
 

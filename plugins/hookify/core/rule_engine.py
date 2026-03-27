@@ -203,7 +203,8 @@ class RuleEngine:
         if input_data:
             # Stop event specific fields
             if field == 'reason':
-                return input_data.get('reason', '')
+                value = input_data.get('reason')
+                return value if value else None
             elif field == 'transcript':
                 # Read transcript file if path provided
                 transcript_path = input_data.get('transcript_path')
