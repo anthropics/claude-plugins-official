@@ -1,0 +1,9 @@
+{
+  "substrate": {
+    "type": "http",
+    "url": "https://substrate.garmolabs.com/mcp-server/mcp",
+    "headers": {
+      "Authorization": "Bearer ${SUBSTRATE_API_KEY}"
+    }
+  }
+}

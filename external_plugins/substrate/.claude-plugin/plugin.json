@@ -1,0 +1,17 @@
+{
+  "name": "substrate",
+  "description": "SUBSTRATE cognitive entity framework — persistent memory, emotional state, values, and identity continuity for AI. Give Claude a mind that remembers.",
+  "version": "1.0.0",
+  "author": {
+    "name": "Garmo Labs"
+  },
+  "keywords": [
+    "memory",
+    "cognitive",
+    "entity",
+    "identity",
+    "emotional-state",
+    "mcp",
+    "substrate"
+  ]
+}
