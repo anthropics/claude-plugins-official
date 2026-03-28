@@ -1,0 +1,11 @@
+{
+  "name": "airport-pickups-london",
+  "description": "Book UK airport and cruise port transfers with Airport Pickups London. Get instant fixed-price quotes, validate flights, and create real bookings for Heathrow, Gatwick, Stansted, Luton, City Airport, Edinburgh, and all UK cruise ports. TfL-licensed (No. 8004), 24/7 service, meet & greet included.",
+  "author": {
+    "name": "Airport Pickups London",
+    "email": "info@aplcars.com",
+    "url": "https://www.airport-pickups-london.com"
+  },
+  "homepage": "https://www.airport-pickups-london.com",
+  "repository": "https://github.com/mfy-apl/apl-mcp-server"
+}

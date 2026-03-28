@@ -1,0 +1,6 @@
+{
+  "airport-pickups-london": {
+    "type": "http",
+    "url": "https://mcp.airport-pickups-london.com/mcp"
+  }
+}
