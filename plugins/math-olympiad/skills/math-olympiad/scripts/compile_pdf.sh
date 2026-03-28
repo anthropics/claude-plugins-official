@@ -16,7 +16,6 @@ cat > "$FULL" <<'PREAMBLE'
 \usepackage[margin=1.25in]{geometry}
 \usepackage{amsmath, amssymb, amsthm, mathtools}
 \usepackage[shortlabels]{enumitem}
-\usepackage{enumitem}
 \usepackage[colorlinks=true, linkcolor=blue, citecolor=blue]{hyperref}
 
 \theoremstyle{plain}
