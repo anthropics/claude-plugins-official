@@ -364,6 +364,18 @@
       "source": "./external_plugins/discord"
     },
     {
+      "name": "devteam",
+      "description": "Multi-agent development team orchestration for Claude Code. Assembles a 10-agent hierarchical team (Orchestrator, Team Leads, Implementers, Reviewers, Evaluators) with file-based message queues, sprint contracts, and tmux-based parallel execution.",
+      "category": "development",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/yn01/claude-plugins.git",
+        "path": "devteam",
+        "ref": "main"
+      },
+      "homepage": "https://github.com/yn01/claude-plugins/tree/main/devteam"
+    },
+    {
       "name": "elixir-ls-lsp",
       "description": "Elixir language server (ElixirLS) for Claude Code — provides code intelligence and diagnostics for .ex, .exs, and .heex files.",
       "source": {
