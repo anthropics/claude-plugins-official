@@ -1342,6 +1342,27 @@
       "homepage": "https://github.com/vercel/vercel-plugin"
     },
     {
+      "name": "visual-eyes",
+      "description": "Give Claude Code eyes to see running web applications. Screenshot capture (desktop/mobile/full-page), visual analysis, auto-fix loop, and pixel-level regression testing via Playwright. Zero config, works with any localhost app.",
+      "category": "development",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/nikolasdehor/visual-eyes.git"
+      },
+      "author": {
+        "name": "Nikolas DeHor",
+        "url": "https://github.com/nikolasdehor"
+      },
+      "homepage": "https://github.com/nikolasdehor/visual-eyes",
+      "keywords": [
+        "visual-testing",
+        "screenshot",
+        "playwright",
+        "regression",
+        "ui"
+      ]
+    },
+    {
       "name": "voila-api",
       "description": "Definitive guide for the Voila API. Covers shipment creation (Manual/Smart Shipping), real-time tracking, detailed history, manifesting, collections, webhooks, and third-party integrations (Sorted, Peoplevox, Mintsoft, Veeqo, JD).",
       "source": {
