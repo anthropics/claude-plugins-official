@@ -280,6 +280,10 @@ async function gate(msg: Message): Promise<GateResult> {
     : msg.channelId
   const policy = access.groups[channelId]
   if (!policy) return { action: 'drop' }
+  // Bot messages in allowBotMessages channels skip sender/mention checks
+  if (msg.author.bot) {
+    return policy.allowBotMessages ? { action: 'deliver', access } : { action: 'drop' }
+  }
   const groupAllowFrom = policy.allowFrom ?? []
   const requireMention = policy.requireMention ?? true
   if (groupAllowFrom.length > 0 && !groupAllowFrom.includes(senderId)) {
@@ -668,7 +672,22 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
                   // adjacent rows. History includes ungated senders (no-@mention
                   // messages in an opted-in channel never hit the gate but
                   // still live in channel history).
-                  const text = m.content.replace(/[\r\n]+/g, ' ⏎ ')
+                  let text = m.content.replace(/[\r\n]+/g, ' ⏎ ')
+                  // Extract embed content — bot messages (Sentry, GitHub, etc.)
+                  // use embeds instead of content.
+                  if (m.embeds.length > 0) {
+                    const embedText = m.embeds.map(e => {
+                      const parts: string[] = []
+                      if (e.title) parts.push(e.title)
+                      if (e.description) parts.push(e.description.replace(/[\r\n]+/g, ' ⏎ '))
+                      if (e.fields?.length) {
+                        for (const f of e.fields) parts.push(`${f.name}: ${f.value}`)
+                      }
+                      if (e.footer?.text) parts.push(e.footer.text)
+                      return parts.join(' | ')
+                    }).join(' ⏎ ')
+                    text = text ? `${text} ⏎ [embed] ${embedText}` : embedText
+                  }
                   return `[${m.createdAt.toISOString()}] ${who}: ${text}  (id: ${m.id}${atts})`
                 })
                 .join('\n')
@@ -800,7 +819,16 @@ client.on('interactionCreate', async (interaction: Interaction) => {
 })
 
 client.on('messageCreate', msg => {
-  if (msg.author.bot) return
+  if (msg.author.bot) {
+    // Allow bot messages in guild channels that have allowBotMessages: true
+    if (msg.channel.type === ChannelType.DM) return
+    const channelId = msg.channel.isThread?.()
+      ? (msg.channel as any).parentId ?? msg.channelId
+      : msg.channelId
+    const access = loadAccess()
+    const policy = access.groups[channelId]
+    if (!policy?.allowBotMessages) return
+  }
   handleInbound(msg).catch(e => process.stderr.write(`discord: handleInbound failed: ${e}\n`))
 })
 
