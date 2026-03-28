@@ -1,0 +1,19 @@
+{
+  "name": "voice-transcript-processor",
+  "description": "Transform voice recording transcripts into structured project context documents. Extracts instructions, answers to previous questions, research tasks, feedback, and decisions — presents the structured document for review before executing.",
+  "author": {
+    "name": "Aaron Chand",
+    "url": "https://github.com/puzzled-mushroom911"
+  },
+  "homepage": "https://github.com/puzzled-mushroom911/voice-transcript-plugin",
+  "license": "MIT",
+  "keywords": [
+    "voice",
+    "transcript",
+    "productivity",
+    "workflow",
+    "context",
+    "session-management"
+  ],
+  "category": "productivity"
+}
