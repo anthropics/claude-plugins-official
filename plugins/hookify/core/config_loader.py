@@ -63,6 +63,8 @@ class Rule:
                 field = 'command'
             elif event == 'file':
                 field = 'new_text'
+            elif event == 'stop':
+                field = 'last_assistant_message'
             else:
                 field = 'content'
 

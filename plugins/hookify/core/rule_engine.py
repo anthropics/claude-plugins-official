@@ -202,7 +202,9 @@ class RuleEngine:
         # For Stop events and other non-tool events, check input_data
         if input_data:
             # Stop event specific fields
-            if field == 'reason':
+            if field == 'last_assistant_message':
+                return input_data.get('last_assistant_message', '')
+            elif field == 'reason':
                 return input_data.get('reason', '')
             elif field == 'transcript':
                 # Read transcript file if path provided
