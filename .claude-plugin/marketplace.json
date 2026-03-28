@@ -53,7 +53,7 @@
     },
     {
       "name": "aikido",
-      "description": "Aikido Security scanning for Claude Code — SAST, secrets, and IaC vulnerability detection powered by the Aikido MCP server.",
+      "description": "Aikido Security scanning for Claude Code \u00e2\u20ac\u201d SAST, secrets, and IaC vulnerability detection powered by the Aikido MCP server.",
       "source": {
         "source": "url",
         "url": "https://github.com/AikidoSec/aikido-claude-plugin.git",
@@ -243,7 +243,7 @@
     },
     {
       "name": "cockroachdb",
-      "description": "CockroachDB plugin for Claude Code — explore schemas, write optimized SQL, debug queries, and manage distributed database clusters directly from your AI coding agent.",
+      "description": "CockroachDB plugin for Claude Code \u00e2\u20ac\u201d explore schemas, write optimized SQL, debug queries, and manage distributed database clusters directly from your AI coding agent.",
       "source": {
         "source": "url",
         "url": "https://github.com/cockroachdb/claude-plugin.git",
@@ -275,7 +275,7 @@
     },
     {
       "name": "coderabbit",
-      "description": "Your code review partner. CodeRabbit provides external validation using a specialized AI architecture and 40+ integrated static analyzers—offering a different perspective that catches bugs, security vulnerabilities, logic errors, and edge cases. Context-aware analysis via AST parsing and codegraph relationships. Automatically incorporates CLAUDE.md and project coding guidelines into reviews. Useful after writing or modifying code, before commits, when implementing complex or security-sensitive logic, or when a second opinion would increase confidence in the changes. Returns specific findings with suggested fixes that can be applied immediately. Free to use.",
+      "description": "Your code review partner. CodeRabbit provides external validation using a specialized AI architecture and 40+ integrated static analyzers\u00e2\u20ac\u201doffering a different perspective that catches bugs, security vulnerabilities, logic errors, and edge cases. Context-aware analysis via AST parsing and codegraph relationships. Automatically incorporates CLAUDE.md and project coding guidelines into reviews. Useful after writing or modifying code, before commits, when implementing complex or security-sensitive logic, or when a second opinion would increase confidence in the changes. Returns specific findings with suggested fixes that can be applied immediately. Free to use.",
       "category": "productivity",
       "source": {
         "source": "url",
@@ -365,7 +365,7 @@
     },
     {
       "name": "elixir-ls-lsp",
-      "description": "Elixir language server (ElixirLS) for Claude Code — provides code intelligence and diagnostics for .ex, .exs, and .heex files.",
+      "description": "Elixir language server (ElixirLS) for Claude Code \u00e2\u20ac\u201d provides code intelligence and diagnostics for .ex, .exs, and .heex files.",
       "source": {
         "source": "url",
         "url": "https://github.com/MikaelFangel/claude-elixir-ls-lsp.git",
@@ -542,7 +542,7 @@
     },
     {
       "name": "helius",
-      "description": "Build on Solana with Helius — live blockchain tools, expert coding patterns, and autonomous account signup",
+      "description": "Build on Solana with Helius \u00e2\u20ac\u201d live blockchain tools, expert coding patterns, and autonomous account signup",
       "source": {
         "source": "git-subdir",
         "url": "helius-labs/core-ai",
@@ -753,7 +753,7 @@
     },
     {
       "name": "netlify-skills",
-      "description": "Netlify platform skills for Claude Code — functions, edge functions, blobs, database, image CDN, forms, config, CLI, frameworks, caching, AI gateway, and deployment.",
+      "description": "Netlify platform skills for Claude Code \u00e2\u20ac\u201d functions, edge functions, blobs, database, image CDN, forms, config, CLI, frameworks, caching, AI gateway, and deployment.",
       "category": "development",
       "source": {
         "source": "url",
@@ -773,7 +773,7 @@
     },
     {
       "name": "nimble",
-      "description": "Nimble web data toolkit — search, extract, map, crawl the web and work with structured data agents",
+      "description": "Nimble web data toolkit \u00e2\u20ac\u201d search, extract, map, crawl the web and work with structured data agents",
       "source": {
         "source": "url",
         "url": "https://github.com/Nimbleway/agent-skills.git",
@@ -793,7 +793,7 @@
     },
     {
       "name": "opsera-devsecops",
-      "description": "Opsera DevSecOps Agent — AI-powered architecture analysis, security scanning, compliance auditing, and SQL security for your codebase. Free trial included.",
+      "description": "Opsera DevSecOps Agent \u00e2\u20ac\u201d AI-powered architecture analysis, security scanning, compliance auditing, and SQL security for your codebase. Free trial included.",
       "source": {
         "source": "url",
         "url": "https://github.com/opsera-agents/opsera-devsecops.git",
@@ -803,7 +803,7 @@
     },
     {
       "name": "optibot",
-      "description": "AI code review that catches production-breaking bugs, business logic issues, and security vulnerabilities — directly in Claude Code.",
+      "description": "AI code review that catches production-breaking bugs, business logic issues, and security vulnerabilities \u00e2\u20ac\u201d directly in Claude Code.",
       "source": {
         "source": "url",
         "url": "https://github.com/Optimal-AI/optibot-skill.git",
@@ -868,7 +868,7 @@
     },
     {
       "name": "playground",
-      "description": "Creates interactive HTML playgrounds — self-contained single-file explorers with visual controls, live preview, and prompt output with copy button. Includes templates for design playgrounds, data explorers, concept maps, and document critique.",
+      "description": "Creates interactive HTML playgrounds \u00e2\u20ac\u201d self-contained single-file explorers with visual controls, live preview, and prompt output with copy button. Includes templates for design playgrounds, data explorers, concept maps, and document critique.",
       "author": {
         "name": "Anthropic",
         "email": "support@anthropic.com"
@@ -950,7 +950,7 @@
     },
     {
       "name": "product-tracking-skills",
-      "description": "AI agent skills that make SaaS products data-ready for product analytics — from codebase scan to tracking plan to working instrumentation code.",
+      "description": "AI agent skills that make SaaS products data-ready for product analytics \u00e2\u20ac\u201d from codebase scan to tracking plan to working instrumentation code.",
       "source": {
         "source": "url",
         "url": "https://github.com/Accoil/product-tracking-skills.git",
@@ -984,7 +984,7 @@
     },
     {
       "name": "qodo-skills",
-      "description": "Qodo Skills provides a curated library of reusable AI agent capabilities that extend Claude's functionality for software development workflows. Each skill is designed to integrate seamlessly into your development process, enabling tasks like code quality checks, automated testing, security scanning, and compliance validation. Skills operate across your entire SDLC—from IDE to CI/CD—ensuring consistent standards and catching issues early.",
+      "description": "Qodo Skills provides a curated library of reusable AI agent capabilities that extend Claude's functionality for software development workflows. Each skill is designed to integrate seamlessly into your development process, enabling tasks like code quality checks, automated testing, security scanning, and compliance validation. Skills operate across your entire SDLC\u00e2\u20ac\u201dfrom IDE to CI/CD\u00e2\u20ac\u201densuring consistent standards and catching issues early.",
       "category": "development",
       "source": {
         "source": "url",
@@ -1108,7 +1108,7 @@
     },
     {
       "name": "searchfit-seo",
-      "description": "Free AI-powered SEO toolkit — audit websites, plan content strategy, optimize pages, generate schema markup, cluster keywords, and track AI visibility. Works with any website or codebase.",
+      "description": "Free AI-powered SEO toolkit \u00e2\u20ac\u201d audit websites, plan content strategy, optimize pages, generate schema markup, cluster keywords, and track AI visibility. Works with any website or codebase.",
       "source": {
         "source": "url",
         "url": "https://github.com/searchfit/searchfit-seo.git",
@@ -1395,6 +1395,17 @@
         "sha": "0705316ef8a2d0c64f81e50d4612ccc6a74edf03"
       },
       "homepage": "https://zoominfo.com"
+    },
+    {
+      "name": "quangflow",
+      "description": "5-phase workflow framework with TDD enforcement, systematic debugging, verification gates, structured logging, feature memory, and multi-agent team orchestration. Turns Claude Code into a deliberate project manager and architect.",
+      "category": "workflow",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/DuongMQuang/quangflow.git",
+        "sha": "09c3f96f89d2e95dd16635918a1adbd3f3386430"
+      },
+      "homepage": "https://github.com/DuongMQuang/quangflow"
     }
   ]
 }
