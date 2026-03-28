@@ -76,9 +76,10 @@ async function main() {
 
   if (command === "appraise") {
     if (params.vin === undefined) { console.error("--vin required"); process.exit(1); }
+  if (params.mileage === undefined) { console.error("--mileage required (km, no commas e.g. 15000)"); process.exit(1); }
     var results = await Promise.all([CMD["master-scan"](params), CMD["copilot-handoff"](params)]);
     var ms = results[0]; var hf = results[1];
-    print({ command:"appraise", vin:params.vin, vehicle:[params.year,params.make,params.model].filter(Boolean).join(" "), masterPrompt:ms.masterPrompt, copilotHandoff:hf.handoffBlock, instructions:hf.instructions||[] });
+    print({ command:"appraise", vin:params.vin, vehicle:[params.year,params.make,params.model,params.grade].filter(Boolean).join(" "), masterPrompt:ms.masterPrompt, copilotHandoff:hf.handoffBlock, instructions:hf.instructions||[] });
     return;
   }
 
