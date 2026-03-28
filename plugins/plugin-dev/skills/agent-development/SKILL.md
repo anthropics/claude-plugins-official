@@ -281,7 +281,7 @@ See `examples/agent-creation-prompt.md` for complete template.
 ### System Prompt Validation
 
 **Length:** 20-10,000 characters
-**Best:** 500-3,000 characters
+**Best:** 500-3,000 words
 **Structure:** Clear responsibilities, process, output format
 
 ## Agent Organization
