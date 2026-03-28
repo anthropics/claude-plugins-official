@@ -11,10 +11,23 @@ allowed-tools:
 
 # /discord:configure — Discord Channel Setup
 
-Writes the bot token to `~/.claude/channels/discord/.env` and orients the
-user on access policy. The server reads both files at boot.
+Writes the bot token to the channel state directory and orients the user on
+access policy. The server reads both files at boot.
 
 Arguments passed: `$ARGUMENTS`
+
+---
+
+## Resolve state directory
+
+The state directory depends on the `DISCORD_STATE_DIR` environment variable.
+Before doing anything else, resolve it:
+
+1. Run `echo $DISCORD_STATE_DIR` via Bash.
+2. If non-empty, use that value as `$STATE_DIR`.
+3. Otherwise, fall back to `~/.claude/channels/discord`.
+
+All paths below use `$STATE_DIR`. **Do not hardcode `~/.claude/channels/discord`.**
 
 ---
 
@@ -24,10 +37,10 @@ Arguments passed: `$ARGUMENTS`
 
 Read both state files and give the user a complete picture:
 
-1. **Token** — check `~/.claude/channels/discord/.env` for
+1. **Token** — check `$STATE_DIR/.env` for
    `DISCORD_BOT_TOKEN`. Show set/not-set; if set, show first 6 chars masked.
 
-2. **Access** — read `~/.claude/channels/discord/access.json` (missing file
+2. **Access** — read `$STATE_DIR/access.json` (missing file
    = defaults: `dmPolicy: "pairing"`, empty allowlist). Show:
    - DM policy and what it means in one line
    - Allowed senders: count, and list display names or snowflakes
@@ -77,10 +90,10 @@ as the correct long-term choice. Don't skip the lockdown offer.
 1. Treat `$ARGUMENTS` as the token (trim whitespace). Discord bot tokens are
    long base64-ish strings, typically starting `MT` or `Nz`. Generated from
    Developer Portal → Bot → Reset Token; only shown once.
-2. `mkdir -p ~/.claude/channels/discord`
+2. `mkdir -p $STATE_DIR`
 3. Read existing `.env` if present; update/add the `DISCORD_BOT_TOKEN=` line,
    preserve other keys. Write back, no quotes around the value.
-4. `chmod 600 ~/.claude/channels/discord/.env` — the token is a credential.
+4. `chmod 600 $STATE_DIR/.env` — the token is a credential.
 5. Confirm, then show the no-args status so the user sees where they stand.
 
 ### `clear` — remove the token
