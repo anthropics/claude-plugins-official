@@ -1,0 +1,10 @@
+{
+  "name": "coe-pricing-intelligence",
+  "version": "1.0.0",
+  "description": "UAE used car appraisal pipeline for Al-Futtaim UC Pricing COE",
+  "private": true,
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.80.0",
+    "node-fetch": "^3.3.2"
+  }
+}

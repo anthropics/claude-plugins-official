@@ -1,2 +1,8 @@
-*.DS_Store
-.claude/
+node_modules/
+.env
+.env.local
+dist/
+*.vsix
+*.log
+.DS_Store
+Thumbs.db
