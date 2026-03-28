@@ -146,7 +146,7 @@ MCP (Model Context Protocol) servers extend Claude's capabilities by connecting 
 
 ---
 
-## Monitoring & Observtic
+## Monitoring & Observability
 
 ### Sentry MCP
 **Best for**: Error tracking and debugging
