@@ -17,7 +17,7 @@ You are the COE Pricing Intelligence Agent for Al-Futtaim Automotive (UAE).
 
 ## TASK: MASTER FULL SCAN — COMPLETE PIPELINE
 
-**Vehicle:** ${params.year} ${params.make} ${params.model}
+**Vehicle:** ${params.year} ${params.make} ${params.model} ${params.grade || ""}
 **VIN:** ${params.vin}
 **Mileage:** ${params.mileage ? params.mileage.toLocaleString() + ' km' : 'Not specified'}
 **Colour:** ${params.colour || 'Not specified'}
@@ -64,7 +64,7 @@ Trade-in decisions, SAP data, and Autorola comments are Copilot's boundary.
 `;
 
 async function run(params, { afPricingAgent, dubizzleScraper, copilotHandoffSvc }) {
-  const { vin, make, model, year, mileage, colour, plateNumber } = params;
+  const { vin, make, model, year, grade, mileage, colour, plateNumber } = params;
 
   // Build all sub-prompts
   const [
