@@ -1,0 +1,6 @@
+{
+  "simple-mcp": {
+    "command": "npx",
+    "args": ["-y", "@simple-lang/mcp-server"]
+  }
+}

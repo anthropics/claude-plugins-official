@@ -1,0 +1,7 @@
+{
+  "name": "simple-lang",
+  "description": "Simple Language MCP server — 68 tools for code intelligence, debugging (DAP), build, test, VCS (jj), code search, and analysis. Native binary, no Node.js runtime needed.",
+  "author": {
+    "name": "ormastes"
+  }
+}
