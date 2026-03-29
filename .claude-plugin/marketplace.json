@@ -791,6 +791,27 @@
       },
       "homepage": "https://github.com/makenotion/claude-code-notion-plugin"
     },
+    {    {
+            "name": "openclaw-setup",
+            "description": "Guided setup wizard for OpenClaw - detects, installs/updates OpenClaw, configures channel (Telegram/WhatsApp/Discord/Slack/Signal), LLM provider, 28 plugin integrations with credential-only collection, memory, and security. Generates production-ready openclaw.json, AGENT.md, .env.example, setup-checklist.md, and plugins-status.md.",
+            "category": "productivity",
+            "source": {
+                      "source": "url",
+                      "url": "https://github.com/anasdevai/openclaw-setup-plugin.git",
+                      "sha": "2b669c0faf0d10a04a90fddf54bdbae4729dece3"
+            },
+            "homepage": "https://github.com/anasdevai/openclaw-setup-plugin"
+    },
+      "name": "openclaw-setup",
+      "description": "Guided setup wizard for OpenClaw - detects, installs/updates OpenClaw, configures channel (Telegram/WhatsApp/Discord/Slack/Signal), LLM provider, 28 plugin integrations with credential-only collection, memory, and security. Generates production-ready openclaw.json, AGENT.md, .env.example, setup-checklist.md, and plugins-status.md.",
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/anasdevai/openclaw-setup-plugin.git",
+        "sha": "2b669c0faf0d10a04a90fddf54bdbae4729dece3"
+      },
+      "homepage": "https://github.com/anasdevai/openclaw-setup-plugin"
+    },
     {
       "name": "openclaw-setup",
       "description": "Guided setup wizard for OpenClaw - detects, installs/updates OpenClaw, configures channel (Telegram/WhatsApp/Discord/Slack/Signal), LLM provider, 28 plugin integrations with credential-only collection, memory, and security. Generates production-ready openclaw.json, AGENT.md, .env.example, setup-checklist.md, and plugins-status.md.",
@@ -1408,4 +1429,4 @@
       "homepage": "https://zoominfo.com"
     }
   ]
-}
+      }
