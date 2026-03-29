@@ -19,7 +19,7 @@ import { z } from 'zod'
 import { Bot, GrammyError, InlineKeyboard, InputFile, type Context } from 'grammy'
 import type { ReactionTypeEmoji } from 'grammy/types'
 import { randomBytes } from 'crypto'
-import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, statSync, renameSync, realpathSync, chmodSync } from 'fs'
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, statSync, renameSync, realpathSync, chmodSync, openSync, closeSync, unlinkSync, existsSync } from 'fs'
 import { homedir } from 'os'
 import { join, extname, sep } from 'path'
 
@@ -51,6 +51,56 @@ if (!TOKEN) {
   process.exit(1)
 }
 const INBOX_DIR = join(STATE_DIR, 'inbox')
+
+// Lock file to prevent multiple instances from polling the same bot token.
+// Only one process can hold the lock; others start in outbound-only mode
+// (MCP tools work, but bot.start() is skipped — no inbound polling).
+const LOCK_FILE = join(STATE_DIR, 'telegram.lock')
+let pollingOwner = false
+
+function acquireLock(): boolean {
+  mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 })
+  try {
+    // O_EXCL fails atomically if file exists — race-free.
+    const fd = openSync(LOCK_FILE, 'wx')
+    writeFileSync(fd, String(process.pid))
+    closeSync(fd)
+    pollingOwner = true
+    return true
+  } catch {
+    // File exists — check if the owning process is still alive.
+    try {
+      const pid = parseInt(readFileSync(LOCK_FILE, 'utf8').trim(), 10)
+      if (pid && pid !== process.pid) {
+        process.kill(pid, 0) // throws if process is gone
+        return false // owner is alive
+      }
+    } catch {
+      // Owner process is dead — steal the lock.
+    }
+    try {
+      writeFileSync(LOCK_FILE, String(process.pid))
+      pollingOwner = true
+      return true
+    } catch {
+      return false
+    }
+  }
+}
+
+function releaseLock(): void {
+  if (!pollingOwner) return
+  try { unlinkSync(LOCK_FILE) } catch {}
+  pollingOwner = false
+}
+
+const hasPollingLock = acquireLock()
+
+if (!hasPollingLock) {
+  process.stderr.write(
+    'telegram channel: another instance owns polling — starting in outbound-only mode (tools work, no inbound)\n',
+  )
+}
 
 // Last-resort safety net — without these the process dies silently on any
 // unhandled promise rejection. With them it logs and keeps serving tools.
@@ -621,10 +671,15 @@ function shutdown(): void {
   if (shuttingDown) return
   shuttingDown = true
   process.stderr.write('telegram channel: shutting down\n')
+  releaseLock()
   // bot.stop() signals the poll loop to end; the current getUpdates request
   // may take up to its long-poll timeout to return. Force-exit after 2s.
   setTimeout(() => process.exit(0), 2000)
-  void Promise.resolve(bot.stop()).finally(() => process.exit(0))
+  if (hasPollingLock) {
+    void Promise.resolve(bot.stop()).finally(() => process.exit(0))
+  } else {
+    process.exit(0)
+  }
 }
 process.stdin.on('end', shutdown)
 process.stdin.on('close', shutdown)
@@ -956,40 +1011,44 @@ bot.catch(err => {
 // 409 Conflict = another getUpdates consumer is still active (zombie from a
 // previous session, or a second Claude Code instance). Retry with backoff
 // until the slot frees up instead of crashing on the first rejection.
-void (async () => {
-  for (let attempt = 1; ; attempt++) {
-    try {
-      await bot.start({
-        onStart: info => {
-          botUsername = info.username
-          process.stderr.write(`telegram channel: polling as @${info.username}\n`)
-          void bot.api.setMyCommands(
-            [
-              { command: 'start', description: 'Welcome and setup guide' },
-              { command: 'help', description: 'What this bot can do' },
-              { command: 'status', description: 'Check your pairing status' },
-            ],
-            { scope: { type: 'all_private_chats' } },
-          ).catch(() => {})
-        },
-      })
-      return // bot.stop() was called — clean exit from the loop
-    } catch (err) {
-      if (err instanceof GrammyError && err.error_code === 409) {
-        const delay = Math.min(1000 * attempt, 15000)
-        const detail = attempt === 1
-          ? ' — another instance is polling (zombie session, or a second Claude Code running?)'
-          : ''
-        process.stderr.write(
-          `telegram channel: 409 Conflict${detail}, retrying in ${delay / 1000}s\n`,
-        )
-        await new Promise(r => setTimeout(r, delay))
-        continue
+// If we don't hold the polling lock, skip bot.start() entirely — another
+// instance owns inbound polling; this one is outbound-only.
+if (hasPollingLock) {
+  void (async () => {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await bot.start({
+          onStart: info => {
+            botUsername = info.username
+            process.stderr.write(`telegram channel: polling as @${info.username}\n`)
+            void bot.api.setMyCommands(
+              [
+                { command: 'start', description: 'Welcome and setup guide' },
+                { command: 'help', description: 'What this bot can do' },
+                { command: 'status', description: 'Check your pairing status' },
+              ],
+              { scope: { type: 'all_private_chats' } },
+            ).catch(() => {})
+          },
+        })
+        return // bot.stop() was called — clean exit from the loop
+      } catch (err) {
+        if (err instanceof GrammyError && err.error_code === 409) {
+          const delay = Math.min(1000 * attempt, 15000)
+          const detail = attempt === 1
+            ? ' — another instance is polling (zombie session, or a second Claude Code running?)'
+            : ''
+          process.stderr.write(
+            `telegram channel: 409 Conflict${detail}, retrying in ${delay / 1000}s\n`,
+          )
+          await new Promise(r => setTimeout(r, delay))
+          continue
+        }
+        // bot.stop() mid-setup rejects with grammy's "Aborted delay" — expected, not an error.
+        if (err instanceof Error && err.message === 'Aborted delay') return
+        process.stderr.write(`telegram channel: polling failed: ${err}\n`)
+        return
       }
-      // bot.stop() mid-setup rejects with grammy's "Aborted delay" — expected, not an error.
-      if (err instanceof Error && err.message === 'Aborted delay') return
-      process.stderr.write(`telegram channel: polling failed: ${err}\n`)
-      return
     }
-  }
-})()
+  })()
+}
