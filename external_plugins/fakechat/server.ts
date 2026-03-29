@@ -17,6 +17,7 @@ import { homedir } from 'os'
 import { join, extname, basename } from 'path'
 import type { ServerWebSocket } from 'bun'
 
+const HOST = process.env.FAKECHAT_HOST ?? '127.0.0.1'
 const PORT = Number(process.env.FAKECHAT_PORT ?? 8787)
 const STATE_DIR = join(homedir(), '.claude', 'channels', 'fakechat')
 const INBOX_DIR = join(STATE_DIR, 'inbox')
@@ -60,7 +61,7 @@ const mcp = new Server(
   { name: 'fakechat', version: '0.1.0' },
   {
     capabilities: { tools: {}, experimental: { 'claude/channel': {} } },
-    instructions: `The sender reads the fakechat UI, not this session. Anything you want them to see must go through the reply tool — your transcript output never reaches the UI.\n\nMessages from the fakechat web UI arrive as <channel source="fakechat" chat_id="web" message_id="...">. If the tag has a file_path attribute, Read that file — it is an upload from the UI. Reply with the reply tool. UI is at http://localhost:${PORT}.`,
+    instructions: `The sender reads the fakechat UI, not this session. Anything you want them to see must go through the reply tool — your transcript output never reaches the UI.\n\nMessages from the fakechat web UI arrive as <channel source="fakechat" chat_id="web" message_id="...">. If the tag has a file_path attribute, Read that file — it is an upload from the UI. Reply with the reply tool. UI is at http://${HOST}:${PORT}.`,
   },
 )
 
@@ -149,7 +150,7 @@ function deliver(id: string, text: string, file?: { path: string; name: string }
 
 Bun.serve({
   port: PORT,
-  hostname: '127.0.0.1',
+  hostname: HOST,
   fetch(req, server) {
     const url = new URL(req.url)
 
@@ -207,7 +208,7 @@ Bun.serve({
   },
 })
 
-process.stderr.write(`fakechat: http://localhost:${PORT}\n`)
+process.stderr.write(`fakechat: http://${HOST}:${PORT}\n`)
 
 const HTML = `<!doctype html>
 <meta charset="utf-8">
