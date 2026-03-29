@@ -1149,6 +1149,18 @@
       "homepage": "https://github.com/getsentry/sentry-for-claude/tree/main"
     },
     {
+      "name": "sentry-cli",
+      "description": "Skills for using the Sentry CLI to interact with Sentry from the command line.",
+      "category": "monitoring",
+      "source": {
+        "source": "git-subdir",
+        "url": "getsentry/cli",
+        "path": "plugins/sentry-cli",
+        "ref": "main"
+      },
+      "homepage": "https://github.com/getsentry/cli/tree/main"
+    },
+    {
       "name": "serena",
       "description": "Semantic code analysis MCP server providing intelligent code understanding, refactoring suggestions, and codebase navigation through language server protocol integration.",
       "category": "development",
