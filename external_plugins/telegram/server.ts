@@ -844,6 +844,29 @@ bot.on('message:sticker', async ctx => {
   })
 })
 
+bot.on('message:location', async ctx => {
+  const loc = ctx.message.location
+  const text = `(location: lat=${loc.latitude} lon=${loc.longitude})`
+  await handleInbound(ctx, text, undefined)
+})
+
+bot.on('message:venue', async ctx => {
+  const venue = ctx.message.venue
+  const loc = venue.location
+  const title = safeName(venue.title) ?? 'venue'
+  const addr = safeName(venue.address) ?? ''
+  const text = `(venue: ${title}, ${addr} \u2014 lat=${loc.latitude} lon=${loc.longitude})`
+  await handleInbound(ctx, text, undefined)
+})
+
+bot.on('message:contact', async ctx => {
+  const c = ctx.message.contact
+  const name = [c.first_name, c.last_name].filter(Boolean).join(' ')
+  const phone = c.phone_number
+  const text = `(contact: ${name}, phone: ${phone})`
+  await handleInbound(ctx, text, undefined)
+})
+
 type AttachmentMeta = {
   kind: string
   file_id: string
