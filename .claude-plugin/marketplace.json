@@ -1128,6 +1128,17 @@
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/plugins/security-guidance"
     },
     {
+      "name": "session-manager",
+      "description": "List and resume Claude Code sessions for the current working directory",
+      "author": {
+        "name": "Abdul Sahil",
+        "email": "abdulsaheel81@gmail.com"
+      },
+      "source": "./plugins/session-manager",
+      "category": "productivity",
+      "homepage": "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/session-manager"
+    },
+    {
       "name": "semgrep",
       "description": "Semgrep catches security vulnerabilities in real-time and guides Claude to write secure code from the start.",
       "category": "security",
