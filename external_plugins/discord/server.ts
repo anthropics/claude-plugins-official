@@ -552,6 +552,18 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
       },
     },
     {
+      name: 'fetch_reactions',
+      description: 'Fetch all emoji reactions on a Discord message, including who reacted.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          chat_id: { type: 'string' },
+          message_id: { type: 'string' },
+        },
+        required: ['chat_id', 'message_id'],
+      },
+    },
+    {
       name: 'edit_message',
       description: 'Edit a message the bot previously sent. Useful for interim progress updates. Edits don\'t trigger push notifications — send a new reply when a long task completes so the user\'s device pings.',
       inputSchema: {
@@ -679,6 +691,20 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         const msg = await ch.messages.fetch(args.message_id as string)
         await msg.react(args.emoji as string)
         return { content: [{ type: 'text', text: 'reacted' }] }
+      }
+      case 'fetch_reactions': {
+        const ch = await fetchAllowedChannel(args.chat_id as string)
+        const msg = await ch.messages.fetch({ message: args.message_id as string, force: true })
+        const results = []
+        for (const [, reaction] of msg.reactions.cache) {
+          const users = await reaction.users.fetch()
+          results.push({
+            emoji: reaction.emoji.name ?? reaction.emoji.id,
+            count: reaction.count,
+            users: users.map(u => u.username),
+          })
+        }
+        return { content: [{ type: 'text', text: JSON.stringify(results, null, 2) }] }
       }
       case 'edit_message': {
         const ch = await fetchAllowedChannel(args.chat_id as string)
