@@ -32,6 +32,10 @@ import { join, basename, sep } from 'path'
 
 const STATIC = process.env.IMESSAGE_ACCESS_MODE === 'static'
 const APPEND_SIGNATURE = process.env.IMESSAGE_APPEND_SIGNATURE !== 'false'
+// SMS sender IDs are spoofable; iMessage is Apple-ID-authenticated. Default
+// drops SMS/RCS so a forged sender can't reach the gate. Opt in only if you
+// understand the risk.
+const ALLOW_SMS = process.env.IMESSAGE_ALLOW_SMS === 'true'
 const SIGNATURE = '\nSent by Claude'
 const CHAT_DB =
   process.env.IMESSAGE_DB_PATH ?? join(homedir(), 'Library', 'Messages', 'chat.db')
@@ -105,6 +109,7 @@ type Row = {
   date: number
   is_from_me: number
   cache_has_attachments: number
+  service: string | null
   handle_id: string | null
   chat_guid: string
   chat_style: number | null
@@ -114,7 +119,7 @@ const qWatermark = db.query<{ max: number | null }, []>('SELECT MAX(ROWID) AS ma
 
 const qPoll = db.query<Row, [number]>(`
   SELECT m.ROWID AS rowid, m.guid, m.text, m.attributedBody, m.date, m.is_from_me,
-         m.cache_has_attachments, h.id AS handle_id, c.guid AS chat_guid, c.style AS chat_style
+         m.cache_has_attachments, m.service, h.id AS handle_id, c.guid AS chat_guid, c.style AS chat_style
   FROM message m
   JOIN chat_message_join cmj ON cmj.message_id = m.ROWID
   JOIN chat c ON c.ROWID = cmj.chat_id
@@ -125,7 +130,7 @@ const qPoll = db.query<Row, [number]>(`
 
 const qHistory = db.query<Row, [string, number]>(`
   SELECT m.ROWID AS rowid, m.guid, m.text, m.attributedBody, m.date, m.is_from_me,
-         m.cache_has_attachments, h.id AS handle_id, c.guid AS chat_guid, c.style AS chat_style
+         m.cache_has_attachments, m.service, h.id AS handle_id, c.guid AS chat_guid, c.style AS chat_style
   FROM message m
   JOIN chat_message_join cmj ON cmj.message_id = m.ROWID
   JOIN chat c ON c.ROWID = cmj.chat_id
@@ -165,21 +170,16 @@ const qAttachments = db.query<AttRow, [number]>(`
   WHERE maj.message_id = ?
 `)
 
-// Your own addresses. message.account ("E:you@icloud.com" / "p:+1555...") is
-// the identity you sent *from* on each row — but an Apple ID can be reachable
-// at both an email and a phone, and account only shows whichever you sent
-// from. chat.last_addressed_handle covers the rest: it's the per-chat "which
-// of your addresses reaches this person" field, so it accumulates every
-// identity you've actually used. Union both.
+// Your own addresses, from message.account ("E:you@icloud.com" / "p:+1555...")
+// on rows you sent. Don't supplement with chat.last_addressed_handle — on
+// machines with SMS history that column is polluted with short codes and
+// other people's numbers, not just your own identities.
 const SELF = new Set<string>()
 {
   type R = { addr: string }
   const norm = (s: string) => (/^[A-Za-z]:/.test(s) ? s.slice(2) : s).toLowerCase()
   for (const { addr } of db.query<R, []>(
     `SELECT DISTINCT account AS addr FROM message WHERE is_from_me = 1 AND account IS NOT NULL AND account != '' LIMIT 50`,
-  ).all()) SELF.add(norm(addr))
-  for (const { addr } of db.query<R, []>(
-    `SELECT DISTINCT last_addressed_handle AS addr FROM chat WHERE last_addressed_handle IS NOT NULL AND last_addressed_handle != '' LIMIT 50`,
   ).all()) SELF.add(norm(addr))
 }
 process.stderr.write(`imessage channel: self-chat addresses: ${[...SELF].join(', ') || '(none)'}\n`)
@@ -432,7 +432,14 @@ const ECHO_WINDOW_MS = 15000
 const echo = new Map<string, number>()
 
 function echoKey(raw: string): string {
-  return raw.trim().replace(/\s+/g, ' ').slice(0, 120)
+  return raw
+    .replace(/\s*Sent by Claude\s*$/, '')
+    .replace(/[\u200d\ufe00-\ufe0f]/g, '')    // ZWJ + variation selectors — chat.db is inconsistent about these
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201c\u201d]/g, '"')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .slice(0, 120)
 }
 
 function trackEcho(chatGuid: string, key: string): void {
@@ -562,11 +569,9 @@ const mcp = new Server(
   },
 )
 
-// Receive permission_request from CC → format → send to all allowlisted DMs.
-// Groups are intentionally excluded — the security thread resolution was
-// "single-user mode for official plugins." Anyone in access.allowFrom
-// already passed explicit pairing; group members haven't. Self-chat is
-// always included (owner).
+// Permission prompts go to self-chat only. A "yes" grants tool execution on
+// this machine — that authority is the owner's alone, not allowlisted
+// contacts'.
 mcp.setNotificationHandler(
   z.object({
     method: z.literal('notifications/claude/channel/permission_request'),
@@ -579,7 +584,6 @@ mcp.setNotificationHandler(
   }),
   async ({ params }) => {
     const { request_id, tool_name, description, input_preview } = params
-    const access = loadAccess()
     // input_preview is unbearably long for Write/Edit; show only for Bash
     // where the command itself is the dangerous part.
     const preview = tool_name === 'Bash' ? `${input_preview}\n\n` : '\n'
@@ -588,13 +592,16 @@ mcp.setNotificationHandler(
       `${tool_name}: ${description}\n` +
       preview +
       `Reply "yes ${request_id}" to allow or "no ${request_id}" to deny.`
-    // allowFrom holds handle IDs, not chat GUIDs — resolve via qChatsForHandle.
-    // Include SELF addresses so the owner's self-chat gets the prompt even
-    // when allowFrom is empty (default config).
-    const handles = new Set([...access.allowFrom.map(h => h.toLowerCase()), ...SELF])
     const targets = new Set<string>()
-    for (const h of handles) {
+    for (const h of SELF) {
       for (const { guid } of qChatsForHandle.all(h)) targets.add(guid)
+    }
+    if (targets.size === 0) {
+      process.stderr.write(
+        `imessage channel: permission_request ${request_id} not relayed — no self-chat found. ` +
+        `Send yourself an iMessage to create one.\n`,
+      )
+      return
     }
     for (const guid of targets) {
       const err = sendText(guid, text)
@@ -770,6 +777,7 @@ function expandTilde(p: string): string {
 
 function handleInbound(r: Row): void {
   if (!r.chat_guid) return
+  if (!ALLOW_SMS && r.service !== 'iMessage') return
 
   // style 45 = DM, 43 = group. Drop unknowns rather than risk routing a
   // group message through the DM gate and leaking a pairing code.
@@ -781,7 +789,9 @@ function handleInbound(r: Row): void {
 
   const text = messageText(r)
   const hasAttachments = r.cache_has_attachments === 1
-  if (!text && !hasAttachments) return
+  // trim() catches tapbacks/receipts synced from other devices — those land
+  // as whitespace-only rows.
+  if (!text.trim() && !hasAttachments) return
 
   // Never deliver our own sends. In self-chat the is_from_me=1 rows are empty
   // sent-receipts anyway — the content lands on the is_from_me=0 copy below.
@@ -817,12 +827,9 @@ function handleInbound(r: Row): void {
     }
   }
 
-  // Permission-reply intercept: if this looks like "yes xxxxx" for a
-  // pending permission request, emit the structured event instead of
-  // relaying as chat. The sender is already gate()-approved at this point
-  // (non-allowlisted senders were dropped above; self-chat is the owner),
-  // so we trust the reply.
-  const permMatch = PERMISSION_REPLY_RE.exec(text)
+  // Permission replies: emit the structured event instead of relaying as
+  // chat. Owner-only — same gate as the send side.
+  const permMatch = isSelfChat ? PERMISSION_REPLY_RE.exec(text) : null
   if (permMatch) {
     void mcp.notification({
       method: 'notifications/claude/channel/permission',

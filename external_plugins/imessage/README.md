@@ -62,6 +62,7 @@ Handles are phone numbers (`+15551234567`) or Apple ID emails (`them@icloud.com`
 | Variable | Default | Effect |
 | --- | --- | --- |
 | `IMESSAGE_APPEND_SIGNATURE` | `true` | Appends `\nSent by Claude` to outbound messages. Set to `false` to disable. |
+| `IMESSAGE_ALLOW_SMS` | `false` | Accept inbound SMS/RCS in addition to iMessage. **Off by default because SMS sender IDs are spoofable** — a forged SMS from your own number would otherwise bypass access control. Only enable if you understand the risk. |
 | `IMESSAGE_ACCESS_MODE` | — | Set to `static` to disable runtime pairing and read `access.json` only. |
 | `IMESSAGE_STATE_DIR` | `~/.claude/channels/imessage` | Override where `access.json` and pairing state live. |
 
