@@ -416,11 +416,32 @@ if (!STATIC) setInterval(checkApprovals, 5000).unref()
 // Text and chat GUID go through argv — AppleScript `on run` receives them as a
 // list, so no escaping of user content into source is ever needed.
 const SEND_SCRIPT = `on run argv
-  tell application "Messages" to send (item 1 of argv) to chat id (item 2 of argv)
+  set msg to (item 1 of argv)
+  set chatGuid to (item 2 of argv)
+  tell application "Messages"
+    try
+      send msg to chat id chatGuid
+    on error
+      -- chat id failed (any;-; prefix on some macOS setups); send to buddy instead
+      set tid to text ((offset of ";-;" in chatGuid) + 3) thru -1 of chatGuid
+      set svc to first service whose service type is iMessage
+      send msg to buddy tid of svc
+    end try
+  end tell
 end run`
 
 const SEND_FILE_SCRIPT = `on run argv
-  tell application "Messages" to send (POSIX file (item 1 of argv)) to chat id (item 2 of argv)
+  set fp to POSIX file (item 1 of argv)
+  set chatGuid to (item 2 of argv)
+  tell application "Messages"
+    try
+      send fp to chat id chatGuid
+    on error
+      set tid to text ((offset of ";-;" in chatGuid) + 3) thru -1 of chatGuid
+      set svc to first service whose service type is iMessage
+      send fp to buddy tid of svc
+    end try
+  end tell
 end run`
 
 // Echo filter for self-chat. osascript gives no GUID back, so we match on
