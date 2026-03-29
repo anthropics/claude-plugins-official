@@ -221,6 +221,17 @@
       "homepage": "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/claude-code-setup"
     },
     {
+      "name": "claude-custom-think",
+      "description": "Custom thinking indicators for Claude Code — replace \"Thinking...\" with themed rotating words from categories like Dogs, Space, Coffee Shop, Zen, and more.",
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/rcom-source/custom-think-cli.git",
+        "sha": "8cf423f502f2a17354d16cecbb9ca23b9d65d33c"
+      },
+      "homepage": "https://github.com/rcom-source/custom-think-cli"
+    },
+    {
       "name": "claude-md-management",
       "description": "Tools to maintain and improve CLAUDE.md files - audit quality, capture session learnings, and keep project memory current.",
       "author": {
