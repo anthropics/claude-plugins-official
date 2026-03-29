@@ -739,6 +739,17 @@
       "homepage": "https://www.mintlify.com/"
     },
     {
+      "name": "namejam",
+      "description": "AI naming tool — generates short, memorable project names with taste. Reads project context, generates compounds/blends/truncations (not random syllables), checks npm/PyPI/crates.io and domain availability.",
+      "category": "development",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/FireflySentinel/namejam.git",
+        "sha": "3966de785b4b07db13e7776129d5b0cfc162edf5"
+      },
+      "homepage": "https://github.com/FireflySentinel/namejam"
+    },
+    {
       "name": "neon",
       "description": "Manage your Neon projects and databases with the neon-postgres agent skill and the Neon MCP Server.",
       "category": "database",
