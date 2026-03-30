@@ -166,20 +166,15 @@ const qAttachments = db.query<AttRow, [number]>(`
 `)
 
 // Your own addresses. message.account ("E:you@icloud.com" / "p:+1555...") is
-// the identity you sent *from* on each row — but an Apple ID can be reachable
-// at both an email and a phone, and account only shows whichever you sent
-// from. chat.last_addressed_handle covers the rest: it's the per-chat "which
-// of your addresses reaches this person" field, so it accumulates every
-// identity you've actually used. Union both.
+// the identity you sent *from* on each row. chat.last_addressed_handle was
+// previously unioned in, but it's unreliable — it sometimes stores the other
+// party's handle, which causes permission prompts to leak to non-self addresses.
 const SELF = new Set<string>()
 {
   type R = { addr: string }
   const norm = (s: string) => (/^[A-Za-z]:/.test(s) ? s.slice(2) : s).toLowerCase()
   for (const { addr } of db.query<R, []>(
     `SELECT DISTINCT account AS addr FROM message WHERE is_from_me = 1 AND account IS NOT NULL AND account != '' LIMIT 50`,
-  ).all()) SELF.add(norm(addr))
-  for (const { addr } of db.query<R, []>(
-    `SELECT DISTINCT last_addressed_handle AS addr FROM chat WHERE last_addressed_handle IS NOT NULL AND last_addressed_handle != '' LIMIT 50`,
   ).all()) SELF.add(norm(addr))
 }
 process.stderr.write(`imessage channel: self-chat addresses: ${[...SELF].join(', ') || '(none)'}\n`)
@@ -430,6 +425,12 @@ end run`
 // whitespace, and cap length so minor trailing diffs don't break the match.
 const ECHO_WINDOW_MS = 15000
 const echo = new Map<string, number>()
+
+// Dedup for permission replies: iCloud sync can write the same inbound message
+// as two rows with different GUIDs. Track (chat_guid, request_id) so the second
+// row is dropped before it fires a duplicate ack.
+const PERM_DEDUP_WINDOW_MS = 30000
+const seenPermissions = new Map<string, number>()
 
 function echoKey(raw: string): string {
   return raw.trim().replace(/\s+/g, ' ').slice(0, 120)
@@ -824,10 +825,16 @@ function handleInbound(r: Row): void {
   // so we trust the reply.
   const permMatch = PERMISSION_REPLY_RE.exec(text)
   if (permMatch) {
+    const requestId = permMatch[2]!.toLowerCase()
+    const permKey = `${r.chat_guid}\x00${requestId}`
+    const now = Date.now()
+    for (const [k, t] of seenPermissions) if (now - t > PERM_DEDUP_WINDOW_MS) seenPermissions.delete(k)
+    if (seenPermissions.has(permKey)) return
+    seenPermissions.set(permKey, now)
     void mcp.notification({
       method: 'notifications/claude/channel/permission',
       params: {
-        request_id: permMatch[2]!.toLowerCase(),
+        request_id: requestId,
         behavior: permMatch[1]!.toLowerCase().startsWith('y') ? 'allow' : 'deny',
       },
     })
