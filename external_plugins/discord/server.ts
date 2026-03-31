@@ -404,7 +404,17 @@ async function fetchAllowedChannel(id: string) {
   const ch = await fetchTextChannel(id)
   const access = loadAccess()
   if (ch.type === ChannelType.DM) {
-    if (access.allowFrom.includes(ch.recipientId)) return ch
+    // Primary check: recipientId (populated when channel is cached from a message event)
+    if (ch.recipientId && access.allowFrom.includes(ch.recipientId)) return ch
+    // Fallback: when recipientId is null (REST fetch after cache expiry), check if
+    // the DM channel ID is in groups (users may have added it there) or resolve the
+    // recipient from the channel's recipients collection.
+    if (id in access.groups) return ch
+    if (!ch.recipientId && 'recipients' in ch && (ch as any).recipients?.size) {
+      for (const [uid] of (ch as any).recipients) {
+        if (access.allowFrom.includes(uid)) return ch
+      }
+    }
   } else {
     const key = ch.isThread() ? ch.parentId ?? ch.id : ch.id
     if (key in access.groups) return ch
