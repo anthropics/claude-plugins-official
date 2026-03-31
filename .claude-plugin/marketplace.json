@@ -668,6 +668,19 @@
       "homepage": "https://www.legalzoom.com/"
     },
     {
+      "name": "lark-channel",
+      "description": "Lark/Feishu channel for Claude Code — receive and reply to Lark messages with threaded replies, running cards, emoji reactions, and file attachments. No public IP required (WebSocket mode).",
+      "category": "messaging",
+      "source": {
+        "source": "git-subdir",
+        "url": "rock98rock/claude-channel-lark",
+        "path": "plugins/lark",
+        "ref": "main",
+        "sha": "89a12a8613b54be9d5b852ca42a2c79d94c0d11c"
+      },
+      "homepage": "https://github.com/rock98rock/claude-channel-lark"
+    },
+    {
       "name": "linear",
       "description": "Linear issue tracking integration. Create issues, manage projects, update statuses, search across workspaces, and streamline your software development workflow with Linear's modern issue tracker.",
       "category": "productivity",
