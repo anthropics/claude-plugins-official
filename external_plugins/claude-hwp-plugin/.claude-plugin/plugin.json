@@ -1,0 +1,20 @@
+{
+  "name": "claude-hwp-plugin",
+  "description": "Control Korean HWP/HWPX documents with natural language in Claude Code. Supports reading, form auto-fill, batch generation, document creation, and comparison.",
+  "author": {
+    "name": "hyunmin625",
+    "url": "https://github.com/hyunmin625"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/hyunmin625/claude-hwp-plugin",
+  "repository": "https://github.com/hyunmin625/claude-hwp-plugin",
+  "keywords": [
+    "hwp",
+    "hwpx",
+    "korean",
+    "document",
+    "kordoc",
+    "mcp",
+    "form-fill"
+  ]
+}
