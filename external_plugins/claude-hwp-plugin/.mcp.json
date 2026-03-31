@@ -1,0 +1,9 @@
+{
+  "claude-hwp": {
+    "command": "npx",
+    "args": [
+      "-y",
+      "claude-hwp-plugin-mcp"
+    ]
+  }
+}
