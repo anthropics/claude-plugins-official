@@ -1,0 +1,10 @@
+{
+  "name": "cc",
+  "description": "Multi-session awareness for Claude Code. See what other sessions are doing, get file conflict warnings, and share context across parallel sessions.",
+  "author": {
+    "name": "Ani Potts",
+    "url": "https://github.com/anipotts"
+  },
+  "homepage": "https://github.com/anipotts/cc",
+  "keywords": ["multi-session", "collaboration", "hooks", "awareness"]
+}
