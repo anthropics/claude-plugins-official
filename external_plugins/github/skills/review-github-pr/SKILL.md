@@ -12,11 +12,11 @@ Use the GitHub MCP server to fetch pull request details and provide a thorough c
 1. **Identify the pull request** — extract the owner, repo, and PR number from the user's request.
    - If no PR number is given, use the GitHub MCP `list_pull_requests` tool to find the most recently updated open PR.
 2. **Fetch PR data** using the GitHub MCP tools:
-   - `get_pull_request` — title, description, author, base/head branches, status
-   - `get_pull_request_files` — list of changed files with additions/deletions
-   - `get_pull_request_diff` — full unified diff
-   - `list_pull_request_commits` — commit history for the PR
-   - `list_pull_request_reviews` — existing review comments
+   - Get the pull request details — title, description, author, base/head branches, status
+   - List the changed files — file paths with additions/deletions counts
+   - Retrieve the unified diff — full code changes across all files
+   - List the commits — commit history for the PR
+   - List existing reviews and review comments — prior feedback already given
 3. **Analyse the changes** and provide feedback covering:
    - **Summary**: what the PR does and why
    - **Code quality**: readability, naming, duplication

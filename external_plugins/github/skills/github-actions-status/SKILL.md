@@ -17,8 +17,8 @@ Use the GitHub MCP server to retrieve workflow run information and highlight fai
    - List each run with: workflow name, run number, trigger event, branch, status, and duration
    - For failed runs, highlight them prominently
 4. **Drill into failures** if the user wants more detail:
-   - Use `list_workflow_jobs` to get individual job results within a run
-   - Use `get_job_logs` to retrieve log output for failed jobs
+   - List the individual jobs within the failed run to identify which job failed
+   - Retrieve the log output for failed jobs
    - Identify the failing step and surface the key error message
 5. **Report findings** clearly, grouping by workflow when multiple are shown.
 

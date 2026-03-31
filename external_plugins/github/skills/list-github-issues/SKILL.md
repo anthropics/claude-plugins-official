@@ -15,7 +15,9 @@ Use the GitHub MCP server to fetch and display GitHub issues filtered by the use
    - **State** (optional): `open` (default), `closed`, or `all`
    - **Labels** (optional): one or more label names (e.g. `bug`, `help wanted`)
    - **Milestone** (optional): milestone title or number
-2. **Fetch issues** using the GitHub MCP `list_issues` or `search_issues` tool with the appropriate filters.
+2. **Fetch issues** using the GitHub MCP tools:
+   - Use the **list issues** tool when querying a single repository with simple filters (state, assignee, label, milestone). This is more efficient for repository-scoped queries.
+   - Use the **search issues** tool when looking across multiple repositories, combining complex filters, or searching by keyword. Suitable for "my issues across all repos" or "find issues mentioning a specific error".
 3. **Present the results** in a clear list for each issue:
    - **Number and title**: `#42 — Login fails with OAuth provider`
    - **State**: open / closed
