@@ -1,5 +1,5 @@
 ---
-allowed-tools: Bash(gh issue view:*), Bash(gh search:*), Bash(gh issue list:*), Bash(gh pr comment:*), Bash(gh pr diff:*), Bash(gh pr view:*), Bash(gh pr list:*)
+allowed-tools: Bash(gh issue view:*), Bash(gh search:*), Bash(gh issue list:*), Bash(gh pr comment:*), Bash(gh pr diff:*), Bash(gh pr view:*), Bash(gh pr list:*), Bash(gh api:*)
 description: Code review a pull request
 disable-model-invocation: false
 ---
@@ -25,10 +25,47 @@ To do this, follow these steps precisely:
    e. 100: Absolutely certain. The agent double checked the issue, and confirmed that it is definitely a real issue, that will happen frequently in practice. The evidence directly confirms this.
 6. Filter out any issues with a score less than 80. If there are no issues that meet this criteria, do not proceed.
 7. Use a Haiku agent to repeat the eligibility check from #1, to make sure that the pull request is still eligible for code review.
-8. Finally, use the gh bash command to comment back on the pull request with the result. When writing your comment, keep in mind to:
-   a. Keep your output brief
-   b. Avoid emojis
-   c. Link and cite relevant code, files, and URLs
+8. Finally, post the review as **inline review comments** on the pull request using the GitHub Reviews API via `gh api`. This places comments directly on the relevant lines in the "Files changed" tab, rather than as a standalone PR comment. To do this:
+   a. Use a Haiku agent to resolve the exact **file-level line numbers** for each issue. For each issue, the agent should fetch the file content at the PR's HEAD SHA (`gh api "repos/OWNER/REPO/contents/FILE_PATH?ref=HEAD_SHA" --jq '.content' | base64 -d | grep -n "PATTERN"`) to get the correct line number in the file. The agent should return a list of `{path, line, body}` objects.
+   b. Write a JSON payload file and post using `gh api repos/OWNER/REPO/pulls/PR_NUMBER/reviews --method POST --input FILE`. The payload format is:
+      ```json
+      {
+        "event": "COMMENT",
+        "body": "review summary",
+        "comments": [
+          {"path": "relative/file/path.ext", "line": 42, "body": "issue description"}
+        ]
+      }
+      ```
+   c. Keep each inline comment brief
+   d. Avoid emojis in comment text
+   e. For the review body (summary), use this format:
+
+      ```
+      ### Code review
+
+      Found N issues. See inline comments below.
+
+      🤖 Generated with [Claude Code](https://claude.ai/code)
+
+      <sub>- If this code review was useful, please react with 👍. Otherwise, react with 👎.</sub>
+      ```
+
+   f. For each inline comment body, use this format:
+      ```
+      **Brief description of the issue**
+
+      Explanation of why this is an issue. If CLAUDE.md related, quote the relevant rule.
+      ```
+
+   g. If no issues were found (after filtering in step 6), post a regular PR comment instead using `gh pr comment`:
+      ```
+      ### Code review
+
+      No issues found. Checked for bugs and CLAUDE.md compliance.
+
+      🤖 Generated with [Claude Code](https://claude.ai/code)
+      ```
 
 Examples of false positives, for steps 4 and 5:
 
@@ -47,46 +84,6 @@ Notes:
 - Use `gh` to interact with Github (eg. to fetch a pull request, or to create inline comments), rather than web fetch
 - Make a todo list first
 - You must cite and link each bug (eg. if referring to a CLAUDE.md, you must link it)
-- For your final comment, follow the following format precisely (assuming for this example that you found 3 issues):
-
----
-
-### Code review
-
-Found 3 issues:
-
-1. <brief description of bug> (CLAUDE.md says "<...>")
-
-<link to file and line with full sha1 + line range for context, note that you MUST provide the full sha and not use bash here, eg. https://github.com/anthropics/claude-code/blob/1d54823877c4de72b2316a64032a54afc404e619/README.md#L13-L17>
-
-2. <brief description of bug> (some/other/CLAUDE.md says "<...>")
-
-<link to file and line with full sha1 + line range for context>
-
-3. <brief description of bug> (bug due to <file and code snippet>)
-
-<link to file and line with full sha1 + line range for context>
-
-🤖 Generated with [Claude Code](https://claude.ai/code)
-
-<sub>- If this code review was useful, please react with 👍. Otherwise, react with 👎.</sub>
-
----
-
-- Or, if you found no issues:
-
----
-
-### Code review
-
-No issues found. Checked for bugs and CLAUDE.md compliance.
-
-🤖 Generated with [Claude Code](https://claude.ai/code)
-
-- When linking to code, follow the following format precisely, otherwise the Markdown preview won't render correctly: https://github.com/anthropics/claude-cli-internal/blob/c21d3c10bc8e898b7ac1a2d745bdc9bc4e423afe/package.json#L10-L15
-  - Requires full git sha
-  - You must provide the full sha. Commands like `https://github.com/owner/repo/blob/$(git rev-parse HEAD)/foo/bar` will not work, since your comment will be directly rendered in Markdown.
-  - Repo name must match the repo you're code reviewing
-  - # sign after the file name
-  - Line range format is L[start]-L[end]
-  - Provide at least 1 line of context before and after, centered on the line you are commenting about (eg. if you are commenting about lines 5-6, you should link to `L4-7`)
+- When resolving line numbers for inline comments, always use the file content at the PR's HEAD SHA to get accurate line numbers. Do NOT use diff line offsets, as they can be unreliable.
+- The `line` field in the review comment must be the line number in the file as it appears in the PR's HEAD commit, not the line number in the diff.
+- The `path` field must be the file path relative to the repository root.
