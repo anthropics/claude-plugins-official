@@ -1,0 +1,9 @@
+{
+  "name": "slack-channel",
+  "description": "Slack channel plugin for Claude Code — real-time messaging via Socket Mode with per-conversation thread routing.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Oded Falik"
+  },
+  "keywords": ["slack", "messaging", "channel", "mcp"]
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Slack channel plugin — writes conversation ID for thread routing",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/on-session-start.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
