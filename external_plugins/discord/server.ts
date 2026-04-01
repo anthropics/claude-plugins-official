@@ -404,7 +404,12 @@ async function fetchAllowedChannel(id: string) {
   const ch = await fetchTextChannel(id)
   const access = loadAccess()
   if (ch.type === ChannelType.DM) {
-    if (access.allowFrom.includes(ch.recipientId)) return ch
+    // recipientId can be null when the DM channel is fetched from the API
+    // rather than served from the gateway cache (discord.js partial channels).
+    // Fall back to fetching the full channel to populate the recipient.
+    const rid = ch.recipientId
+      ?? (ch.partial ? (await ch.fetch()).recipientId : null)
+    if (rid && access.allowFrom.includes(rid)) return ch
   } else {
     const key = ch.isThread() ? ch.parentId ?? ch.id : ch.id
     if (key in access.groups) return ch
