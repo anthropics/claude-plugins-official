@@ -11,11 +11,30 @@ A curated directory of high-quality plugins for Claude Code.
 
 ## Installation
 
+### Claude Code
+
 Plugins can be installed directly from this marketplace via Claude Code's plugin system.
 
 To install, run `/plugin install {plugin-name}@claude-plugins-official`
 
 or browse for the plugin in `/plugin > Discover`
+
+### GitHub Copilot CLI
+
+This marketplace is also compatible with [GitHub Copilot CLI](https://docs.github.com/copilot/concepts/agents/about-copilot-cli).
+
+1. Add the marketplace:
+   ```
+   copilot plugin marketplace add anthropics/claude-plugins-official
+   ```
+2. Browse available plugins:
+   ```
+   copilot plugin marketplace browse claude-plugins-official
+   ```
+3. Install a plugin:
+   ```
+   copilot plugin install {plugin-name}@claude-plugins-official
+   ```
 
 ## Contributing
 
