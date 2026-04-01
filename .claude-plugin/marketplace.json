@@ -374,6 +374,17 @@
       "homepage": "https://elixir-lsp.github.io/elixir-ls/"
     },
     {
+      "name": "engineering-skills",
+      "description": "Engineering, SRE, and communication workflow skills. Includes SRE investigation and incident reporting (Grafana MCP powered), PR review, API design, database migrations, Go service scaffolding, Bun agent scaffolding, and RFC writing.",
+      "category": "development",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/projectdiscovery/engineering-skills.git",
+        "sha": "59fc9ed9130faa6469f9c61cb10e8e548d314fc6"
+      },
+      "homepage": "https://github.com/projectdiscovery/engineering-skills"
+    },
+    {
       "name": "explanatory-output-style",
       "description": "Adds educational insights about implementation choices and codebase patterns (mimics the deprecated Explanatory output style)",
       "author": {
