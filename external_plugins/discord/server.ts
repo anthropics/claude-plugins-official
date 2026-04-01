@@ -865,6 +865,17 @@ async function handleInbound(msg: Message): Promise<void> {
   // forgeable by any allowlisted sender typing that string.
   const content = msg.content || (atts.length > 0 ? '(attachment)' : '')
 
+  // Channel / thread metadata — lets consumers route by name instead of ID.
+  const channelName = 'name' in msg.channel ? (msg.channel.name ?? '') : ''
+  const isThread = msg.channel.isThread()
+  const threadMeta = isThread
+    ? {
+        is_thread: 'true',
+        parent_id: msg.channel.parentId ?? '',
+        parent_name: msg.channel.parent?.name ?? '',
+      }
+    : {}
+
   mcp.notification({
     method: 'notifications/claude/channel',
     params: {
@@ -875,6 +886,8 @@ async function handleInbound(msg: Message): Promise<void> {
         user: msg.author.username,
         user_id: msg.author.id,
         ts: msg.createdAt.toISOString(),
+        channel_name: channelName,
+        ...threadMeta,
         ...(atts.length > 0 ? { attachment_count: String(atts.length), attachments: atts.join('; ') } : {}),
       },
     },
