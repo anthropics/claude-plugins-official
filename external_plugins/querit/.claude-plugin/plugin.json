@@ -1,0 +1,10 @@
+{
+  "name": "querit-search",
+  "description": "Search the web using Querit.ai's powerful search API. Access real-time information, technical documentation, and answers to questions.",
+  "version": "1.0.0",
+  "author": {
+    "name": "Querit.ai Integration"
+  },
+  "homepage": "https://querit.ai",
+  "repository": "https://github.com/querit-ai/claude-querit"
+}

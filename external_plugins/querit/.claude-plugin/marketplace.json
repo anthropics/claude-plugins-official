@@ -1,0 +1,13 @@
+{
+  "name": "querit-marketplace",
+  "owner": {
+    "name": "Querit.ai"
+  },
+  "plugins": [
+    {
+      "name": "querit-search",
+      "source": "./skills/querit-search",
+      "description": "Search the web using Querit.ai to find real-time information, documentation, articles, and answers. Triggers on queries like 'search for', 'find information about', 'look up', or any question that would benefit from web search results."
+    }
+  ]
+}

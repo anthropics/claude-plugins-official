@@ -1,0 +1,20 @@
+{
+  "skill_name": "querit-search",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I'm trying to understand the latest changes in the React 19 release. Can you search for information about what's new in React 19 and summarize the key features?",
+      "expected_output": "Search results about React 19 with key features like Server Components, Actions, and new hooks, presented with titles, URLs, and summaries"
+    },
+    {
+      "id": 2,
+      "prompt": "Search for recent articles about Claude AI from the past month and tell me what people are saying about it.",
+      "expected_output": "Time-filtered search results (last 30 days) about Claude AI with article summaries and sentiment analysis"
+    },
+    {
+      "id": 3,
+      "prompt": "I need documentation on how to use the Stripe API for subscription billing. Can you find some good resources?",
+      "expected_output": "Search results focused on Stripe subscription billing documentation, including official docs and tutorials with URLs"
+    }
+  ]
+}
