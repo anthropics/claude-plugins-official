@@ -1,4 +1,5 @@
 # Claude Code Plugins Directory
+- [submission-site-discovery](https://github.com/SeeleAI/submission-site-discovery) - Automated tool for discovering product submission sites and launch directories for indie hackers.
 
 A curated directory of high-quality plugins for Claude Code.
 
