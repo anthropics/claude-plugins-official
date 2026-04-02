@@ -1,4 +1,5 @@
 # Claude Code Plugins Directory
+- [skill-taxonomy](https://github.com/SeeleAI/skill-taxonomy) - Structured taxonomy for AI agent skills: discovery, classification and routing across multi-agent workflows.
 
 A curated directory of high-quality plugins for Claude Code.
 
