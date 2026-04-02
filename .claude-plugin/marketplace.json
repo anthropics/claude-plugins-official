@@ -1399,6 +1399,12 @@
       "homepage": "https://github.com/TSedmanDC/Voila-API-Skill"
     },
     {
+      "name": "webchat",
+      "description": "HTTP/WebSocket chat bridge for Claude Code — connect any chat app via REST API. Built-in access control with pairing, allowlists, and webhook delivery. Manage via /webchat:access.",
+      "category": "productivity",
+      "source": "./external_plugins/webchat"
+    },
+    {
       "name": "wix",
       "description": "Build, manage, and deploy Wix sites and apps. CLI development skills for dashboard extensions, backend APIs, site widgets, and service plugins with the Wix Design System, plus MCP server for site management.",
       "category": "development",

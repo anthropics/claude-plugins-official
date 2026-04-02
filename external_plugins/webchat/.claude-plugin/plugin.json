@@ -1,0 +1,6 @@
+{
+  "name": "webchat",
+  "description": "HTTP/WebSocket chat bridge for Claude Code — connect any chat app via REST API. Built-in access control with pairing, allowlists, and webhook delivery. Manage via /webchat:access.",
+  "version": "0.0.1",
+  "keywords": ["webchat", "http", "websocket", "channel", "mcp", "api"]
+}
