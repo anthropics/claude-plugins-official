@@ -385,6 +385,17 @@
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/plugins/explanatory-output-style"
     },
     {
+      "name": "extract-alpha",
+      "description": "Remove background from AI-generated images using two-pass difference matting. Generate the same image on white and black backgrounds, then extract pixel-perfect transparency.",
+      "category": "media",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/furic/extract-alpha.git",
+        "sha": "60c4a05483b3c37fd5901c8b7ae81ef71abff9da"
+      },
+      "homepage": "https://github.com/furic/extract-alpha"
+    },
+    {
       "name": "fakechat",
       "description": "Localhost web chat for testing the channel notification flow. No tokens, no access control, no third-party service.",
       "category": "development",
