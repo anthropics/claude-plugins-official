@@ -121,9 +121,7 @@
         "path": "claude-plugin/atomic-agents"
       },
       "homepage": "https://github.com/BrainBlend-AI/atomic-agents",
-      "tags": [
-        "community-managed"
-      ]
+      "tags": ["community-managed"]
     },
     {
       "name": "autofix-bot",
@@ -192,9 +190,7 @@
       "lspServers": {
         "clangd": {
           "command": "clangd",
-          "args": [
-            "--background-index"
-          ],
+          "args": ["--background-index"],
           "extensionToLanguage": {
             ".c": "c",
             ".h": "c",
@@ -300,9 +296,7 @@
       "category": "development",
       "source": "./external_plugins/context7",
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/context7",
-      "tags": [
-        "community-managed"
-      ]
+      "tags": ["community-managed"]
     },
     {
       "name": "csharp-lsp",
@@ -625,9 +619,7 @@
       "lspServers": {
         "kotlin-lsp": {
           "command": "kotlin-lsp",
-          "args": [
-            "--stdio"
-          ],
+          "args": ["--stdio"],
           "extensionToLanguage": {
             ".kt": "kotlin",
             ".kts": "kotlin"
@@ -795,11 +787,19 @@
     },
     {
       "name": "nimble",
-      "description": "Nimble web data toolkit \u2014 search, extract, map, crawl the web and work with structured data agents",
+      "description": "Real-time web search and data extraction for AI agents \u2013 powered by Nimble. Search, extract, map, and crawl any site on the web with built-in stealth, JS rendering, and retries. Get clean, structured web data from any public webpage with pre-built Web Search Agents, or build your own reusable extraction templates. The definitive web data toolkit for AI-native development.",
+      "category": "development",
+      "keywords": [
+        "web-scraping",
+        "data-extraction",
+        "serp",
+        "web-data",
+        "real-time-data",
+        "ai-agents"
+      ],
       "source": {
         "source": "url",
-        "url": "https://github.com/Nimbleway/agent-skills.git",
-        "sha": "cf391e95bd8ac009e3641f172434a1d130dde7fe"
+        "url": "https://github.com/Nimbleway/agent-skills.git"
       },
       "homepage": "https://docs.nimbleway.com/integrations/agent-skills/plugin-installation"
     },
@@ -858,9 +858,7 @@
       "lspServers": {
         "intelephense": {
           "command": "intelephense",
-          "args": [
-            "--stdio"
-          ],
+          "args": ["--stdio"],
           "extensionToLanguage": {
             ".php": "php"
           }
@@ -993,9 +991,7 @@
       "lspServers": {
         "pyright": {
           "command": "pyright-langserver",
-          "args": [
-            "--stdio"
-          ],
+          "args": ["--stdio"],
           "extensionToLanguage": {
             ".py": "python",
             ".pyi": "python"
@@ -1175,9 +1171,7 @@
       "category": "development",
       "source": "./external_plugins/serena",
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/serena",
-      "tags": [
-        "community-managed"
-      ]
+      "tags": ["community-managed"]
     },
     {
       "name": "skill-creator",
@@ -1233,17 +1227,10 @@
         "repo": "browserbase/agent-browse"
       },
       "category": "automation",
-      "keywords": [
-        "browser",
-        "automation",
-        "stagehand",
-        "web-scraping"
-      ],
+      "keywords": ["browser", "automation", "stagehand", "web-scraping"],
       "homepage": "https://github.com/browserbase/agent-browse",
       "strict": false,
-      "skills": [
-        "./.claude/skills/browser-automation"
-      ]
+      "skills": ["./.claude/skills/browser-automation"]
     },
     {
       "name": "stripe",
@@ -1336,9 +1323,7 @@
       "lspServers": {
         "typescript": {
           "command": "typescript-language-server",
-          "args": [
-            "--stdio"
-          ],
+          "args": ["--stdio"],
           "extensionToLanguage": {
             ".ts": "typescript",
             ".tsx": "typescriptreact",
