@@ -1049,6 +1049,17 @@
       "homepage": "https://www.revenuecat.com"
     },
     {
+      "name": "recall",
+      "description": "Cross-session, cross-project conversation recall with SQLite storage, auto-tagging, compaction recovery, and highlight sharing between sessions.",
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/bledden/claude-recall-plugin.git",
+        "sha": "0b4f2de23dab95eb4dd1fbc7ea3521e51b12447b"
+      },
+      "homepage": "https://github.com/bledden/claude-recall-plugin"
+    },
+    {
       "name": "remember",
       "description": "Continuous memory for Claude Code. Extracts, summarizes, and compresses conversations into tiered daily logs. Claude remembers what you did yesterday.",
       "source": {
