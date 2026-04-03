@@ -137,11 +137,17 @@ else
   COMPLETION_PROMISE_YAML="null"
 fi
 
+# Session ID for isolation: use env var if available, otherwise generate a
+# unique ID from PID + timestamp. Without this, the stop hook matches ALL
+# sessions when multiple Claude Code instances share the same .claude/ directory
+# (e.g. ttyd web terminals with bind-mounted home directories).
+RALPH_SESSION_ID="${CLAUDE_CODE_SESSION_ID:-ralph-$$-$(date +%s)}"
+
 cat > .claude/ralph-loop.local.md <<EOF
 ---
 active: true
 iteration: 1
-session_id: ${CLAUDE_CODE_SESSION_ID:-}
+session_id: $RALPH_SESSION_ID
 max_iterations: $MAX_ITERATIONS
 completion_promise: $COMPLETION_PROMISE_YAML
 started_at: "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
