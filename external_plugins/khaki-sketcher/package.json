@@ -1,0 +1,37 @@
+{
+  "name": "khaki-sketcher",
+  "version": "0.2.0",
+  "description": "Lightweight multi-model orchestration plugin for Claude Code — CLI-native, zero MCP overhead",
+  "author": "KhakiSketch",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/KhakiSkech/KhakiSketcher.git"
+  },
+  "homepage": "https://github.com/KhakiSkech/KhakiSketcher",
+  "bugs": {
+    "url": "https://github.com/KhakiSkech/KhakiSketcher/issues"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "files": [
+    "hooks",
+    "scripts",
+    "skills",
+    "agents",
+    ".claude-plugin",
+    "CLAUDE.md",
+    "LICENSE",
+    "README.md"
+  ],
+  "keywords": [
+    "claude-code",
+    "codex",
+    "gemini",
+    "orchestration",
+    "multi-model",
+    "cli"
+  ]
+}

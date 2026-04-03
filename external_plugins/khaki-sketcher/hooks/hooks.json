@@ -1,0 +1,29 @@
+{
+  "description": "KhakiSketcher hooks — session init and security guard",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PLUGIN_ROOT/scripts/run.cjs\" \"$CLAUDE_PLUGIN_ROOT/scripts/session-init.mjs\"",
+            "timeout": 12
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PLUGIN_ROOT/scripts/run.cjs\" \"$CLAUDE_PLUGIN_ROOT/scripts/security-guard.mjs\"",
+            "timeout": 2
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "khaki-sketcher",
+  "version": "0.2.0",
+  "description": "CLI-native multi-model orchestrator for Claude Code",
+  "author": {
+    "name": "KhakiSketch"
+  },
+  "repository": "https://github.com/KhakiSkech/KhakiSketcher",
+  "homepage": "https://github.com/KhakiSkech/KhakiSketcher",
+  "license": "MIT",
+  "keywords": ["claude-code", "orchestration", "cli", "codex", "gemini"],
+  "skills": "./skills/"
+}
