@@ -274,6 +274,16 @@
       "homepage": "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/code-simplifier"
     },
     {
+      "name": "code-tour",
+      "description": "AI-generated CodeTour walkthroughs for any codebase. Creates persona-targeted, step-by-step .tour files with file/line links for VS Code CodeTour extension.",
+      "category": "development",
+      "source": "./external_plugins/code-tour",
+      "homepage": "https://github.com/vaddisrinivas/code-tour",
+      "tags": [
+        "community-managed"
+      ]
+    },
+    {
       "name": "coderabbit",
       "description": "Your code review partner. CodeRabbit provides external validation using a specialized AI architecture and 40+ integrated static analyzers\u2014offering a different perspective that catches bugs, security vulnerabilities, logic errors, and edge cases. Context-aware analysis via AST parsing and codegraph relationships. Automatically incorporates CLAUDE.md and project coding guidelines into reviews. Useful after writing or modifying code, before commits, when implementing complex or security-sensitive logic, or when a second opinion would increase confidence in the changes. Returns specific findings with suggested fixes that can be applied immediately. Free to use.",
       "category": "productivity",
@@ -477,6 +487,20 @@
         "sha": "f59ec3d1f6337a6ed825ef06836a221ed3d2ffb0"
       },
       "homepage": "https://subscriptions.agentic.followrabbit.ai/"
+    },
+    {
+      "name": "framecraft",
+      "description": "LLM skill and MCP plugin for creating polished demo videos from a prompt. Includes story structure, HTML scene rendering, TTS narration, and ffmpeg assembly.",
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/vaddisrinivas/framecraft.git",
+        "sha": "a9d7e196c2e974637456cd885dd3cc5308ee3a87"
+      },
+      "homepage": "https://github.com/vaddisrinivas/framecraft",
+      "tags": [
+        "community-managed"
+      ]
     },
     {
       "name": "frontend-design",

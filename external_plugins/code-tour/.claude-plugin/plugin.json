@@ -1,0 +1,12 @@
+{
+  "name": "code-tour",
+  "description": "AI-generated CodeTour walkthroughs for any codebase. Creates persona-targeted, step-by-step .tour files that link to real files and line numbers, compatible with the VS Code CodeTour extension.",
+  "author": {
+    "name": "vaddisrinivas",
+    "url": "https://github.com/vaddisrinivas"
+  },
+  "homepage": "https://github.com/vaddisrinivas/code-tour",
+  "repository": "https://github.com/vaddisrinivas/code-tour",
+  "license": "MIT",
+  "keywords": ["codetour", "walkthrough", "onboarding", "code-review", "documentation"]
+}
