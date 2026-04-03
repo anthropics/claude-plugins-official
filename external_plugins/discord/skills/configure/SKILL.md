@@ -7,14 +7,31 @@ allowed-tools:
   - Write
   - Bash(ls *)
   - Bash(mkdir *)
+  - Bash(echo *)
 ---
 
 # /discord:configure — Discord Channel Setup
 
-Writes the bot token to `~/.claude/channels/discord/.env` and orients the
+Writes the bot token to the state directory `.env` and orients the
 user on access policy. The server reads both files at boot.
 
 Arguments passed: `$ARGUMENTS`
+
+---
+
+## Resolve state directory
+
+**Before doing anything else**, determine the state directory:
+
+1. Run: `echo ${DISCORD_STATE_DIR:-~/.claude/channels/discord}`
+2. Use the output as `STATE_DIR` for all file paths below.
+
+This ensures multi-instance setups (where `DISCORD_STATE_DIR` points to a
+per-bot directory) read and write the correct files.
+
+All paths below use `STATE_DIR`:
+- Token file: `STATE_DIR/.env`
+- Access file: `STATE_DIR/access.json`
 
 ---
 
@@ -24,10 +41,10 @@ Arguments passed: `$ARGUMENTS`
 
 Read both state files and give the user a complete picture:
 
-1. **Token** — check `~/.claude/channels/discord/.env` for
+1. **Token** — check `STATE_DIR/.env` for
    `DISCORD_BOT_TOKEN`. Show set/not-set; if set, show first 6 chars masked.
 
-2. **Access** — read `~/.claude/channels/discord/access.json` (missing file
+2. **Access** — read `STATE_DIR/access.json` (missing file
    = defaults: `dmPolicy: "pairing"`, empty allowlist). Show:
    - DM policy and what it means in one line
    - Allowed senders: count, and list display names or snowflakes
@@ -77,10 +94,10 @@ as the correct long-term choice. Don't skip the lockdown offer.
 1. Treat `$ARGUMENTS` as the token (trim whitespace). Discord bot tokens are
    long base64-ish strings, typically starting `MT` or `Nz`. Generated from
    Developer Portal → Bot → Reset Token; only shown once.
-2. `mkdir -p ~/.claude/channels/discord`
-3. Read existing `.env` if present; update/add the `DISCORD_BOT_TOKEN=` line,
+2. `mkdir -p STATE_DIR`
+3. Read existing `STATE_DIR/.env` if present; update/add the `DISCORD_BOT_TOKEN=` line,
    preserve other keys. Write back, no quotes around the value.
-4. `chmod 600 ~/.claude/channels/discord/.env` — the token is a credential.
+4. `chmod 600 STATE_DIR/.env` — the token is a credential.
 5. Confirm, then show the no-args status so the user sees where they stand.
 
 ### `clear` — remove the token
@@ -97,3 +114,5 @@ Delete the `DISCORD_BOT_TOKEN=` line (or the file if that's the only line).
   or `/reload-plugins`. Say so after saving.
 - `access.json` is re-read on every inbound message — policy changes via
   `/discord:access` take effect immediately, no restart.
+- `DISCORD_STATE_DIR` is set by users running multiple bot instances from one
+  machine. Always resolve it before reading or writing any state files.
