@@ -1,6 +1,6 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
-  "name": "claude-plugins-vox",
+  "name": "vox-plugins",
   "description": "Directory of popular Claude Code extensions including development tools, productivity plugins, and MCP integrations",
   "owner": {
     "name": "VoX",
