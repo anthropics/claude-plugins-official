@@ -98,6 +98,8 @@ type Access = {
   textChunkLimit?: number
   /** Split on paragraph boundaries instead of hard char count. */
   chunkMode?: 'length' | 'newline'
+  /** User IDs who receive permission relay requests. Falls back to allowFrom if absent or empty. */
+  permissionApprovers?: string[]
 }
 
 function defaultAccess(): Access {
@@ -142,6 +144,7 @@ function readAccessFile(): Access {
       replyToMode: parsed.replyToMode,
       textChunkLimit: parsed.textChunkLimit,
       chunkMode: parsed.chunkMode,
+      permissionApprovers: parsed.permissionApprovers,
     }
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return defaultAccess()
@@ -405,7 +408,11 @@ mcp.setNotificationHandler(
       .text('See more', `perm:more:${request_id}`)
       .text('✅ Allow', `perm:allow:${request_id}`)
       .text('❌ Deny', `perm:deny:${request_id}`)
-    for (const chat_id of access.allowFrom) {
+    const targets =
+      access.permissionApprovers && access.permissionApprovers.length > 0
+        ? access.permissionApprovers
+        : access.allowFrom
+    for (const chat_id of targets) {
       void bot.api.sendMessage(chat_id, text, { reply_markup: keyboard }).catch(e => {
         process.stderr.write(`permission_request send to ${chat_id} failed: ${e}\n`)
       })

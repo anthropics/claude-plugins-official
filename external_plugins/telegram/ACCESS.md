@@ -105,6 +105,9 @@ Configure outbound behavior with `/telegram:access set <key> <value>`.
 | `/telegram:access group add -1001654782309` | Enable a group. Flags: `--no-mention` (also requires disabling privacy mode), `--allow id1,id2`. |
 | `/telegram:access group rm -1001654782309` | Disable a group. |
 | `/telegram:access set ackReaction 👀` | Set a config key: `ackReaction`, `replyToMode`, `textChunkLimit`, `chunkMode`, `mentionPatterns`. |
+| `/telegram:access approver add 412587349` | Add a user ID to the permission approvers list. Only these users receive permission relay requests. |
+| `/telegram:access approver remove 412587349` | Remove a user from the permission approvers list. |
+| `/telegram:access approver list` | Show current permission approvers. Falls back to `allowFrom` if none set. |
 
 ## Config file
 
@@ -142,6 +145,10 @@ Configure outbound behavior with `/telegram:access set <key> <value>`.
   "textChunkLimit": 4096,
 
   // length = cut at limit. newline = prefer paragraph boundaries.
-  "chunkMode": "newline"
+  "chunkMode": "newline",
+
+  // User IDs who receive permission relay requests.
+  // Falls back to allowFrom if absent or empty.
+  "permissionApprovers": ["412587349"]
 }
 ```

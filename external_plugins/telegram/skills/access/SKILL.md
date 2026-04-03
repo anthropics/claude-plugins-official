@@ -43,17 +43,18 @@ Arguments passed: `$ARGUMENTS`
       "createdAt": <ms>, "expiresAt": <ms>
     }
   },
-  "mentionPatterns": ["@mybot"]
+  "mentionPatterns": ["@mybot"],
+  "permissionApprovers": ["<senderId>"]
 }
 ```
 
-Missing file = `{dmPolicy:"pairing", allowFrom:[], groups:{}, pending:{}}`.
+Missing file = `{dmPolicy:"pairing", allowFrom:[], groups:{}, pending:{}, permissionApprovers:[]}`.
 
 ---
 
 ## Dispatch on arguments
 
-Parse `$ARGUMENTS` (space-separated). If empty or unrecognized, show status.
+Parse `$ARGUMENTS` (space-separated). Check multi-word prefixes first (`group`, `approver`) before single-word commands. If empty or unrecognized, show status.
 
 ### No args — status
 
@@ -105,6 +106,24 @@ Parse `$ARGUMENTS` (space-separated). If empty or unrecognized, show status.
 ### `group rm <groupId>`
 
 1. Read, `delete groups[<groupId>]`, write.
+
+### `approver add <senderId>`
+
+1. Read access.json (create default if missing).
+2. Add `<senderId>` to `permissionApprovers` (dedupe, create array if missing).
+3. Write back. Confirm.
+
+### `approver remove <senderId>`
+
+1. Read access.json.
+2. Filter `permissionApprovers` to exclude `<senderId>`.
+3. If array is empty after removal, delete the key entirely (falls back to `allowFrom`).
+4. Write back. Confirm.
+
+### `approver list`
+
+1. Read access.json.
+2. Show `permissionApprovers` list, or `"none set (falls back to allowFrom)"` if absent or empty.
 
 ### `set <key> <value>`
 
