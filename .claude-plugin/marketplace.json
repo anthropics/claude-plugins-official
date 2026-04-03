@@ -221,6 +221,16 @@
       "homepage": "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/claude-code-setup"
     },
     {
+      "name": "claude-code-tts-edge",
+      "description": "Auto text-to-speech for Claude Code — sends short responses as Telegram voice messages using Microsoft Edge TTS. Free, no API key required.",
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/devlux-creator/claude-code-tts-edge.git"
+      },
+      "homepage": "https://github.com/devlux-creator/claude-code-tts-edge"
+    },
+    {
       "name": "claude-md-management",
       "description": "Tools to maintain and improve CLAUDE.md files - audit quality, capture session learnings, and keep project memory current.",
       "author": {
