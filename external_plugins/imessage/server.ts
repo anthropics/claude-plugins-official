@@ -844,20 +844,20 @@ function handleInbound(r: Row): void {
   }
 
   // attachment.filename is an absolute path (sometimes tilde-prefixed) —
-  // already on disk, no download. Include the first image inline.
-  let imagePath: string | undefined
+  // already on disk, no download. Collect all image attachments.
+  const imagePaths: string[] = []
   if (hasAttachments) {
     for (const att of qAttachments.all(r.rowid)) {
       if (!att.filename) continue
       if (att.mime_type && !att.mime_type.startsWith('image/')) continue
-      imagePath = expandTilde(att.filename)
-      break
+      imagePaths.push(expandTilde(att.filename))
     }
   }
 
-  // image_path goes in meta only — an in-content "[image attached — read: PATH]"
-  // annotation is forgeable by any allowlisted sender typing that string.
-  const content = text || (imagePath ? '(image)' : '')
+  // image_path / image_paths go in meta only — an in-content
+  // "[image attached — read: PATH]" annotation is forgeable by any
+  // allowlisted sender typing that string.
+  const content = text || (imagePaths.length ? '(image)' : '')
 
   void mcp.notification({
     method: 'notifications/claude/channel',
@@ -868,7 +868,10 @@ function handleInbound(r: Row): void {
         message_id: r.guid,
         user: sender,
         ts: appleDate(r.date).toISOString(),
-        ...(imagePath ? { image_path: imagePath } : {}),
+        // Backwards-compatible: keep image_path for single-image messages,
+        // add image_paths array when multiple images are attached.
+        ...(imagePaths.length === 1 ? { image_path: imagePaths[0] } : {}),
+        ...(imagePaths.length > 1 ? { image_path: imagePaths[0], image_paths: imagePaths } : {}),
       },
     },
   })
