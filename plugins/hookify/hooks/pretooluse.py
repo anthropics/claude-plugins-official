@@ -20,7 +20,7 @@ try:
 except ImportError as e:
     # If imports fail, allow operation and log error
     error_msg = {"systemMessage": f"Hookify import error: {e}"}
-    print(json.dumps(error_msg), file=sys.stdout)
+    print(json.dumps(error_msg, ensure_ascii=False), file=sys.stdout)
     sys.exit(0)
 
 
@@ -48,14 +48,14 @@ def main():
         result = engine.evaluate_rules(rules, input_data)
 
         # Always output JSON (even if empty)
-        print(json.dumps(result), file=sys.stdout)
+        print(json.dumps(result, ensure_ascii=False), file=sys.stdout)
 
     except Exception as e:
         # On any error, allow the operation and log
         error_output = {
             "systemMessage": f"Hookify error: {str(e)}"
         }
-        print(json.dumps(error_output), file=sys.stdout)
+        print(json.dumps(error_output, ensure_ascii=False), file=sys.stdout)
 
     finally:
         # ALWAYS exit 0 - never block operations due to hook errors
