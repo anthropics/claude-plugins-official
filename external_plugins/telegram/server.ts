@@ -51,6 +51,29 @@ if (!TOKEN) {
   process.exit(1)
 }
 const INBOX_DIR = join(STATE_DIR, 'inbox')
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY
+
+async function transcribeViaOpenAI(audioPath: string): Promise<string | undefined> {
+  if (!OPENAI_API_KEY) return undefined
+  try {
+    const audioData = readFileSync(audioPath)
+    const ext = audioPath.includes('.') ? audioPath.split('.').pop()! : 'ogg'
+    const formData = new FormData()
+    formData.append('file', new Blob([audioData]), `voice.${ext}`)
+    formData.append('model', 'whisper-1')
+    const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${OPENAI_API_KEY}` },
+      body: formData,
+      signal: AbortSignal.timeout(30_000),
+    })
+    if (!res.ok) return undefined
+    const data = await res.json() as { text?: string }
+    return data.text?.trim() || undefined
+  } catch {
+    return undefined
+  }
+}
 
 // Last-resort safety net — without these the process dies silently on any
 // unhandled promise rejection. With them it logs and keeps serving tools.
@@ -791,13 +814,37 @@ bot.on('message:document', async ctx => {
 
 bot.on('message:voice', async ctx => {
   const voice = ctx.message.voice
-  const text = ctx.message.caption ?? '(voice message)'
-  await handleInbound(ctx, text, undefined, {
+  let text = ctx.message.caption ?? '(voice message)'
+  let attachment: AttachmentMeta | undefined = {
     kind: 'voice',
     file_id: voice.file_id,
     size: voice.file_size,
     mime: voice.mime_type,
-  })
+  }
+  if (OPENAI_API_KEY) {
+    try {
+      const file = await ctx.api.getFile(voice.file_id)
+      if (file.file_path) {
+        const url = `https://api.telegram.org/file/bot${TOKEN}/${file.file_path}`
+        const res = await fetch(url)
+        if (res.ok) {
+          const buf = Buffer.from(await res.arrayBuffer())
+          const ext = (file.file_path.split('.').pop() ?? 'ogg').replace(/[^a-zA-Z0-9]/g, '') || 'ogg'
+          const path = join(INBOX_DIR, `${Date.now()}-${voice.file_unique_id}.${ext}`)
+          mkdirSync(INBOX_DIR, { recursive: true })
+          writeFileSync(path, buf)
+          const transcription = await transcribeViaOpenAI(path)
+          if (transcription) {
+            text = `🎤 ${transcription}`
+            attachment = undefined
+          }
+        }
+      }
+    } catch (err) {
+      process.stderr.write(`telegram channel: voice transcription failed: ${err}\n`)
+    }
+  }
+  await handleInbound(ctx, text, undefined, attachment)
 })
 
 bot.on('message:audio', async ctx => {
