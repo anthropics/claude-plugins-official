@@ -400,7 +400,20 @@ mcp.setNotificationHandler(
     const { request_id, tool_name, description, input_preview } = params
     pendingPermissions.set(request_id, { tool_name, description, input_preview })
     const access = loadAccess()
-    const text = `🔐 Permission: ${tool_name}`
+    // Show tool name + description + a compact input summary so the user
+    // can make an informed decision without tapping "See more".
+    let summary = ''
+    try {
+      const input = JSON.parse(input_preview)
+      // Extract the most useful field for common tools:
+      // Edit/Write → file_path, Bash → command, etc.
+      const path = input.file_path ?? input.path ?? input.pattern
+      const cmd = input.command
+      if (path) summary = `\n📄 ${path}`
+      else if (cmd) summary = `\n💻 ${cmd.length > 80 ? cmd.slice(0, 77) + '...' : cmd}`
+    } catch {}
+    const desc = description ? `\n${description}` : ''
+    const text = `🔐 Permission: ${tool_name}${summary}${desc}`
     const keyboard = new InlineKeyboard()
       .text('See more', `perm:more:${request_id}`)
       .text('✅ Allow', `perm:allow:${request_id}`)
