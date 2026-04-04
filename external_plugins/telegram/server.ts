@@ -963,11 +963,20 @@ void (async () => {
         onStart: info => {
           botUsername = info.username
           process.stderr.write(`telegram channel: polling as @${info.username}\n`)
+          // Register commands in Telegram's "/" autocomplete menu.
+          // Bot-level commands (start, help, status) are handled locally.
+          // Claude Code skills (commit, review, etc.) are relayed as plain
+          // text — Claude recognizes the /slash syntax and executes them.
+          // Telegram command names: lowercase a-z and underscores only.
           void bot.api.setMyCommands(
             [
+              // Bot commands
               { command: 'start', description: 'Welcome and setup guide' },
               { command: 'help', description: 'What this bot can do' },
               { command: 'status', description: 'Check your pairing status' },
+              // Claude Code skills — relayed as text, Claude executes
+              { command: 'commit', description: 'Create a git commit' },
+              { command: 'review', description: 'Run code reviews' },
             ],
             { scope: { type: 'all_private_chats' } },
           ).catch(() => {})
