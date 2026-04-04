@@ -34,7 +34,7 @@
       "description": "AI-first project auditor and re-engineer based on the 9 design principles and 7 design patterns from the TechWolf AI-First Bootcamp",
       "source": {
         "source": "git-subdir",
-        "url": "techwolf-ai/ai-first-toolkit",
+        "url": "https://github.com/techwolf-ai/ai-first-toolkit.git",
         "path": "plugins/ai-firstify",
         "ref": "main",
         "sha": "7f18e11d694b9ae62ea3009fbbc175f08ae913df"
@@ -69,7 +69,8 @@
         "source": "git-subdir",
         "url": "https://github.com/awslabs/agent-plugins.git",
         "path": "plugins/amazon-location-service",
-        "ref": "main"
+        "ref": "main",
+        "sha": "165132190a9c554b7880b377588243b48124f287"
       },
       "homepage": "https://github.com/awslabs/agent-plugins"
     },
@@ -143,7 +144,8 @@
         "source": "git-subdir",
         "url": "https://github.com/awslabs/agent-plugins.git",
         "path": "plugins/aws-serverless",
-        "ref": "main"
+        "ref": "main",
+        "sha": "165132190a9c554b7880b377588243b48124f287"
       },
       "homepage": "https://github.com/awslabs/agent-plugins"
     },
@@ -353,7 +355,8 @@
         "source": "git-subdir",
         "url": "https://github.com/awslabs/agent-plugins.git",
         "path": "plugins/deploy-on-aws",
-        "ref": "main"
+        "ref": "main",
+        "sha": "165132190a9c554b7880b377588243b48124f287"
       },
       "homepage": "https://github.com/awslabs/agent-plugins"
     },
@@ -545,7 +548,7 @@
       "description": "Build on Solana with Helius — live blockchain tools, expert coding patterns, and autonomous account signup",
       "source": {
         "source": "git-subdir",
-        "url": "helius-labs/core-ai",
+        "url": "https://github.com/helius-labs/core-ai.git",
         "path": "helius-plugin",
         "ref": "main",
         "sha": "05ea4d1128d46618266bbcc23a5e7019c57be0d6"
@@ -660,7 +663,7 @@
       "category": "productivity",
       "source": {
         "source": "git-subdir",
-        "url": "legalzoom/claude-plugins",
+        "url": "https://github.com/legalzoom/claude-plugins.git",
         "path": "plugins/legalzoom",
         "ref": "main",
         "sha": "f9fd8a0ca6e1421bc1aacb113a109663a7a6f6d8"
@@ -734,7 +737,8 @@
         "source": "git-subdir",
         "url": "https://github.com/awslabs/agent-plugins.git",
         "path": "plugins/migration-to-aws",
-        "ref": "main"
+        "ref": "main",
+        "sha": "165132190a9c554b7880b377588243b48124f287"
       },
       "homepage": "https://github.com/awslabs/agent-plugins"
     },
@@ -766,7 +770,7 @@
       "category": "database",
       "source": {
         "source": "git-subdir",
-        "url": "neondatabase/agent-skills",
+        "url": "https://github.com/neondatabase/agent-skills.git",
         "path": "plugins/neon-postgres",
         "ref": "main",
         "sha": "54d7a9db2ddd476f84d5d1fd7bac323907858a8b"
@@ -1019,7 +1023,7 @@
       "category": "deployment",
       "source": {
         "source": "git-subdir",
-        "url": "railwayapp/railway-skills",
+        "url": "https://github.com/railwayapp/railway-skills.git",
         "path": "plugins/railway",
         "ref": "main",
         "sha": "d52f3741a6a33a3191d6138eb3d6c3355cb970d1"
@@ -1155,7 +1159,9 @@
       "source": {
         "source": "git-subdir",
         "url": "https://github.com/semgrep/mcp-marketplace.git",
-        "path": "plugin"
+        "path": "plugin",
+        "sha": "6f39623510411a255def92c98f89b595e0b086f4",
+        "ref": "main"
       },
       "homepage": "https://github.com/semgrep/mcp-marketplace.git"
     },
@@ -1262,9 +1268,10 @@
       "category": "development",
       "source": {
         "source": "git-subdir",
-        "url": "stripe/ai",
+        "url": "https://github.com/stripe/ai.git",
         "path": "providers/claude/plugin",
-        "ref": "main"
+        "ref": "main",
+        "sha": "6856c6cd4dd11152e4d8d97d42abc21558dcacc8"
       },
       "homepage": "https://github.com/stripe/ai/tree/main/providers/claude/plugin"
     },
@@ -1369,7 +1376,7 @@
       "category": "development",
       "source": {
         "source": "git-subdir",
-        "url": "UI5/plugins-claude",
+        "url": "https://github.com/UI5/plugins-claude.git",
         "path": "plugins/ui5",
         "ref": "main",
         "sha": "5070dfc1cef711d6efad40beb43750027039d71f"
@@ -1382,7 +1389,7 @@
       "category": "development",
       "source": {
         "source": "git-subdir",
-        "url": "UI5/plugins-claude",
+        "url": "https://github.com/UI5/plugins-claude.git",
         "path": "plugins/ui5-typescript-conversion",
         "ref": "main",
         "sha": "5070dfc1cef711d6efad40beb43750027039d71f"
@@ -1436,7 +1443,7 @@
       "category": "productivity",
       "source": {
         "source": "git-subdir",
-        "url": "zapier/zapier-mcp",
+        "url": "https://github.com/zapier/zapier-mcp.git",
         "path": "plugins/zapier",
         "ref": "main",
         "sha": "b93007e9a726c6ee93c57a949e732744ef5acbfd"
