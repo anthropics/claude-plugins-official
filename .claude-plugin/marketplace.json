@@ -418,6 +418,17 @@
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/plugins/ralph-loop"
     },
     {
+      "name": "remote-control",
+      "description": "Send commands to a running Claude Code session from external systems via the RemoteTrigger API. Set up a trigger, then dispatch prompts from CI pipelines, scripts, or other tools.",
+      "author": {
+        "name": "Anthropic",
+        "email": "support@anthropic.com"
+      },
+      "source": "./plugins/remote-control",
+      "category": "productivity",
+      "homepage": "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/remote-control"
+    },
+    {
       "name": "hookify",
       "description": "Easily create custom hooks to prevent unwanted behaviors by analyzing conversation patterns or from explicit instructions. Define rules via simple markdown files.",
       "author": {

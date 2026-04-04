@@ -1,0 +1,15 @@
+{
+  "description": "Remote Control plugin stop hook - polls for incoming remote commands",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/stop-hook.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "name": "remote-control",
+  "description": "Send commands to a running Claude Code session from external systems via the RemoteTrigger API. Set up a trigger, then dispatch prompts from CI pipelines, scripts, or other tools.",
+  "author": {
+    "name": "Anthropic",
+    "email": "support@anthropic.com"
+  }
+}
