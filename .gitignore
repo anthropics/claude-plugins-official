@@ -1,2 +1,9 @@
-*.DS_Store
-.claude/
+node_modules/
+.env
+.claude/settings.local.json
+.env.local
+dist/
+*.vsix
+*.log
+.DS_Store
+Thumbs.db
