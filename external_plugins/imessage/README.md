@@ -62,6 +62,7 @@ Handles are phone numbers (`+15551234567`) or Apple ID emails (`them@icloud.com`
 | Variable | Default | Effect |
 | --- | --- | --- |
 | `IMESSAGE_APPEND_SIGNATURE` | `true` | Appends `\nSent by Claude` to outbound messages. Set to `false` to disable. |
+| `IMESSAGE_ALLOW_SMS` | `false` | Accept inbound SMS/RCS in addition to iMessage. **Off by default because SMS sender IDs are spoofable** — a forged SMS from your own number would otherwise bypass access control. Only enable if you understand the risk. |
 | `IMESSAGE_ACCESS_MODE` | — | Set to `static` to disable runtime pairing and read `access.json` only. |
 | `IMESSAGE_STATE_DIR` | `~/.claude/channels/imessage` | Override where `access.json` and pairing state live. |
 
@@ -76,7 +77,7 @@ Quick reference: IDs are **handle addresses** (`+15551234567` or `someone@icloud
 | Tool | Purpose |
 | --- | --- |
 | `reply` | Send to a chat. `chat_id` + `text`, optional `files` (absolute paths). Auto-chunks text; files send as separate messages. |
-| `chat_messages` | Fetch recent history from a chat (oldest-first). Reads `chat.db` directly — full native history. Scoped to allowlisted chats. |
+| `chat_messages` | Fetch recent history as conversation threads. Each thread is labelled **DM** or **Group** with its participant list, then timestamped messages (oldest-first). Omit `chat_guid` to see every allowlisted chat at once, or pass one to drill in. Default 100 messages per chat. Reads `chat.db` directly — full native history. |
 
 ## What you don't get
 

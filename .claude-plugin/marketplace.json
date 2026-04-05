@@ -464,7 +464,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/tryflint/claude-code-plugin.git",
-        "sha": "8f57ef474f59817c7e5930dd6c295232d43c3711"
+        "sha": "f3d56e33ed2fb3ed9b4f02e0fc65d0a79b24bf4d"
       },
       "homepage": "https://www.tryflint.com/docs/claude-code-plugin"
     },
@@ -695,6 +695,17 @@
       }
     },
     {
+      "name": "math-olympiad",
+      "description": "Solve competition math (IMO, Putnam, USAMO) with adversarial verification that catches what self-verification misses. Fresh-context verifiers attack proofs with specific failure patterns. Calibrated abstention over bluffing.",
+      "author": {
+        "name": "Anthropic",
+        "email": "support@anthropic.com"
+      },
+      "source": "./plugins/math-olympiad",
+      "category": "math",
+      "homepage": "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/math-olympiad"
+    },
+    {
       "name": "mcp-server-dev",
       "description": "Skills for designing and building MCP servers that work seamlessly with Claude. Guides you through deployment models (remote HTTP, MCPB, local), tool design patterns, auth, and interactive MCP apps.",
       "author": {
@@ -737,6 +748,17 @@
         "sha": "ce435be18a700dc849d6a63a80da4816d1e2128c"
       },
       "homepage": "https://www.mintlify.com/"
+    },
+    {
+      "name": "mongodb",
+      "description": "Official Claude plugin for MongoDB (MCP Server + Skills). Connect to databases, explore data, manage collections, optimize queries, generate reliable code, implement best practices, develop advanced features, and more.",
+      "category": "database",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/mongodb/agent-skills.git",
+        "sha": "c47079f65e88a113c52d1ce0618684cef300246c"
+      },
+      "homepage": "https://www.mongodb.com/docs/mcp-server/overview/"
     },
     {
       "name": "neon",
@@ -901,8 +923,7 @@
       "category": "monitoring",
       "source": {
         "source": "url",
-        "url": "https://github.com/PostHog/ai-plugin.git",
-        "sha": "f2f37954ecef9f1afce4fa81b6a612454a96c410"
+        "url": "https://github.com/PostHog/ai-plugin.git"
       },
       "homepage": "https://posthog.com/docs/model-context-protocol"
     },
@@ -923,7 +944,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/Postman-Devrel/postman-claude-code-plugin.git",
-        "sha": "0714280351c1a137e79aad465a66730511ffbd57"
+        "sha": "40b11ac3466c500cf4625ac016d5c01cd00046f4"
       },
       "homepage": "https://learning.postman.com/docs/developer/postman-mcp-server/"
     },
@@ -1180,6 +1201,17 @@
       "homepage": "https://github.com/slackapi/slack-mcp-plugin/tree/main"
     },
     {
+      "name": "sonarqube-agent-plugins",
+      "description": "Integrate SonarQube code quality and security analysis into Claude Code: namespaced slash commands, a guided skill to setup the SonarQube CLI, and a startup check for CLI wiring. MCP server registration and secrets-scanning hooks are installed by the SonarQube CLI as part of setup.",
+      "category": "security",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/SonarSource/sonarqube-agent-plugins.git",
+        "sha": "0cae644cee9318e6245b62ca779abdc60e6daa49"
+      },
+      "homepage": "https://github.com/SonarSource/sonarqube-agent-plugins"
+    },
+    {
       "name": "sonatype-guide",
       "description": "Sonatype Guide MCP server for software supply chain intelligence and dependency security. Analyze dependencies for vulnerabilities, get secure version recommendations, and check component quality metrics.",
       "category": "security",
@@ -1332,6 +1364,32 @@
       }
     },
     {
+      "name": "ui5",
+      "description": "SAPUI5 / OpenUI5 plugin for Claude. Create and validate UI5 projects, access API documentation, run UI5 linter, get development guidelines and best practices for UI5 development.",
+      "category": "development",
+      "source": {
+        "source": "git-subdir",
+        "url": "UI5/plugins-claude",
+        "path": "plugins/ui5",
+        "ref": "main",
+        "sha": "5070dfc1cef711d6efad40beb43750027039d71f"
+      },
+      "homepage": "https://github.com/UI5/plugins-claude"
+    },
+    {
+      "name": "ui5-typescript-conversion",
+      "description": "SAPUI5 / OpenUI5 plugin for Claude. Convert JavaScript based UI5 projects to TypeScript.",
+      "category": "development",
+      "source": {
+        "source": "git-subdir",
+        "url": "UI5/plugins-claude",
+        "path": "plugins/ui5-typescript-conversion",
+        "ref": "main",
+        "sha": "5070dfc1cef711d6efad40beb43750027039d71f"
+      },
+      "homepage": "https://github.com/UI5/plugins-claude"
+    },
+    {
       "name": "vercel",
       "description": "Vercel deployment platform integration. Manage deployments, check build status, access logs, configure domains, and control your frontend infrastructure directly from Claude Code.",
       "category": "deployment",
@@ -1384,17 +1442,6 @@
         "sha": "b93007e9a726c6ee93c57a949e732744ef5acbfd"
       },
       "homepage": "https://github.com/zapier/zapier-mcp/tree/main/plugins/zapier"
-    },
-    {
-      "name": "zoominfo",
-      "description": "Search companies and contacts, enrich leads, find lookalikes, and get AI-ranked contact recommendations. Pre-built skills chain multiple ZoomInfo tools into complete B2B sales workflows.",
-      "category": "productivity",
-      "source": {
-        "source": "url",
-        "url": "https://github.com/Zoominfo/zoominfo-mcp-plugin.git",
-        "sha": "0705316ef8a2d0c64f81e50d4612ccc6a74edf03"
-      },
-      "homepage": "https://zoominfo.com"
     }
   ]
 }

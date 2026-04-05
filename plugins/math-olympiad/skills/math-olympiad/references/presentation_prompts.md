@@ -1,38 +1,68 @@
 # Presentation Pass — Prompts and Templates
 
-**Premise**: Aletheia's PDFs are beautiful; raw IMO output is not. The difference is a *presentation pass*: after a proof is **verified correct**, a fresh agent — one who didn't sweat through the discovery — finds the cleanest way to say it. The discoverer is too attached to the scaffolding.
+**Premise**: Aletheia's PDFs are beautiful; raw IMO output is not. The
+difference is a _presentation pass_: after a proof is **verified correct**, a
+fresh agent — one who didn't sweat through the discovery — finds the cleanest
+way to say it. The discoverer is too attached to the scaffolding.
 
-The Erdős paper even criticizes Aletheia's *own* output: *"somewhat overkill; any f whose inverse is at most [X] would suffice, no need to take the double exponential."* The presentation pass is where overkill goes to die.
+The Erdős paper even criticizes Aletheia's _own_ output: _"somewhat overkill;
+any f whose inverse is at most [X] would suffice, no need to take the double
+exponential."_ The presentation pass is where overkill goes to die.
 
 ---
 
 ## 1. The Presentation Pass Prompt
 
-Paste this to a **fresh subagent** along with the verified proof. The agent must not have discovery-context; that's the point.
+Paste this to a **fresh subagent** along with the verified proof. The agent must
+not have discovery-context; that's the point.
 
-> You are given a **verified, correct proof**. Your job is not to check it — it is correct. Your job is to find the **cleanest presentation**. The order it was discovered in is almost never the order it should be read in.
+> You are given a **verified, correct proof**. Your job is not to check it — it
+> is correct. Your job is to find the **cleanest presentation**. The order it
+> was discovered in is almost never the order it should be read in.
 >
 > Work through these questions in order:
 >
-> **Hindsight shortcuts.** Now that you know the answer, is there a 3-line argument? The discoverer built machinery to *find* the key step; you already *have* the key step. Can the machinery be discarded? (Classic: a long case-bash that, in hindsight, collapses once you spot the invariant.)
+> **Hindsight shortcuts.** Now that you know the answer, is there a 3-line
+> argument? The discoverer built machinery to _find_ the key step; you already
+> _have_ the key step. Can the machinery be discarded? (Classic: a long
+> case-bash that, in hindsight, collapses once you spot the invariant.)
 >
-> **Overkill.** Is any bound stronger than needed? Any construction more general than the problem requires? If a double exponential works but a linear function also works, use the linear one — the reader will wonder what the double exponential is hiding. Match the strength of each tool to the strength of what it's proving.
+> **Overkill.** Is any bound stronger than needed? Any construction more general
+> than the problem requires? If a double exponential works but a linear function
+> also works, use the linear one — the reader will wonder what the double
+> exponential is hiding. Match the strength of each tool to the strength of what
+> it's proving.
 >
-> **What to cut.** Which steps *verify* without *illuminating*? Discovery leaves a debris field: sanity checks, dead ends backed out of, "note that X (we won't use this)". Delete them. If a paragraph can be removed and the proof still compiles in the reader's head, remove it.
+> **What to cut.** Which steps _verify_ without _illuminating_? Discovery leaves
+> a debris field: sanity checks, dead ends backed out of, "note that X (we won't
+> use this)". Delete them. If a paragraph can be removed and the proof still
+> compiles in the reader's head, remove it.
 >
-> **Lemma granularity.** Inline a lemma if it's used once and the proof is ≤3 lines. Keep it standalone if it's used twice, or if its *statement alone* clarifies the structure (even with a 1-line proof). Name standalone lemmas descriptively — "Combinatorial dimension bound", not "Lemma 2".
+> **Lemma granularity.** Inline a lemma if it's used once and the proof is ≤3
+> lines. Keep it standalone if it's used twice, or if its _statement alone_
+> clarifies the structure (even with a 1-line proof). Name standalone lemmas
+> descriptively — "Combinatorial dimension bound", not "Lemma 2".
 >
-> **Order.** Lead with the main statement. Then the one idea that makes it work. Then the details. Isolate the one genuinely clever step — there's almost always exactly one — and let everything else be obviously routine *by contrast*.
+> **Order.** Lead with the main statement. Then the one idea that makes it work.
+> Then the details. Isolate the one genuinely clever step — there's almost
+> always exactly one — and let everything else be obviously routine _by
+> contrast_.
 >
-> **Step names.** Number steps *and* name them: "**Step 3: Fourier inversion and translation invariance.**" The name is a promise to the reader about what this block accomplishes. Signpost reductions explicitly: "We are reduced to showing that…"
+> **Step names.** Number steps _and_ name them: "**Step 3: Fourier inversion and
+> translation invariance.**" The name is a promise to the reader about what this
+> block accomplishes. Signpost reductions explicitly: "We are reduced to showing
+> that…"
 >
-> Output clean LaTeX using the template below. Aim for: a strong grad student could reconstruct every suppressed detail, a professor could skim the step names alone and nod.
+> Output clean LaTeX using the template below. Aim for: a strong grad student
+> could reconstruct every suppressed detail, a professor could skim the step
+> names alone and nod.
 
 ---
 
 ## 2. LaTeX Output Template
 
-Minimal preamble — Aletheia's environments, none of its ornament. No `tcolorbox`, no custom colors.
+Minimal preamble — Aletheia's environments, none of its ornament. No
+`tcolorbox`, no custom colors.
 
 ```latex
 \documentclass[11pt]{article}
@@ -89,10 +119,16 @@ Minimal preamble — Aletheia's environments, none of its ornament. No `tcolorbo
 ```
 
 **Style conventions lifted from the Aletheia samples:**
-- Display math for the equation a step *produces*; inline math for the algebra getting there.
-- Cite precisely when invoking a named result: *(Jacquet–Piatetski-Shapiro–Shalika, 1981)* — not "by a well-known theorem".
-- In contradiction proofs: state the false assumption plainly ("Suppose, for contradiction, that…"), and flag the collision plainly ("We are led to the contradiction $0 > 0$.").
-- Integer bounds earn the ceiling: if $d \ge n/k$ and $d \in \mathbb{Z}$, write $d \ge \lceil n/k \rceil$. Free sharpness.
+
+- Display math for the equation a step _produces_; inline math for the algebra
+  getting there.
+- Cite precisely when invoking a named result:
+  _(Jacquet–Piatetski-Shapiro–Shalika, 1981)_ — not "by a well-known theorem".
+- In contradiction proofs: state the false assumption plainly ("Suppose, for
+  contradiction, that…"), and flag the collision plainly ("We are led to the
+  contradiction $0 > 0$.").
+- Integer bounds earn the ceiling: if $d \ge n/k$ and $d \in \mathbb{Z}$, write
+  $d \ge \lceil n/k \rceil$. Free sharpness.
 
 ---
 
@@ -100,10 +136,18 @@ Minimal preamble — Aletheia's environments, none of its ornament. No `tcolorbo
 
 The presentation agent should flag and fix these:
 
-- **Discovery-order exposition.** "First I tried X, which led me to notice Y…" — the reader doesn't care. State Y.
-- **Overkill constructions.** The tell: the bound you prove is parametrically stronger than what the next line consumes. Weaken it until it's tight.
-- **Proof by intimidation.** *"It is trivial to see that…"*, *"Obviously…"*, *"A standard argument shows…"* — if it's trivial, one sentence suffices. Write the sentence.
-- **Unnecessary generality.** Proving it for all $n$ when the problem asks about $n=3$ and the general case adds no insight, only indices.
+- **Discovery-order exposition.** "First I tried X, which led me to notice Y…" —
+  the reader doesn't care. State Y.
+- **Overkill constructions.** The tell: the bound you prove is parametrically
+  stronger than what the next line consumes. Weaken it until it's tight.
+- **Proof by intimidation.** _"It is trivial to see that…"_, _"Obviously…"_, _"A
+  standard argument shows…"_ — if it's trivial, one sentence suffices. Write the
+  sentence.
+- **Unnecessary generality.** Proving it for all $n$ when the problem asks about
+  $n=3$ and the general case adds no insight, only indices.
 - **Orphan lemmas.** Stated, proved, cited once, three lines long. Inline it.
-- **Unlabeled case splits.** Five cases, no indication of why five or what distinguishes them. Name the cases; say upfront which one carries the content.
-- **Missing signposts.** A page of computation with no "we are reduced to" / "it suffices to show" markers. The reader shouldn't have to reverse-engineer your strategy.
+- **Unlabeled case splits.** Five cases, no indication of why five or what
+  distinguishes them. Name the cases; say upfront which one carries the content.
+- **Missing signposts.** A page of computation with no "we are reduced to" / "it
+  suffices to show" markers. The reader shouldn't have to reverse-engineer your
+  strategy.
