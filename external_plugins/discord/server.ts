@@ -84,6 +84,8 @@ const client = new Client({
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildMessageReactions,
+    GatewayIntentBits.DirectMessageReactions,
   ],
   // DMs arrive as partial channels — messageCreate never fires without this.
   partials: [Partials.Channel],
@@ -669,7 +671,8 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
                   // messages in an opted-in channel never hit the gate but
                   // still live in channel history).
                   const text = m.content.replace(/[\r\n]+/g, ' ⏎ ')
-                  return `[${m.createdAt.toISOString()}] ${who}: ${text}  (id: ${m.id}${atts})`
+                  const reacts = m.reactions.cache.size > 0 ? ` [${m.reactions.cache.map(r => `${r.emoji}×${r.count}`).join(', ')}]` : ''
+                  return `[${m.createdAt.toISOString()}] ${who}: ${text}  (id: ${m.id}${atts}${reacts})`
                 })
                 .join('\n')
         return { content: [{ type: 'text', text: out }] }
