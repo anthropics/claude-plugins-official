@@ -672,7 +672,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
                   // still live in channel history).
                   const text = m.content.replace(/[\r\n]+/g, ' ⏎ ')
                   const reacts = m.reactions.cache.size > 0 ? ` [${m.reactions.cache.map(r => `${r.emoji}×${r.count}`).join(', ')}]` : ''
-                  return `[${m.createdAt.toISOString()}] ${who}: ${text}  (id: ${m.id}${atts}${reacts})`
+                  return `[${m.createdAt.toISOString()}] ${who}: ${text}  (id: ${m.id}, attachments: ${atts}, reactions: ${reacts})`
                 })
                 .join('\n')
         return { content: [{ type: 'text', text: out }] }
