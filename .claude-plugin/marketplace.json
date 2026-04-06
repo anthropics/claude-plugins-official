@@ -221,6 +221,17 @@
       "homepage": "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/claude-code-setup"
     },
     {
+      "name": "claude-mac-chrome",
+      "description": "Professional Chrome automation for Claude Code on macOS. Deterministic multi-profile detection via Chrome's authoritative Local State catalog combined with email extraction from tab titles and same-email disambiguation via SNSS Sessions/Tabs URL-set overlap. Addresses windows and tabs by stable AppleScript string IDs instead of ordinal indices. Zero user configuration, zero dependencies, shellcheck + shfmt clean.",
+      "category": "development",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/yolo-labz/claude-mac-chrome.git",
+        "sha": "6c724ed90511c46d8ba32410890268001ee2d7f1"
+      },
+      "homepage": "https://github.com/yolo-labz/claude-mac-chrome"
+    },
+    {
       "name": "claude-md-management",
       "description": "Tools to maintain and improve CLAUDE.md files - audit quality, capture session learnings, and keep project memory current.",
       "author": {
