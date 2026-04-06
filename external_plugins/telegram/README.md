@@ -88,6 +88,42 @@ local path is included in the `<channel>` notification so the assistant can
 `Read` it. Telegram compresses photos — if you need the original file, send it
 as a document instead (long-press → Send as File).
 
+## Voice transcription
+
+Voice messages arrive as `(voice message)` by default. To have them
+automatically transcribed so Claude receives the spoken text, set
+`TELEGRAM_VOICE_CMD` to a command that accepts an audio file path (`.ogg`) as
+its single argument and prints the transcription to **stdout**.
+
+Add it to `~/.claude/channels/telegram/.env`:
+
+```
+TELEGRAM_VOICE_CMD=/path/to/my-transcribe.sh
+```
+
+Example script using [OpenAI Whisper](https://github.com/openai/whisper):
+
+```bash
+#!/bin/bash
+whisper "$1" --model small --language ru --output_format txt --output_dir /tmp 2>/dev/null
+cat "/tmp/$(basename "${1%.*}").txt"
+rm -f "/tmp/$(basename "${1%.*}").txt"
+```
+
+Example using the OpenAI API:
+
+```bash
+#!/bin/bash
+curl -s https://api.openai.com/v1/audio/transcriptions \
+  -H "Authorization: Bearer $OPENAI_API_KEY" \
+  -F file="@$1" -F model="whisper-1" | jq -r .text
+```
+
+Any tool works — `faster-whisper`, `whisper.cpp`, a cloud API — as long as it
+reads the file and prints text to stdout. The command has a 2-minute timeout.
+If it fails or `TELEGRAM_VOICE_CMD` is unset, the original `(voice message)`
+behavior is preserved.
+
 ## No history or search
 
 Telegram's Bot API exposes **neither** message history nor search. The bot

@@ -19,7 +19,8 @@ import { z } from 'zod'
 import { Bot, GrammyError, InlineKeyboard, InputFile, type Context } from 'grammy'
 import type { ReactionTypeEmoji } from 'grammy/types'
 import { randomBytes } from 'crypto'
-import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, statSync, renameSync, realpathSync, chmodSync } from 'fs'
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, statSync, renameSync, realpathSync, chmodSync, existsSync, unlinkSync } from 'fs'
+import { execFileSync } from 'child_process'
 import { homedir } from 'os'
 import { join, extname, sep } from 'path'
 
@@ -51,6 +52,30 @@ if (!TOKEN) {
   process.exit(1)
 }
 const INBOX_DIR = join(STATE_DIR, 'inbox')
+
+// Voice transcription — optional, disabled by default.
+// Set TELEGRAM_VOICE_CMD to a command that accepts an audio file path as its
+// single argument and prints the transcription to stdout.
+// Example: TELEGRAM_VOICE_CMD="my-transcribe.sh"
+//   where my-transcribe.sh does: whisper "$1" --model small -f txt -o /tmp && cat /tmp/$(basename "${1%.*}").txt
+const VOICE_CMD = process.env.TELEGRAM_VOICE_CMD ?? ''
+
+/** Run the user-supplied voice transcription command. Returns text or undefined. */
+function transcribeVoice(audioPath: string): string | undefined {
+  if (!VOICE_CMD) return undefined
+  try {
+    const result = execFileSync(VOICE_CMD, [audioPath], {
+      timeout: 120_000,
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    const text = result.trim()
+    return text || undefined
+  } catch (err) {
+    process.stderr.write(`telegram channel: voice transcription failed: ${err}\n`)
+    return undefined
+  }
+}
 
 // Last-resort safety net — without these the process dies silently on any
 // unhandled promise rejection. With them it logs and keeps serving tools.
@@ -791,7 +816,33 @@ bot.on('message:document', async ctx => {
 
 bot.on('message:voice', async ctx => {
   const voice = ctx.message.voice
-  const text = ctx.message.caption ?? '(voice message)'
+  const caption = ctx.message.caption ?? ''
+
+  // When TELEGRAM_VOICE_CMD is set, download the voice file and transcribe it
+  // so Claude receives the spoken text instead of a bare "(voice message)" tag.
+  let transcription: string | undefined
+  if (VOICE_CMD) {
+    try {
+      const file = await ctx.api.getFile(voice.file_id)
+      if (file.file_path) {
+        const url = `https://api.telegram.org/file/bot${TOKEN}/${file.file_path}`
+        const res = await fetch(url)
+        const buf = Buffer.from(await res.arrayBuffer())
+        const audioPath = join(INBOX_DIR, `${Date.now()}-${voice.file_unique_id}.ogg`)
+        mkdirSync(INBOX_DIR, { recursive: true })
+        writeFileSync(audioPath, buf)
+        transcription = transcribeVoice(audioPath)
+        try { unlinkSync(audioPath) } catch {}
+      }
+    } catch (err) {
+      process.stderr.write(`telegram channel: voice download failed: ${err}\n`)
+    }
+  }
+
+  const text = transcription
+    ? `🎤 [voice]: ${transcription}${caption ? `\n${caption}` : ''}`
+    : caption || '(voice message)'
+
   await handleInbound(ctx, text, undefined, {
     kind: 'voice',
     file_id: voice.file_id,
