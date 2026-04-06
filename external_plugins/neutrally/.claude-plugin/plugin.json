@@ -1,0 +1,15 @@
+{
+  "name": "neutrally",
+  "description": "Persistent cross-session memory for Claude Code. Auto-injects your project context, decisions, and preferences at session start. Captures conversations every 5 minutes. Survives /compact and session restarts.",
+  "version": "1.0.0",
+  "author": {
+    "name": "Neutrally",
+    "email": "hello@neutrally.app"
+  },
+  "homepage": "https://neutrally.app",
+  "repository": "https://github.com/neutrally-app/neutrally-claude-plugin",
+  "license": "MIT",
+  "keywords": ["memory", "context", "persistent", "cross-session", "developer-productivity"],
+  "skills": "./skills",
+  "commands": "./commands"
+}

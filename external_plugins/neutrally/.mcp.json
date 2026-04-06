@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "neutrally": {
+      "command": "npx",
+      "args": ["-y", "--package=neutrally", "neutrally-mcp"]
+    }
+  }
+}
