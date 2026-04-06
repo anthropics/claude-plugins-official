@@ -1180,6 +1180,17 @@
       ]
     },
     {
+      "name": "session-normalizer",
+      "description": "Auto-cleanup junk sessions on startup, show project-relevant sessions as context, and merge old sessions into project docs. Keeps one meaningful session per project.",
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/mutale/session-normalizer.git",
+        "sha": "f5e31a80a2916a8ef871e4e1e640464733bdc1d9"
+      },
+      "homepage": "https://github.com/mutale/session-normalizer"
+    },
+    {
       "name": "skill-creator",
       "description": "Create new skills, improve existing skills, and measure skill performance. Use when users want to create a skill from scratch, update or optimize an existing skill, run evals to test a skill, or benchmark skill performance with variance analysis.",
       "author": {
