@@ -1,0 +1,5 @@
+node_modules/
+bun.lock
+bun.lockb
+debug.log
+*.sqlite

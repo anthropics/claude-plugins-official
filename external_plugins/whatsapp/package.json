@@ -1,0 +1,34 @@
+{
+  "name": "claude-channel-whatsapp",
+  "version": "0.1.0",
+  "description": "WhatsApp channel plugin for Claude Code — bridge WhatsApp messages to Claude via MCP",
+  "license": "Apache-2.0",
+  "type": "module",
+  "bin": "./server.ts",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/PenguinMiaou/claude-channel-whatsapp.git"
+  },
+  "homepage": "https://github.com/PenguinMiaou/claude-channel-whatsapp",
+  "bugs": {
+    "url": "https://github.com/PenguinMiaou/claude-channel-whatsapp/issues"
+  },
+  "author": "PenguinMiaou",
+  "keywords": [
+    "claude",
+    "claude-code",
+    "whatsapp",
+    "mcp",
+    "channel",
+    "baileys",
+    "plugin"
+  ],
+  "scripts": {
+    "start": "bun install --no-summary && bun server.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@whiskeysockets/baileys": "^6.7.16",
+    "zod": "^3.23.0"
+  }
+}

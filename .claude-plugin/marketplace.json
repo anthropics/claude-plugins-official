@@ -1323,6 +1323,12 @@
       "source": "./external_plugins/telegram"
     },
     {
+      "name": "whatsapp",
+      "description": "WhatsApp messaging bridge via WhatsApp Web with built-in access control. Manage pairing, allowlists, and policy via /whatsapp:access.",
+      "category": "productivity",
+      "source": "./external_plugins/whatsapp"
+    },
+    {
       "name": "terraform",
       "description": "The Terraform MCP Server provides seamless integration with Terraform ecosystem, enabling advanced automation and interaction capabilities for Infrastructure as Code (IaC) development.",
       "author": {

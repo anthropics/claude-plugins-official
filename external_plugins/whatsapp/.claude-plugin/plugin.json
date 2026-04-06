@@ -1,0 +1,11 @@
+{
+  "name": "whatsapp",
+  "description": "WhatsApp channel for Claude Code — messaging bridge via WhatsApp Web with built-in access control. Manage pairing, allowlists, and policy via /whatsapp:access.",
+  "version": "0.1.0",
+  "keywords": [
+    "whatsapp",
+    "messaging",
+    "channel",
+    "mcp"
+  ]
+}
