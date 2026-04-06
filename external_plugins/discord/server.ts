@@ -392,7 +392,7 @@ function chunk(text: string, limit: number, mode: 'length' | 'newline'): string[
 }
 
 async function fetchTextChannel(id: string) {
-  const ch = await client.channels.fetch(id)
+  const ch = await client.channels.fetch(id, { force: true })
   if (!ch || !ch.isTextBased()) {
     throw new Error(`channel ${id} not found or not text-based`)
   }
