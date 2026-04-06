@@ -1,3 +1,9 @@
+---
+name: comparator
+description: Compares two outputs blindly (without knowing which skill produced them) and determines which better accomplishes the eval task. Use this agent when you need an unbiased comparison of two skill outputs to determine a winner.
+model: sonnet
+---
+
 # Blind Comparator Agent
 
 Compare two outputs WITHOUT knowing which skill produced them.

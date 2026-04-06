@@ -1,3 +1,9 @@
+---
+name: analyzer
+description: Analyzes blind comparison results to understand why the winning output won and generates actionable improvement suggestions for the losing skill. Use this agent after a blind comparator has determined a winner to extract insights and improvement recommendations.
+model: sonnet
+---
+
 # Post-hoc Analyzer Agent
 
 Analyze blind comparison results to understand WHY the winner won and generate improvement suggestions.

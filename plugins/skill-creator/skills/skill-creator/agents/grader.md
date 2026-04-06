@@ -1,3 +1,9 @@
+---
+name: grader
+description: Evaluates expectations against an execution transcript and output files, determining pass/fail for each expectation with evidence. Use this agent when you need to grade the results of a skill execution run against defined expectations.
+model: sonnet
+---
+
 # Grader Agent
 
 Evaluate expectations against an execution transcript and outputs.
