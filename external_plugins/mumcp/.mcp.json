@@ -1,0 +1,6 @@
+{
+  "mumcp": {
+    "type": "http",
+    "url": "https://mucp.mumega.com/mcp"
+  }
+}
