@@ -639,10 +639,11 @@ process.on('SIGINT', shutdown)
 bot.command('start', async ctx => {
   if (ctx.chat?.type !== 'private') return
   const access = loadAccess()
-  if (access.dmPolicy === 'disabled') {
-    await ctx.reply(`This bot isn't accepting new connections.`)
-    return
-  }
+  if (access.dmPolicy === 'disabled') return
+  const senderId = String(ctx.from?.id ?? '')
+  // In allowlist mode, silently drop non-allowlisted senders to avoid revealing
+  // that this bot is connected to a Claude Code session.
+  if (access.dmPolicy === 'allowlist' && !access.allowFrom.includes(senderId)) return
   await ctx.reply(
     `This bot bridges Telegram to a Claude Code session.\n\n` +
     `To pair:\n` +
@@ -654,6 +655,10 @@ bot.command('start', async ctx => {
 
 bot.command('help', async ctx => {
   if (ctx.chat?.type !== 'private') return
+  const access = loadAccess()
+  if (access.dmPolicy === 'disabled') return
+  const senderId = String(ctx.from?.id ?? '')
+  if (access.dmPolicy === 'allowlist' && !access.allowFrom.includes(senderId)) return
   await ctx.reply(
     `Messages you send here route to a paired Claude Code session. ` +
     `Text and photos are forwarded; replies and reactions come back.\n\n` +
@@ -668,6 +673,10 @@ bot.command('status', async ctx => {
   if (!from) return
   const senderId = String(from.id)
   const access = loadAccess()
+
+  if (access.dmPolicy === 'disabled') return
+  // In allowlist mode, silently drop non-allowlisted senders.
+  if (access.dmPolicy === 'allowlist' && !access.allowFrom.includes(senderId)) return
 
   if (access.allowFrom.includes(senderId)) {
     const name = from.username ? `@${from.username}` : senderId
