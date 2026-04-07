@@ -631,6 +631,34 @@ process.stdin.on('close', shutdown)
 process.on('SIGTERM', shutdown)
 process.on('SIGINT', shutdown)
 
+// Orphan watchdog — detect when Claude Code (grandparent) dies.
+// Chain: Claude Code → bun run (ppid of this process) → bun server.ts (this).
+// When Claude Code exits, "bun run" gets reparented to PID 1 on macOS/Linux.
+// The stdin EOF handler above should catch this, but if the intermediate "bun run"
+// wrapper keeps stdin open, the EOF never fires and this process becomes a zombie
+// burning CPU in the 409-retry polling loop. Poll every 30s as a safety net.
+const _orphanPpid = process.ppid
+const _orphanCheck = setInterval(() => {
+  try {
+    // Check if our direct parent is still alive
+    process.kill(_orphanPpid, 0)
+    // Parent alive — check if IT was reparented to launchd/init (ppid=1)
+    const result = Bun.spawnSync(['ps', '-o', 'ppid=', '-p', String(_orphanPpid)])
+    const grandPpid = result.stdout.toString().trim()
+    if (grandPpid === '1') {
+      process.stderr.write('telegram channel: orphan detected (grandparent died), shutting down\n')
+      clearInterval(_orphanCheck)
+      shutdown()
+    }
+  } catch {
+    // Parent process gone — definitely orphaned
+    process.stderr.write('telegram channel: parent process gone, shutting down\n')
+    clearInterval(_orphanCheck)
+    shutdown()
+  }
+}, 30_000)
+_orphanCheck.unref()
+
 // Commands are DM-only. Responding in groups would: (1) leak pairing codes via
 // /status to other group members, (2) confirm bot presence in non-allowlisted
 // groups, (3) spam channels the operator never approved. Silent drop matches
