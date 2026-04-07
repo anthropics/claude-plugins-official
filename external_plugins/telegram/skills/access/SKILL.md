@@ -109,12 +109,13 @@ Parse `$ARGUMENTS` (space-separated). If empty or unrecognized, show status.
 ### `set <key> <value>`
 
 Delivery/UX config. Supported keys: `ackReaction`, `replyToMode`,
-`textChunkLimit`, `chunkMode`, `mentionPatterns`. Validate types:
+`textChunkLimit`, `chunkMode`, `mentionPatterns`, `typingMode`. Validate types:
 - `ackReaction`: string (emoji) or `""` to disable
 - `replyToMode`: `off` | `first` | `all`
 - `textChunkLimit`: number
 - `chunkMode`: `length` | `newline`
 - `mentionPatterns`: JSON array of regex strings
+- `typingMode`: `mention` | `always` | `dm_only` | `off`
 
 Read, set the key, write, confirm.
 

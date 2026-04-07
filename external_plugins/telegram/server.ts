@@ -98,6 +98,8 @@ type Access = {
   textChunkLimit?: number
   /** Split on paragraph boundaries instead of hard char count. */
   chunkMode?: 'length' | 'newline'
+  /** When to send a typing indicator. Default: 'always'. */
+  typingMode?: 'always' | 'mention' | 'dm_only' | 'off'
 }
 
 function defaultAccess(): Access {
@@ -142,6 +144,7 @@ function readAccessFile(): Access {
       replyToMode: parsed.replyToMode,
       textChunkLimit: parsed.textChunkLimit,
       chunkMode: parsed.chunkMode,
+      typingMode: parsed.typingMode,
     }
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return defaultAccess()
@@ -905,7 +908,22 @@ async function handleInbound(
   }
 
   // Typing indicator — signals "processing" until we reply (or ~5s elapses).
-  void bot.api.sendChatAction(chat_id, 'typing').catch(() => {})
+  // Controlled by typingMode (default: 'mention'). Each mode's rule is one
+  // entry in the lookup; the Record key type ensures exhaustiveness.
+  const isGroup = ctx.chat!.type === 'group' || ctx.chat!.type === 'supergroup'
+  const mentioned = isGroup && isMentioned(ctx, access.mentionPatterns)
+  const typingMode = access.typingMode ?? 'always'
+
+  const shouldType: Record<NonNullable<Access['typingMode']>, boolean> = {
+    always:  true,
+    mention: !isGroup || mentioned,
+    dm_only: !isGroup,
+    off:     false,
+  }
+
+  if (shouldType[typingMode]) {
+    void bot.api.sendChatAction(chat_id, 'typing').catch(() => {})
+  }
 
   // Ack reaction — lets the user know we're processing. Fire-and-forget.
   // Telegram only accepts a fixed emoji whitelist — if the user configures

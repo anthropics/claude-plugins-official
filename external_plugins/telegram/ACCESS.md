@@ -86,6 +86,19 @@ Configure outbound behavior with `/telegram:access set <key> <value>`.
 /telegram:access set ackReaction ""
 ```
 
+**`typingMode`** controls when the bot sends a "typing…" indicator. In groups with `requireMention: false` the bot receives every message but usually only replies to @mentions — sending a typing indicator on all of them is noise for the whole group.
+
+| Value | Behavior |
+| --- | --- |
+| `always` (default) | Every delivered message, including unmentioned group messages. |
+| `mention` | DMs: always. Groups: only when @mentioned or replied to. |
+| `dm_only` | Only in DMs, never in groups. |
+| `off` | Never send a typing indicator. |
+
+```
+/telegram:access set typingMode dm_only
+```
+
 **`replyToMode`** controls threading on chunked replies. When a long response is split, `first` (default) threads only the first chunk under the inbound message; `all` threads every chunk; `off` sends all chunks standalone.
 
 **`textChunkLimit`** sets the split threshold. Telegram rejects messages over 4096 characters.
@@ -104,7 +117,7 @@ Configure outbound behavior with `/telegram:access set <key> <value>`.
 | `/telegram:access policy allowlist` | Set `dmPolicy`. Values: `pairing`, `allowlist`, `disabled`. |
 | `/telegram:access group add -1001654782309` | Enable a group. Flags: `--no-mention` (also requires disabling privacy mode), `--allow id1,id2`. |
 | `/telegram:access group rm -1001654782309` | Disable a group. |
-| `/telegram:access set ackReaction 👀` | Set a config key: `ackReaction`, `replyToMode`, `textChunkLimit`, `chunkMode`, `mentionPatterns`. |
+| `/telegram:access set ackReaction 👀` | Set a config key: `ackReaction`, `replyToMode`, `textChunkLimit`, `chunkMode`, `mentionPatterns`, `typingMode`. |
 
 ## Config file
 
@@ -142,6 +155,9 @@ Configure outbound behavior with `/telegram:access set <key> <value>`.
   "textChunkLimit": 4096,
 
   // length = cut at limit. newline = prefer paragraph boundaries.
-  "chunkMode": "newline"
+  "chunkMode": "newline",
+
+  // Typing indicator: always | mention | dm_only | off
+  "typingMode": "always"
 }
 ```
