@@ -922,6 +922,13 @@ async function handleInbound(
 
   // image_path goes in meta only — an in-content "[image attached — read: PATH]"
   // annotation is forgeable by any allowlisted sender typing that string.
+  // Extract reply-to context so Claude knows which message was quoted.
+  const replyTo = ctx.message?.reply_to_message
+  const replyMeta = replyTo ? {
+    reply_to_message_id: String(replyTo.message_id),
+    ...(replyTo.text ? { reply_to_text: replyTo.text.slice(0, 200) } : {}),
+  } : {}
+
   mcp.notification({
     method: 'notifications/claude/channel',
     params: {
@@ -940,6 +947,7 @@ async function handleInbound(
           ...(attachment.mime ? { attachment_mime: attachment.mime } : {}),
           ...(attachment.name ? { attachment_name: attachment.name } : {}),
         } : {}),
+        ...replyMeta,
       },
     },
   }).catch(err => {
