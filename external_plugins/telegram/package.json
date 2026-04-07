@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
-    "grammy": "^1.21.0"
+    "grammy": "^1.21.0",
+    "marked": "^17.0.6"
   }
 }

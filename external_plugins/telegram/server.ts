@@ -22,6 +22,152 @@ import { randomBytes } from 'crypto'
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, statSync, renameSync, realpathSync, chmodSync } from 'fs'
 import { homedir } from 'os'
 import { join, extname, sep } from 'path'
+import { Marked } from 'marked'
+
+// --- Markdown to Telegram HTML Converter ---
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+}
+
+let listDepth = 0
+const listStack: Array<{ ordered: boolean; start: number }> = []
+
+const telegramRenderer = {
+  paragraph(this: any, { tokens }: any): string {
+    const content = this.parser.parseInline(tokens)
+    return listDepth > 0 ? content + '\n' : content + '\n\n'
+  },
+
+  strong(this: any, { tokens }: any): string {
+    return `<b>${this.parser.parseInline(tokens)}</b>`
+  },
+
+  em(this: any, { tokens }: any): string {
+    return `<i>${this.parser.parseInline(tokens)}</i>`
+  },
+
+  codespan({ text }: any): string {
+    return `<code>${escapeHtml(text)}</code>`
+  },
+
+  code({ text, lang }: any): string {
+    const langAttr = lang ? ` class="language-${lang}"` : ''
+    return `<pre><code${langAttr}>${escapeHtml(text)}</code></pre>\n\n`
+  },
+
+  link(this: any, { href, tokens }: any): string {
+    if (!/^https?:\/\/|tg:\/\//i.test(href)) {
+      return `${this.parser.parseInline(tokens)}`
+    }
+    return `<a href="${href}">${this.parser.parseInline(tokens)}</a>`
+  },
+
+  heading(this: any, { tokens }: any): string {
+    const content = this.parser.parseInline(tokens)
+    if (content.startsWith('<b>') && content.endsWith('</b>')) {
+      return `\n${content}\n\n`
+    }
+    return `\n<b>${content}</b>\n\n`
+  },
+
+  hr(): string {
+    return '-------------------\n\n'
+  },
+
+  list(this: any, token: any): string {
+    listDepth++
+    listStack.push({ ordered: token.ordered, start: token.start || 1 })
+
+    const body = token.items.map((item: any, index: number) =>
+      this.listitem(item, index)
+    ).join('')
+
+    listStack.pop()
+    listDepth--
+
+    return ('\n' + body).replace(/\n\n+/g, '\n')
+  },
+
+  listitem(this: any, item: any, index: number): string {
+    let content = this.parser.parse(item.tokens)
+    content = content.replace(/\n+$/, '')
+
+    const indent = "\u00A0\u00A0".repeat(Math.max(0, listDepth - 1))
+    const currentList = listStack[listStack.length - 1]
+
+    let bullet: string
+    if (currentList?.ordered) {
+      bullet = `${(currentList.start || 1) + index}.`
+    } else {
+      if (listDepth === 1) bullet = '●'
+      else if (listDepth === 2) bullet = '○'
+      else bullet = '▪'
+    }
+
+    return `${indent}${bullet} ${content}\n`
+  },
+
+  br(): string {
+    return '\n'
+  },
+
+  html({ text }: any): string {
+    if (/^<\/?(b|i|u|s|a|code|pre)(\s|>)/i.test(text)) {
+      return text
+    }
+    return escapeHtml(text)
+  },
+
+  table(this: any, token: any): string {
+    const headerLine = token.header.map((c: any) => c.text).join(' | ')
+    const dividerLine = token.header.map(() => '---').join('|')
+
+    let body = ''
+    if (token.rows.length > 0) {
+      body = token.rows.map((row: any) => {
+        return row.map((c: any) => c.text).join(' | ')
+      }).join('\n')
+    }
+    return `<pre>${headerLine}\n${dividerLine}\n${body}</pre>\n\n`
+  },
+
+  tablerow(this: any): string { return "" },
+  tablecell(this: any, { tokens }: any): string {
+    return this.parser.parseInline(tokens)
+  }
+}
+
+const telegramMarked = new Marked({
+  renderer: telegramRenderer as any,
+  gfm: true,
+  breaks: true,
+  async: false
+})
+
+function convertMarkdownToTelegramHtml(markdown: string): string {
+  const previousDepth = listDepth
+  const previousStack = [...listStack]
+  listDepth = 0
+  listStack.length = 0
+
+  try {
+    const html = telegramMarked.parse(markdown) as string
+    const finalHtml = html.replace(/<br\s*\/?>/gi, '\n')
+    return finalHtml.replace(/\n{3,}/g, '\n\n').trim()
+  } catch (e) {
+    process.stderr.write(`Markdown conversion error: ${e}\n`)
+    return markdown
+  } finally {
+    listDepth = previousDepth
+    listStack.length = 0
+    listStack.push(...previousStack)
+  }
+}
 
 const STATE_DIR = process.env.TELEGRAM_STATE_DIR ?? join(homedir(), '.claude', 'channels', 'telegram')
 const ACCESS_FILE = join(STATE_DIR, 'access.json')
@@ -435,8 +581,8 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
           },
           format: {
             type: 'string',
-            enum: ['text', 'markdownv2'],
-            description: "Rendering mode. 'markdownv2' enables Telegram formatting (bold, italic, code, links). Caller must escape special chars per MarkdownV2 rules. Default: 'text' (plain, no escaping needed).",
+            enum: ['text', 'markdown', 'html'],
+            description: "Rendering mode. 'markdown' or 'html' enable Telegram formatting. Default: 'text' (plain, no escaping needed).",
           },
         },
         required: ['chat_id', 'text'],
@@ -477,8 +623,8 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
           text: { type: 'string' },
           format: {
             type: 'string',
-            enum: ['text', 'markdownv2'],
-            description: "Rendering mode. 'markdownv2' enables Telegram formatting (bold, italic, code, links). Caller must escape special chars per MarkdownV2 rules. Default: 'text' (plain, no escaping needed).",
+            enum: ['text', 'markdown', 'html'],
+            description: "Rendering mode. 'markdown' or 'html' enable Telegram formatting. Default: 'text' (plain, no escaping needed).",
           },
         },
         required: ['chat_id', 'message_id', 'text'],
@@ -496,8 +642,17 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         const text = args.text as string
         const reply_to = args.reply_to != null ? Number(args.reply_to) : undefined
         const files = (args.files as string[] | undefined) ?? []
-        const format = (args.format as string | undefined) ?? 'text'
-        const parseMode = format === 'markdownv2' ? 'MarkdownV2' as const : undefined
+        const format = (args.format as string | undefined) ?? 'markdown'
+
+        let parseMode: 'HTML' | 'MarkdownV2' | undefined
+        let processedText = text
+
+        if (format === 'markdown') {
+          parseMode = 'HTML'
+          processedText = convertMarkdownToTelegramHtml(text)
+        } else if (format === 'html') {
+          parseMode = 'HTML'
+        }
 
         assertAllowedChat(chat_id)
 
@@ -513,7 +668,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         const limit = Math.max(1, Math.min(access.textChunkLimit ?? MAX_CHUNK_LIMIT, MAX_CHUNK_LIMIT))
         const mode = access.chunkMode ?? 'length'
         const replyMode = access.replyToMode ?? 'first'
-        const chunks = chunk(text, limit, mode)
+        const chunks = chunk(processedText, limit, mode)
         const sentIds: number[] = []
 
         try {
@@ -585,13 +740,15 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
       }
       case 'edit_message': {
         assertAllowedChat(args.chat_id as string)
-        const editFormat = (args.format as string | undefined) ?? 'text'
-        const editParseMode = editFormat === 'markdownv2' ? 'MarkdownV2' as const : undefined
+        const editFormat = (args.format as string | undefined) ?? 'markdown'
+        const editText = editFormat === 'markdown'
+          ? convertMarkdownToTelegramHtml(args.text as string)
+          : args.text as string
         const edited = await bot.api.editMessageText(
           args.chat_id as string,
           Number(args.message_id),
-          args.text as string,
-          ...(editParseMode ? [{ parse_mode: editParseMode }] : []),
+          editText,
+          { parse_mode: 'HTML' as const },
         )
         const id = typeof edited === 'object' ? edited.message_id : args.message_id
         return { content: [{ type: 'text', text: `edited (id: ${id})` }] }
