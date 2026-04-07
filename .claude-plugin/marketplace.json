@@ -422,7 +422,7 @@
       "homepage": "https://docs.voxel51.com/"
     },
     {
-      "name": "figma",
+      "name": "figma-plugin",
       "description": "Figma design platform integration. Access design files, extract component information, read design tokens, and translate designs into code. Bridge the gap between design and development workflows.",
       "category": "design",
       "source": {
