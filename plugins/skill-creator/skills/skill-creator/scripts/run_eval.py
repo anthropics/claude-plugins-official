@@ -144,12 +144,12 @@ def run_single_query(
                             delta = se.get("delta", {})
                             if delta.get("type") == "input_json_delta":
                                 accumulated_json += delta.get("partial_json", "")
-                                if clean_name in accumulated_json:
+                                if clean_name in accumulated_json or skill_name in accumulated_json:
                                     return True
 
                         elif se_type in ("content_block_stop", "message_stop"):
                             if pending_tool_name:
-                                return clean_name in accumulated_json
+                                return clean_name in accumulated_json or skill_name in accumulated_json
                             if se_type == "message_stop":
                                 return False
 
@@ -161,9 +161,9 @@ def run_single_query(
                                 continue
                             tool_name = content_item.get("name", "")
                             tool_input = content_item.get("input", {})
-                            if tool_name == "Skill" and clean_name in tool_input.get("skill", ""):
+                            if tool_name == "Skill" and (clean_name in tool_input.get("skill", "") or skill_name in tool_input.get("skill", "")):
                                 triggered = True
-                            elif tool_name == "Read" and clean_name in tool_input.get("file_path", ""):
+                            elif tool_name == "Read" and (clean_name in tool_input.get("file_path", "") or skill_name in tool_input.get("file_path", "")):
                                 triggered = True
                             return triggered
 
