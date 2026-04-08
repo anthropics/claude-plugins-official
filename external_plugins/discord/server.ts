@@ -222,6 +222,10 @@ type GateResult =
 const recentSentIds = new Set<string>()
 const RECENT_SENT_CAP = 200
 
+// Map DM channel ID → user ID, populated when inbound gate accepts a DM.
+// Fallback for when DMChannel.recipientId is undefined after cache eviction.
+const dmChannelOwners = new Map<string, string>()
+
 function noteSent(id: string): void {
   recentSentIds.add(id)
   if (recentSentIds.size > RECENT_SENT_CAP) {
@@ -242,7 +246,10 @@ async function gate(msg: Message): Promise<GateResult> {
   const isDM = msg.channel.type === ChannelType.DM
 
   if (isDM) {
-    if (access.allowFrom.includes(senderId)) return { action: 'deliver', access }
+    if (access.allowFrom.includes(senderId)) {
+      dmChannelOwners.set(msg.channelId, senderId)
+      return { action: 'deliver', access }
+    }
     if (access.dmPolicy === 'allowlist') return { action: 'drop' }
 
     // pairing mode — check for existing non-expired code for this sender
@@ -404,7 +411,8 @@ async function fetchAllowedChannel(id: string) {
   const ch = await fetchTextChannel(id)
   const access = loadAccess()
   if (ch.type === ChannelType.DM) {
-    if (access.allowFrom.includes(ch.recipientId)) return ch
+    const rid = ch.recipientId ?? dmChannelOwners.get(id)
+    if (rid && access.allowFrom.includes(rid)) return ch
   } else {
     const key = ch.isThread() ? ch.parentId ?? ch.id : ch.id
     if (key in access.groups) return ch
