@@ -487,6 +487,7 @@ const mcp = new Server(
 
 // Stores full permission details for "See more" expansion keyed by request_id.
 const pendingPermissions = new Map<string, { tool_name: string; description: string; input_preview: string }>()
+const resolvedPermissions = new Map<string, { readonly resolved: boolean; resolve(): void }>()
 
 // Receive permission_request from CC → format → send to all allowlisted DMs.
 // Groups are intentionally excluded — the security thread resolution was
@@ -523,6 +524,7 @@ mcp.setNotificationHandler(
         .setEmoji('❌')
         .setStyle(ButtonStyle.Danger),
     )
+    let resolved = false
     for (const userId of access.allowFrom) {
       void (async () => {
         try {
@@ -533,6 +535,21 @@ mcp.setNotificationHandler(
         }
       })()
     }
+    setTimeout(() => {
+      if (!resolved) {
+        resolved = true
+        void mcp.notification({
+          method: 'notifications/claude/channel/permission',
+          params: { request_id, behavior: 'deny' },
+        })
+        pendingPermissions.delete(request_id)
+        process.stderr.write(`permission_request ${request_id} auto-denied after 30s timeout\n`)
+      }
+    }, 30000)
+    resolvedPermissions.set(request_id, {
+      get resolved() { return resolved },
+      resolve() { resolved = true },
+    })
   },
 )
 
@@ -826,6 +843,13 @@ client.on('interactionCreate', async (interaction: Interaction) => {
     return
   }
 
+  const state = resolvedPermissions.get(request_id)
+  if (state?.resolved) {
+    await interaction.reply({ content: 'This request has already been resolved.', ephemeral: true }).catch(() => {})
+    return
+  }
+  state?.resolve()
+  resolvedPermissions.delete(request_id)
   void mcp.notification({
     method: 'notifications/claude/channel/permission',
     params: { request_id, behavior },
