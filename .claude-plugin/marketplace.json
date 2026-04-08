@@ -1421,6 +1421,17 @@
       "homepage": "https://dev.wix.com/docs/wix-cli/guides/development/about-wix-skills"
     },
     {
+      "name": "wmux-orchestrator",
+      "description": "Multi-agent task orchestration for Claude Code. Decomposes complex dev tasks into parallel agents coordinated through dependency-aware waves with visual terminal panes and automated review.",
+      "category": "development",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/amirlehmam/wmux-orchestrator.git",
+        "sha": "d8fd745e425a818d5f2789e76e60fba44fdb1d37"
+      },
+      "homepage": "https://wmux.org"
+    },
+    {
       "name": "wordpress.com",
       "description": "Uses Claude Code to create and edit WordPress sites with WordPress Studio before deploying changes to your WordPress.com site.",
       "source": {
