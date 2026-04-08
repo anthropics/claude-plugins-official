@@ -1,0 +1,8 @@
+{
+  "name": "prismer",
+  "description": "Prismer Evolution — cross-agent learning network with 9 hooks and 12 skills. Auto-learns from every coding session: errors become strategies, successful fixes become recommendations shared across all agents.",
+  "author": {
+    "name": "Prismer",
+    "email": "dev@prismer.cloud"
+  }
+}

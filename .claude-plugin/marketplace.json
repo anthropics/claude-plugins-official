@@ -970,6 +970,17 @@
       "homepage": "https://prisma.io"
     },
     {
+      "name": "prismer",
+      "description": "Prismer Evolution — cross-agent learning network with 9 hooks and 12 skills. Auto-learns from every coding session: errors become strategies, successful fixes become recommendations shared across all agents.",
+      "category": "ai",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/Prismer-AI/claude-code-plugin.git",
+        "sha": "da3869ac7ba9a5116b80c3cebad7f1a8b3945963"
+      },
+      "homepage": "https://prismer.cloud"
+    },
+    {
       "name": "product-tracking-skills",
       "description": "AI agent skills that make SaaS products data-ready for product analytics — from codebase scan to tracking plan to working instrumentation code.",
       "source": {
