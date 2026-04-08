@@ -164,26 +164,49 @@ See `references/schemas.md` for the full schema (including the `assertions` fiel
 
 This section is one continuous sequence — don't stop partway through. Do NOT use `/skill-test` or any other testing skill.
 
-Put results in `<skill-name>-workspace/` as a sibling to the skill directory. Within the workspace, organize results by iteration (`iteration-1/`, `iteration-2/`, etc.) and within that, each test case gets a directory (`eval-0/`, `eval-1/`, etc.). Don't create all of this upfront — just create directories as you go.
+Put results in `<skill-name>-workspace/` as a sibling to the skill directory. Within the workspace, organize results by iteration (`iteration-1/`, `iteration-2/`, etc.) and within that, each test case gets a directory (`eval-<ID>/`, e.g., `eval-1/`). Each configuration within an eval gets a `run-1/` subdirectory (use higher numbers if you run the same eval multiple times for variance analysis). Don't create all of this upfront — just create directories as you go.
+
+The full structure looks like:
+```
+<skill-name>-workspace/
+└── iteration-1/
+    ├── eval-1/
+    │   ├── eval_metadata.json
+    │   ├── with_skill/
+    │   │   └── run-1/
+    │   │       ├── outputs/          ← executor saves artifacts here
+    │   │       ├── timing.json       ← you save this from the task notification
+    │   │       └── grading.json      ← grader saves this
+    │   └── without_skill/
+    │       └── run-1/
+    │           ├── outputs/
+    │           ├── timing.json
+    │           └── grading.json
+    ├── eval-2/
+    │   └── ...
+    └── benchmark.json
+```
 
 ### Step 1: Spawn all runs (with-skill AND baseline) in the same turn
 
 For each test case, spawn two subagents in the same turn — one with the skill, one without. This is important: don't spawn the with-skill runs first and then come back for baselines later. Launch everything at once so it all finishes around the same time.
 
+Each subagent is an executor: tell it to read `agents/executor.md` from the skill-creator directory and follow those instructions. The executor contract (transcript format, metrics.json, directory layout) lives there — no need to repeat it in each prompt.
+
 **With-skill run:**
 
 ```
-Execute this task:
+Read agents/executor.md at <skill-creator-path>/agents/executor.md and follow its instructions.
+
 - Skill path: <path-to-skill>
 - Task: <eval prompt>
 - Input files: <eval files if any, or "none">
-- Save outputs to: <workspace>/iteration-<N>/eval-<ID>/with_skill/outputs/
-- Outputs to save: <what the user cares about — e.g., "the .docx file", "the final CSV">
+- Run dir: <workspace>/iteration-<N>/eval-<ID>/with_skill/run-1/
 ```
 
 **Baseline run** (same prompt, but the baseline depends on context):
-- **Creating a new skill**: no skill at all. Same prompt, no skill path, save to `without_skill/outputs/`.
-- **Improving an existing skill**: the old version. Before editing, snapshot the skill (`cp -r <skill-path> <workspace>/skill-snapshot/`), then point the baseline subagent at the snapshot. Save to `old_skill/outputs/`.
+- **Creating a new skill**: no skill at all. Same prompt, omit the skill path, use `without_skill/run-1/`.
+- **Improving an existing skill**: the old version. Before editing, snapshot the skill (`cp -r <skill-path> <workspace>/skill-snapshot/`), then point the baseline subagent at the snapshot. Use `old_skill/run-1/`.
 
 Write an `eval_metadata.json` for each test case (assertions can be empty for now). Give each eval a descriptive name based on what it's testing — not just "eval-0". Use this name for the directory too. If this iteration uses new or modified eval prompts, create these files for each new eval directory — don't assume they carry over from previous iterations.
 
@@ -206,7 +229,7 @@ Update the `eval_metadata.json` files and `evals/evals.json` with the assertions
 
 ### Step 3: As runs complete, capture timing data
 
-When each subagent task completes, you receive a notification containing `total_tokens` and `duration_ms`. Save this data immediately to `timing.json` in the run directory:
+When each subagent task completes, you receive a notification containing `total_tokens` and `duration_ms`. Save this data immediately to `timing.json` in the run directory (e.g., `eval-1/with_skill/run-1/timing.json`):
 
 ```json
 {
@@ -222,7 +245,7 @@ This is the only opportunity to capture this data — it comes through the task 
 
 Once all runs are done:
 
-1. **Grade each run** — spawn a grader subagent (or grade inline) that reads `agents/grader.md` and evaluates each assertion against the outputs. Save results to `grading.json` in each run directory. The grading.json expectations array must use the fields `text`, `passed`, and `evidence` (not `name`/`met`/`details` or other variants) — the viewer depends on these exact field names. For assertions that can be checked programmatically, write and run a script rather than eyeballing it — scripts are faster, more reliable, and can be reused across iterations.
+1. **Grade each run** — spawn a grader subagent that reads `agents/grader.md` and evaluates each assertion against the transcript and outputs. The grader saves `grading.json` as a sibling to `outputs/` (i.e., inside `run-1/`). The grading.json expectations array must use the fields `text`, `passed`, and `evidence` (not `name`/`met`/`details` or other variants) — the viewer depends on these exact field names. For assertions that can be checked programmatically, write and run a script rather than eyeballing it — scripts are faster, more reliable, and can be reused across iterations.
 
 2. **Aggregate into benchmark** — run the aggregation script from the skill-creator directory:
    ```bash
