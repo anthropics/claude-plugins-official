@@ -295,6 +295,17 @@
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/plugins/commit-commands"
     },
     {
+      "name": "conkurrence",
+      "description": "AI evaluation toolkit — measure inter-rater agreement (Fleiss' κ, Kendall's W) across multiple LLM providers. Evaluate prompt reliability and track agreement trends.",
+      "category": "testing",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/AlligatorC0der/conkurrence.git",
+        "sha": "e482a5bf387d9d2b774e68b031466c6327a4af55"
+      },
+      "homepage": "https://conkurrence.com"
+    },
+    {
       "name": "context7",
       "description": "Upstash Context7 MCP server for up-to-date documentation lookup. Pull version-specific documentation and code examples directly from source repositories into your LLM context.",
       "category": "development",
