@@ -97,3 +97,75 @@ assistant needs earlier context, it will ask you to paste or summarize.
 This also means there's no `download_attachment` tool for historical messages
 — photos are downloaded eagerly on arrival since there's no way to fetch them
 later.
+
+## Group chat setup
+
+The Quick Setup above covers DMs. Groups require extra steps — **order matters**.
+
+**1. Disable privacy mode (once per bot).**
+
+Message [@BotFather](https://t.me/BotFather):
+
+```
+/setprivacy
+```
+
+Select your bot, then choose **Disable**. This lets the bot see all group messages, not just commands and @mentions. You only need to do this once, but verify it's off before proceeding.
+
+**2. Add the bot to the group and promote to admin.**
+
+Add your bot to the target group, then promote it to admin. Admin status is required for the bot to reliably receive and send messages in groups.
+
+> **Critical:** If the bot was added to the group _before_ privacy mode was disabled, remove the bot from the group and re-add it. Privacy mode changes only take effect for groups joined _after_ the change.
+
+**3. Trigger chat ID registration.**
+
+After adding the bot, someone must send a message in the group. The bot registers the `chat_id` on the first message it sees — until then, it doesn't know the group exists.
+
+**4. Enable the group in access config.**
+
+```
+/telegram:access group add <chat_id>
+```
+
+See [ACCESS.md](./ACCESS.md) for `--no-mention`, `--allow`, and other group flags.
+
+## Troubleshooting
+
+**"Channels are not currently available"**
+
+This is a known Claude Code bug. Workaround: launch with the development channels flag and add a `.mcp.json` entry:
+
+```sh
+claude --dangerously-load-development-channels server:telegram
+```
+
+Ensure your `.mcp.json` includes the telegram server configuration. See [#36503](https://github.com/anthropics/claude-code/issues/36503) for details.
+
+**409 Conflict errors**
+
+Only one process can poll a bot token at a time. If you see `409 Conflict`, another process is already polling with the same token. Kill old Claude Code sessions or other scripts using the token:
+
+```sh
+ps aux | grep telegram
+```
+
+**Bot shows "typing" but never replies**
+
+The channel notification was sent to Claude Code, but the model didn't route it to the reply tool. This can happen when the assistant is busy with another task or the channel message was deprioritized. Try sending the message again, or check that `--channels` is active in your session.
+
+**Bot doesn't see group messages**
+
+Privacy mode is still enabled, or the bot was added before privacy mode was disabled. Fix:
+
+1. Verify privacy is off: [@BotFather](https://t.me/BotFather) → `/setprivacy` → select bot → should show "Privacy mode is disabled".
+2. Remove the bot from the group.
+3. Re-add the bot to the group.
+4. Promote to admin.
+
+## Known issues
+
+- [#36503](https://github.com/anthropics/claude-code/issues/36503) — "Channels are not currently available" error
+- [#36477](https://github.com/anthropics/claude-code/issues/36477) — Channel plugin setup issues
+- [#38259](https://github.com/anthropics/claude-code/issues/38259) — Telegram channel reliability
+- [#38098](https://github.com/anthropics/claude-code/issues/38098) — Bot polling conflicts
