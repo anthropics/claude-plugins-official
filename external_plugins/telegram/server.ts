@@ -418,7 +418,7 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: 'reply',
       description:
-        'Reply on Telegram. Pass chat_id from the inbound message. Optionally pass reply_to (message_id) for threading, and files (absolute paths) to attach images or documents.',
+        'Reply on Telegram. Pass chat_id from the inbound message. Optionally pass reply_to (message_id) for threading, files (absolute paths) to attach images or documents, and inline_keyboard to add interactive buttons.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -437,6 +437,21 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
             type: 'string',
             enum: ['text', 'markdownv2'],
             description: "Rendering mode. 'markdownv2' enables Telegram formatting (bold, italic, code, links). Caller must escape special chars per MarkdownV2 rules. Default: 'text' (plain, no escaping needed).",
+          },
+          inline_keyboard: {
+            type: 'array',
+            description: 'Inline keyboard buttons as a 2D array (rows of buttons). Each button has text (label) and data (callback payload, max 64 bytes). Buttons are attached to the last text chunk. When pressed, the callback is delivered as an inbound channel message.',
+            items: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  text: { type: 'string', description: 'Button label shown to the user' },
+                  data: { type: 'string', description: 'Callback data sent back when pressed (max 64 bytes)' },
+                },
+                required: ['text', 'data'],
+              },
+            },
           },
         },
         required: ['chat_id', 'text'],
@@ -484,6 +499,24 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
         required: ['chat_id', 'message_id', 'text'],
       },
     },
+    {
+      name: 'answer_callback',
+      description: 'Acknowledge an inline keyboard button press. Call this after receiving a callback_query inbound to dismiss the loading spinner. Optionally show a brief toast notification to the user.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          callback_query_id: {
+            type: 'string',
+            description: 'The callback_query_id from the inbound channel message meta.',
+          },
+          text: {
+            type: 'string',
+            description: 'Optional short text to show as a toast notification (max 200 chars). Omit for silent acknowledgement.',
+          },
+        },
+        required: ['callback_query_id'],
+      },
+    },
   ],
 }))
 
@@ -498,6 +531,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         const files = (args.files as string[] | undefined) ?? []
         const format = (args.format as string | undefined) ?? 'text'
         const parseMode = format === 'markdownv2' ? 'MarkdownV2' as const : undefined
+        const keyboardRows = args.inline_keyboard as Array<Array<{ text: string; data: string }>> | undefined
 
         assertAllowedChat(chat_id)
 
@@ -506,6 +540,21 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
           const st = statSync(f)
           if (st.size > MAX_ATTACHMENT_BYTES) {
             throw new Error(`file too large: ${f} (${(st.size / 1024 / 1024).toFixed(1)}MB, max 50MB)`)
+          }
+        }
+
+        // Build inline keyboard if provided
+        let replyMarkup: InlineKeyboard | undefined
+        if (keyboardRows && keyboardRows.length > 0) {
+          replyMarkup = new InlineKeyboard()
+          for (const row of keyboardRows) {
+            for (const btn of row) {
+              if (btn.data.length > 64) {
+                throw new Error(`callback_data too long (max 64 bytes): "${btn.data}"`)
+              }
+              replyMarkup.text(btn.text, btn.data)
+            }
+            replyMarkup.row()
           }
         }
 
@@ -518,6 +567,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
 
         try {
           for (let i = 0; i < chunks.length; i++) {
+            const isLastChunk = i === chunks.length - 1
             const shouldReplyTo =
               reply_to != null &&
               replyMode !== 'off' &&
@@ -525,6 +575,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
             const sent = await bot.api.sendMessage(chat_id, chunks[i], {
               ...(shouldReplyTo ? { reply_parameters: { message_id: reply_to } } : {}),
               ...(parseMode ? { parse_mode: parseMode } : {}),
+              ...(replyMarkup && isLastChunk ? { reply_markup: replyMarkup } : {}),
             })
             sentIds.push(sent.message_id)
           }
@@ -595,6 +646,14 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         )
         const id = typeof edited === 'object' ? edited.message_id : args.message_id
         return { content: [{ type: 'text', text: `edited (id: ${id})` }] }
+      }
+      case 'answer_callback': {
+        const cbId = args.callback_query_id as string
+        const cbText = args.text as string | undefined
+        await bot.api.answerCallbackQuery(cbId, {
+          ...(cbText ? { text: cbText } : {}),
+        })
+        return { content: [{ type: 'text', text: 'answered' }] }
       }
       default:
         return {
@@ -694,7 +753,32 @@ bot.on('callback_query:data', async ctx => {
   const data = ctx.callbackQuery.data
   const m = /^perm:(allow|deny|more):([a-km-z]{5})$/.exec(data)
   if (!m) {
-    await ctx.answerCallbackQuery().catch(() => {})
+    // Non-permission callback — route to Claude as an inbound message.
+    const from = ctx.from
+    const chat_id = String(ctx.callbackQuery.message?.chat.id ?? from.id)
+    const access = loadAccess()
+    if (!access.allowFrom.includes(String(from.id))) {
+      await ctx.answerCallbackQuery({ text: 'Not authorized.' }).catch(() => {})
+      return
+    }
+    const msgId = ctx.callbackQuery.message?.message_id
+    mcp.notification({
+      method: 'notifications/claude/channel',
+      params: {
+        content: `(button pressed: ${data})`,
+        meta: {
+          chat_id,
+          ...(msgId != null ? { message_id: String(msgId) } : {}),
+          user: from.username ?? String(from.id),
+          user_id: String(from.id),
+          ts: new Date().toISOString(),
+          callback_query_id: ctx.callbackQuery.id,
+          callback_data: data,
+        },
+      },
+    }).catch(err => {
+      process.stderr.write(`telegram channel: failed to deliver callback to Claude: ${err}\n`)
+    })
     return
   }
   const access = loadAccess()
