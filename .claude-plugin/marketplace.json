@@ -210,6 +210,17 @@
       }
     },
     {
+      "name": "claude-career-plugin",
+      "description": "AI job search command center -- evaluate offers, generate tailored CVs, scan portals, track applications. Turns Claude Code into a full recruiting pipeline.",
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/skytow/claude-career-plugin.git",
+        "sha": "14de655c5b8d81141bdb31c5accdda8b6a970e14"
+      },
+      "homepage": "https://github.com/skytow/claude-career-plugin"
+    },
+    {
       "name": "claude-code-setup",
       "description": "Analyze codebases and recommend tailored Claude Code automations such as hooks, skills, MCP servers, and subagents.",
       "author": {
