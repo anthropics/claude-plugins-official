@@ -272,10 +272,13 @@ function add(m) {
   msgs[m.id] = { body: el.querySelector('.body') }
 }
 
+function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') }
+
 function line(who, text, replyTo, file) {
   const div = document.createElement('div')
   const t = new Date().toTimeString().slice(0, 8)
-  const reply = replyTo && msgs[replyTo] ? ' ↳ ' + (msgs[replyTo].body.textContent || '(file)').slice(0, 40) : ''
+  const replyText = replyTo && msgs[replyTo] ? (msgs[replyTo].body.textContent || '(file)').slice(0, 40) : ''
+  const reply = replyText ? ' ↳ ' + esc(replyText) : ''
   div.innerHTML = '[' + t + '] <b>' + who + '</b>' + reply + ': <span class=body></span>'
   const body = div.querySelector('.body')
   body.textContent = text || ''
