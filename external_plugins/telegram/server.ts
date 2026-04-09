@@ -613,6 +613,12 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
 
 await mcp.connect(new StdioServerTransport())
 
+// Replay any inbound messages persisted by a previous session that never got
+// confirmed delivery. Bot API has no history, so without this any message that
+// arrived while Claude was unreachable is lost forever.
+void queueReplayPending()
+queuePruneDelivered()
+
 // When Claude Code closes the MCP connection, stdin gets EOF. Without this
 // the bot keeps polling forever as a zombie, holding the token and blocking
 // the next session with 409 Conflict.
@@ -859,6 +865,98 @@ function safeName(s: string | undefined): string | undefined {
   return s?.replace(/[<>\[\]\r\n;]/g, '_')
 }
 
+// ── Claude-side inbox ────────────────────────────────────────────────────────
+// MCP notifications are fire-and-forget at the protocol level, and the bot
+// server can outlive the Claude session that spawned it. Without persistence,
+// any message that arrives while the Claude end is unreachable (session
+// restarting, mid-crash, transport dropped) is gone — Bot API has no history
+// to re-fetch from. We write every inbound to disk BEFORE notifying, and
+// replay anything still in pending/ at next startup.
+//
+// This directory lives under STATE_DIR, so the existing assertSendable guard
+// blocks Claude from exfiltrating its contents via the reply tool.
+const CLAUDE_QUEUE_DIR = join(STATE_DIR, 'claude-inbox')
+const CLAUDE_QUEUE_PENDING = join(CLAUDE_QUEUE_DIR, 'pending')
+const CLAUDE_QUEUE_DELIVERED = join(CLAUDE_QUEUE_DIR, 'delivered')
+const CLAUDE_QUEUE_TTL_MS = 7 * 24 * 60 * 60 * 1000
+
+// One file per message. Filename sorts chronologically so replay is in order.
+function queueWrite(params: unknown): string {
+  mkdirSync(CLAUDE_QUEUE_PENDING, { recursive: true, mode: 0o700 })
+  const seq = randomBytes(4).toString('hex')
+  const path = join(CLAUDE_QUEUE_PENDING, `${Date.now()}-${seq}.json`)
+  writeFileSync(path, JSON.stringify(params), { mode: 0o600 })
+  return path
+}
+
+function queueMarkDelivered(path: string): void {
+  try {
+    mkdirSync(CLAUDE_QUEUE_DELIVERED, { recursive: true, mode: 0o700 })
+    const name = path.split(sep).pop()!
+    renameSync(path, join(CLAUDE_QUEUE_DELIVERED, name))
+  } catch (err) {
+    process.stderr.write(`telegram channel: queueMarkDelivered failed: ${err}\n`)
+  }
+}
+
+// Drop delivered entries older than the TTL so the dir doesn't grow unbounded.
+function queuePruneDelivered(): void {
+  let files: string[]
+  try {
+    files = readdirSync(CLAUDE_QUEUE_DELIVERED)
+  } catch {
+    return
+  }
+  const cutoff = Date.now() - CLAUDE_QUEUE_TTL_MS
+  for (const name of files) {
+    const full = join(CLAUDE_QUEUE_DELIVERED, name)
+    try {
+      if (statSync(full).mtimeMs < cutoff) rmSync(full, { force: true })
+    } catch {}
+  }
+}
+
+// Replay every pending message in chronological order. Runs once at startup,
+// after mcp.connect() resolves. On first failure we stop and leave the rest
+// in pending — the next restart will try again from where we left off.
+async function queueReplayPending(): Promise<void> {
+  let files: string[]
+  try {
+    files = readdirSync(CLAUDE_QUEUE_PENDING).sort()
+  } catch {
+    return
+  }
+  if (files.length === 0) return
+  process.stderr.write(
+    `telegram channel: replaying ${files.length} pending inbound message(s)\n`,
+  )
+  for (const name of files) {
+    const full = join(CLAUDE_QUEUE_PENDING, name)
+    let params: unknown
+    try {
+      params = JSON.parse(readFileSync(full, 'utf8'))
+    } catch (err) {
+      process.stderr.write(
+        `telegram channel: pending/${name} unreadable, dropping: ${err}\n`,
+      )
+      try { rmSync(full, { force: true }) } catch {}
+      continue
+    }
+    try {
+      await mcp.notification({
+        method: 'notifications/claude/channel',
+        params: params as Record<string, unknown>,
+      })
+      queueMarkDelivered(full)
+    } catch (err) {
+      process.stderr.write(
+        `telegram channel: replay failed at ${name}, stopping: ${err}\n`,
+      )
+      return
+    }
+  }
+}
+
 async function handleInbound(
   ctx: Context,
   text: string,
@@ -922,29 +1020,40 @@ async function handleInbound(
 
   // image_path goes in meta only — an in-content "[image attached — read: PATH]"
   // annotation is forgeable by any allowlisted sender typing that string.
+  const params = {
+    content: text,
+    meta: {
+      chat_id,
+      ...(msgId != null ? { message_id: String(msgId) } : {}),
+      user: from.username ?? String(from.id),
+      user_id: String(from.id),
+      ts: new Date((ctx.message?.date ?? 0) * 1000).toISOString(),
+      ...(imagePath ? { image_path: imagePath } : {}),
+      ...(attachment ? {
+        attachment_kind: attachment.kind,
+        attachment_file_id: attachment.file_id,
+        ...(attachment.size != null ? { attachment_size: String(attachment.size) } : {}),
+        ...(attachment.mime ? { attachment_mime: attachment.mime } : {}),
+        ...(attachment.name ? { attachment_name: attachment.name } : {}),
+      } : {}),
+    },
+  }
+
+  // Persist BEFORE notifying. If we crash, Claude closes the MCP pipe, or the
+  // notification promise rejects, the file stays in pending/ and gets replayed
+  // at next startup. This is the one thing between a dropped message and
+  // nothing — Bot API has no history to re-fetch from.
+  const queuePath = queueWrite(params)
   mcp.notification({
     method: 'notifications/claude/channel',
-    params: {
-      content: text,
-      meta: {
-        chat_id,
-        ...(msgId != null ? { message_id: String(msgId) } : {}),
-        user: from.username ?? String(from.id),
-        user_id: String(from.id),
-        ts: new Date((ctx.message?.date ?? 0) * 1000).toISOString(),
-        ...(imagePath ? { image_path: imagePath } : {}),
-        ...(attachment ? {
-          attachment_kind: attachment.kind,
-          attachment_file_id: attachment.file_id,
-          ...(attachment.size != null ? { attachment_size: String(attachment.size) } : {}),
-          ...(attachment.mime ? { attachment_mime: attachment.mime } : {}),
-          ...(attachment.name ? { attachment_name: attachment.name } : {}),
-        } : {}),
-      },
+    params,
+  }).then(
+    () => queueMarkDelivered(queuePath),
+    err => {
+      process.stderr.write(`telegram channel: failed to deliver inbound to Claude: ${err}\n`)
+      // Intentionally leave queuePath in pending/ — it'll replay next start.
     },
-  }).catch(err => {
-    process.stderr.write(`telegram channel: failed to deliver inbound to Claude: ${err}\n`)
-  })
+  )
 }
 
 // Without this, any throw in a message handler stops polling permanently
