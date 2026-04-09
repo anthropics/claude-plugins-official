@@ -221,6 +221,20 @@
       "homepage": "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/claude-code-setup"
     },
     {
+      "name": "claude-account-guard",
+      "description": "Warns or blocks prompts when the active Claude account does not match the expected account for the current directory. Useful for teams or individuals who switch between work and personal Claude accounts.",
+      "author": {
+        "name": "Federico Seitun"
+      },
+      "source": {
+        "source": "url",
+        "url": "https://github.com/fseitun/claude-account-guard.git",
+        "sha": "f4db1a89a0377f4f56c2aec335dc48a558a4f022"
+      },
+      "category": "productivity",
+      "homepage": "https://github.com/fseitun/claude-account-guard"
+    },
+    {
       "name": "claude-md-management",
       "description": "Tools to maintain and improve CLAUDE.md files - audit quality, capture session learnings, and keep project memory current.",
       "author": {
