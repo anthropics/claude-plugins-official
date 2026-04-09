@@ -148,22 +148,14 @@
       "homepage": "https://github.com/awslabs/agent-plugins"
     },
     {
-      "name": "axon",
-      "title": "AXON Notation",
+      "name": "AXON",
       "description": "AXON (AI eXchange Optimized Notation) — encode, decode, validate, and explain compact symbolic AI expressions. Compresses natural language into token-efficient notation.",
-      "version": "1.0.0",
-      "author": {
-        "name": "colwill",
-        "url": "https://github.com/colwill"
-      },
       "homepage": "https://colwill.github.io/axon/",
-      "repository": "https://github.com/colwill/axon",
-      "license": "MIT",
-      "keywords": ["axon", "notation", "compression", "tokens", "nlp", "symbolic", "encoding"],
+      "category": "development",
       "source": {
-        "source": "git",
-        "repo": "colwill/axon",
-        "path": "./"
+        "source": "url",
+        "url": "https://github.com/colwill/axon.git",
+        "sha": "000e2d13e3cccb4aeca9ba482a10c7d9d31d6353"
       }
     },
     {
