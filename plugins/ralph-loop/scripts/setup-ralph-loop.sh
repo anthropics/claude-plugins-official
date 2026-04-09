@@ -141,7 +141,7 @@ cat > .claude/ralph-loop.local.md <<EOF
 ---
 active: true
 iteration: 1
-session_id: ${CLAUDE_CODE_SESSION_ID:-}
+session_id: ${CLAUDE_CODE_SESSION_ID:-$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null || echo "fallback-$$-$(date +%s)")}
 max_iterations: $MAX_ITERATIONS
 completion_promise: $COMPLETION_PROMISE_YAML
 started_at: "$(date -u +%Y-%m-%dT%H:%M:%SZ)"

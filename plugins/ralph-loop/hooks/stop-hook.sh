@@ -27,10 +27,13 @@ COMPLETION_PROMISE=$(echo "$FRONTMATTER" | grep '^completion_promise:' | sed 's/
 # Session isolation: the state file is project-scoped, but the Stop hook
 # fires in every Claude Code session in that project. If another session
 # started the loop, this session must not block (or touch the state file).
-# Legacy state files without session_id fall through (preserves old behavior).
 STATE_SESSION=$(echo "$FRONTMATTER" | grep '^session_id:' | sed 's/session_id: *//' || true)
 HOOK_SESSION=$(echo "$HOOK_INPUT" | jq -r '.session_id // ""')
-if [[ -n "$STATE_SESSION" ]] && [[ "$STATE_SESSION" != "$HOOK_SESSION" ]]; then
+# Empty session_id means isolation cannot be enforced — do not intercept.
+if [[ -z "$STATE_SESSION" ]]; then
+  exit 0
+fi
+if [[ "$STATE_SESSION" != "$HOOK_SESSION" ]]; then
   exit 0
 fi
 
@@ -130,7 +133,9 @@ if [[ "$COMPLETION_PROMISE" != "null" ]] && [[ -n "$COMPLETION_PROMISE" ]]; then
   # Extract text from <promise> tags using Perl for multiline support
   # -0777 slurps entire input, s flag makes . match newlines
   # .*? is non-greedy (takes FIRST tag), whitespace normalized
-  PROMISE_TEXT=$(echo "$LAST_OUTPUT" | perl -0777 -pe 's/.*?<promise>(.*?)<\/promise>.*/$1/s; s/^\s+|\s+$//g; s/\s+/ /g' 2>/dev/null || echo "")
+  # Use a dedicated extraction that returns empty string when no <promise> tag exists,
+  # preventing false positives when the raw output happens to match the promise text.
+  PROMISE_TEXT=$(echo "$LAST_OUTPUT" | perl -0777 -ne 'if (/<promise>(.*?)<\/promise>/s) { my $t = $1; $t =~ s/^\s+|\s+$//g; $t =~ s/\s+/ /g; print $t; }' 2>/dev/null || echo "")
 
   # Use = for literal string comparison (not pattern matching)
   # == in [[ ]] does glob pattern matching which breaks with *, ?, [ characters
