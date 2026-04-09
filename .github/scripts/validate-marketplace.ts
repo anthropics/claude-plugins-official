@@ -50,7 +50,7 @@ async function main() {
     }
     const entry = p as Record<string, unknown>;
     for (const field of required) {
-      if (!entry[field]) {
+      if (entry[field] == null || entry[field] === "") {
         errors.push(`plugins[${i}] (${entry.name ?? "?"}): missing required field "${field}"`);
       }
     }
