@@ -1,0 +1,10 @@
+{
+  "name": "math-swarm",
+  "description": "Zero-hallucination math computation. Replaces token prediction with SymPy symbolic math. 1,079 tests, 12 categories, 100% accuracy. 15 healthcare clinical formulas with guideline-based decision support.",
+  "author": {
+    "name": "Michael Winczuk",
+    "url": "https://swarmlabsusa.com"
+  },
+  "homepage": "https://github.com/michaelwinczuk/math-swarm",
+  "repository": "https://github.com/michaelwinczuk/math-swarm"
+}
