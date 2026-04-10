@@ -994,6 +994,23 @@
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/plugins/pr-review-toolkit"
     },
     {
+      "name": "preserve-session",
+      "description": "Preserves Claude Code session history across project directory renames, moves, and copies by assigning each project a path-independent UUID",
+      "version": "1.1.1",
+      "author": {
+        "name": "won",
+        "email": "wonbywondev@gmail.com"
+      },
+      "homepage": "https://github.com/wonbywondev/claude-plugins/tree/main/plugins/preserve-session",
+      "source": {
+        "source": "git-subdir",
+        "url": "wonbywondev/claude-plugins",
+        "path": "plugins/preserve-session",
+        "ref": "main"
+      },
+      "category": "productivity"
+    },
+    {
       "name": "prisma",
       "description": "Prisma MCP integration for Postgres database management, schema migrations, SQL queries, and connection string management. Provision Prisma Postgres databases, run migrations, and interact with your data directly.",
       "source": {
