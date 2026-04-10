@@ -51,6 +51,26 @@ if (!TOKEN) {
   process.exit(1)
 }
 const INBOX_DIR = join(STATE_DIR, 'inbox')
+const PID_FILE = join(STATE_DIR, 'bot.pid')
+
+// Kill any stale bot process holding the getUpdates connection.
+// Prevents 409 Conflict and zombie message consumption. See #947, #1075.
+try {
+  const existingPid = parseInt(readFileSync(PID_FILE, 'utf8').trim(), 10)
+  if (existingPid && existingPid !== process.pid) {
+    try {
+      process.kill(existingPid, 0)
+      process.stderr.write(`telegram channel: killing stale process ${existingPid}\n`)
+      process.kill(existingPid, 'SIGTERM')
+      const start = Date.now()
+      while (Date.now() - start < 3000) {
+        try { process.kill(existingPid, 0) } catch { break }
+        Bun.sleepSync(100)
+      }
+    } catch {}
+  }
+} catch {}
+writeFileSync(PID_FILE, String(process.pid))
 
 // Last-resort safety net — without these the process dies silently on any
 // unhandled promise rejection. With them it logs and keeps serving tools.
@@ -621,6 +641,7 @@ function shutdown(): void {
   if (shuttingDown) return
   shuttingDown = true
   process.stderr.write('telegram channel: shutting down\n')
+  try { rmSync(PID_FILE) } catch {}
   // bot.stop() signals the poll loop to end; the current getUpdates request
   // may take up to its long-poll timeout to return. Force-exit after 2s.
   setTimeout(() => process.exit(0), 2000)
@@ -630,6 +651,19 @@ process.stdin.on('end', shutdown)
 process.stdin.on('close', shutdown)
 process.on('SIGTERM', shutdown)
 process.on('SIGINT', shutdown)
+// tmux kill-session sends SIGHUP; without this handler the bot survives as a zombie.
+process.on('SIGHUP', shutdown)
+
+// Watchdog: detect stdin death even when 'end'/'close' events don't fire
+// (e.g. parent crash, force-quit). Polls every 5s — negligible overhead.
+const _stdinWatchdog = setInterval(() => {
+  if (process.stdin.destroyed || process.stdin.readableEnded) {
+    process.stderr.write('telegram channel: stdin dead (watchdog), shutting down\n')
+    clearInterval(_stdinWatchdog)
+    shutdown()
+  }
+}, 5000)
+_stdinWatchdog.unref()
 
 // Commands are DM-only. Responding in groups would: (1) leak pairing codes via
 // /status to other group members, (2) confirm bot presence in non-allowlisted
