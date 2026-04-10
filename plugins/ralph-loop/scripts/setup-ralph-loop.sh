@@ -5,6 +5,51 @@
 
 set -euo pipefail
 
+# If no argv was passed and stdin is a pipe/heredoc (not a terminal), read
+# the raw argument text from stdin and split it into argv ourselves. The
+# slash command wrapper feeds $ARGUMENTS through a single-quoted heredoc so
+# apostrophes and unbalanced quotes in the user's prompt (e.g. "fix Mike's
+# bug", "don't crash") don't break bash parsing with
+# "eval: line 0: unexpected EOF while looking for matching '".
+if [[ $# -eq 0 ]] && [[ ! -t 0 ]]; then
+  RAW_STDIN_ARGS=$(cat)
+  if [[ -n "$RAW_STDIN_ARGS" ]]; then
+    STDIN_ARGV=()
+    if command -v python3 >/dev/null 2>&1; then
+      # Use shlex so matched quotes around option values are honored
+      # (e.g. --completion-promise 'DONE' yields the token DONE, not 'DONE').
+      # Before splitting, escape any apostrophe that sits *inside* a word
+      # (e.g. "Mike'"'"'s", "don'"'"'t") — posix shlex would otherwise treat
+      # it as the start of an unterminated quote and raise ValueError.
+      # Apostrophes at word boundaries are left alone so intentional shell
+      # quoting still works. A final fallback to naive whitespace split
+      # handles any remaining pathological input.
+      PARSE_PY='
+import re, shlex, sys
+text = sys.stdin.read()
+# Escape apostrophes between two non-whitespace chars (contractions,
+# possessives). Intentional shell quoting has whitespace on at least
+# one side and is left alone.
+preprocessed = re.sub(r"(?<=\S)'"'"'(?=\S)", r"\\'"'"'", text)
+try:
+    toks = shlex.split(preprocessed, posix=True)
+except ValueError:
+    toks = text.split()
+for t in toks:
+    print(t)
+'
+      while IFS= read -r __line; do
+        STDIN_ARGV+=("$__line")
+      done < <(printf '%s' "$RAW_STDIN_ARGS" | python3 -c "$PARSE_PY")
+    else
+      # Fallback when python3 is unavailable: naive whitespace split
+      # (no quote handling).
+      read -ra STDIN_ARGV <<< "$RAW_STDIN_ARGS"
+    fi
+    set -- ${STDIN_ARGV[@]+"${STDIN_ARGV[@]}"}
+  fi
+fi
+
 # Parse arguments
 PROMPT_PARTS=()
 MAX_ITERATIONS=0
