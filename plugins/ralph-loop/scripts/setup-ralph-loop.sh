@@ -130,6 +130,16 @@ fi
 # Create state file for stop hook (markdown with YAML frontmatter)
 mkdir -p .claude
 
+# Warn if session ID is unavailable — the stop hook needs it for cross-session
+# isolation. Without it, the loop will fire in every concurrent Claude session
+# in this project until it can claim a session on first stop.
+if [[ -z "${CLAUDE_CODE_SESSION_ID:-}" ]]; then
+  echo "⚠️  Warning: CLAUDE_CODE_SESSION_ID is not set." >&2
+  echo "   Session isolation will be claimed on first stop-hook execution." >&2
+  echo "   Avoid running concurrent Claude sessions in this project until" >&2
+  echo "   the loop completes or is cancelled." >&2
+fi
+
 # Quote completion promise for YAML if it contains special chars or is not null
 if [[ -n "$COMPLETION_PROMISE" ]] && [[ "$COMPLETION_PROMISE" != "null" ]]; then
   COMPLETION_PROMISE_YAML="\"$COMPLETION_PROMISE\""

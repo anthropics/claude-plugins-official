@@ -27,10 +27,23 @@ COMPLETION_PROMISE=$(echo "$FRONTMATTER" | grep '^completion_promise:' | sed 's/
 # Session isolation: the state file is project-scoped, but the Stop hook
 # fires in every Claude Code session in that project. If another session
 # started the loop, this session must not block (or touch the state file).
-# Legacy state files without session_id fall through (preserves old behavior).
-STATE_SESSION=$(echo "$FRONTMATTER" | grep '^session_id:' | sed 's/session_id: *//' || true)
+STATE_SESSION=$(echo "$FRONTMATTER" | grep '^session_id:' | sed 's/session_id: *//' | tr -d '[:space:]' || true)
 HOOK_SESSION=$(echo "$HOOK_INPUT" | jq -r '.session_id // ""')
+
 if [[ -n "$STATE_SESSION" ]] && [[ "$STATE_SESSION" != "$HOOK_SESSION" ]]; then
+  # Loop was started by a different session — don't interfere.
+  exit 0
+fi
+
+if [[ -z "$STATE_SESSION" ]] && [[ -n "$HOOK_SESSION" ]]; then
+  # Blank session_id: CLAUDE_CODE_SESSION_ID was not set when the loop was
+  # created, so we cannot determine which session owns it. Any session could
+  # race to claim it, making adoption unsafe. Clear the orphaned state file
+  # so the loop does not bleed into every concurrent session.
+  echo "⚠️  Ralph loop: state file has no session_id — loop owner is unknown." >&2
+  echo "   Clearing orphaned state to prevent cross-session bleed." >&2
+  echo "   Run /ralph-loop again to restart with proper session isolation." >&2
+  rm "$RALPH_STATE_FILE"
   exit 0
 fi
 
