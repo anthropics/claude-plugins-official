@@ -148,6 +148,56 @@
       "homepage": "https://github.com/awslabs/agent-plugins"
     },
     {
+      "name": "axonflow-governance",
+      "description": "Policy enforcement, PII detection, and audit trails for Claude Code. Automatically evaluates governed tool inputs against 80+ governance policies before execution, blocks dangerous operations, and maintains a complete compliance audit trail.",
+      "version": "0.2.0",
+      "author": {
+        "name": "AxonFlow",
+        "email": "hello@getaxonflow.com"
+      },
+      "source": {
+        "source": "github",
+        "repo": "getaxonflow/axonflow-claude-plugin"
+      },
+      "category": "security",
+      "keywords": [
+        "governance",
+        "security",
+        "pii-detection",
+        "audit",
+        "compliance",
+        "policy-enforcement"
+      ],
+      "homepage": "https://getaxonflow.com",
+      "repository": "https://github.com/getaxonflow/axonflow-claude-plugin",
+      "license": "MIT"
+    },
+    {
+      "name": "axonflow-governance",
+      "description": "Policy enforcement, PII detection, and audit trails for Claude Code. Automatically evaluates governed tool inputs against 80+ governance policies before execution, blocks dangerous operations, and maintains a complete compliance audit trail.",
+      "version": "0.2.0",
+      "author": {
+        "name": "AxonFlow",
+        "email": "hello@getaxonflow.com"
+      },
+      "source": {
+        "source": "github",
+        "repo": "getaxonflow/axonflow-claude-plugin"
+      },
+      "category": "security",
+      "keywords": [
+        "governance",
+        "security",
+        "pii-detection",
+        "audit",
+        "compliance",
+        "policy-enforcement"
+      ],
+      "homepage": "https://getaxonflow.com",
+      "repository": "https://github.com/getaxonflow/axonflow-claude-plugin",
+      "license": "MIT"
+    },
+    {
       "name": "box",
       "description": "Work with your Box content directly from Claude Code — search files, organize folders, collaborate with your team, and use Box AI to answer questions, summarize documents, and extract data without leaving your workflow.",
       "category": "productivity",
