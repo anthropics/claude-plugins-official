@@ -19,8 +19,8 @@ import { z } from 'zod'
 import { Bot, GrammyError, InlineKeyboard, InputFile, type Context } from 'grammy'
 import type { ReactionTypeEmoji } from 'grammy/types'
 import { randomBytes } from 'crypto'
-import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, statSync, renameSync, realpathSync, chmodSync } from 'fs'
-import { homedir } from 'os'
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, statSync, renameSync, realpathSync, chmodSync, unlinkSync } from 'fs'
+import { homedir, tmpdir } from 'os'
 import { join, extname, sep } from 'path'
 
 const STATE_DIR = process.env.TELEGRAM_STATE_DIR ?? join(homedir(), '.claude', 'channels', 'telegram')
@@ -823,7 +823,28 @@ bot.on('message:document', async ctx => {
 
 bot.on('message:voice', async ctx => {
   const voice = ctx.message.voice
-  const text = ctx.message.caption ?? '(voice message)'
+  const caption = ctx.message.caption
+
+  // Gate check before heavy transcription work
+  const gateResult = gate(ctx)
+  if (gateResult.action === 'drop') return
+  if (gateResult.action === 'pair') {
+    const lead = gateResult.isResend ? 'Still pending' : 'Pairing required'
+    await ctx.reply(`${lead} — run in Claude Code:\n\n/telegram:access pair ${gateResult.code}`)
+    return
+  }
+
+  // Typing indicator while transcribing
+  void bot.api.sendChatAction(String(ctx.chat!.id), 'typing').catch(() => {})
+
+  let text: string
+  if (caption) {
+    text = caption
+  } else {
+    const transcript = await transcribeVoice(voice.file_id)
+    text = transcript ? `[voice transcription] ${transcript}` : '(voice message)'
+  }
+
   await handleInbound(ctx, text, undefined, {
     kind: 'voice',
     file_id: voice.file_id,
@@ -889,6 +910,290 @@ type AttachmentMeta = {
 // or forge a second meta entry.
 function safeName(s: string | undefined): string | undefined {
   return s?.replace(/[<>\[\]\r\n;]/g, '_')
+}
+
+// --- Voice transcription via whisper.cpp (cross-platform auto-install) ---
+const PLATFORM = process.platform  // 'darwin' | 'linux' | 'win32'
+const IS_WIN = PLATFORM === 'win32'
+const WHISPER_BIN_NAME = IS_WIN ? 'whisper-cli.exe' : 'whisper-cli'
+const FFMPEG_BIN_NAME = IS_WIN ? 'ffmpeg.exe' : 'ffmpeg'
+const WHISPER_MODEL_DIR = process.env.WHISPER_MODEL_DIR
+  ?? join(homedir(), '.local', 'share', 'whisper-cpp', 'models')
+const WHISPER_MODEL_NAME = process.env.WHISPER_MODEL_NAME ?? 'ggml-medium.bin'
+const WHISPER_MODEL_URL = process.env.WHISPER_MODEL_URL
+  ?? `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/${WHISPER_MODEL_NAME}`
+
+function findBinary(name: string): string | null {
+  const paths: string[] = IS_WIN
+    ? [
+        join(process.env.LOCALAPPDATA ?? '', 'Programs', 'whisper-cpp', 'bin'),
+        join(process.env.ProgramFiles ?? 'C:\\Program Files', 'whisper-cpp', 'bin'),
+        join(homedir(), 'scoop', 'shims'),
+        join(homedir(), '.local', 'bin'),
+      ]
+    : [
+        '/opt/homebrew/bin',
+        '/usr/local/bin',
+        '/usr/bin',
+        '/snap/bin',
+        join(homedir(), '.local', 'bin'),
+      ]
+  for (const dir of paths) {
+    const p = join(dir, name)
+    try { statSync(p); return p } catch {}
+  }
+  return null
+}
+
+function findPkgManager(): { name: string; path: string } | null {
+  if (IS_WIN) {
+    for (const name of ['winget', 'choco', 'scoop']) {
+      const p = findBinary(name + '.exe') ?? findBinary(name)
+      if (p) return { name, path: p }
+    }
+    return null
+  }
+  if (PLATFORM === 'darwin') {
+    const p = findBinary('brew')
+    if (p) return { name: 'brew', path: p }
+    return null
+  }
+  for (const name of ['apt-get', 'dnf', 'pacman']) {
+    const p = findBinary(name)
+    if (p) return { name, path: p }
+  }
+  return null
+}
+
+let resolvedWhisperCli: string | null = process.env.WHISPER_CLI_PATH ?? null
+let resolvedFfmpeg: string | null = process.env.FFMPEG_PATH ?? null
+const WHISPER_MODEL = process.env.WHISPER_MODEL_PATH ?? join(WHISPER_MODEL_DIR, WHISPER_MODEL_NAME)
+
+async function runCmd(
+  cmd: string[],
+  opts?: { timeout?: number },
+): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+  const proc = Bun.spawn(cmd, { stdout: 'pipe', stderr: 'pipe' })
+  const timeoutMs = opts?.timeout ?? 120_000
+  const timer = setTimeout(() => proc.kill(), timeoutMs)
+  try {
+    const [stdout, stderr] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+    ])
+    const exitCode = await proc.exited
+    return { stdout, stderr, exitCode }
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+async function installWithPkgManager(
+  pkg: { name: string; path: string },
+  what: 'whisper' | 'ffmpeg',
+): Promise<boolean> {
+  const cmds: Record<string, Record<string, string[]>> = {
+    brew:      { whisper: ['install', 'whisper-cpp'], ffmpeg: ['install', 'ffmpeg'] },
+    'apt-get': { whisper: ['install', '-y', 'whisper-cpp'], ffmpeg: ['install', '-y', 'ffmpeg'] },
+    dnf:       { whisper: ['install', '-y', 'whisper-cpp'], ffmpeg: ['install', '-y', 'ffmpeg'] },
+    pacman:    { whisper: ['-S', '--noconfirm', 'whisper-cpp'], ffmpeg: ['-S', '--noconfirm', 'ffmpeg'] },
+    winget:    { whisper: ['install', '--accept-source-agreements', '-e', 'ggerganov.whisper-cpp'], ffmpeg: ['install', '--accept-source-agreements', '-e', 'Gyan.FFmpeg'] },
+    choco:     { whisper: ['install', '-y', 'whisper-cpp'], ffmpeg: ['install', '-y', 'ffmpeg'] },
+    scoop:     { whisper: ['install', 'whisper-cpp'], ffmpeg: ['install', 'ffmpeg'] },
+  }
+  const args = cmds[pkg.name]?.[what]
+  if (!args) return false
+  process.stderr.write(`telegram channel: installing ${what} via ${pkg.name}...\n`)
+  const result = await runCmd([pkg.path, ...args], { timeout: 300_000 })
+  if (result.exitCode !== 0) {
+    process.stderr.write(`telegram channel: ${pkg.name} install ${what} failed (exit ${result.exitCode}): ${result.stderr.slice(0, 500)}\n`)
+    return false
+  }
+  return true
+}
+
+let whisperReady: boolean | null = null
+let whisperInstalling = false
+
+function ffmpegInstallHint(): string {
+  if (PLATFORM === 'darwin') return 'brew install ffmpeg'
+  if (IS_WIN) return 'winget install Gyan.FFmpeg'
+  return 'sudo apt-get install ffmpeg  (or dnf/pacman equivalent)'
+}
+
+async function ensureWhisper(): Promise<boolean> {
+  if (whisperReady === true) return true
+  if (whisperReady === false) return false
+  if (whisperInstalling) return false
+
+  const pkgMgr = findPkgManager()
+
+  // --- ffmpeg ---
+  if (!resolvedFfmpeg) resolvedFfmpeg = findBinary(FFMPEG_BIN_NAME)
+  if (!resolvedFfmpeg) {
+    if (pkgMgr) {
+      whisperInstalling = true
+      try {
+        const ok = await installWithPkgManager(pkgMgr, 'ffmpeg')
+        if (ok) resolvedFfmpeg = findBinary(FFMPEG_BIN_NAME)
+      } finally { whisperInstalling = false }
+    }
+    if (!resolvedFfmpeg) {
+      process.stderr.write(
+        `telegram channel: voice transcription disabled — ffmpeg not found\n` +
+        `  install with: ${ffmpegInstallHint()}\n`,
+      )
+      whisperReady = false
+      return false
+    }
+  }
+
+  // --- whisper-cli ---
+  if (!resolvedWhisperCli) resolvedWhisperCli = findBinary(WHISPER_BIN_NAME)
+  if (!resolvedWhisperCli) {
+    if (pkgMgr) {
+      whisperInstalling = true
+      try {
+        const ok = await installWithPkgManager(pkgMgr, 'whisper')
+        if (ok) resolvedWhisperCli = findBinary(WHISPER_BIN_NAME)
+      } finally { whisperInstalling = false }
+    }
+    if (!resolvedWhisperCli) {
+      process.stderr.write(
+        `telegram channel: voice transcription disabled — whisper-cli not found\n` +
+        `  macOS:  brew install whisper-cpp\n` +
+        `  Linux:  apt install whisper-cpp (or build from https://github.com/ggerganov/whisper.cpp)\n` +
+        `  Win:    winget install ggerganov.whisper-cpp\n`,
+      )
+      whisperReady = false
+      return false
+    }
+  }
+
+  // --- model ---
+  try {
+    statSync(WHISPER_MODEL)
+  } catch {
+    process.stderr.write(`telegram channel: model not found — downloading ${WHISPER_MODEL_NAME}...\n`)
+    whisperInstalling = true
+    try {
+      mkdirSync(WHISPER_MODEL_DIR, { recursive: true })
+      const partPath = `${WHISPER_MODEL}.part`
+      const res = await fetch(WHISPER_MODEL_URL, { redirect: 'follow' })
+      if (!res.ok || !res.body) {
+        process.stderr.write(`telegram channel: model download failed: HTTP ${res.status}\n`)
+        whisperReady = false
+        return false
+      }
+      const fileHandle = Bun.file(partPath)
+      const writer = fileHandle.writer()
+      const reader = res.body.getReader()
+      let downloaded = 0
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        writer.write(value)
+        downloaded += value.byteLength
+        if (downloaded % (50 * 1024 * 1024) < value.byteLength) {
+          process.stderr.write(`telegram channel: model download progress: ${(downloaded / 1e9).toFixed(2)} GB\n`)
+        }
+      }
+      await writer.end()
+      if (downloaded < 100_000_000) {
+        process.stderr.write(`telegram channel: model file too small (${downloaded} bytes) — download may have failed\n`)
+        try { unlinkSync(partPath) } catch {}
+        whisperReady = false
+        return false
+      }
+      renameSync(partPath, WHISPER_MODEL)
+      process.stderr.write(`telegram channel: model downloaded (${(downloaded / 1e9).toFixed(2)} GB)\n`)
+    } catch (err) {
+      process.stderr.write(`telegram channel: model download error: ${err}\n`)
+      whisperReady = false
+      return false
+    } finally {
+      whisperInstalling = false
+    }
+  }
+
+  whisperReady = true
+  process.stderr.write(
+    `telegram channel: voice transcription enabled\n` +
+    `  platform:    ${PLATFORM}\n` +
+    `  whisper-cli: ${resolvedWhisperCli}\n` +
+    `  ffmpeg:      ${resolvedFfmpeg}\n` +
+    `  model:       ${WHISPER_MODEL}\n`,
+  )
+  return true
+}
+
+async function transcribeVoice(fileId: string): Promise<string | null> {
+  if (!(await ensureWhisper())) return null
+
+  const ts = Date.now()
+  const ogaPath = join(INBOX_DIR, `${ts}-voice.oga`)
+  const wavPath = join(INBOX_DIR, `${ts}-voice.wav`)
+
+  try {
+    const file = await bot.api.getFile(fileId)
+    if (!file.file_path) {
+      process.stderr.write('telegram channel: voice transcription — no file_path from Telegram\n')
+      return null
+    }
+    const url = `https://api.telegram.org/file/bot${TOKEN}/${file.file_path}`
+    const res = await fetch(url)
+    if (!res.ok) {
+      process.stderr.write(`telegram channel: voice download failed: HTTP ${res.status}\n`)
+      return null
+    }
+    const buf = Buffer.from(await res.arrayBuffer())
+    mkdirSync(INBOX_DIR, { recursive: true })
+    writeFileSync(ogaPath, buf)
+
+    const ffResult = await runCmd([
+      resolvedFfmpeg!, '-y', '-i', ogaPath,
+      '-ar', '16000', '-ac', '1', '-c:a', 'pcm_s16le',
+      wavPath,
+    ], { timeout: 30_000 })
+    if (ffResult.exitCode !== 0) {
+      process.stderr.write(`telegram channel: ffmpeg conversion failed: ${ffResult.stderr}\n`)
+      return null
+    }
+
+    const whisperResult = await runCmd([
+      resolvedWhisperCli!,
+      '-m', WHISPER_MODEL,
+      '-f', wavPath,
+      '-nt',
+      '-t', '4',
+      '-l', 'auto',
+    ], { timeout: 120_000 })
+    if (whisperResult.exitCode !== 0) {
+      process.stderr.write(`telegram channel: whisper-cli failed: ${whisperResult.stderr}\n`)
+      return null
+    }
+
+    const transcript = whisperResult.stdout
+      .split('\n')
+      .map(l => l.trim())
+      .filter(Boolean)
+      .join(' ')
+      .trim()
+
+    if (!transcript) {
+      process.stderr.write('telegram channel: whisper produced empty transcription\n')
+      return null
+    }
+
+    process.stderr.write(`telegram channel: transcribed voice (${transcript.length} chars)\n`)
+    return transcript
+  } catch (err) {
+    process.stderr.write(`telegram channel: voice transcription error: ${err}\n`)
+    return null
+  } finally {
+    try { unlinkSync(ogaPath) } catch {}
+    try { unlinkSync(wavPath) } catch {}
+  }
 }
 
 async function handleInbound(
