@@ -689,6 +689,17 @@
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/plugins/learning-output-style"
     },
     {
+      "name": "meta-learn",
+      "description": "AI-powered interactive learning coach — master any topic 10x faster with knowledge maps, Feynman sparring, and personalized learning paths. Supports Chinese and English.",
+      "author": {
+        "name": "xuhengzhi75",
+        "url": "https://github.com/xuhengzhi75"
+      },
+      "source": "./plugins/meta-learn",
+      "category": "learning",
+      "homepage": "https://github.com/xuhengzhi75/meta-learn"
+    },
+    {
       "name": "legalzoom",
       "description": "Attorney guidance and legal tools for business and personal needs. AI-powered document review identifies critical risks and important clauses, advises when to engage an attorney, and routes to LegalZoom's network when professional expertise is needed.",
       "category": "productivity",

@@ -1,0 +1,12 @@
+{
+  "name": "meta-learn",
+  "description": "AI-powered interactive learning coach that helps you master any topic 10x faster using knowledge maps, Feynman sparring, and personalized learning paths.",
+  "author": {
+    "name": "gardon"
+  },
+  "version": "1.0.0",
+  "license": "MIT",
+  "skills": [
+    "skill"
+  ]
+}
