@@ -166,6 +166,7 @@ const toolUseIdToPrompt = new Map() // tool_use id -> promptKey (Agent spawned d
 const agentIdToPrompt = new Map() // agentId -> promptKey
 const prompts = new Map() // promptKey -> { text, ts, project, sessionId, ...usage }
 const sessionTurns = new Map() // sessionId -> [promptKey, ...] in transcript order
+const sessionSpans = new Map() // sessionId -> {project, firstTs, lastTs, tokens}
 
 function promptRecord(key, init) {
   let r = prompts.get(key)
@@ -333,10 +334,28 @@ async function processFile(p, info, buckets) {
     }
   }
 
+  // session span (for by_day timeline) — subagent files roll into parent sessionId
+  let span = sessionSpans.get(info.sessionId)
+  if (!span) {
+    span = { project: info.project, firstTs: null, lastTs: null, tokens: 0 }
+    sessionSpans.set(info.sessionId, span)
+  }
+  if (firstTs !== null) {
+    if (span.firstTs === null || firstTs < span.firstTs) span.firstTs = firstTs
+    if (span.lastTs === null || lastTs > span.lastTs) span.lastTs = lastTs
+  }
+
   // commit API calls
   for (const [key, { usage, ts, skill, prompt }] of fileApiCalls) {
     if (key && seenRequestIds.has(key)) continue
     seenRequestIds.add(key)
+
+    const tot =
+      (usage.input_tokens || 0) +
+      (usage.cache_creation_input_tokens || 0) +
+      (usage.cache_read_input_tokens || 0) +
+      (usage.output_tokens || 0)
+    span.tokens += tot
 
     const targets = [overall, project]
     if (subagent) targets.push(subagent)
@@ -359,11 +378,6 @@ async function processFile(p, info, buckets) {
 
     // subagent token accounting on parent buckets
     if (info.kind === 'subagent') {
-      const tot =
-        (usage.input_tokens || 0) +
-        (usage.cache_creation_input_tokens || 0) +
-        (usage.cache_read_input_tokens || 0) +
-        (usage.output_tokens || 0)
       overall.subagentTokens += tot
       project.subagentTokens += tot
       if (subagent) subagent.subagentTokens += tot
@@ -656,8 +670,53 @@ function printJson({ overall, perProject, perSubagent, perSkill }) {
       [...perSkill].map(([k, v]) => [k, summarize(v)]),
     ),
     top_prompts: topPrompts(100),
+    by_day: buildByDay(),
   }
   process.stdout.write(JSON.stringify(out, null, 2) + '\n')
+}
+
+// Group sessions into local-date buckets for the timeline view. A session is
+// placed on the day its first message landed; tokens for that session (incl.
+// subagents) count toward that day even if it ran past midnight.
+function buildByDay() {
+  const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+  const days = new Map() // yyyy-mm-dd -> {date, dow, tokens, sessions:[]}
+  for (const [id, s] of sessionSpans) {
+    if (s.firstTs === null || s.tokens === 0) continue
+    const d0 = new Date(s.firstTs)
+    const key = `${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, '0')}-${String(d0.getDate()).padStart(2, '0')}`
+    let day = days.get(key)
+    if (!day) {
+      day = { date: key, dow: DOW[d0.getDay()], tokens: 0, sessions: [] }
+      days.set(key, day)
+    }
+    const base = new Date(
+      d0.getFullYear(),
+      d0.getMonth(),
+      d0.getDate(),
+    ).getTime()
+    day.tokens += s.tokens
+    day.sessions.push({
+      id,
+      project: s.project,
+      tokens: s.tokens,
+      start_min: Math.max(0, Math.round((s.firstTs - base) / 60000)),
+      end_min: Math.max(1, Math.round((s.lastTs - base) / 60000)),
+    })
+  }
+  for (const d of days.values()) {
+    // peak concurrency via 10-min buckets, capped at 24h for display
+    const b = new Array(144).fill(0)
+    for (const s of d.sessions) {
+      const lo = Math.min(143, Math.floor(s.start_min / 10))
+      const hi = Math.min(144, Math.ceil(Math.min(s.end_min, 1440) / 10))
+      for (let i = lo; i < hi; i++) b[i]++
+    }
+    d.peak = Math.max(0, ...b)
+    d.peak_at_min = d.peak > 0 ? b.indexOf(d.peak) * 10 : 0
+    d.sessions.sort((a, b) => a.start_min - b.start_min)
+  }
+  return [...days.values()].sort((a, b) => a.date.localeCompare(b.date))
 }
 
 function promptTotal(r) {
