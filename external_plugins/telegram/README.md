@@ -48,6 +48,10 @@ The server won't connect without this — exit your session and start a new one:
 claude --channels plugin:telegram@claude-plugins-official
 ```
 
+If another Claude Code session is already polling the same bot token, this
+session falls back to tools-only mode: it can still send replies, reactions,
+and edits, but inbound Telegram messages keep flowing to the active poller.
+
 **5. Pair.**
 
 With Claude Code running from the previous step, DM your bot on Telegram — it replies with a 6-character pairing code. If the bot doesn't respond, make sure your session is running with `--channels`. In your Claude Code session:

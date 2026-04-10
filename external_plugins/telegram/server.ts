@@ -19,7 +19,19 @@ import { z } from 'zod'
 import { Bot, GrammyError, InlineKeyboard, InputFile, type Context } from 'grammy'
 import type { ReactionTypeEmoji } from 'grammy/types'
 import { randomBytes } from 'crypto'
-import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, statSync, renameSync, realpathSync, chmodSync } from 'fs'
+import {
+  readFileSync,
+  writeFileSync,
+  mkdirSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  renameSync,
+  realpathSync,
+  chmodSync,
+  watch,
+  type FSWatcher,
+} from 'fs'
 import { homedir } from 'os'
 import { join, extname, sep } from 'path'
 
@@ -27,6 +39,8 @@ const STATE_DIR = process.env.TELEGRAM_STATE_DIR ?? join(homedir(), '.claude', '
 const ACCESS_FILE = join(STATE_DIR, 'access.json')
 const APPROVED_DIR = join(STATE_DIR, 'approved')
 const ENV_FILE = join(STATE_DIR, '.env')
+const POLLING_LOCK_DIR = join(STATE_DIR, 'polling.lock')
+const POLLING_OWNER_FILE = join(POLLING_LOCK_DIR, 'owner.json')
 
 // Load ~/.claude/channels/telegram/.env into process.env. Real env wins.
 // Plugin-spawned servers don't get an env block — this is where the token lives.
@@ -78,6 +92,11 @@ type PendingEntry = {
   replies: number
 }
 
+type PollingLockOwner = {
+  pid: number
+  startedAt: number
+}
+
 type GroupPolicy = {
   requireMention: boolean
   allowFrom: string[]
@@ -111,6 +130,95 @@ function defaultAccess(): Access {
 
 const MAX_CHUNK_LIMIT = 4096
 const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024
+let pollingEnabled = false
+let pollingLockHeld = false
+let approvalWatcher: FSWatcher | undefined
+let approvalPollTimer: ReturnType<typeof setInterval> | undefined
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+function readPollingLockOwner(): PollingLockOwner | null {
+  try {
+    const raw = readFileSync(POLLING_OWNER_FILE, 'utf8')
+    const parsed = JSON.parse(raw) as Partial<PollingLockOwner>
+    if (!Number.isInteger(parsed.pid) || parsed.pid! <= 0) return null
+    return {
+      pid: parsed.pid!,
+      startedAt: Number(parsed.startedAt ?? 0),
+    }
+  } catch {
+    return null
+  }
+}
+
+function isPidAlive(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) return false
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code
+    return code !== 'ESRCH'
+  }
+}
+
+function releasePollingLock(): void {
+  if (!pollingLockHeld) return
+  try {
+    const owner = readPollingLockOwner()
+    if (owner?.pid === process.pid || owner == null) {
+      rmSync(POLLING_LOCK_DIR, { recursive: true, force: true })
+    }
+  } catch {}
+  pollingLockHeld = false
+}
+
+async function claimPollingLock(): Promise<boolean> {
+  mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 })
+
+  for (let attempt = 1; attempt <= 6; attempt++) {
+    try {
+      mkdirSync(POLLING_LOCK_DIR, { mode: 0o700 })
+      writeFileSync(
+        POLLING_OWNER_FILE,
+        JSON.stringify({ pid: process.pid, startedAt: Date.now() }, null, 2) + '\n',
+        { mode: 0o600 },
+      )
+      pollingLockHeld = true
+      return true
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err
+    }
+
+    const owner = readPollingLockOwner()
+    if (owner?.pid === process.pid) {
+      pollingLockHeld = true
+      return true
+    }
+    if (!owner) {
+      if (attempt === 6) {
+        rmSync(POLLING_LOCK_DIR, { recursive: true, force: true })
+        continue
+      }
+      await sleep(100 * attempt)
+      continue
+    }
+    if (!isPidAlive(owner.pid)) {
+      rmSync(POLLING_LOCK_DIR, { recursive: true, force: true })
+      await sleep(50)
+      continue
+    }
+    process.stderr.write(
+      `telegram channel: poller already active (pid ${owner.pid}) — running tools-only mode\n`,
+    )
+    return false
+  }
+
+  process.stderr.write('telegram channel: polling lock unresolved — running tools-only mode\n')
+  return false
+}
 
 // reply's files param takes any path. .env is ~60 bytes and ships as a
 // document. Claude can already Read+paste file contents, so this isn't a new
@@ -320,7 +428,48 @@ function checkApprovals(): void {
   }
 }
 
-if (!STATIC) setInterval(checkApprovals, 5000).unref()
+function ensureApprovalPollingFallback(): void {
+  if (approvalPollTimer) return
+  approvalPollTimer = setInterval(checkApprovals, 5000)
+  approvalPollTimer.unref()
+}
+
+function stopApprovalWatcher(): void {
+  try {
+    approvalWatcher?.close()
+  } catch {}
+  approvalWatcher = undefined
+
+  if (approvalPollTimer) {
+    clearInterval(approvalPollTimer)
+    approvalPollTimer = undefined
+  }
+}
+
+function startApprovalWatcher(): void {
+  if (STATIC || approvalWatcher || approvalPollTimer) return
+
+  mkdirSync(APPROVED_DIR, { recursive: true, mode: 0o700 })
+  checkApprovals()
+
+  try {
+    approvalWatcher = watch(APPROVED_DIR, { persistent: false }, () => {
+      checkApprovals()
+    })
+    approvalWatcher.on('error', err => {
+      process.stderr.write(
+        `telegram channel: approval watcher failed, falling back to polling: ${err}\n`,
+      )
+      stopApprovalWatcher()
+      ensureApprovalPollingFallback()
+    })
+  } catch (err) {
+    process.stderr.write(
+      `telegram channel: approval watcher unavailable, falling back to polling: ${err}\n`,
+    )
+    ensureApprovalPollingFallback()
+  }
+}
 
 // Telegram caps messages at 4096 chars. Split long replies, preferring
 // paragraph boundaries when chunkMode is 'newline'.
@@ -621,10 +770,21 @@ function shutdown(): void {
   if (shuttingDown) return
   shuttingDown = true
   process.stderr.write('telegram channel: shutting down\n')
+  stopApprovalWatcher()
   // bot.stop() signals the poll loop to end; the current getUpdates request
   // may take up to its long-poll timeout to return. Force-exit after 2s.
-  setTimeout(() => process.exit(0), 2000)
-  void Promise.resolve(bot.stop()).finally(() => process.exit(0))
+  setTimeout(() => {
+    releasePollingLock()
+    process.exit(0)
+  }, 2000)
+  if (!pollingEnabled) {
+    releasePollingLock()
+    process.exit(0)
+  }
+  void Promise.resolve(bot.stop()).finally(() => {
+    releasePollingLock()
+    process.exit(0)
+  })
 }
 process.stdin.on('end', shutdown)
 process.stdin.on('close', shutdown)
@@ -957,6 +1117,10 @@ bot.catch(err => {
 // previous session, or a second Claude Code instance). Retry with backoff
 // until the slot frees up instead of crashing on the first rejection.
 void (async () => {
+  pollingEnabled = await claimPollingLock()
+  if (!pollingEnabled) return
+
+  startApprovalWatcher()
   for (let attempt = 1; ; attempt++) {
     try {
       await bot.start({
@@ -988,6 +1152,8 @@ void (async () => {
       }
       // bot.stop() mid-setup rejects with grammy's "Aborted delay" — expected, not an error.
       if (err instanceof Error && err.message === 'Aborted delay') return
+      stopApprovalWatcher()
+      releasePollingLock()
       process.stderr.write(`telegram channel: polling failed: ${err}\n`)
       return
     }
