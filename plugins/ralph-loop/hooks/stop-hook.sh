@@ -27,11 +27,22 @@ COMPLETION_PROMISE=$(echo "$FRONTMATTER" | grep '^completion_promise:' | sed 's/
 # Session isolation: the state file is project-scoped, but the Stop hook
 # fires in every Claude Code session in that project. If another session
 # started the loop, this session must not block (or touch the state file).
-# Legacy state files without session_id fall through (preserves old behavior).
-STATE_SESSION=$(echo "$FRONTMATTER" | grep '^session_id:' | sed 's/session_id: *//' || true)
+STATE_SESSION=$(echo "$FRONTMATTER" | grep '^session_id:' | sed 's/session_id: *//' | tr -d '[:space:]' || true)
 HOOK_SESSION=$(echo "$HOOK_INPUT" | jq -r '.session_id // ""')
+
 if [[ -n "$STATE_SESSION" ]] && [[ "$STATE_SESSION" != "$HOOK_SESSION" ]]; then
+  # Loop was started by a different session — don't interfere.
   exit 0
+fi
+
+if [[ -z "$STATE_SESSION" ]] && [[ -n "$HOOK_SESSION" ]]; then
+  # Blank session_id: CLAUDE_CODE_SESSION_ID was not available when the loop
+  # was created (common in some Claude Code versions). The state file is
+  # unowned — adopt it for this session so isolation works going forward.
+  TEMP_FILE="${RALPH_STATE_FILE}.tmp.$$"
+  sed "s/^session_id: *$/session_id: $HOOK_SESSION/" "$RALPH_STATE_FILE" > "$TEMP_FILE"
+  mv "$TEMP_FILE" "$RALPH_STATE_FILE"
+  STATE_SESSION="$HOOK_SESSION"
 fi
 
 # Validate numeric fields before arithmetic operations
