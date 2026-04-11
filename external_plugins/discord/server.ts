@@ -30,7 +30,7 @@ import {
   type Interaction,
 } from 'discord.js'
 import { randomBytes } from 'crypto'
-import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, statSync, renameSync, realpathSync, chmodSync } from 'fs'
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, statSync, renameSync, realpathSync, chmodSync, copyFileSync } from 'fs'
 import { homedir } from 'os'
 import { join, sep } from 'path'
 
@@ -605,7 +605,20 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: 'download_attachment',
-      description: 'Download attachments from a specific Discord message to the local inbox. Use after fetch_messages shows a message has attachments (marked with +Natt). Returns file paths ready to Read.',
+      description: 'Download attachments from a specific Discord message to the local inbox. Use after fetch_messages shows a message has attachments (marked with +Natt). Returns file paths ready to Read. Optionally pass dest_dir to copy files directly to a target directory (avoids needing a separate cp command).',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          chat_id: { type: 'string' },
+          message_id: { type: 'string' },
+          dest_dir: { type: 'string', description: 'Optional: copy downloaded files to this directory (absolute path). Files are still saved to inbox too.' },
+        },
+        required: ['chat_id', 'message_id'],
+      },
+    },
+    {
+      name: 'pin_message',
+      description: 'Pin a message in a Discord channel. Requires Manage Messages permission.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -749,15 +762,29 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         if (msg.attachments.size === 0) {
           return { content: [{ type: 'text', text: 'message has no attachments' }] }
         }
+        const destDir = args.dest_dir as string | undefined
+        if (destDir) mkdirSync(destDir, { recursive: true })
         const lines: string[] = []
         for (const att of msg.attachments.values()) {
           const path = await downloadAttachment(att)
           const kb = (att.size / 1024).toFixed(0)
-          lines.push(`  ${path}  (${safeAttName(att)}, ${att.contentType ?? 'unknown'}, ${kb}KB)`)
+          let finalPath = path
+          if (destDir) {
+            const destPath = join(destDir, safeAttName(att))
+            copyFileSync(path, destPath)
+            finalPath = destPath
+          }
+          lines.push(`  ${finalPath}  (${safeAttName(att)}, ${att.contentType ?? 'unknown'}, ${kb}KB)`)
         }
         return {
           content: [{ type: 'text', text: `downloaded ${lines.length} attachment(s):\n${lines.join('\n')}` }],
         }
+      }
+      case 'pin_message': {
+        const ch = await fetchAllowedChannel(args.chat_id as string)
+        const msg = await ch.messages.fetch(args.message_id as string)
+        await msg.pin()
+        return { content: [{ type: 'text', text: 'pinned' }] }
       }
       default:
         return {
