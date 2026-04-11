@@ -30,11 +30,16 @@ def main():
         # Read input from stdin
         input_data = json.load(sys.stdin)
 
-        # Determine event type for filtering
-        # For PreToolUse, we use tool_name to determine "bash" vs "file" event
+        # Determine event type for filtering.
+        # For PreToolUse, we use tool_name to determine "bash" vs "file" event.
+        # Default to a sentinel ('pretooluse') so load_rules filters out rules
+        # declared for other hook events (notably 'stop'). Passing event=None
+        # bypasses filtering in load_rules and lets stop-event rules fire on
+        # every PreToolUse, which can deadlock tool loading when a stop rule's
+        # conditions also match arbitrary PreToolUse input.
         tool_name = input_data.get('tool_name', '')
 
-        event = None
+        event = 'pretooluse'
         if tool_name == 'Bash':
             event = 'bash'
         elif tool_name in ['Edit', 'Write', 'MultiEdit']:
