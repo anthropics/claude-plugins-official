@@ -829,18 +829,36 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         // Estimate duration from file size (Opus ~16kbps for speech ≈ 2KB/s)
         const durationSecs = Math.max(1, Math.round(audioBuf.length / 2000))
 
-        const attachment = new AttachmentBuilder(filePath, { name: 'voice-message.ogg' })
-          .setDescription('Voice message')
-
-        const sent = await ch.send({
-          files: [{ attachment: filePath, name: 'voice-message.ogg', description: 'Voice message' }],
-          flags: MessageFlags.IsVoiceMessage,
+        // Use REST API directly — discord.js's send() doesn't support waveform/duration_secs metadata
+        const { FormData, Blob } = await import('node:buffer' as any).catch(() => globalThis)
+        const form = new (globalThis as any).FormData()
+        form.append('payload_json', JSON.stringify({
+          flags: 1 << 13,
+          attachments: [{
+            id: '0',
+            filename: 'voice-message.ogg',
+            duration_secs: durationSecs,
+            waveform,
+          }],
           ...(replyTo
-            ? { reply: { messageReference: replyTo, failIfNotExists: false } }
+            ? { message_reference: { message_id: replyTo, fail_if_not_exists: false } }
             : {}),
+        }))
+        const fileBlob = new Blob([audioBuf], { type: 'audio/ogg' })
+        form.append('files[0]', fileBlob, 'voice-message.ogg')
+
+        const res = await fetch(`https://discord.com/api/v10/channels/${chatId}/messages`, {
+          method: 'POST',
+          headers: { Authorization: `Bot ${TOKEN}` },
+          body: form,
         })
-        noteSent(sent.id)
-        return { content: [{ type: 'text', text: `voice message sent (id: ${sent.id})` }] }
+        if (!res.ok) {
+          const errBody = await res.text()
+          throw new Error(`Discord API ${res.status}: ${errBody}`)
+        }
+        const sentMsg = await res.json() as { id: string }
+        noteSent(sentMsg.id)
+        return { content: [{ type: 'text', text: `voice message sent (id: ${sentMsg.id})` }] }
       }
       case 'pin_message': {
         const ch = await fetchAllowedChannel(args.chat_id as string)
