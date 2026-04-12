@@ -1,0 +1,8 @@
+{
+  "name": "mandu-skills",
+  "description": "Development skills for Mandu — the agent-native Bun + React fullstack framework. Includes feature scaffolding, API creation, debugging, architecture guidance, and deployment workflows powered by 85 MCP tools.",
+  "author": {
+    "name": "konamgil",
+    "email": "konamgil@lamysolution.com"
+  }
+}
