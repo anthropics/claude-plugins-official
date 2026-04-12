@@ -1,0 +1,20 @@
+{
+    "name": "harness-engineering",
+    "description": "AI Agent engineering harness plugin. Supports project initialization, codebase audit, sprint management, and continuous iteration with Plan-Work-Review cycle. Integrates obra/superpowers workflow skills.",
+    "author": {
+          "name": "Baixun Huang",
+          "url": "https://github.com/huangbaixun"
+    },
+    "homepage": "https://github.com/huangbaixun/harness-engineering",
+    "keywords": [
+          "harness",
+          "engineering",
+          "agent",
+          "claude-code",
+          "codebuddy",
+          "sprint",
+          "tdd",
+          "planning",
+          "verification"
+    ]
+}
