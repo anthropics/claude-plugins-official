@@ -985,15 +985,21 @@ bot.catch(err => {
   process.stderr.write(`telegram channel: handler error (polling continues): ${err.error}\n`)
 })
 
-// 409 Conflict = another getUpdates consumer is still active (zombie from a
-// previous session, or a second Claude Code instance). Retry with backoff
-// until the slot frees up instead of crashing on the first rejection.
+// Retry polling on ANY transient error with backoff — not just 409 Conflict.
+// Without this, a single connection timeout, TLS reset, or DNS hiccup causes
+// bot.start() to reject with a non-409 error, the catch block returns, and
+// polling stops permanently. The plugin process stays alive (MCP stdin keeps
+// it running), so outbound tools still work — but the bot is completely deaf
+// to inbound Telegram messages. See: anthropics/claude-code#46744, #46016.
 void (async () => {
+  let consecutive409 = 0
   for (let attempt = 1; ; attempt++) {
     try {
       await bot.start({
         onStart: info => {
           botUsername = info.username
+          attempt = 0
+          consecutive409 = 0
           process.stderr.write(`telegram channel: polling as @${info.username}\n`)
           void bot.api.setMyCommands(
             [
@@ -1008,28 +1014,32 @@ void (async () => {
       return // bot.stop() was called — clean exit from the loop
     } catch (err) {
       if (shuttingDown) return
-      if (err instanceof GrammyError && err.error_code === 409) {
-        if (attempt >= 8) {
+      // bot.stop() mid-setup rejects with grammy's "Aborted delay" — expected, not an error.
+      if (err instanceof Error && err.message === 'Aborted delay') return
+
+      const is409 = err instanceof GrammyError && err.error_code === 409
+      if (is409) {
+        consecutive409++
+        if (consecutive409 >= 8) {
           process.stderr.write(
-            `telegram channel: 409 Conflict persists after ${attempt} attempts — ` +
+            `telegram channel: 409 Conflict persists after ${consecutive409} attempts — ` +
             `another poller is holding the bot token (stray 'bun server.ts' process or a second session). Exiting.\n`,
           )
           return
         }
-        const delay = Math.min(1000 * attempt, 15000)
-        const detail = attempt === 1
-          ? ' — another instance is polling (zombie session, or a second Claude Code running?)'
-          : ''
-        process.stderr.write(
-          `telegram channel: 409 Conflict${detail}, retrying in ${delay / 1000}s\n`,
-        )
-        await new Promise(r => setTimeout(r, delay))
-        continue
+      } else {
+        consecutive409 = 0
       }
-      // bot.stop() mid-setup rejects with grammy's "Aborted delay" — expected, not an error.
-      if (err instanceof Error && err.message === 'Aborted delay') return
-      process.stderr.write(`telegram channel: polling failed: ${err}\n`)
-      return
+
+      const delay = Math.min(1000 * Math.min(attempt, 15), 15000)
+      const label = is409
+        ? `409 Conflict${attempt === 1 ? ' — another instance is polling (zombie session, or a second Claude Code running?)' : ''}`
+        : String(err)
+      process.stderr.write(
+        `telegram channel: ${label}, retrying in ${delay / 1000}s\n`,
+      )
+      await new Promise(r => setTimeout(r, delay))
+      continue
     }
   }
 })()
