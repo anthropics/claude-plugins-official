@@ -390,9 +390,12 @@ function chunk(text: string, limit: number, mode: 'length' | 'newline'): string[
 }
 
 async function fetchTextChannel(id: string) {
-  const ch = await client.channels.fetch(id)
+  let ch = await client.channels.fetch(id)
   if (!ch || !ch.isTextBased()) {
     throw new Error(`channel ${id} not found or not text-based`)
+  }
+  if (ch.partial) {
+    ch = await ch.fetch()
   }
   return ch
 }
@@ -401,7 +404,15 @@ async function fetchTextChannel(id: string) {
 // from. DM channel ID ≠ user ID, so we inspect the fetched channel's type.
 // Thread → parent lookup mirrors the inbound gate.
 async function fetchAllowedChannel(id: string) {
-  const ch = await fetchTextChannel(id)
+  // Force bypass Discord.js cache to avoid stale partial objects where
+  // recipientId is null (DMs) or type/properties are wrong (groups).
+  // See: https://github.com/anthropics/claude-plugins-official/issues/983
+  let ch = await client.channels.fetch(id, { force: true })
+  if (!ch || !ch.isTextBased()) {
+    throw new Error(`channel ${id} not found or not text-based`)
+  }
+  if (ch.partial) ch = await ch.fetch()
+
   const access = loadAccess()
   if (ch.type === ChannelType.DM) {
     if (access.allowFrom.includes(ch.recipientId)) return ch
@@ -409,7 +420,7 @@ async function fetchAllowedChannel(id: string) {
     const key = ch.isThread() ? ch.parentId ?? ch.id : ch.id
     if (key in access.groups) return ch
   }
-  throw new Error(`channel ${id} is not allowlisted — add via /discord:access`)
+  throw new Error(`channel ${id} is not allowlisted — add via /discord:access`;
 }
 
 async function downloadAttachment(att: Attachment): Promise<string> {
