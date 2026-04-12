@@ -601,6 +601,33 @@
       }
     },
     {
+      "name": "graphql-lsp",
+      "description": "GraphQL language server for schema and operation intelligence",
+      "version": "1.0.0",
+      "author": {
+        "name": "Anthropic",
+        "email": "support@anthropic.com"
+      },
+      "source": "./plugins/graphql-lsp",
+      "category": "development",
+      "strict": false,
+      "lspServers": {
+        "graphql": {
+          "command": "graphql-lsp",
+          "args": [
+            "server",
+            "-m",
+            "stream"
+          ],
+          "extensionToLanguage": {
+            ".graphql": "graphql",
+            ".gql": "graphql",
+            ".graphqls": "graphql"
+          }
+        }
+      }
+    },
+    {
       "name": "greptile",
       "description": "AI-powered codebase search and understanding. Query your repositories using natural language to find relevant code, understand dependencies, and get contextual answers about your codebase architecture.",
       "category": "development",
