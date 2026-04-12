@@ -23,7 +23,33 @@ import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, statSync, 
 import { homedir } from 'os'
 import { join, extname, sep } from 'path'
 
-const STATE_DIR = process.env.TELEGRAM_STATE_DIR ?? join(homedir(), '.claude', 'channels', 'telegram')
+// ── Guard against orphan pollers ─────────────────────────────────────
+// Claude Desktop (GUI) loads all user-scope plugins into every session,
+// including this Telegram plugin. Each instance starts a Grammy
+// getUpdates loop, but Telegram allows exactly ONE long-poller per bot
+// token. Extra pollers cause 409 Conflict, silencing the legitimate
+// listener and dropping messages.
+//
+// The harness sets TELEGRAM_STATE_DIR for explicitly configured channel
+// sessions (CLI --channels, LaunchAgents, etc). Desktop GUI sessions
+// don't set it. Without this guard, Desktop sessions default to the
+// main channel's state dir, steal the bot token from .env, and start
+// a competing poller.
+//
+// Fix: refuse to start when TELEGRAM_STATE_DIR is not set. This is a
+// fail-closed approach — legitimate sessions always set it, so they're
+// unaffected. Desktop sessions that accidentally load the plugin exit
+// cleanly instead of spawning an orphan poller.
+if (!process.env.TELEGRAM_STATE_DIR) {
+  process.stderr.write(
+    `telegram channel: TELEGRAM_STATE_DIR not set — refusing to start.\n` +
+    `  This prevents orphan pollers from stealing the getUpdates slot.\n` +
+    `  Set TELEGRAM_STATE_DIR in your channel config or launch agent.\n`,
+  )
+  process.exit(0) // clean exit, not an error — plugin just isn't needed here
+}
+
+const STATE_DIR = process.env.TELEGRAM_STATE_DIR
 const ACCESS_FILE = join(STATE_DIR, 'access.json')
 const APPROVED_DIR = join(STATE_DIR, 'approved')
 const ENV_FILE = join(STATE_DIR, '.env')
