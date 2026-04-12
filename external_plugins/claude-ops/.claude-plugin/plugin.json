@@ -1,0 +1,26 @@
+{
+  "name": "claude-ops",
+  "description": "Business operating system for Claude Code. One command delivers a complete morning briefing: infra health, CI status, unread messages, open PRs, sprint state, and revenue snapshot. Includes Slack, Telegram, WhatsApp, Linear, Sentry, AWS, and GitHub integrations. YOLO mode runs your entire ops autonomously.",
+  "author": {
+    "name": "Sam Renders",
+    "url": "https://github.com/auroracapital"
+  },
+  "homepage": "https://github.com/auroracapital/claude-ops",
+  "repository": "https://github.com/auroracapital/claude-ops",
+  "license": "MIT",
+  "keywords": [
+    "business",
+    "operations",
+    "devops",
+    "morning-briefing",
+    "slack",
+    "telegram",
+    "whatsapp",
+    "linear",
+    "sentry",
+    "aws",
+    "github",
+    "inbox-zero",
+    "pr-automation"
+  ]
+}
