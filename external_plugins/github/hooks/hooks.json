@@ -1,0 +1,17 @@
+{
+  "description": "Auto-allow gh CLI and bundled Python helper commands so the GitHub plugin works in sandbox mode without manual approval.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/allow-gh.sh\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

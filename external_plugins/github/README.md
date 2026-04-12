@@ -42,36 +42,60 @@ Python 3 is required for the two bundled helper scripts
 
 ## Why this plugin does not ship an MCP server
 
-Earlier versions of this plugin shipped a `.mcp.json` that pointed at the
-remote GitHub Copilot MCP endpoint (`https://api.githubcopilot.com/mcp/`).
-That endpoint does **not** support OAuth 2.0 Dynamic Client Registration
-(RFC 7591), which Claude Code's plugin auth path currently requires.
-Installing the plugin resulted in:
+The official `github` plugin in
+[anthropics/claude-plugins-official](https://github.com/anthropics/claude-plugins-official)
+ships a `.mcp.json` pointing at the remote GitHub Copilot MCP endpoint
+(`https://api.githubcopilot.com/mcp/`). That endpoint does **not** support
+OAuth 2.0 Dynamic Client Registration (RFC 7591), which Claude Code's
+plugin auth path currently requires. Installing the official plugin fails
+with:
 
 ```
 Invalid MCP server config for "github": Missing environment variables:
 GITHUB_PERSONAL_ACCESS_TOKEN
 ```
 
-and any attempt to authenticate through the plugin UI returned:
+and any attempt to authenticate through the plugin UI returns:
 
 ```
 SDK auth failed: Incompatible auth server: does not support dynamic client
 registration
 ```
 
+For comparison, OpenAI's
+[`github@openai-curated` plugin for Codex](https://github.com/openai/plugins)
+solves the same problem with a hybrid approach: a pre-registered OAuth app
+on their Apps & Connectors backend (no DCR needed) plus a `gh` CLI
+fallback in every skill. That plugin works out of the box today.
+
+Claude Code has no equivalent connector registry, so this plugin takes
+the `gh` CLI path exclusively — a skills bundle that reaches GitHub
+through the already-authenticated `gh` CLI, which uses real OAuth via
+`gh auth login` and stores credentials in the OS keyring.
+
 Tracked upstream:
 
 - Plugin-level: [anthropics/claude-plugins-official#283](https://github.com/anthropics/claude-plugins-official/issues/283)
 - Claude Code core: [anthropics/claude-code#3433](https://github.com/anthropics/claude-code/issues/3433)
 
-Until Claude Code gains pre-registered OAuth client support for MCP,
-this plugin takes a different path: a skills bundle that tells Claude how
-to reach GitHub through the already-authenticated `gh` CLI, which uses
-real OAuth via `gh auth login` and stores credentials in the OS keyring.
+When Claude Code gains pre-registered OAuth client support for MCP, a
+structured MCP server can be added back alongside the skills without
+breaking anything.
 
-When the core issue lands, a structured MCP server can be added back in a
-separate release alongside the skills without breaking anything.
+## Sandbox compatibility
+
+The plugin works in Claude Code's sandbox mode without any user configuration:
+
+1. **Skill instructions** tell Claude to set `dangerouslyDisableSandbox: true`
+   on every `gh`, `git`, and helper-script Bash call. This bypasses the
+   sandbox network proxy that would otherwise block TLS connections to
+   `api.github.com`.
+
+2. **PreToolUse hook** (`hooks/hooks.json` + `hooks/allow-gh.sh`)
+   auto-approves these calls with `permissionDecision: "allow"`, so the
+   user is never prompted for permission.
+
+No changes to project or global `settings.json` are needed.
 
 ## Attribution
 
