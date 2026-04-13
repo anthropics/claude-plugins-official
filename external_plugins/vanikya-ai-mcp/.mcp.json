@@ -1,0 +1,6 @@
+{
+  "vanikya": {
+    "type": "http",
+    "url": "https://prod.vanikya.com/mcp"
+  }
+}

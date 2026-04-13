@@ -1,0 +1,10 @@
+{
+  "name": "vanikya-ai-mcp",
+  "description": "Vanikya AI tools for Claude Code — image, video, vector & lottie generation, SEO analysis, creative insights, and credits via MCP",
+  "author": {
+    "name": "Vanikya",
+    "url": "https://vanikya.ai"
+  },
+  "homepage": "https://vanikya.ai",
+  "keywords": ["image-generation", "seo", "ai", "mcp", "creative", "video-generation"]
+}
