@@ -180,6 +180,17 @@
       "homepage": "https://github.com/AzureCosmosDB/cosmosdb-claude-code-plugin"
     },
     {
+      "name": "azure-skills",
+      "description": "Microsoft Azure MCP integration for cloud resource management, deployments, and Azure services. Manage your Azure infrastructure, monitor applications, and deploy resources directly from Claude Code.",
+      "category": "deployment",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/microsoft/azure-skills.git",
+        "sha": "6ffe5ea548bae9679c4eb4f5c82c51db3527d58c"
+      },
+      "homepage": "https://github.com/microsoft/azure-skills"
+    },
+    {
       "name": "base44",
       "description": "Build and deploy Base44 full-stack apps with CLI project management and JavaScript/TypeScript SDK development skills",
       "category": "development",
