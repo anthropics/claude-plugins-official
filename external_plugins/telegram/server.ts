@@ -654,12 +654,34 @@ process.on('SIGHUP', shutdown)
 // Orphan watchdog: stdin events above don't reliably fire when the parent
 // chain (`bun run` wrapper → shell → us) is severed by a crash. Poll for
 // reparenting (POSIX) or a dead stdin pipe and self-terminate.
+//
+// Subtlety: our immediate parent is the `bun run --silent start` wrapper,
+// not Claude Code. When a session exits, the wrapper gets reparented to
+// launchd (PID 1) but stays alive waiting for us — so `process.ppid` never
+// changes. Check the *wrapper's* ppid (our grandparent) instead: if it's
+// PID 1, the session that spawned us is gone.
+// Bun also doesn't reliably set `stdin.destroyed`/`readableEnded` when the
+// other end of a unix socket closes, so the direct stdin checks are
+// insufficient on their own.
 const bootPpid = process.ppid
 setInterval(() => {
-  const orphaned =
+  let orphaned =
     (process.platform !== 'win32' && process.ppid !== bootPpid) ||
     process.stdin.destroyed ||
     process.stdin.readableEnded
+
+  // Grandparent check: if the wrapper's parent is PID 1 (launchd/init),
+  // the Claude Code session that started us is dead.
+  if (!orphaned && process.platform !== 'win32') {
+    try {
+      const result = Bun.spawnSync(['ps', '-o', 'ppid=', '-p', String(process.ppid)])
+      const gpid = parseInt(new TextDecoder().decode(result.stdout).trim(), 10)
+      if (gpid <= 1) orphaned = true
+    } catch {
+      orphaned = true
+    }
+  }
+
   if (orphaned) shutdown()
 }, 5000).unref()
 
