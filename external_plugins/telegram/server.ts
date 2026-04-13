@@ -654,12 +654,19 @@ process.on('SIGHUP', shutdown)
 // Orphan watchdog: stdin events above don't reliably fire when the parent
 // chain (`bun run` wrapper → shell → us) is severed by a crash. Poll for
 // reparenting (POSIX) or a dead stdin pipe and self-terminate.
+//
+// Windows note: process.stdin.destroyed / readableEnded report transient
+// false positives under bun on Windows when the parent (Claude Code CLI) is
+// busy with long-running tools, killing a healthy subprocess. Genuine EOF on
+// Windows is still caught by the 'end' / 'close' listeners above, so gate the
+// whole check to non-win32 platforms.
 const bootPpid = process.ppid
 setInterval(() => {
   const orphaned =
-    (process.platform !== 'win32' && process.ppid !== bootPpid) ||
-    process.stdin.destroyed ||
-    process.stdin.readableEnded
+    process.platform !== 'win32' &&
+    (process.ppid !== bootPpid ||
+      process.stdin.destroyed ||
+      process.stdin.readableEnded)
   if (orphaned) shutdown()
 }, 5000).unref()
 
