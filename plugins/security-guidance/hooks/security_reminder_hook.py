@@ -27,6 +27,20 @@ def debug_log(message):
 
 # State file to track warnings shown (session-scoped using session ID)
 
+# Documentation file extensions — content is not executable, so
+# substring-based code-injection checks produce false positives on
+# fenced code examples. Path-based checks (e.g., GitHub Actions) are
+# still applied to these files.
+DOC_EXTENSIONS = (
+    ".md",
+    ".markdown",
+    ".txt",
+    ".rst",
+    ".org",
+    ".adoc",
+    ".asciidoc",
+)
+
 # Security patterns configuration
 SECURITY_PATTERNS = [
     {
@@ -185,13 +199,18 @@ def check_patterns(file_path, content):
     # Normalize path by removing leading slashes
     normalized_path = file_path.lstrip("/")
 
+    # Documentation files don't execute — their fenced code blocks are
+    # examples, not behavior. Skip content-substring checks for them
+    # to avoid false positives. Path-based checks still apply.
+    is_doc = normalized_path.lower().endswith(DOC_EXTENSIONS)
+
     for pattern in SECURITY_PATTERNS:
         # Check path-based patterns
         if "path_check" in pattern and pattern["path_check"](normalized_path):
             return pattern["ruleName"], pattern["reminder"]
 
-        # Check content-based patterns
-        if "substrings" in pattern and content:
+        # Check content-based patterns (skipped for documentation files)
+        if not is_doc and "substrings" in pattern and content:
             for substring in pattern["substrings"]:
                 if substring in content:
                     return pattern["ruleName"], pattern["reminder"]
