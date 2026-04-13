@@ -1,0 +1,12 @@
+[project]
+name = "skill-creator"
+version = "0.1.0"
+description = "Helper scripts for authoring, packaging, and evaluating Claude Code skills."
+requires-python = ">=3.9"
+dependencies = [
+    "pyyaml>=6.0",
+    "anthropic>=0.39",
+]
+
+[tool.uv]
+package = false
