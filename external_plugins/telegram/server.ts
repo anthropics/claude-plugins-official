@@ -23,6 +23,126 @@ import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, statSync, 
 import { homedir } from 'os'
 import { join, extname, sep } from 'path'
 
+// GitHub-flavored markdown → Telegram MarkdownV2 converter.
+// Lets callers pass `format: "markdown"` with natural markdown (```code fences```,
+// **bold**, _italic_, `inline`, [links](url), plus loose prose with punctuation)
+// without worrying about Telegram's MarkdownV2 escape rules.
+const MDV2_SPECIALS = /[_*\[\]()~`>#+\-=|{}.!\\]/g
+function escapeMdV2Text(s: string): string {
+  return s.replace(MDV2_SPECIALS, '\\$&')
+}
+function escapeMdV2Code(s: string): string {
+  return s.replace(/[`\\]/g, '\\$&')
+}
+function isWordChar(ch: string | undefined): boolean {
+  return ch !== undefined && /[\p{L}\p{N}_]/u.test(ch)
+}
+function githubMdToTelegramMdV2(input: string): string {
+  // Tokenize: fenced code blocks ```...``` first (multi-line, greedy-minimal).
+  const parts: { kind: 'fence' | 'text', body: string, lang?: string }[] = []
+  const fenceRe = /```([a-zA-Z0-9_.+-]*)\n?([\s\S]*?)```/g
+  let last = 0
+  let m: RegExpExecArray | null
+  while ((m = fenceRe.exec(input)) !== null) {
+    if (m.index > last) parts.push({ kind: 'text', body: input.slice(last, m.index) })
+    parts.push({ kind: 'fence', lang: m[1], body: m[2] })
+    last = m.index + m[0].length
+  }
+  if (last < input.length) parts.push({ kind: 'text', body: input.slice(last) })
+
+  return parts.map(p => {
+    if (p.kind === 'fence') {
+      const lang = p.lang ?? ''
+      return '```' + lang + '\n' + escapeMdV2Code(p.body.replace(/\n$/, '')) + '\n```'
+    }
+    // In text: handle inline code `...`, bold **...**, italic *.../_..._, links [text](url).
+    let out = ''
+    let i = 0
+    const s = p.body
+    while (i < s.length) {
+      // Inline code
+      if (s[i] === '`') {
+        const end = s.indexOf('`', i + 1)
+        if (end !== -1) {
+          out += '`' + escapeMdV2Code(s.slice(i + 1, end)) + '`'
+          i = end + 1
+          continue
+        }
+      }
+      // Bold **text** (GFM canonical)
+      if (s[i] === '*' && s[i + 1] === '*') {
+        const end = s.indexOf('**', i + 2)
+        if (end !== -1) {
+          out += '*' + escapeMdV2Text(s.slice(i + 2, end)) + '*'
+          i = end + 2
+          continue
+        }
+      }
+      // Bold __text__ (GFM alternative, requires word boundaries like italic).
+      if (s[i] === '_' && s[i + 1] === '_' && !isWordChar(s[i - 1]) && isWordChar(s[i + 2])) {
+        let j = i + 2
+        let matched = false
+        while ((j = s.indexOf('__', j)) !== -1) {
+          if (isWordChar(s[j - 1]) && !isWordChar(s[j + 2])) {
+            out += '*' + escapeMdV2Text(s.slice(i + 2, j)) + '*'
+            i = j + 2
+            matched = true
+            break
+          }
+          j++
+        }
+        if (matched) continue
+      }
+      // Strikethrough ~~text~~ (GFM) → Telegram MdV2 ~text~.
+      if (s[i] === '~' && s[i + 1] === '~') {
+        const end = s.indexOf('~~', i + 2)
+        if (end !== -1) {
+          out += '~' + escapeMdV2Text(s.slice(i + 2, end)) + '~'
+          i = end + 2
+          continue
+        }
+      }
+      // Italic _text_ (underscore form). Requires word boundaries around the
+      // delimiters so identifiers like `user_id` survive as literals. GFM's
+      // `*text*` form is not accepted since it clashes with **bold**.
+      if (s[i] === '_' && !isWordChar(s[i - 1]) && isWordChar(s[i + 1])) {
+        let j = i + 1
+        let matched = false
+        while ((j = s.indexOf('_', j)) !== -1) {
+          if (isWordChar(s[j - 1]) && !isWordChar(s[j + 1])) {
+            out += '_' + escapeMdV2Text(s.slice(i + 1, j)) + '_'
+            i = j + 1
+            matched = true
+            break
+          }
+          j++
+        }
+        if (matched) continue
+      }
+      // Link [text](url)
+      if (s[i] === '[') {
+        const closeBracket = s.indexOf(']', i + 1)
+        if (closeBracket !== -1 && s[closeBracket + 1] === '(') {
+          const closeParen = s.indexOf(')', closeBracket + 2)
+          if (closeParen !== -1) {
+            const linkText = s.slice(i + 1, closeBracket)
+            const url = s.slice(closeBracket + 2, closeParen)
+            out += '[' + escapeMdV2Text(linkText) + '](' + url.replace(/[)\\]/g, '\\$&') + ')'
+            i = closeParen + 1
+            continue
+          }
+        }
+      }
+      // Default: escape this character if special, else pass through.
+      out += MDV2_SPECIALS.test(s[i]) ? '\\' + s[i] : s[i]
+      MDV2_SPECIALS.lastIndex = 0
+      i++
+    }
+    return out
+  }).join('')
+}
+// === END LOCAL PATCH ===
+
 const STATE_DIR = process.env.TELEGRAM_STATE_DIR ?? join(homedir(), '.claude', 'channels', 'telegram')
 const ACCESS_FILE = join(STATE_DIR, 'access.json')
 const APPROVED_DIR = join(STATE_DIR, 'approved')
@@ -451,8 +571,8 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
           },
           format: {
             type: 'string',
-            enum: ['text', 'markdownv2'],
-            description: "Rendering mode. 'markdownv2' enables Telegram formatting (bold, italic, code, links). Caller must escape special chars per MarkdownV2 rules. Default: 'text' (plain, no escaping needed).",
+            enum: ['text', 'markdown', 'markdownv2'],
+            description: "Rendering mode. 'markdown' (recommended) accepts GitHub-flavored markdown (```code blocks```, **bold**, _italic_, `inline`, [links](url)) and is auto-converted to Telegram MarkdownV2 with correct escaping. 'markdownv2' is raw MarkdownV2 — caller must escape per Telegram rules. Default: 'text' (plain, no escaping).",
           },
         },
         required: ['chat_id', 'text'],
@@ -493,8 +613,8 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
           text: { type: 'string' },
           format: {
             type: 'string',
-            enum: ['text', 'markdownv2'],
-            description: "Rendering mode. 'markdownv2' enables Telegram formatting (bold, italic, code, links). Caller must escape special chars per MarkdownV2 rules. Default: 'text' (plain, no escaping needed).",
+            enum: ['text', 'markdown', 'markdownv2'],
+            description: "Rendering mode. 'markdown' (recommended) accepts GitHub-flavored markdown (```code blocks```, **bold**, _italic_, `inline`, [links](url)) and is auto-converted to Telegram MarkdownV2 with correct escaping. 'markdownv2' is raw MarkdownV2 — caller must escape per Telegram rules. Default: 'text' (plain, no escaping).",
           },
         },
         required: ['chat_id', 'message_id', 'text'],
@@ -509,11 +629,13 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
     switch (req.params.name) {
       case 'reply': {
         const chat_id = args.chat_id as string
-        const text = args.text as string
         const reply_to = args.reply_to != null ? Number(args.reply_to) : undefined
         const files = (args.files as string[] | undefined) ?? []
         const format = (args.format as string | undefined) ?? 'text'
-        const parseMode = format === 'markdownv2' ? 'MarkdownV2' as const : undefined
+        const parseMode = (format === 'markdownv2' || format === 'markdown') ? 'MarkdownV2' as const : undefined
+        const text = format === 'markdown'
+          ? githubMdToTelegramMdV2(args.text as string)
+          : (args.text as string)
 
         assertAllowedChat(chat_id)
 
@@ -602,11 +724,14 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
       case 'edit_message': {
         assertAllowedChat(args.chat_id as string)
         const editFormat = (args.format as string | undefined) ?? 'text'
-        const editParseMode = editFormat === 'markdownv2' ? 'MarkdownV2' as const : undefined
+        const editParseMode = (editFormat === 'markdownv2' || editFormat === 'markdown') ? 'MarkdownV2' as const : undefined
+        const editText = editFormat === 'markdown'
+          ? githubMdToTelegramMdV2(args.text as string)
+          : (args.text as string)
         const edited = await bot.api.editMessageText(
           args.chat_id as string,
           Number(args.message_id),
-          args.text as string,
+          editText,
           ...(editParseMode ? [{ parse_mode: editParseMode }] : []),
         )
         const id = typeof edited === 'object' ? edited.message_id : args.message_id
