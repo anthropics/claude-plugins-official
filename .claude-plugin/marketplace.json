@@ -401,6 +401,34 @@
       }
     },
     {
+      "name": "dart-lsp",
+      "description": "Dart language server for code intelligence in Dart and Flutter projects",
+      "version": "1.0.0",
+      "author": {
+        "name": "Aryan Shukla",
+        "email": "aryanshukla@users.noreply.github.com"
+      },
+      "source": "./plugins/dart-lsp",
+      "category": "development",
+      "strict": false,
+      "lspServers": {
+        "dart": {
+          "command": "sh",
+          "args": ["-c", "exec ${DART_EXECUTABLE:-dart} language-server --protocol=lsp"],
+          "extensionToLanguage": {
+            ".dart": "dart"
+          },
+          "initializationOptions": {
+            "onlyAnalyzeProjectsWithOpenFiles": true,
+            "suggestFromUnimportedLibraries": false,
+            "closingLabels": true,
+            "flutterOutline": true,
+            "outline": true
+          }
+        }
+      }
+    },
+    {
       "name": "data",
       "description": "Data engineering for Apache Airflow and Astronomer. Author DAGs with best practices, debug pipeline failures, trace data lineage, profile tables, migrate Airflow 2 to 3, and manage local and cloud deployments.",
       "category": "development",
