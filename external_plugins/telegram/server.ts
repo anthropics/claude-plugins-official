@@ -19,7 +19,7 @@ import { z } from 'zod'
 import { Bot, GrammyError, InlineKeyboard, InputFile, type Context } from 'grammy'
 import type { ReactionTypeEmoji } from 'grammy/types'
 import { randomBytes } from 'crypto'
-import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, statSync, renameSync, realpathSync, chmodSync } from 'fs'
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, statSync, renameSync, realpathSync, chmodSync, createWriteStream, existsSync } from 'fs'
 import { homedir } from 'os'
 import { join, extname, sep } from 'path'
 
@@ -27,6 +27,28 @@ const STATE_DIR = process.env.TELEGRAM_STATE_DIR ?? join(homedir(), '.claude', '
 const ACCESS_FILE = join(STATE_DIR, 'access.json')
 const APPROVED_DIR = join(STATE_DIR, 'approved')
 const ENV_FILE = join(STATE_DIR, '.env')
+
+// Persistent stderr log. Tee stderr to ~/.claude/channels/telegram/server.log
+// so post-mortem debugging has something to read when the process dies silently.
+// Rotate when it exceeds ~5MB (truncate to last ~2MB). Runs before any stderr write
+// below so nothing is lost. Does not break existing stderr → harness piping.
+const SERVER_LOG = join(STATE_DIR, 'server.log')
+try {
+  mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 })
+  if (existsSync(SERVER_LOG) && statSync(SERVER_LOG).size > 5 * 1024 * 1024) {
+    const existing = readFileSync(SERVER_LOG, 'utf8')
+    writeFileSync(SERVER_LOG, existing.slice(-2 * 1024 * 1024))
+  }
+} catch {}
+try {
+  const logStream = createWriteStream(SERVER_LOG, { flags: 'a' })
+  const origStderrWrite = process.stderr.write.bind(process.stderr)
+  ;(process.stderr as any).write = ((chunk: any, ...args: any[]) => {
+    try { logStream.write(chunk) } catch {}
+    return (origStderrWrite as any)(chunk, ...args)
+  })
+  process.on('exit', () => { try { logStream.end() } catch {} })
+} catch {}
 
 // Load ~/.claude/channels/telegram/.env into process.env. Real env wins.
 // Plugin-spawned servers don't get an env block — this is where the token lives.
@@ -645,22 +667,47 @@ function shutdown(): void {
   setTimeout(() => process.exit(0), 2000)
   void Promise.resolve(bot.stop()).finally(() => process.exit(0))
 }
-process.stdin.on('end', shutdown)
-process.stdin.on('close', shutdown)
-process.on('SIGTERM', shutdown)
-process.on('SIGINT', shutdown)
-process.on('SIGHUP', shutdown)
+
+// Wrap shutdown() with a reason-logged entry point so we can see in
+// server.log WHY the process decided to die. Every known shutdown trigger routes
+// through here; shutdown() remains the canonical teardown.
+function shutdownWithReason(reason: string, detail?: string): void {
+  const msg = detail ? `[shutdown] ${reason}: ${detail}` : `[shutdown] ${reason}`
+  try { process.stderr.write(msg + '\n') } catch {}
+  shutdown()
+}
+process.stdin.on('end', () => shutdownWithReason('stdin-end'))
+process.stdin.on('close', () => shutdownWithReason('stdin-close'))
+process.on('SIGTERM', () => shutdownWithReason('SIGTERM'))
+process.on('SIGINT', () => shutdownWithReason('SIGINT'))
+process.on('SIGHUP', () => shutdownWithReason('SIGHUP'))
 
 // Orphan watchdog: stdin events above don't reliably fire when the parent
 // chain (`bun run` wrapper → shell → us) is severed by a crash. Poll for
 // reparenting (POSIX) or a dead stdin pipe and self-terminate.
+// Require 3 consecutive polls (15s) of orphaned state before shutdown.
+// Under heavy load (e.g. DAW + browser + many Claude sessions) a single transient
+// stdin/ppid glitch used to falsely trigger shutdown. Any clean poll resets
+// the counter, so true reparenting still terminates within ~15s.
 const bootPpid = process.ppid
+let orphanedPolls = 0
+const ORPHAN_CONFIRMATION_POLLS = 3
 setInterval(() => {
   const orphaned =
     (process.platform !== 'win32' && process.ppid !== bootPpid) ||
     process.stdin.destroyed ||
     process.stdin.readableEnded
-  if (orphaned) shutdown()
+  if (orphaned) {
+    orphanedPolls++
+    if (orphanedPolls >= ORPHAN_CONFIRMATION_POLLS) {
+      shutdownWithReason(
+        'orphan-watchdog',
+        `ppid=${process.ppid} bootPpid=${bootPpid} destroyed=${process.stdin.destroyed} ended=${process.stdin.readableEnded}`,
+      )
+    }
+  } else {
+    orphanedPolls = 0
+  }
 }, 5000).unref()
 
 // Commands are DM-only. Responding in groups would: (1) leak pairing codes via
