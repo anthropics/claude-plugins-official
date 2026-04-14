@@ -8,6 +8,16 @@
   },
   "plugins": [
     {
+      "name": "adlc",
+      "description": "Agentforce Agent Development Life Cycle — author, discover, scaffold, deploy, test, and optimize .agent files",
+      "category": "development",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/SalesforceAIResearch/agentforce-adlc.git"
+      },
+      "homepage": "https://github.com/SalesforceAIResearch/agentforce-adlc"
+    },
+    {
       "name": "adspirer-ads-agent",
       "description": "Cross-platform ad management for Google Ads, Meta Ads, TikTok Ads, and LinkedIn Ads. 91 tools for keyword research, campaign creation, performance analysis, and budget optimization.",
       "category": "productivity",
