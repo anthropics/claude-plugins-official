@@ -7,5 +7,14 @@
     "messaging",
     "channel",
     "mcp"
-  ]
+  ],
+  "userConfig": {
+    "TELEGRAM_BOT_TOKEN": {
+      "type": "string",
+      "title": "Bot Token",
+      "description": "Bot token from @BotFather — format is 123456789:AAH... Stored in keychain (macOS) or ~/.claude/.credentials.json with 0600 permissions elsewhere. Never written to settings.json.",
+      "required": true,
+      "sensitive": true
+    }
+  }
 }

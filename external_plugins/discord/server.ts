@@ -39,10 +39,12 @@ const ACCESS_FILE = join(STATE_DIR, 'access.json')
 const APPROVED_DIR = join(STATE_DIR, 'approved')
 const ENV_FILE = join(STATE_DIR, '.env')
 
-// Load ~/.claude/channels/discord/.env into process.env. Real env wins.
-// Plugin-spawned servers don't get an env block — this is where the token lives.
+// Token is injected via ${user_config.DISCORD_BOT_TOKEN} from .mcp.json —
+// prompted at enable time, stored in keychain (macOS) or .credentials.json 0600
+// elsewhere. The .env file below is a legacy fallback for users configured
+// before H1 #3617646 — real env wins, so the injected value takes precedence.
 try {
-  // Token is a credential — lock to owner. No-op on Windows (would need ACLs).
+  // Defensive chmod for legacy .env files (no-op on Windows).
   chmodSync(ENV_FILE, 0o600)
   for (const line of readFileSync(ENV_FILE, 'utf8').split('\n')) {
     const m = line.match(/^(\w+)=(.*)$/)
@@ -56,8 +58,8 @@ const STATIC = process.env.DISCORD_ACCESS_MODE === 'static'
 if (!TOKEN) {
   process.stderr.write(
     `discord channel: DISCORD_BOT_TOKEN required\n` +
-    `  set in ${ENV_FILE}\n` +
-    `  format: DISCORD_BOT_TOKEN=MTIz...\n`,
+    `  re-enter via: /plugin manage → discord → Configure options\n` +
+    `  (stored in keychain/credentials.json, not settings.json)\n`,
   )
   process.exit(1)
 }
