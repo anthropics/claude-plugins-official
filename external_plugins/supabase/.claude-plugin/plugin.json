@@ -1,5 +1,6 @@
 {
   "name": "supabase",
+  "version": "1.0.0",
   "description": "Supabase MCP integration for database operations, authentication, storage, and real-time subscriptions. Manage your Supabase projects, run SQL queries, and interact with your backend directly.",
   "author": {
     "name": "Supabase"
