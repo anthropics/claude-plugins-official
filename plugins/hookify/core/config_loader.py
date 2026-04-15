@@ -40,6 +40,9 @@ class Rule:
     action: str = "warn"  # "warn" or "block" (future)
     tool_matcher: Optional[str] = None  # Override tool matching
     message: str = ""  # Message body from markdown
+    silent: bool = False  # If true, suppress systemMessage (banner) and
+                          # deliver the warning only via additionalContext
+                          # (assistant-facing self-correction mode).
 
     @classmethod
     def from_dict(cls, frontmatter: Dict[str, Any], message: str) -> 'Rule':
@@ -80,7 +83,8 @@ class Rule:
             conditions=conditions,
             action=frontmatter.get('action', 'warn'),
             tool_matcher=frontmatter.get('tool_matcher'),
-            message=message.strip()
+            message=message.strip(),
+            silent=bool(frontmatter.get('silent', False)),
         )
 
 

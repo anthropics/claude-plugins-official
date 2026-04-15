@@ -86,16 +86,23 @@ class RuleEngine:
 
         # If only warnings, show them but allow operation
         if warning_rules:
-            messages = [f"**[{r.name}]**\n{r.message}" for r in warning_rules]
-            combined = "\n\n".join(messages)
-            response = {"systemMessage": combined}
+            all_messages = [f"**[{r.name}]**\n{r.message}" for r in warning_rules]
+            visible_messages = [f"**[{r.name}]**\n{r.message}"
+                                for r in warning_rules
+                                if not getattr(r, 'silent', False)]
+            response = {}
+            # Silent rules suppress the user-facing banner; non-silent rules
+            # still show systemMessage. If ALL matching rules are silent, no
+            # banner is emitted at all.
+            if visible_messages:
+                response["systemMessage"] = "\n\n".join(visible_messages)
             # PreToolUse additionalContext supported since Claude Code v2.1.9.
-            # PostToolUse has supported it since earlier. Inject so Claude (not
-            # just the user console) sees the educational message.
+            # PostToolUse has supported it since earlier. Inject so Claude
+            # (not just the user console) sees the educational message.
             if hook_event in ('PreToolUse', 'PostToolUse'):
                 response["hookSpecificOutput"] = {
                     "hookEventName": hook_event,
-                    "additionalContext": combined,
+                    "additionalContext": "\n\n".join(all_messages),
                 }
             return response
 
