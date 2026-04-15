@@ -73,7 +73,8 @@ class RuleEngine:
                 return {
                     "hookSpecificOutput": {
                         "hookEventName": hook_event,
-                        "permissionDecision": "deny"
+                        "permissionDecision": "deny",
+                        "permissionDecisionReason": combined_message,
                     },
                     "systemMessage": combined_message
                 }
@@ -86,9 +87,17 @@ class RuleEngine:
         # If only warnings, show them but allow operation
         if warning_rules:
             messages = [f"**[{r.name}]**\n{r.message}" for r in warning_rules]
-            return {
-                "systemMessage": "\n\n".join(messages)
-            }
+            combined = "\n\n".join(messages)
+            response = {"systemMessage": combined}
+            # PreToolUse additionalContext supported since Claude Code v2.1.9.
+            # PostToolUse has supported it since earlier. Inject so Claude (not
+            # just the user console) sees the educational message.
+            if hook_event in ('PreToolUse', 'PostToolUse'):
+                response["hookSpecificOutput"] = {
+                    "hookEventName": hook_event,
+                    "additionalContext": combined,
+                }
+            return response
 
         # No matches - allow operation
         return {}
