@@ -333,6 +333,17 @@
       "homepage": "https://github.com/cloudflare/skills"
     },
     {
+        "name": "claude-buddy",                                                              
+        "source": {                                                                  
+          "source": "url",
+          "url": "https://github.com/wilbert-t/claude-buddy.git",
+          "sha": "1e1942d1b92e8acba6ee1c2de8caf66b01631472"                                  
+        },
+        "description": "Never miss a Claude Code approval prompt. Native sound + banner notifications with smart risk classification. Works on macOS, Linux, and Windows.",        
+        "category": "productivity",
+        "homepage": "https://github.com/wilbert-t/claude-buddy"                              
+    },
+    {
       "name": "cloudinary",
       "description": "Use Cloudinary directly in Claude. Manage assets, apply transformations, optimize media, and more through natural conversation.",
       "source": {
