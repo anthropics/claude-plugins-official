@@ -31,6 +31,19 @@ The technique is described as "deterministically bad in an undeterministic world
 
 ## Available Commands
 
+### /ralph-loop:init
+
+Configure permissions so Ralph Loop can run without interruption.
+
+Ralph Loop writes to `.claude/ralph-loop.local.md` to track loop state. Without the right permissions, Claude Code prompts you every time this file is created or updated — breaking the loop flow. Run this once after installing the plugin to add the necessary permission rules to your global settings.
+
+**Usage:**
+```
+/ralph-loop:init
+```
+
+---
+
 ### /ralph-loop <PROMPT> [OPTIONS]
 
 Start a Ralph loop in your current session.
