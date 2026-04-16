@@ -134,12 +134,13 @@
     },
     {
       "name": "atomic-agents",
-      "description": "Comprehensive development workflow for building AI agents with the Atomic Agents framework. Includes specialized agents for schema design, architecture planning, code review, and tool development. Features guided workflows, progressive-disclosure skills, and best practice validation.",
+      "description": "Skills plus explorer and reviewer subagents for building, scaffolding, understanding, and auditing applications with the Atomic Agents Python framework. Progressive-disclosure reference material for schemas, agents, tools, context providers, prompts, orchestration, memory, hooks, providers, project structure, and testing — plus isolated-context subagents for codebase mapping and code review, and a new-app scaffolder.",
       "category": "development",
       "source": {
-        "source": "url",
-        "url": "https://github.com/BrainBlend-AI/atomic-agents.git",
-        "path": "claude-plugin/atomic-agents"
+        "source": "git-subdir",
+        "url": "BrainBlend-AI/atomic-agents",
+        "path": "claude-plugin/atomic-agents",
+        "ref": "main"
       },
       "homepage": "https://github.com/BrainBlend-AI/atomic-agents",
       "tags": [
