@@ -9,9 +9,13 @@ import os
 import sys
 import json
 
-# Add plugin root to Python path for imports
-PLUGIN_ROOT = os.environ.get('CLAUDE_PLUGIN_ROOT')
-if PLUGIN_ROOT and PLUGIN_ROOT not in sys.path:
+# Add plugin root to Python path for imports.
+# Prefer CLAUDE_PLUGIN_ROOT, but fall back to __file__ because the env var is
+# not always present in the subprocess that Claude Code spawns for hooks.
+PLUGIN_ROOT = os.environ.get('CLAUDE_PLUGIN_ROOT') or os.path.dirname(
+    os.path.dirname(os.path.abspath(__file__))
+)
+if PLUGIN_ROOT not in sys.path:
     sys.path.insert(0, PLUGIN_ROOT)
 
 try:
