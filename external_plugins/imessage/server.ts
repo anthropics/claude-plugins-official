@@ -26,7 +26,7 @@ import { z } from 'zod'
 import { Database } from 'bun:sqlite'
 import { spawnSync } from 'child_process'
 import { randomBytes } from 'crypto'
-import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, statSync, renameSync, realpathSync } from 'fs'
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, statSync, renameSync, realpathSync, copyFileSync } from 'fs'
 import { homedir } from 'os'
 import { join, basename, sep } from 'path'
 
@@ -466,14 +466,28 @@ function sendText(chatGuid: string, text: string): string | null {
   return null
 }
 
+// Messages.app sandbox only permits reads from a handful of home-relative paths
+// (~/Library/Messages/, ~/Media/, ...). Paths outside (e.g. /tmp, ~/Downloads)
+// are silently rejected after osascript returns — attachment never sends.
+// Fix: stage the file into ~/Library/Messages/.send-staging/ before the send,
+// then clean up asynchronously. Ref: #1113.
+const SEND_STAGING_DIR = join(homedir(), 'Library', 'Messages', '.send-staging')
+
 function sendAttachment(chatGuid: string, filePath: string): string | null {
-  const res = spawnSync('osascript', ['-', filePath, chatGuid], {
-    input: SEND_FILE_SCRIPT,
-    encoding: 'utf8',
-  })
-  if (res.status !== 0) return res.stderr.trim() || `osascript exit ${res.status}`
-  trackEcho(chatGuid, '\x00att')
-  return null
+  mkdirSync(SEND_STAGING_DIR, { recursive: true })
+  const staged = join(SEND_STAGING_DIR, `${Date.now()}-${randomBytes(4).toString('hex')}-${basename(filePath)}`)
+  copyFileSync(filePath, staged)
+  try {
+    const res = spawnSync('osascript', ['-', staged, chatGuid], {
+      input: SEND_FILE_SCRIPT,
+      encoding: 'utf8',
+    })
+    if (res.status !== 0) return res.stderr.trim() || `osascript exit ${res.status}`
+    trackEcho(chatGuid, '\x00att')
+    return null
+  } finally {
+    setTimeout(() => { try { rmSync(staged, { force: true }) } catch {} }, 30000)
+  }
 }
 
 function chunk(text: string, limit: number, mode: 'length' | 'newline'): string[] {
