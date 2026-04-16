@@ -27,6 +27,25 @@ def debug_log(message):
 
 # State file to track warnings shown (session-scoped using session ID)
 
+# Decision-guidance footer appended to every reminder. The footer exists
+# to shape agent behavior on the retry: a bare block can read as
+# "mechanical obstacle, just try again", which risks bypassing the very
+# concern the reminder flagged. The explicit checklist redirects the
+# agent toward re-evaluating user intent and self-checking the diff
+# before retrying, rather than treating the block as a pure speed bump.
+DECISION_FOOTER = """
+
+────
+ℹ️  This is a one-time security reminder (shown once per file per session).
+    The next attempt with the same tool call will not be blocked.
+
+    Before retrying, confirm:
+      1. The user explicitly requested this change (not inferred from ambiguity)
+      2. Your proposed change does not introduce the concern above
+
+    If both hold, retry the tool call. If either is uncertain,
+    pause and clarify with the user rather than retrying mechanically."""
+
 # Security patterns configuration
 SECURITY_PATTERNS = [
     {
@@ -268,8 +287,11 @@ def main():
             shown_warnings.add(warning_key)
             save_state(session_id, shown_warnings)
 
-            # Output the warning to stderr and block execution
-            print(reminder, file=sys.stderr)
+            # Output the warning to stderr and block execution.
+            # The decision footer is appended so agents interpret the
+            # block as a prompt to re-verify user intent + self-check
+            # the diff, not as a mechanical retry trigger.
+            print(reminder + DECISION_FOOTER, file=sys.stderr)
             sys.exit(2)  # Block tool execution (exit code 2 for PreToolUse hooks)
 
     # Allow tool to proceed
