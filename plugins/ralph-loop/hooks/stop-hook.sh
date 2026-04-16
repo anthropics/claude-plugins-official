@@ -87,50 +87,28 @@ if ! grep -q '"role":"assistant"' "$TRANSCRIPT_PATH"; then
   exit 0
 fi
 
-# Extract the most recent assistant text block.
+# Check for completion promise by scanning assistant lines from the transcript.
 #
-# Claude Code writes each content block (text/tool_use/thinking) as its own
-# JSONL line, all with role=assistant. So slurp the last N assistant lines,
-# flatten to text blocks only, and take the last one.
+# Uses grep + perl instead of grep + jq because Claude Code transcripts may
+# contain literal newline bytes (0x0a) inside JSON string values. This is
+# technically invalid JSON per RFC 8259 — newlines should be escaped as \n.
+# jq strictly rejects these with "Invalid string: control characters from
+# U+0000 through U+001F must be escaped", causing the entire slurp to fail.
 #
-# Capped at the last 100 assistant lines to keep jq's slurp input bounded
-# for long-running sessions.
-LAST_LINES=$(grep '"role":"assistant"' "$TRANSCRIPT_PATH" | tail -n 100)
-if [[ -z "$LAST_LINES" ]]; then
-  echo "⚠️  Ralph loop: Failed to extract assistant messages" >&2
-  echo "   Ralph loop is stopping." >&2
-  rm "$RALPH_STATE_FILE"
-  exit 0
-fi
-
-# Parse the recent lines and pull out the final text block.
-# `last // ""` yields empty string when no text blocks exist (e.g. a turn
-# that is all tool calls). That's fine: empty text means no <promise> tag,
-# so the loop simply continues.
-# (Briefly disable errexit so a jq failure can be caught by the $? check.)
-set +e
-LAST_OUTPUT=$(echo "$LAST_LINES" | jq -rs '
-  map(.message.content[]? | select(.type == "text") | .text) | last // ""
-' 2>&1)
-JQ_EXIT=$?
-set -e
-
-# Check if jq succeeded
-if [[ $JQ_EXIT -ne 0 ]]; then
-  echo "⚠️  Ralph loop: Failed to parse assistant message JSON" >&2
-  echo "   Error: $LAST_OUTPUT" >&2
-  echo "   This may indicate a transcript format issue." >&2
-  echo "   Ralph loop is stopping." >&2
-  rm "$RALPH_STATE_FILE"
-  exit 0
-fi
-
-# Check for completion promise (only if set)
+# The grep pre-filter restricts scanning to assistant messages only, avoiding
+# false positives from system messages (which echo the <promise> tag text in
+# the loop continuation instructions).
+#
+# Capped at the last 100 assistant lines to keep the scan bounded for
+# long-running sessions.
 if [[ "$COMPLETION_PROMISE" != "null" ]] && [[ -n "$COMPLETION_PROMISE" ]]; then
-  # Extract text from <promise> tags using Perl for multiline support
-  # -0777 slurps entire input, s flag makes . match newlines
-  # .*? is non-greedy (takes FIRST tag), whitespace normalized
-  PROMISE_TEXT=$(echo "$LAST_OUTPUT" | perl -0777 -pe 's/.*?<promise>(.*?)<\/promise>.*/$1/s; s/^\s+|\s+$//g; s/\s+/ /g' 2>/dev/null || echo "")
+  PROMISE_TEXT=$(grep '"role":"assistant"' "$TRANSCRIPT_PATH" | tail -n 100 | perl -0777 -ne '
+    my $last = "";
+    while (/<promise>(.*?)<\/promise>/gs) { $last = $1; }
+    $last =~ s/^\s+|\s+$//g;
+    $last =~ s/\s+/ /g;
+    print $last if $last ne "";
+  ' 2>/dev/null || echo "")
 
   # Use = for literal string comparison (not pattern matching)
   # == in [[ ]] does glob pattern matching which breaks with *, ?, [ characters
