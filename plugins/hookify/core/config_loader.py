@@ -206,9 +206,13 @@ def load_rules(event: Optional[str] = None) -> List[Rule]:
     """
     rules = []
 
-    # Find all hookify.*.local.md files
-    pattern = os.path.join('.claude', 'hookify.*.local.md')
+    # Find all hookify.*.local.md files. Use CLAUDE_PROJECT_DIR when set so
+    # rules load regardless of the CWD a tool was invoked from; fall back to
+    # os.getcwd() for direct/test invocations.
+    project_dir = os.environ.get('CLAUDE_PROJECT_DIR') or os.getcwd()
+    pattern = os.path.join(project_dir, '.claude', 'hookify.*.local.md')
     files = glob.glob(pattern)
+
 
     for file_path in files:
         try:
