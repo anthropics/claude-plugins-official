@@ -88,6 +88,8 @@ AppleScript can send messages but cannot tapback, edit, or thread-reply; those r
 
 **`chunkMode`** chooses the split strategy: `length` cuts exactly at the limit; `newline` prefers paragraph boundaries.
 
+**`appendSignature`** controls the `\nSent by Claude` suffix on outbound text. Defaults to `true`. Set `false` to disable. Overrides the `IMESSAGE_APPEND_SIGNATURE` env var when present.
+
 There is no `ackReaction` or `replyToMode` on this channel.
 
 ## Skill reference
@@ -102,7 +104,7 @@ There is no `ackReaction` or `replyToMode` on this channel.
 | `/imessage:access policy pairing` | Set `dmPolicy`. Values: `pairing`, `allowlist`, `disabled`. |
 | `/imessage:access group add "iMessage;+;chat…"` | Enable a group. Quote the GUID. Flags: `--no-mention`, `--allow a,b`. |
 | `/imessage:access group rm "iMessage;+;chat…"` | Disable a group. |
-| `/imessage:access set textChunkLimit 5000` | Set a config key: `textChunkLimit`, `chunkMode`, `mentionPatterns`. |
+| `/imessage:access set textChunkLimit 5000` | Set a config key: `textChunkLimit`, `chunkMode`, `mentionPatterns`, `appendSignature`. |
 
 ## Config file
 
@@ -137,6 +139,9 @@ There is no `ackReaction` or `replyToMode` on this channel.
   "textChunkLimit": 10000,
 
   // length = cut at limit. newline = prefer paragraph boundaries.
-  "chunkMode": "newline"
+  "chunkMode": "newline",
+
+  // Append "\nSent by Claude" to outbound text. Default true.
+  "appendSignature": true
 }
 ```

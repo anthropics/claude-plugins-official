@@ -119,6 +119,7 @@ Delivery config. Supported keys:
 - `textChunkLimit`: number — split replies longer than this (max 10000)
 - `chunkMode`: `length` | `newline` — hard cut vs paragraph-preferring
 - `mentionPatterns`: JSON array of regex strings — iMessage has no structured mentions, so this is the only trigger in groups
+- `appendSignature`: boolean — append `\nSent by Claude` to outbound text (default true)
 
 Read, set the key, write, confirm.
 

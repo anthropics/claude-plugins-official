@@ -31,7 +31,7 @@ import { homedir } from 'os'
 import { join, basename, sep } from 'path'
 
 const STATIC = process.env.IMESSAGE_ACCESS_MODE === 'static'
-const APPEND_SIGNATURE = process.env.IMESSAGE_APPEND_SIGNATURE !== 'false'
+const APPEND_SIGNATURE_DEFAULT = process.env.IMESSAGE_APPEND_SIGNATURE !== 'false'
 // SMS sender IDs are spoofable; iMessage is Apple-ID-authenticated. Default
 // drops SMS/RCS so a forged sender can't reach the gate. Opt in only if you
 // understand the risk.
@@ -207,6 +207,7 @@ type Access = {
   mentionPatterns?: string[]
   textChunkLimit?: number
   chunkMode?: 'length' | 'newline'
+  appendSignature?: boolean
 }
 
 // Default is allowlist, not pairing. Unlike Discord/Telegram where a bot has
@@ -250,6 +251,7 @@ function readAccessFile(): Access {
       mentionPatterns: parsed.mentionPatterns,
       textChunkLimit: parsed.textChunkLimit,
       chunkMode: parsed.chunkMode,
+      appendSignature: parsed.appendSignature,
     }
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return defaultAccess()
@@ -456,22 +458,41 @@ function consumeEcho(chatGuid: string, key: string): boolean {
   return true
 }
 
+// Absolute path to osascript so spawn never fails due to a stripped PATH in
+// the plugin's spawn environment (Claude Code's MCP launcher does not always
+// pass a PATH that includes /usr/bin).
+const OSASCRIPT = '/usr/bin/osascript'
+
+// spawnSync's return shape varies when the child cannot be started at all
+// (ENOENT, EACCES, EPERM from TCC, etc.): status is null, stderr is null, and
+// res.error carries the real cause. The old code called res.stderr.trim()
+// unconditionally when status !== 0, which threw a cryptic
+// `null is not an object (evaluating 'res.stderr.trim')` — masking the real
+// error. This helper returns a non-empty string on failure, null on success.
+function describeSpawnFailure(res: ReturnType<typeof spawnSync>): string {
+  if (res.error) return `spawn failed: ${String(res.error)}`
+  const stderr = typeof res.stderr === 'string' ? res.stderr.trim() : ''
+  if (stderr) return stderr
+  if (res.signal) return `osascript killed by signal ${res.signal}`
+  return `osascript exit ${res.status}`
+}
+
 function sendText(chatGuid: string, text: string): string | null {
-  const res = spawnSync('osascript', ['-', text, chatGuid], {
+  const res = spawnSync(OSASCRIPT, ['-', text, chatGuid], {
     input: SEND_SCRIPT,
     encoding: 'utf8',
   })
-  if (res.status !== 0) return res.stderr.trim() || `osascript exit ${res.status}`
+  if (res.status !== 0) return describeSpawnFailure(res)
   trackEcho(chatGuid, text)
   return null
 }
 
 function sendAttachment(chatGuid: string, filePath: string): string | null {
-  const res = spawnSync('osascript', ['-', filePath, chatGuid], {
+  const res = spawnSync(OSASCRIPT, ['-', filePath, chatGuid], {
     input: SEND_FILE_SCRIPT,
     encoding: 'utf8',
   })
-  if (res.status !== 0) return res.stderr.trim() || `osascript exit ${res.status}`
+  if (res.status !== 0) return describeSpawnFailure(res)
   trackEcho(chatGuid, '\x00att')
   return null
 }
@@ -677,7 +698,8 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         const limit = Math.max(1, Math.min(access.textChunkLimit ?? MAX_CHUNK_LIMIT, MAX_CHUNK_LIMIT))
         const mode = access.chunkMode ?? 'length'
         const chunks = chunk(text, limit, mode)
-        if (APPEND_SIGNATURE && chunks.length > 0) chunks[chunks.length - 1] += SIGNATURE
+        const appendSig = access.appendSignature ?? APPEND_SIGNATURE_DEFAULT
+        if (appendSig && chunks.length > 0) chunks[chunks.length - 1] += SIGNATURE
         let sent = 0
 
         for (let i = 0; i < chunks.length; i++) {
