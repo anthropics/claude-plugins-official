@@ -798,11 +798,16 @@ function handleInbound(r: Row): void {
   if (!r.handle_id) return
   const sender = r.handle_id
 
-  // Self-chat: in a DM to yourself, both your typed input and our osascript
-  // echoes arrive as is_from_me=0 with handle_id = your own address. Filter
-  // echoes by recently-sent text; bypass the gate for what's left.
+  // Echoes: every osascript-sent message arrives back as is_from_me=0 under
+  // some alias of the sender. In self-chat the sender is you; in any other
+  // chat the sender is the recipient's handle. Apple's message.account only
+  // records one of your aliases per send, so SELF-based detection misses
+  // echoes whenever the echoing alias isn't in SELF. The echo tracker is
+  // chat-keyed and time-bounded (~ECHO_WINDOW_MS), so consuming
+  // unconditionally is safe: it only matches text we just sent in this
+  // exact chat.
   const isSelfChat = !isGroup && SELF.has(sender.toLowerCase())
-  if (isSelfChat && consumeEcho(r.chat_guid, text || '\x00att')) return
+  if (consumeEcho(r.chat_guid, text || '\x00att')) return
 
   // Self-chat bypasses access control — you're the owner.
   if (!isSelfChat) {
