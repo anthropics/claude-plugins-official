@@ -147,16 +147,6 @@
       ]
     },
     {
-      "name": "autofix-bot",
-      "description": "Code review agent that detects security vulnerabilities, code quality issues, and hardcoded secrets. Combines 5,000+ static analyzers to scan your code and dependencies for CVEs.",
-      "author": {
-        "name": "DeepSource Corp"
-      },
-      "category": "security",
-      "source": "./external_plugins/autofix-bot",
-      "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/autofix-bot"
-    },
-    {
       "name": "aws-serverless",
       "description": "Design, build, deploy, test, and debug serverless applications with AWS Serverless services.",
       "category": "development",
