@@ -53,17 +53,58 @@ if (!TOKEN) {
 const INBOX_DIR = join(STATE_DIR, 'inbox')
 const PID_FILE = join(STATE_DIR, 'bot.pid')
 
-// Telegram allows exactly one getUpdates consumer per token. If a previous
-// session crashed (SIGKILL, terminal closed) its server.ts grandchild can
-// survive as an orphan and hold the slot forever, so every new session sees
-// 409 Conflict. Kill any stale holder before we start polling.
+// Telegram allows exactly one getUpdates consumer per token. Three startup
+// cases to handle:
+//   (a) No PID file / holder is gone → claim the slot.
+//   (b) Holder is alive and orphaned (PPid=1 — crashed claude, watchdog
+//       has not yet fired) → steal the slot. The orphan's self-terminate
+//       loop will clean up within 5s; stealing is faster and safe because
+//       no live claude is bridged to the orphan.
+//   (c) Holder is alive with a live non-init parent → it's a sibling claude
+//       session already polling. Yield — kicking would break that user's
+//       in-flight Telegram bridge.
+function holderPpid(pid: number): number | null {
+  // Linux: /proc is always available.
+  try {
+    const status = readFileSync(`/proc/${pid}/status`, 'utf8')
+    const line = status.split('\n').find(l => l.startsWith('PPid:'))
+    const ppid = line ? parseInt(line.split(/\s+/)[1], 10) : NaN
+    if (!Number.isNaN(ppid)) return ppid
+  } catch {}
+  // macOS / other POSIX: shell out to ps.
+  try {
+    const res = Bun.spawnSync(['ps', '-p', String(pid), '-o', 'ppid='])
+    if (res.success) {
+      const ppid = parseInt(res.stdout.toString().trim(), 10)
+      if (!Number.isNaN(ppid)) return ppid
+    }
+  } catch {}
+  return null
+}
+
 mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 })
 try {
   const stale = parseInt(readFileSync(PID_FILE, 'utf8'), 10)
   if (stale > 1 && stale !== process.pid) {
-    process.kill(stale, 0)
-    process.stderr.write(`telegram channel: replacing stale poller pid=${stale}\n`)
-    process.kill(stale, 'SIGTERM')
+    let alive = false
+    try { process.kill(stale, 0); alive = true } catch {}
+    if (alive) {
+      const ppid = holderPpid(stale)
+      if (ppid !== null && ppid > 1) {
+        // Sibling case — yield.
+        process.stderr.write(
+          `telegram channel: another poller is live (pid=${stale}, ppid=${ppid}); ` +
+          `exiting cleanly. Only one claude process at a time can bind ` +
+          `Telegram's getUpdates stream.\n`,
+        )
+        process.exit(0)
+      }
+      // Orphan (ppid=1) or unknown → fall through and replace.
+      process.stderr.write(`telegram channel: SIGTERMing orphan poller pid=${stale}\n`)
+      try { process.kill(stale, 'SIGTERM') } catch {}
+    } else {
+      process.stderr.write(`telegram channel: replacing stale poller pid=${stale}\n`)
+    }
   }
 } catch {}
 writeFileSync(PID_FILE, String(process.pid))
