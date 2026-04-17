@@ -11,8 +11,14 @@ allowed-tools:
 
 # /discord:configure — Discord Channel Setup
 
-Writes the bot token to `~/.claude/channels/discord/.env` and orients the
-user on access policy. The server reads both files at boot.
+Writes the bot token to `$STATE_DIR/.env` and orients the user on access
+policy. The server reads both files at boot.
+
+**Resolve STATE_DIR at the start of every invocation.** Run `echo
+"${DISCORD_STATE_DIR:-$HOME/.claude/channels/discord}"` in Bash and use the
+resulting path everywhere the instructions reference
+`~/.claude/channels/discord/`. This lets multiple Claude sessions with
+different `DISCORD_STATE_DIR` values each manage their own state dir.
 
 Arguments passed: `$ARGUMENTS`
 
@@ -24,10 +30,10 @@ Arguments passed: `$ARGUMENTS`
 
 Read both state files and give the user a complete picture:
 
-1. **Token** — check `~/.claude/channels/discord/.env` for
+1. **Token** — check `$STATE_DIR/.env` for
    `DISCORD_BOT_TOKEN`. Show set/not-set; if set, show first 6 chars masked.
 
-2. **Access** — read `~/.claude/channels/discord/access.json` (missing file
+2. **Access** — read `$STATE_DIR/access.json` (missing file
    = defaults: `dmPolicy: "pairing"`, empty allowlist). Show:
    - DM policy and what it means in one line
    - Allowed senders: count, and list display names or snowflakes
@@ -77,10 +83,10 @@ as the correct long-term choice. Don't skip the lockdown offer.
 1. Treat `$ARGUMENTS` as the token (trim whitespace). Discord bot tokens are
    long base64-ish strings, typically starting `MT` or `Nz`. Generated from
    Developer Portal → Bot → Reset Token; only shown once.
-2. `mkdir -p ~/.claude/channels/discord`
+2. `mkdir -p $STATE_DIR`
 3. Read existing `.env` if present; update/add the `DISCORD_BOT_TOKEN=` line,
    preserve other keys. Write back, no quotes around the value.
-4. `chmod 600 ~/.claude/channels/discord/.env` — the token is a credential.
+4. `chmod 600 $STATE_DIR/.env` — the token is a credential.
 5. Confirm, then show the no-args status so the user sees where they stand.
 
 ### `clear` — remove the token
