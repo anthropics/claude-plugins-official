@@ -89,14 +89,31 @@ function parseAttributedBody(blob: Uint8Array | null): string | null {
   while (i < buf.length && buf[i] !== 0x2B) i++
   if (i >= buf.length) return null
   i++
-  // Streamtyped length prefix: small lengths are literal bytes; 0x81/0x82/0x83
-  // escape to 1/2/3-byte little-endian lengths respectively.
+  // Streamtyped length prefix: an unadorned byte is a signed int8 literal
+  // length; 0x81/0x82/0x83 escape to signed int16/int32/int64 little-endian
+  // lengths respectively. Decoding the escaped forms at the wrong width
+  // reads wrong values and leaves the payload offset off by 1..4 bytes.
   let len: number
   const b = buf[i++]
-  if (b === 0x81) { len = buf[i]; i += 1 }
-  else if (b === 0x82) { len = buf.readUInt16LE(i); i += 2 }
-  else if (b === 0x83) { len = buf.readUIntLE(i, 3); i += 3 }
-  else { len = b }
+  if (b === 0x81) {
+    if (i + 2 > buf.length) return null
+    const v = buf.readInt16LE(i); i += 2
+    if (v < 0) return null
+    len = v
+  } else if (b === 0x82) {
+    if (i + 4 > buf.length) return null
+    const v = buf.readInt32LE(i); i += 4
+    if (v < 0) return null
+    len = v
+  } else if (b === 0x83) {
+    if (i + 8 > buf.length) return null
+    const v = buf.readBigInt64LE(i); i += 8
+    if (v < 0n || v > BigInt(Number.MAX_SAFE_INTEGER)) return null
+    len = Number(v)
+  } else {
+    len = buf.readInt8(i - 1)
+    if (len < 0) return null
+  }
   if (i + len > buf.length) return null
   return buf.toString('utf8', i, i + len)
 }
