@@ -7,17 +7,72 @@ using Claude with extended thinking.
 
 import argparse
 import json
+import os
 import re
+import subprocess
 import sys
 from pathlib import Path
-
-import anthropic
 
 from scripts.utils import parse_skill_md
 
 
+def _call_claude_cli(prompt: str, model: str, timeout: int = 300) -> tuple[str, str]:
+    """Call `claude -p` via subprocess — uses Claude Code subscription auth.
+
+    Returns (thinking_text, response_text). Thinking is not exposed via the CLI
+    JSON output, so it's always returned as an empty string; callers that log
+    transcripts will simply record an empty thinking field.
+    """
+    env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
+    cmd = [
+        "claude",
+        "-p", prompt,
+        "--output-format", "json",
+        "--model", model,
+    ]
+    result = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=timeout,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"claude -p failed (exit {result.returncode}): {result.stderr[:500]}"
+        )
+    try:
+        data = json.loads(result.stdout)
+    except json.JSONDecodeError as e:
+        raise RuntimeError(
+            f"claude -p returned non-JSON output: {result.stdout[:500]}"
+        ) from e
+    text = data.get("result", "")
+    if not text:
+        raise RuntimeError(
+            f"claude -p returned empty result field. Full response: {json.dumps(data)[:500]}"
+        )
+    return "", text
+
+
+def _call_claude_conversation(messages: list[dict], model: str, timeout: int = 300) -> tuple[str, str]:
+    """Multi-turn conversation variant — flattens messages into a single prompt.
+
+    claude -p doesn't accept a native message list, so we serialise the turns
+    into a plain-text transcript and send it as one prompt. This is sufficient
+    for the shorten-description follow-up in improve_description.
+    """
+    parts = []
+    for msg in messages:
+        role = msg["role"].upper()
+        content = msg["content"]
+        parts.append(f"=== {role} ===\n{content}")
+    flat = "\n\n".join(parts)
+    return _call_claude_cli(flat, model, timeout)
+
+
 def improve_description(
-    client: anthropic.Anthropic,
+    client,  # kept for backward compat; unused when using claude -p
     skill_name: str,
     skill_content: str,
     current_description: str,
@@ -111,24 +166,7 @@ I'd encourage you to be creative and mix up the style in different iterations si
 
 Please respond with only the new description text in <new_description> tags, nothing else."""
 
-    response = client.messages.create(
-        model=model,
-        max_tokens=16000,
-        thinking={
-            "type": "enabled",
-            "budget_tokens": 10000,
-        },
-        messages=[{"role": "user", "content": prompt}],
-    )
-
-    # Extract thinking and text from response
-    thinking_text = ""
-    text = ""
-    for block in response.content:
-        if block.type == "thinking":
-            thinking_text = block.thinking
-        elif block.type == "text":
-            text = block.text
+    thinking_text, text = _call_claude_cli(prompt, model)
 
     # Parse out the <new_description> tags
     match = re.search(r"<new_description>(.*?)</new_description>", text, re.DOTALL)
@@ -148,27 +186,14 @@ Please respond with only the new description text in <new_description> tags, not
     # If over 1024 chars, ask the model to shorten it
     if len(description) > 1024:
         shorten_prompt = f"Your description is {len(description)} characters, which exceeds the hard 1024 character limit. Please rewrite it to be under 1024 characters while preserving the most important trigger words and intent coverage. Respond with only the new description in <new_description> tags."
-        shorten_response = client.messages.create(
-            model=model,
-            max_tokens=16000,
-            thinking={
-                "type": "enabled",
-                "budget_tokens": 10000,
-            },
-            messages=[
+        shorten_thinking, shorten_text = _call_claude_conversation(
+            [
                 {"role": "user", "content": prompt},
                 {"role": "assistant", "content": text},
                 {"role": "user", "content": shorten_prompt},
             ],
+            model=model,
         )
-
-        shorten_thinking = ""
-        shorten_text = ""
-        for block in shorten_response.content:
-            if block.type == "thinking":
-                shorten_thinking = block.thinking
-            elif block.type == "text":
-                shorten_text = block.text
 
         match = re.search(r"<new_description>(.*?)</new_description>", shorten_text, re.DOTALL)
         shortened = match.group(1).strip().strip('"') if match else shorten_text.strip().strip('"')
@@ -216,9 +241,8 @@ def main():
         print(f"Current: {current_description}", file=sys.stderr)
         print(f"Score: {eval_results['summary']['passed']}/{eval_results['summary']['total']}", file=sys.stderr)
 
-    client = anthropic.Anthropic()
     new_description = improve_description(
-        client=client,
+        client=None,  # unused; kept for signature compat
         skill_name=name,
         skill_content=content,
         current_description=current_description,
