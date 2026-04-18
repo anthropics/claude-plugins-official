@@ -633,10 +633,10 @@ await mcp.connect(new StdioServerTransport())
 // the bot keeps polling forever as a zombie, holding the token and blocking
 // the next session with 409 Conflict.
 let shuttingDown = false
-function shutdown(): void {
+function shutdown(reason?: string): void {
   if (shuttingDown) return
   shuttingDown = true
-  process.stderr.write('telegram channel: shutting down\n')
+  process.stderr.write(`telegram channel: shutting down${reason ? ` (${reason})` : ''}\n`)
   try {
     if (parseInt(readFileSync(PID_FILE, 'utf8'), 10) === process.pid) rmSync(PID_FILE)
   } catch {}
@@ -645,22 +645,21 @@ function shutdown(): void {
   setTimeout(() => process.exit(0), 2000)
   void Promise.resolve(bot.stop()).finally(() => process.exit(0))
 }
-process.stdin.on('end', shutdown)
-process.stdin.on('close', shutdown)
-process.on('SIGTERM', shutdown)
-process.on('SIGINT', shutdown)
-process.on('SIGHUP', shutdown)
+process.stdin.on('end',   () => shutdown('stdin end'))
+process.stdin.on('close', () => shutdown('stdin close'))
+process.on('SIGTERM',     () => shutdown('SIGTERM'))
+process.on('SIGINT',      () => shutdown('SIGINT'))
+process.on('SIGHUP',      () => shutdown('SIGHUP'))
 
-// Orphan watchdog: stdin events above don't reliably fire when the parent
-// chain (`bun run` wrapper → shell → us) is severed by a crash. Poll for
-// reparenting (POSIX) or a dead stdin pipe and self-terminate.
-const bootPpid = process.ppid
+// Stdin watchdog — belt-and-suspenders alongside the event handlers above.
+// ppid detection removed: bun/shell launchers reparent us to PID 1 seconds
+// after boot, causing false-positive shutdowns on every normal startup.
+// Stdin EOF/close is the correct orphan signal: the kernel closes all fds of
+// a dying Claude Code process, including the write end of our stdin pipe.
 setInterval(() => {
-  const orphaned =
-    (process.platform !== 'win32' && process.ppid !== bootPpid) ||
-    process.stdin.destroyed ||
-    process.stdin.readableEnded
-  if (orphaned) shutdown()
+  if (process.stdin.destroyed || process.stdin.readableEnded) {
+    shutdown(`stdin dead (destroyed=${process.stdin.destroyed} ended=${process.stdin.readableEnded})`)
+  }
 }, 5000).unref()
 
 // Commands are DM-only. Responding in groups would: (1) leak pairing codes via
