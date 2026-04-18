@@ -386,6 +386,10 @@ const mcp = new Server(
       '',
       'Messages from Telegram arrive as <channel source="telegram" chat_id="..." message_id="..." user="..." ts="...">. If the tag has an image_path attribute, Read that file — it is a photo the sender attached. If the tag has attachment_file_id, call download_attachment with that file_id to fetch the file, then Read the returned path. Reply with the reply tool — pass chat_id back. Use reply_to (set to a message_id) only when replying to an earlier message; the latest message doesn\'t need a quote-reply, omit reply_to for normal responses.',
       '',
+      'Forwarded messages carry forward_* meta (forward_kind, forward_from, forward_date, plus forward_username/forward_chat_title/forward_message_id when available). The body text inside the channel block is prefixed with [forwarded from … · timestamp]. Treat the body as the original sender\'s words, not the user\'s own — the user is sharing it for you to react to. Their accompanying note, if any, arrives as a separate <channel> entry from the same user.',
+      '',
+      'When the sender posts several messages back-to-back (e.g. their note plus a forward, or a quick burst of replies), they are merged into ONE channel block with batch_size=N and message_ids="m1,m2,…". The body text is rendered as numbered sections "[#1] …\\n\\n[#2 · forwarded from … ] …". Treat the whole block as one user turn and respond once. If you need to quote-reply to a specific part, use the matching id from message_ids. Messages with attachments are NOT merged — they still arrive as separate entries so attachment_kind / image_path stay precise.',
+      '',
       'reply accepts file paths (files: ["/abs/path.png"]) for attachments. Use react to add emoji reactions, and edit_message for interim progress updates. Edits don\'t trigger push notifications — when a long task completes, send a new reply so the user\'s device pings.',
       '',
       "Telegram's Bot API exposes no history or search — you only see messages as they arrive. If you need earlier context, ask the user to paste it or summarize.",
@@ -857,6 +861,18 @@ bot.on('message:video', async ctx => {
   })
 })
 
+bot.on('message:animation', async ctx => {
+  const anim = ctx.message.animation
+  const text = ctx.message.caption ?? '(animation)'
+  await handleInbound(ctx, text, undefined, {
+    kind: 'animation',
+    file_id: anim.file_id,
+    size: anim.file_size,
+    mime: anim.mime_type,
+    name: safeName(anim.file_name),
+  })
+})
+
 bot.on('message:video_note', async ctx => {
   const vn = ctx.message.video_note
   await handleInbound(ctx, '(video note)', undefined, {
@@ -884,11 +900,269 @@ type AttachmentMeta = {
   name?: string
 }
 
+// Forward metadata extracted from Telegram's forward_origin (Bot API 7.0+).
+// Without this, Claude sees a forwarded message as if the sender wrote it
+// themselves and loses the "this is from someone else" context.
+type ForwardMeta = {
+  kind: 'user' | 'hidden_user' | 'chat' | 'channel'
+  display: string
+  date: number
+  sender_user_id?: string
+  sender_username?: string
+  sender_name?: string
+  chat_id?: string
+  chat_username?: string
+  chat_title?: string
+  message_id?: string
+  signature?: string
+}
+
+// One inbound message captured for the per-chat batch flush. Populated by
+// handleInbound after typing/reaction kick off, drained by flushInbound.
+type BufferedInbound = {
+  text: string
+  message_id?: number
+  ts: number
+  user: string
+  user_id: string
+  imagePath?: string
+  attachment?: AttachmentMeta
+  forward?: ForwardMeta
+  media_group_id?: string
+}
+
+// Telegram clients send "your note + forward" as two separate Bot-API
+// messages back-to-back (~50–200 ms apart). Without buffering, each becomes
+// its own MCP notification and Claude can answer the first before the second
+// arrives. Buffer per chat for INBOUND_DEBOUNCE_MS, capped at
+// INBOUND_MAX_WAIT_MS so a steady spammer can't stall delivery indefinitely.
+const INBOUND_DEBOUNCE_MS = 500
+const INBOUND_MAX_WAIT_MS = 2500
+const inboundBuffers = new Map<string, BufferedInbound[]>()
+const inboundTimers = new Map<string, NodeJS.Timeout>()
+const inboundDeadlines = new Map<string, number>()
+
 // Filenames and titles are uploader-controlled. They land inside the <channel>
 // notification — delimiter chars would let the uploader break out of the tag
 // or forge a second meta entry.
 function safeName(s: string | undefined): string | undefined {
   return s?.replace(/[<>\[\]\r\n;]/g, '_')
+}
+
+function extractForward(ctx: Context): ForwardMeta | undefined {
+  const origin = ctx.message?.forward_origin
+  if (!origin) return undefined
+  switch (origin.type) {
+    case 'user': {
+      const u = origin.sender_user
+      const handle = u.username
+        ? `@${u.username}`
+        : [u.first_name, u.last_name].filter(Boolean).join(' ') || String(u.id)
+      return {
+        kind: 'user',
+        display: safeName(handle) ?? String(u.id),
+        date: origin.date,
+        sender_user_id: String(u.id),
+        ...(u.username ? { sender_username: safeName(u.username) } : {}),
+        ...(u.first_name || u.last_name
+          ? {
+              sender_name: safeName(
+                [u.first_name, u.last_name].filter(Boolean).join(' '),
+              ),
+            }
+          : {}),
+      }
+    }
+    case 'hidden_user': {
+      return {
+        kind: 'hidden_user',
+        display: safeName(origin.sender_user_name) ?? 'hidden user',
+        date: origin.date,
+        sender_name: safeName(origin.sender_user_name),
+      }
+    }
+    case 'chat': {
+      const c = origin.sender_chat
+      const title =
+        ('title' in c ? c.title : undefined) ??
+        ('first_name' in c ? c.first_name : undefined) ??
+        String(c.id)
+      return {
+        kind: 'chat',
+        display: safeName(title) ?? String(c.id),
+        date: origin.date,
+        chat_id: String(c.id),
+        ...('username' in c && c.username
+          ? { chat_username: safeName(c.username) }
+          : {}),
+        ...('title' in c && c.title ? { chat_title: safeName(c.title) } : {}),
+        ...(origin.author_signature
+          ? { signature: safeName(origin.author_signature) }
+          : {}),
+      }
+    }
+    case 'channel': {
+      const c = origin.chat
+      const display =
+        ('username' in c && c.username
+          ? `@${c.username}`
+          : 'title' in c
+            ? c.title
+            : undefined) ?? String(c.id)
+      return {
+        kind: 'channel',
+        display: safeName(display) ?? String(c.id),
+        date: origin.date,
+        chat_id: String(c.id),
+        ...('username' in c && c.username
+          ? { chat_username: safeName(c.username) }
+          : {}),
+        ...('title' in c && c.title ? { chat_title: safeName(c.title) } : {}),
+        message_id: String(origin.message_id),
+        ...(origin.author_signature
+          ? { signature: safeName(origin.author_signature) }
+          : {}),
+      }
+    }
+  }
+}
+
+function formatForwardLine(f: ForwardMeta): string {
+  const date = new Date(f.date * 1000).toISOString()
+  return `forwarded from ${f.display} · ${date}`
+}
+
+function attachmentFields(a: AttachmentMeta): Record<string, string> {
+  return {
+    attachment_kind: a.kind,
+    attachment_file_id: a.file_id,
+    ...(a.size != null ? { attachment_size: String(a.size) } : {}),
+    ...(a.mime ? { attachment_mime: a.mime } : {}),
+    ...(a.name ? { attachment_name: a.name } : {}),
+  }
+}
+
+function forwardFields(f: ForwardMeta): Record<string, string> {
+  return {
+    forward_kind: f.kind,
+    forward_from: f.display,
+    forward_date: new Date(f.date * 1000).toISOString(),
+    ...(f.sender_user_id ? { forward_user_id: f.sender_user_id } : {}),
+    ...(f.sender_username ? { forward_username: f.sender_username } : {}),
+    ...(f.sender_name ? { forward_sender_name: f.sender_name } : {}),
+    ...(f.chat_id ? { forward_chat_id: f.chat_id } : {}),
+    ...(f.chat_username ? { forward_chat_username: f.chat_username } : {}),
+    ...(f.chat_title ? { forward_chat_title: f.chat_title } : {}),
+    ...(f.message_id ? { forward_message_id: f.message_id } : {}),
+    ...(f.signature ? { forward_signature: f.signature } : {}),
+  }
+}
+
+function scheduleFlush(chat_id: string): void {
+  const now = Date.now()
+  let deadline = inboundDeadlines.get(chat_id)
+  if (deadline == null) {
+    deadline = now + INBOUND_MAX_WAIT_MS
+    inboundDeadlines.set(chat_id, deadline)
+  }
+  const wait = Math.max(0, Math.min(INBOUND_DEBOUNCE_MS, deadline - now))
+  const existing = inboundTimers.get(chat_id)
+  if (existing) clearTimeout(existing)
+  inboundTimers.set(
+    chat_id,
+    setTimeout(() => flushInbound(chat_id), wait),
+  )
+}
+
+function flushInbound(chat_id: string): void {
+  inboundTimers.delete(chat_id)
+  inboundDeadlines.delete(chat_id)
+  const items = inboundBuffers.get(chat_id) ?? []
+  inboundBuffers.delete(chat_id)
+  if (items.length === 0) return
+
+  // Mixed batches with attachments stay as N notifications: each notification
+  // has only one image_path / attachment_kind slot in meta, and existing
+  // user hooks (e.g. PostToolUse on attachment_kind=voice) match per-message.
+  // Pure-text batches collapse into one notification so Claude sees "note +
+  // forward" as a single user turn.
+  const hasAttachments = items.some(it => it.imagePath || it.attachment)
+  if (items.length === 1 || hasAttachments) {
+    for (const it of items) emitOne(chat_id, it)
+    return
+  }
+  emitMerged(chat_id, items)
+}
+
+function emitOne(chat_id: string, it: BufferedInbound): void {
+  const content = it.forward
+    ? `[${formatForwardLine(it.forward)}]\n${it.text}`
+    : it.text
+  void mcp
+    .notification({
+      method: 'notifications/claude/channel',
+      params: {
+        content,
+        meta: {
+          chat_id,
+          ...(it.message_id != null
+            ? { message_id: String(it.message_id) }
+            : {}),
+          user: it.user,
+          user_id: it.user_id,
+          ts: new Date(it.ts * 1000).toISOString(),
+          ...(it.imagePath ? { image_path: it.imagePath } : {}),
+          ...(it.attachment ? attachmentFields(it.attachment) : {}),
+          ...(it.forward ? forwardFields(it.forward) : {}),
+          ...(it.media_group_id ? { media_group_id: it.media_group_id } : {}),
+        },
+      },
+    })
+    .catch(err => {
+      process.stderr.write(
+        `telegram channel: failed to deliver inbound to Claude: ${err}\n`,
+      )
+    })
+}
+
+function emitMerged(chat_id: string, items: BufferedInbound[]): void {
+  const first = items[0]
+  const content = items
+    .map((it, idx) => {
+      const tag = it.forward
+        ? `[#${idx + 1} · ${formatForwardLine(it.forward)}]`
+        : `[#${idx + 1}]`
+      return `${tag}\n${it.text}`
+    })
+    .join('\n\n')
+  const messageIds = items
+    .map(it => (it.message_id != null ? String(it.message_id) : ''))
+    .filter(s => s.length > 0)
+  void mcp
+    .notification({
+      method: 'notifications/claude/channel',
+      params: {
+        content,
+        meta: {
+          chat_id,
+          // Keep first message_id at the top level for back-compat — older
+          // hooks and Claude instructions expect it.
+          ...(first.message_id != null
+            ? { message_id: String(first.message_id) }
+            : {}),
+          user: first.user,
+          user_id: first.user_id,
+          ts: new Date(first.ts * 1000).toISOString(),
+          batch_size: String(items.length),
+          ...(messageIds.length > 0 ? { message_ids: messageIds.join(',') } : {}),
+        },
+      },
+    })
+    .catch(err => {
+      process.stderr.write(
+        `telegram channel: failed to deliver batched inbound to Claude: ${err}\n`,
+      )
+    })
 }
 
 async function handleInbound(
@@ -951,32 +1225,26 @@ async function handleInbound(
   }
 
   const imagePath = downloadImage ? await downloadImage() : undefined
+  const forward = extractForward(ctx)
+  const mediaGroupId = ctx.message?.media_group_id
 
-  // image_path goes in meta only — an in-content "[image attached — read: PATH]"
-  // annotation is forgeable by any allowlisted sender typing that string.
-  mcp.notification({
-    method: 'notifications/claude/channel',
-    params: {
-      content: text,
-      meta: {
-        chat_id,
-        ...(msgId != null ? { message_id: String(msgId) } : {}),
-        user: from.username ?? String(from.id),
-        user_id: String(from.id),
-        ts: new Date((ctx.message?.date ?? 0) * 1000).toISOString(),
-        ...(imagePath ? { image_path: imagePath } : {}),
-        ...(attachment ? {
-          attachment_kind: attachment.kind,
-          attachment_file_id: attachment.file_id,
-          ...(attachment.size != null ? { attachment_size: String(attachment.size) } : {}),
-          ...(attachment.mime ? { attachment_mime: attachment.mime } : {}),
-          ...(attachment.name ? { attachment_name: attachment.name } : {}),
-        } : {}),
-      },
-    },
-  }).catch(err => {
-    process.stderr.write(`telegram channel: failed to deliver inbound to Claude: ${err}\n`)
+  // Buffer this message and arm the per-chat flush. Multiple back-to-back
+  // messages (note + forward, album, fast typing) collapse into one delivery
+  // so Claude responds to the full thought instead of racing the first half.
+  const buf = inboundBuffers.get(chat_id) ?? []
+  buf.push({
+    text,
+    message_id: msgId,
+    ts: ctx.message?.date ?? Math.floor(Date.now() / 1000),
+    user: from.username ?? String(from.id),
+    user_id: String(from.id),
+    ...(imagePath ? { imagePath } : {}),
+    ...(attachment ? { attachment } : {}),
+    ...(forward ? { forward } : {}),
+    ...(mediaGroupId ? { media_group_id: mediaGroupId } : {}),
   })
+  inboundBuffers.set(chat_id, buf)
+  scheduleFlush(chat_id)
 }
 
 // Without this, any throw in a message handler stops polling permanently
