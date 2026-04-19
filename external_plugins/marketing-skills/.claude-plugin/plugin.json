@@ -1,0 +1,17 @@
+{
+  "name": "marketing-skills",
+  "version": "1.0.0",
+  "description": "6 flagship marketing skills: content creation, SEO audit, demand acquisition, campaign analytics, landing page generation, X/Twitter growth.",
+  "author": {
+    "name": "Brian Borghei",
+    "email": "borghei.mohammadamin@gmail.com"
+  },
+  "homepage": "https://github.com/borghei/Claude-Skills",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/borghei/Claude-Skills",
+    "directory": "bundles/marketing-skills"
+  },
+  "license": "MIT + Commons Clause",
+  "keywords": ["marketing", "seo", "content", "demand-generation", "analytics", "growth", "landing-page"]
+}

@@ -1,0 +1,55 @@
+# tweets.csv — 50 sample tweets with engagement metrics for the X/Twitter growth analyzer
+# Fields: tweet_id, date, type, content, likes, retweets, replies, impressions, link_clicks, profile_visits
+# Types: text, thread, image, video, poll, link
+# Account: @AcmeSaaS (B2B SaaS product)
+tweet_id,date,type,content,likes,retweets,replies,impressions,link_clicks,profile_visits
+T001,2026-01-05,text,"Hot take: Most SaaS companies are over-investing in acquisition and under-investing in activation.",142,38,22,8420,0,65
+T002,2026-01-07,link,"We just published our 2025 Year in Review. Here's what we learned scaling to $10M ARR.",45,12,8,3200,280,32
+T003,2026-01-09,image,"Our product roadmap for Q1 2026. What feature are you most excited about?",89,15,41,5100,0,28
+T004,2026-01-11,text,"Unpopular opinion: Your onboarding flow matters more than your pricing page.",231,67,35,12800,0,95
+T005,2026-01-13,thread,"Thread: 7 lessons from our first 1000 customers (1/8)",312,89,48,18500,0,142
+T006,2026-01-15,video,"Quick demo: How to set up automated alerts in under 2 minutes.",67,11,14,4800,185,22
+T007,2026-01-17,text,"Shipped: Dark mode is finally here. You asked we delivered.",198,42,63,9200,0,41
+T008,2026-01-19,poll,"What's the #1 thing holding back your team's productivity? A) Meetings B) Context switching C) Tool sprawl D) Unclear priorities",156,28,32,7600,0,38
+T009,2026-01-21,link,"New blog: Why we ditched our freemium model (and what happened next)",78,22,18,4100,340,45
+T010,2026-01-23,text,"Friendly reminder that your best feature is reliability.",92,31,11,5800,0,19
+T011,2026-01-25,image,"Before/after: Our dashboard redesign. Which do you prefer?",134,19,52,6900,0,33
+T012,2026-01-27,text,"We don't do annual contracts. Here's why.",167,45,29,9800,0,72
+T013,2026-01-29,thread,"How we reduced churn by 40% in 6 months (a thread) 1/6",278,82,41,15200,0,128
+T014,2026-01-31,text,"Just realized our support team resolved 847 tickets this month with a 98.2% CSAT. Shoutout to the team.",112,18,24,5400,0,15
+T015,2026-02-02,link,"Case study: How Globex Corp saved 120 hours/month with our platform",34,8,5,2100,190,18
+T016,2026-02-04,text,"The best marketing channel is a product people actually talk about.",205,58,19,11400,0,88
+T017,2026-02-06,video,"Building in public: Watch us ship a feature from idea to production in 48 hours.",88,24,31,6200,142,35
+T018,2026-02-08,text,"gm. Shipping code.",12,2,3,980,0,4
+T019,2026-02-10,image,"Our team at SaaStr Annual. Great conversations about the future of B2B.",45,6,8,2800,0,11
+T020,2026-02-12,text,"If your error messages don't help users fix the problem they're just frustration messages.",276,78,22,14600,0,102
+T021,2026-02-14,link,"We open-sourced our design system. 400+ components free to use.",189,62,28,10800,520,78
+T022,2026-02-16,poll,"How many SaaS tools does your team use daily? A) 1-5 B) 6-10 C) 11-20 D) 20+",98,14,18,5200,0,22
+T023,2026-02-18,text,"Stop building features nobody asked for. Start fixing bugs everybody complains about.",342,95,38,19200,0,155
+T024,2026-02-20,thread,"The real cost of technical debt (thread) 1/5",198,54,27,11600,0,89
+T025,2026-02-22,text,"Hiring: We're looking for a senior backend engineer. Remote US/EU. DM for details.",56,22,14,3400,0,48
+T026,2026-02-24,video,"Customer spotlight: How Initech uses our API to automate their entire workflow.",42,9,6,2600,98,14
+T027,2026-02-26,text,"v3.2 shipped. 14 bug fixes 3 new features 0 breaking changes.",87,15,19,4200,0,16
+T028,2026-02-28,image,"Milestone: 5000 customers. Thank you for building with us.",224,41,56,12200,0,67
+T029,2026-03-01,text,"Your pricing page is a product. Treat it like one.",118,33,15,6800,0,42
+T030,2026-03-03,link,"Deep dive: How we handle 50K requests/second with a 12-person eng team",156,48,22,8900,410,62
+T031,2026-03-05,text,"Meetings that could have been a Loom that could have been a Slack message that could have been nothing.",389,112,44,22400,0,178
+T032,2026-03-07,thread,"Pricing lessons from experimenting with 6 different models (thread) 1/7",245,71,33,14800,0,112
+T033,2026-03-09,text,"We just passed $1M in monthly revenue. Wild.",167,38,72,9600,0,54
+T034,2026-03-11,image,"New feature: Collaborative dashboards. Build reports together in real-time.",78,12,16,4400,0,21
+T035,2026-03-13,text,"Controversial: Self-serve is overrated. Most B2B buyers want to talk to a human.",198,52,48,11200,0,83
+T036,2026-03-15,link,"Benchmark report: B2B SaaS metrics for 2026. Free download.",92,28,11,5600,380,44
+T037,2026-03-17,video,"AMA recap: Our CEO answers your top 10 questions about our roadmap.",38,7,9,2200,65,12
+T038,2026-03-19,text,"Every feature you add is a feature you have to maintain forever. Choose wisely.",154,44,16,8800,0,58
+T039,2026-03-21,text,"Friday deploy? Bold strategy. Let's see how it plays out.",72,18,25,4000,0,13
+T040,2026-03-23,poll,"Best time to post on X/Twitter for B2B? A) Early morning B) Lunch C) Late afternoon D) It doesn't matter",82,11,22,4600,0,18
+T041,2026-03-24,image,"Infographic: The SaaS metrics that actually matter (not vanity metrics).",134,36,14,7200,0,42
+T042,2026-03-25,text,"We spent $0 on paid ads last quarter. Our best acquisition channel is our product.",267,74,31,15400,0,118
+T043,2026-03-26,thread,"What I wish I knew before starting a SaaS company (thread) 1/9",356,98,52,21000,0,165
+T044,2026-03-27,link,"Tutorial: Build a custom integration with our API in 15 minutes",48,10,7,2800,220,16
+T045,2026-03-28,text,"Documentation is a feature.",128,42,12,7400,0,35
+T046,2026-03-28,text,"Replying to everyone asking about dark mode pricing: it's free. All features are included in every plan.",95,14,8,4800,0,18
+T047,2026-03-29,video,"60-second tip: How to use keyboard shortcuts to 10x your speed.",62,11,9,3600,88,15
+T048,2026-03-30,text,"Just had our best week ever for signups. Something is clicking.",84,16,21,4400,0,26
+T049,2026-03-31,image,"March recap: 312 new customers 99.99% uptime 23 features shipped.",145,28,18,7800,0,38
+T050,2026-03-31,text,"Q1 is done. Time to reflect plan and ship even harder in Q2. Let's go.",68,12,14,3200,0,19
