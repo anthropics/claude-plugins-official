@@ -56,16 +56,59 @@ const PID_FILE = join(STATE_DIR, 'bot.pid')
 // Telegram allows exactly one getUpdates consumer per token. If a previous
 // session crashed (SIGKILL, terminal closed) its server.ts grandchild can
 // survive as an orphan and hold the slot forever, so every new session sees
-// 409 Conflict. Kill any stale holder before we start polling.
+// 409 Conflict. Multiple orphans accumulate across sessions — the PID file
+// only records the last writer — and SIGTERM may not land on a process
+// wedged in a getUpdates retry loop. Sweep for every stale instance and
+// escalate to SIGKILL if they don't exit cleanly.
 mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 })
-try {
-  const stale = parseInt(readFileSync(PID_FILE, 'utf8'), 10)
-  if (stale > 1 && stale !== process.pid) {
-    process.kill(stale, 0)
-    process.stderr.write(`telegram channel: replacing stale poller pid=${stale}\n`)
-    process.kill(stale, 'SIGTERM')
+
+function findStalePollers(): number[] {
+  if (process.platform === 'linux') {
+    // Match any bun process whose cwd is this plugin dir and cmdline runs
+    // server.ts. Catches orphans the PID file forgot about.
+    let pluginDir: string
+    try { pluginDir = realpathSync(import.meta.dir) } catch { return [] }
+    const found: number[] = []
+    for (const entry of readdirSync('/proc')) {
+      const pid = parseInt(entry, 10)
+      if (!pid || pid === process.pid) continue
+      try {
+        const cmdline = readFileSync(`/proc/${pid}/cmdline`, 'utf8')
+        if (!cmdline.includes('server.ts')) continue
+        if (realpathSync(`/proc/${pid}/cwd`) === pluginDir) found.push(pid)
+      } catch {}
+    }
+    return found
   }
-} catch {}
+  // Non-Linux: best-effort single-PID from the file.
+  try {
+    const pid = parseInt(readFileSync(PID_FILE, 'utf8'), 10)
+    if (pid > 1 && pid !== process.pid) {
+      process.kill(pid, 0)
+      return [pid]
+    }
+  } catch {}
+  return []
+}
+
+const stalePids = findStalePollers()
+if (stalePids.length) {
+  for (const pid of stalePids) {
+    process.stderr.write(`telegram channel: replacing stale poller pid=${pid}\n`)
+    try { process.kill(pid, 'SIGTERM') } catch {}
+  }
+  // Block up to 2s for SIGTERM to land, then escalate. Blocking is acceptable
+  // here: we haven't started serving yet and recovery is the priority.
+  const deadline = Date.now() + 2000
+  while (Date.now() < deadline) {
+    const alive = stalePids.filter(pid => { try { process.kill(pid, 0); return true } catch { return false } })
+    if (!alive.length) break
+    Bun.sleepSync(100)
+  }
+  for (const pid of stalePids) {
+    try { process.kill(pid, 'SIGKILL') } catch {}
+  }
+}
 writeFileSync(PID_FILE, String(process.pid))
 
 // Last-resort safety net — without these the process dies silently on any
@@ -652,14 +695,30 @@ process.on('SIGINT', shutdown)
 process.on('SIGHUP', shutdown)
 
 // Orphan watchdog: stdin events above don't reliably fire when the parent
-// chain (`bun run` wrapper → shell → us) is severed by a crash. Poll for
-// reparenting (POSIX) or a dead stdin pipe and self-terminate.
+// chain (`bun run` wrapper → shell → us) is severed by a crash. Two modes:
+//   1. Direct parent dies → process.ppid flips to 1/systemd.
+//   2. Grandparent (Claude harness) dies but the `bun run` wrapper survives
+//      as its own orphan. Our ppid is unchanged, stdin stays open (the
+//      wrapper still holds it), but the wrapper's ppid flips to 1/systemd.
+//      Neither classic signal fires — this was the common leak.
+// Track both layers and bail if either drifts.
+function readParentOf(pid: number): number | null {
+  try {
+    const stat = readFileSync(`/proc/${pid}/stat`, 'utf8')
+    // Format: pid (comm) state ppid ... — comm may contain whitespace/parens,
+    // so parse from the last ')' forward.
+    const rp = stat.lastIndexOf(')')
+    return parseInt(stat.slice(rp + 2).split(' ')[1], 10) || null
+  } catch { return null }
+}
 const bootPpid = process.ppid
+const bootGppid = process.platform === 'linux' ? readParentOf(bootPpid) : null
 setInterval(() => {
   const orphaned =
     (process.platform !== 'win32' && process.ppid !== bootPpid) ||
     process.stdin.destroyed ||
-    process.stdin.readableEnded
+    process.stdin.readableEnded ||
+    (bootGppid !== null && readParentOf(bootPpid) !== bootGppid)
   if (orphaned) shutdown()
 }, 5000).unref()
 
