@@ -1,0 +1,17 @@
+{
+  "name": "product-skills",
+  "version": "1.0.0",
+  "description": "6 flagship product skills: product management, strategy, agile ownership, product design, UX research, design systems.",
+  "author": {
+    "name": "Brian Borghei",
+    "email": "borghei.mohammadamin@gmail.com"
+  },
+  "homepage": "https://github.com/borghei/Claude-Skills",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/borghei/Claude-Skills",
+    "directory": "bundles/product-skills"
+  },
+  "license": "MIT + Commons Clause",
+  "keywords": ["product", "product-management", "ux", "agile", "design-system", "product-strategy"]
+}
