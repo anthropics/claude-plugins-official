@@ -19,11 +19,15 @@ import { z } from 'zod'
 import { Bot, GrammyError, InlineKeyboard, InputFile, type Context } from 'grammy'
 import type { ReactionTypeEmoji } from 'grammy/types'
 import { randomBytes } from 'crypto'
-import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, statSync, renameSync, realpathSync, chmodSync } from 'fs'
+import { readFileSync, writeFileSync, openSync, closeSync, unlinkSync, mkdirSync, renameSync, readdirSync, rmSync, statSync, realpathSync, chmodSync } from 'fs'
 import { homedir } from 'os'
 import { join, extname, sep } from 'path'
 
 const STATE_DIR = process.env.TELEGRAM_STATE_DIR ?? join(homedir(), '.claude', 'channels', 'telegram')
+const LOCK_FILE = join(STATE_DIR, 'poller.lock')
+const BROKER_DIR = join(STATE_DIR, 'broker')
+let isLeader = false
+const REPLAYED = new WeakSet<object>()
 const ACCESS_FILE = join(STATE_DIR, 'access.json')
 const APPROVED_DIR = join(STATE_DIR, 'approved')
 const ENV_FILE = join(STATE_DIR, '.env')
@@ -101,7 +105,181 @@ const bot = new Bot(TOKEN, {
     baseFetchConfig: PROXY_URL ? { proxy: PROXY_URL } as any : undefined,
   },
 })
+bot.use(async (ctx, next) => {
+  if (!isLeader || REPLAYED.has(ctx.update)) return next()
+
+  const threadId = String(
+    ctx.update.message?.message_thread_id ??
+    ctx.update.edited_message?.message_thread_id ??
+    'default',
+  )
+  const updateId = String(ctx.update.update_id)
+  const dir = join(BROKER_DIR, threadId)
+  const filePath = join(dir, `${updateId}.json`)
+  const tmpPath = join(dir, `.${updateId}.${process.pid}.tmp`)
+
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(tmpPath, JSON.stringify(ctx.update))
+  renameSync(tmpPath, filePath)
+  return
+})
 let botUsername = ''
+
+function pidAlive(pid: number): boolean {
+  if (!Number.isFinite(pid) || pid <= 0) return false
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === 'EPERM'
+  }
+}
+
+function tryBecomeLeader(): boolean {
+  mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 })
+  for (let attempt = 0; attempt < 3; attempt++) {
+    let fd: number | undefined
+    try {
+      fd = openSync(LOCK_FILE, 'wx', 0o600)
+      writeFileSync(fd, `${process.pid}\n`)
+      closeSync(fd)
+      return true
+    } catch (err) {
+      if (fd != null) {
+        try {
+          closeSync(fd)
+        } catch {}
+      }
+      if ((err as NodeJS.ErrnoException).code !== 'EEXIST') return false
+      try {
+        const pid = Number(readFileSync(LOCK_FILE, 'utf8').trim())
+        if (pidAlive(pid)) return false
+      } catch {}
+      try {
+        unlinkSync(LOCK_FILE)
+      } catch (unlinkErr) {
+        if ((unlinkErr as NodeJS.ErrnoException).code !== 'ENOENT') return false
+      }
+    }
+  }
+  return false
+}
+
+function releaseLock(): void {
+  if (!isLeader) return
+  try {
+    unlinkSync(LOCK_FILE)
+  } catch {}
+}
+
+async function tryConsume(filePath: string): Promise<void> {
+  const claimPath = filePath.replace(/\.json$/, `.claim-${process.pid}`)
+  try { renameSync(filePath, claimPath) }
+  catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return
+    throw err
+  }
+  let update: any
+  try {
+    update = JSON.parse(readFileSync(claimPath, 'utf8'))
+  } catch (err) {
+    process.stderr.write(`telegram broker: corrupt update, dropping ${claimPath}: ${err}\n`)
+    try { unlinkSync(claimPath) } catch {}
+    return
+  }
+  try {
+    REPLAYED.add(update)
+    await bot.handleUpdate(update)
+    try { unlinkSync(claimPath) } catch {}
+  } catch (err) {
+    process.stderr.write(`telegram broker: handleUpdate failed, leaving for retry: ${err}\n`)
+    try { renameSync(claimPath, filePath) } catch {}
+  }
+}
+
+function pollBrokerDir(): void {
+  let subdirs: string[]
+  if (TOPIC_FILTER) {
+    subdirs = [...TOPIC_FILTER].map(String)
+  } else {
+    try {
+      subdirs = readdirSync(BROKER_DIR)
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return
+      throw err
+    }
+  }
+
+  for (const subdir of subdirs) {
+    const dir = join(BROKER_DIR, subdir)
+    let entries: string[]
+    try {
+      if (!statSync(dir).isDirectory()) continue
+      entries = readdirSync(dir)
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code
+      if (code === 'ENOENT' || code === 'ENOTDIR') continue
+      throw err
+    }
+    for (const entry of entries) {
+      if (entry.startsWith('.') || extname(entry) !== '.json') continue
+      void tryConsume(join(dir, entry)).catch(err => {
+        process.stderr.write(`telegram broker: failed to consume ${join(dir, entry)}: ${err}\n`)
+      })
+    }
+  }
+}
+
+function startBrokerGC(): void {
+  setInterval(() => {
+    let subdirs: string[]
+    try {
+      subdirs = readdirSync(BROKER_DIR)
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return
+      throw err
+    }
+
+    const now = Date.now()
+    for (const subdir of subdirs) {
+      const dir = join(BROKER_DIR, subdir)
+      let entries: string[]
+      try {
+        if (!statSync(dir).isDirectory()) continue
+        entries = readdirSync(dir)
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code
+        if (code === 'ENOENT' || code === 'ENOTDIR') continue
+        throw err
+      }
+      for (const entry of entries) {
+        const filePath = join(dir, entry)
+        let st
+        try {
+          st = statSync(filePath)
+        } catch (err) {
+          if ((err as NodeJS.ErrnoException).code === 'ENOENT') continue
+          throw err
+        }
+        if (entry.endsWith('.json') && now - st.mtimeMs > 60 * 60 * 1000) {
+          try {
+            unlinkSync(filePath)
+          } catch {}
+          continue
+        }
+        const match = entry.match(/\.claim-(\d+)$/)
+        if (match && now - st.mtimeMs > 5 * 60 * 1000 && !pidAlive(Number(match[1]))) {
+          try {
+            unlinkSync(filePath)
+          } catch {}
+        }
+      }
+    }
+  }, 5 * 60 * 1000)
+  .unref()
+}
+
+process.on('exit', releaseLock)
 
 type PendingEntry = {
   senderId: string
@@ -665,6 +843,7 @@ let shuttingDown = false
 function shutdown(): void {
   if (shuttingDown) return
   shuttingDown = true
+  releaseLock()
   process.stderr.write('telegram channel: shutting down\n')
   // bot.stop() signals the poll loop to end; the current getUpdates request
   // may take up to its long-poll timeout to return. Force-exit after 2s.
@@ -1007,10 +1186,24 @@ bot.catch(err => {
   process.stderr.write(`telegram channel: handler error (polling continues): ${err.error}\n`)
 })
 
-// 409 Conflict = another getUpdates consumer is still active (zombie from a
-// previous session, or a second Claude Code instance). Retry with backoff
-// until the slot frees up instead of crashing on the first rejection.
+mkdirSync(BROKER_DIR, { recursive: true })
 void (async () => {
+  try {
+    await bot.init()
+  } catch (err) {
+    process.stderr.write(`telegram channel: bot.init failed: ${err}\n`)
+  }
+  setInterval(pollBrokerDir, 500).unref()
+  pollBrokerDir()
+})()
+
+async function startLeader(): Promise<void> {
+  process.stderr.write('telegram broker: becoming leader\n')
+  startBrokerGC()
+
+  // 409 Conflict = another getUpdates consumer is still active (zombie from a
+  // previous session, or a second Claude Code instance). Retry with backoff
+  // until the slot frees up instead of crashing on the first rejection.
   for (let attempt = 1; ; attempt++) {
     try {
       await bot.start({
@@ -1046,4 +1239,17 @@ void (async () => {
       return
     }
   }
-})()
+}
+
+if (tryBecomeLeader()) {
+  isLeader = true
+  void startLeader()
+} else {
+  process.stderr.write('telegram broker: follower mode\n')
+  const retryTimer = setInterval(() => {
+    if (!tryBecomeLeader()) return
+    isLeader = true
+    clearInterval(retryTimer)
+    void startLeader()
+  }, 3000)
+}
