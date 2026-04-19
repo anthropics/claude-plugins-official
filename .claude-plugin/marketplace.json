@@ -987,6 +987,17 @@
       "homepage": "https://github.com/makenotion/claude-code-notion-plugin"
     },
     {
+      "name": "ololand-dd",
+      "description": "Institutional due diligence for Claude — deterministic financial engines, 246-category risk taxonomy, forensic quality of earnings (Beneish, Benford, EBITDA bridge, lapping detection), cross-document reconciliation with source hierarchy, and a flywheel that retrains from analyst corrections. Includes a Jan-2026 MCP Apps inline-UI tile for the risk matrix.",
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/ololand-ai/ololand-dd-plugin.git",
+        "sha": "ebef4e56baf7c0154107397bc23579529ae240a1"
+      },
+      "homepage": "https://github.com/ololand-ai/ololand-dd-plugin"
+    },
+    {
       "name": "opsera-devsecops",
       "description": "Opsera DevSecOps Agent — AI-powered architecture analysis, security scanning, compliance auditing, and SQL security for your codebase. Free trial included.",
       "source": {
