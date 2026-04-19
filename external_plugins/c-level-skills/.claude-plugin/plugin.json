@@ -1,0 +1,17 @@
+{
+  "name": "c-level-skills",
+  "version": "1.0.0",
+  "description": "7 flagship C-suite advisory skills: CEO, CTO, CFO, CISO, CMO advisors plus board meeting and board deck building.",
+  "author": {
+    "name": "Brian Borghei",
+    "email": "borghei.mohammadamin@gmail.com"
+  },
+  "homepage": "https://github.com/borghei/Claude-Skills",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/borghei/Claude-Skills",
+    "directory": "bundles/c-level-skills"
+  },
+  "license": "MIT + Commons Clause",
+  "keywords": ["c-level", "ceo", "cto", "cfo", "ciso", "cmo", "board", "executive", "strategic"]
+}
