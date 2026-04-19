@@ -1,0 +1,17 @@
+{
+  "name": "engineering-skills",
+  "version": "1.0.0",
+  "description": "8 flagship engineering skills: fullstack, DevOps, security, Docker, Terraform, MCP servers, RAG, code review.",
+  "author": {
+    "name": "Brian Borghei",
+    "email": "borghei.mohammadamin@gmail.com"
+  },
+  "homepage": "https://github.com/borghei/Claude-Skills",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/borghei/Claude-Skills",
+    "directory": "bundles/engineering-skills"
+  },
+  "license": "MIT + Commons Clause",
+  "keywords": ["engineering", "fullstack", "devops", "security", "docker", "terraform", "mcp", "rag"]
+}

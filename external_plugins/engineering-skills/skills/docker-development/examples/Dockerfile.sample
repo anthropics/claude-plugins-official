@@ -1,0 +1,59 @@
+# Dockerfile.sample — Dockerfile with common anti-patterns
+#
+# This Dockerfile contains deliberate bad practices for the Docker
+# development skill scanner to detect:
+#   - Using "latest" tag
+#   - Running as root (no USER directive)
+#   - No multi-stage build
+#   - Installing unnecessary packages
+#   - Not cleaning up apt cache
+#   - COPY before dependency install (breaks caching)
+#   - Using ADD instead of COPY for local files
+#   - No HEALTHCHECK
+#   - Exposing secrets in ENV
+#   - Multiple RUN layers that should be combined
+
+# ANTI-PATTERN: using "latest" tag — not reproducible
+FROM node:latest
+
+# ANTI-PATTERN: setting secrets in ENV (visible in image history)
+ENV DATABASE_URL=postgres://admin:s3cretPass@db.internal:5432/appdb
+ENV API_KEY=sk-prod-a8f3b2c1d4e5f6a7b8c9d0e1f2a3b4c5
+
+# ANTI-PATTERN: installing unnecessary debug/dev packages in production
+RUN apt-get update
+RUN apt-get install -y vim curl wget netcat telnet htop strace
+RUN apt-get install -y python3 python3-pip
+# ANTI-PATTERN: not cleaning apt cache — bloats image
+# (missing: && rm -rf /var/lib/apt/lists/*)
+
+WORKDIR /app
+
+# ANTI-PATTERN: copying everything before installing dependencies
+# This breaks Docker layer caching — any source change re-installs deps
+COPY . .
+
+RUN npm install
+
+# ANTI-PATTERN: using ADD for local files (ADD has extra magic for URLs/tar)
+ADD ./config/default.json /app/config/default.json
+ADD ./scripts/entrypoint.sh /app/scripts/entrypoint.sh
+
+# ANTI-PATTERN: multiple RUN layers that should be combined
+RUN chmod +x /app/scripts/entrypoint.sh
+RUN mkdir -p /app/logs
+RUN mkdir -p /app/tmp
+RUN mkdir -p /app/uploads
+
+# ANTI-PATTERN: exposing too many ports without documentation
+EXPOSE 3000
+EXPOSE 3001
+EXPOSE 9229
+EXPOSE 8080
+
+# ANTI-PATTERN: no HEALTHCHECK defined
+
+# ANTI-PATTERN: running as root (no USER directive)
+# (missing: USER node or USER 1001)
+
+CMD ["node", "server.js"]

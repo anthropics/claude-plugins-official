@@ -1,0 +1,98 @@
+# docker-compose.sample.yml — Compose file with common anti-patterns
+#
+# This Docker Compose file contains deliberate issues for the Docker
+# development skill scanner to detect:
+#   - Port conflicts (multiple services on same host port)
+#   - Missing health checks
+#   - Using "latest" tags
+#   - No resource limits
+#   - Privileged mode enabled
+#   - Bind-mounting sensitive host paths
+#   - No restart policy on critical services
+#   - Hardcoded secrets in environment
+#   - Missing networks isolation
+
+version: "3.8"
+
+services:
+  # ANTI-PATTERN: no health check, no resource limits, latest tag
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: acme/dashboard:latest
+    ports:
+      - "8080:3000"
+      - "9229:9229"   # debug port exposed in production
+    environment:
+      - NODE_ENV=production
+      # ANTI-PATTERN: hardcoded secrets
+      - DB_PASSWORD=supersecret123
+      - JWT_SECRET=my-jwt-secret-do-not-share
+      - REDIS_URL=redis://:redispass@redis:6379
+    volumes:
+      # ANTI-PATTERN: bind-mounting source code in production
+      - .:/app
+      - /var/run/docker.sock:/var/run/docker.sock  # security risk
+    depends_on:
+      - postgres
+      - redis
+    # ANTI-PATTERN: no restart policy
+
+  # ANTI-PATTERN: port conflict with app debug port
+  worker:
+    image: acme/worker:latest
+    ports:
+      - "8080:8080"   # CONFLICT: host port 8080 already used by app
+    environment:
+      - DB_PASSWORD=supersecret123
+      - QUEUE_URL=amqp://guest:guest@rabbitmq:5672
+    # ANTI-PATTERN: privileged mode is almost never needed
+    privileged: true
+    depends_on:
+      - rabbitmq
+
+  postgres:
+    image: postgres:latest     # ANTI-PATTERN: use specific version
+    ports:
+      - "5432:5432"            # ANTI-PATTERN: exposing DB port to host
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: supersecret123
+      POSTGRES_DB: acme_prod
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # ANTI-PATTERN: mounting host /etc (security risk)
+      - /etc/localtime:/etc/localtime:ro
+    # ANTI-PATTERN: no health check for database
+
+  redis:
+    image: redis:latest
+    ports:
+      - "6379:6379"            # ANTI-PATTERN: exposing cache port to host
+    command: redis-server --requirepass redispass
+    # ANTI-PATTERN: no health check, no persistence config, no resource limits
+
+  rabbitmq:
+    image: rabbitmq:management
+    ports:
+      - "5672:5672"
+      - "15672:15672"          # management UI exposed
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest   # ANTI-PATTERN: default credentials
+
+  # ANTI-PATTERN: nginx with no health check, host network mode
+  nginx:
+    image: nginx:latest
+    network_mode: host         # ANTI-PATTERN: bypasses Docker networking
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+    driver: local
+
+# ANTI-PATTERN: no custom networks defined — all services share default bridge
+# Services that don't need to communicate can still reach each other
