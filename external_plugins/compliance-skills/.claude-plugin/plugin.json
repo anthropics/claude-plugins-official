@@ -1,0 +1,17 @@
+{
+  "name": "compliance-skills",
+  "version": "1.0.0",
+  "description": "9 flagship compliance skills: ISO 27001, SOC 2, GDPR, EU AI Act, NIS2, DORA, ISO 13485, MDR, FDA.",
+  "author": {
+    "name": "Brian Borghei",
+    "email": "borghei.mohammadamin@gmail.com"
+  },
+  "homepage": "https://github.com/borghei/Claude-Skills",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/borghei/Claude-Skills",
+    "directory": "bundles/compliance-skills"
+  },
+  "license": "MIT + Commons Clause",
+  "keywords": ["compliance", "iso-27001", "soc-2", "gdpr", "eu-ai-act", "nis2", "dora", "iso-13485", "mdr", "fda", "hipaa", "regulatory"]
+}
