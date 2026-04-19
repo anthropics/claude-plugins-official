@@ -1,0 +1,11 @@
+{
+  "name": "misar-dev",
+  "description": "48-agent audit and optimization suite — 16 categories, 3D model routing (model×effort×version), interactive flag prompting, parallel agent dispatch. Covers QA, Testing, Security, UI/UX, Marketing, Product, Brand, Content, SEO/AEO, Compliance (49 frameworks), Software Engineering, Website Audit, and full-suite orchestration. Saves 90-97% context tokens via automatic task routing.",
+  "author": {
+    "name": "Misar.Dev",
+    "email": "hello@misar.dev",
+    "url": "https://misar.dev"
+  },
+  "homepage": "https://github.com/MisarDev/misar-ai-plugins",
+  "keywords": ["audit", "security", "seo", "aeo", "ui-ux", "testing", "code-review", "compliance", "marketing", "brand", "content", "token-optimization", "model-routing", "orchestration"]
+}
