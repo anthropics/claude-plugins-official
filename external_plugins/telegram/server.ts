@@ -42,6 +42,23 @@ try {
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN
 const STATIC = process.env.TELEGRAM_ACCESS_MODE === 'static'
 
+// Multi-session topic filter. Set TELEGRAM_TOPIC_IDS to a comma-separated list
+// of forum/supergroup topic IDs (message_thread_id) this session should handle.
+// Empty/unset = accept any message_thread_id (legacy behaviour).
+const TOPIC_FILTER: Set<number> | null = (() => {
+  const raw = (process.env.TELEGRAM_TOPIC_IDS ?? '').trim()
+  if (!raw) return null
+  const ids = raw
+    .split(/[\s,]+/)
+    .map(s => Number(s))
+    .filter(n => Number.isFinite(n) && n > 0)
+  return ids.length > 0 ? new Set(ids) : null
+})()
+// Convenience when we only need ONE topic to stamp on outbound.
+const DEFAULT_TOPIC_ID: number | null = TOPIC_FILTER && TOPIC_FILTER.size === 1
+  ? [...TOPIC_FILTER][0]
+  : null
+
 if (!TOKEN) {
   process.stderr.write(
     `telegram channel: TELEGRAM_BOT_TOKEN required\n` +
@@ -51,22 +68,6 @@ if (!TOKEN) {
   process.exit(1)
 }
 const INBOX_DIR = join(STATE_DIR, 'inbox')
-const PID_FILE = join(STATE_DIR, 'bot.pid')
-
-// Telegram allows exactly one getUpdates consumer per token. If a previous
-// session crashed (SIGKILL, terminal closed) its server.ts grandchild can
-// survive as an orphan and hold the slot forever, so every new session sees
-// 409 Conflict. Kill any stale holder before we start polling.
-mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 })
-try {
-  const stale = parseInt(readFileSync(PID_FILE, 'utf8'), 10)
-  if (stale > 1 && stale !== process.pid) {
-    process.kill(stale, 0)
-    process.stderr.write(`telegram channel: replacing stale poller pid=${stale}\n`)
-    process.kill(stale, 'SIGTERM')
-  }
-} catch {}
-writeFileSync(PID_FILE, String(process.pid))
 
 // Last-resort safety net — without these the process dies silently on any
 // unhandled promise rejection. With them it logs and keeps serving tools.
@@ -83,7 +84,23 @@ process.on('uncaughtException', err => {
 // Strict: no bare yes/no (conversational), no prefix/suffix chatter.
 const PERMISSION_REPLY_RE = /^\s*(y|yes|n|no)\s+([a-km-z]{5})\s*$/i
 
-const bot = new Bot(TOKEN)
+// Respect HTTPS_PROXY / HTTP_PROXY for ALL Telegram Bot API calls — including
+// multipart uploads (sendPhoto, sendDocument). Bun's fetch honours the `proxy`
+// option for every request type, so passing it here fixes the known bug where
+// text messages go through the proxy but file uploads silently bypass it.
+const PROXY_URL =
+  process.env.TELEGRAM_PROXY ??
+  process.env.HTTPS_PROXY ??
+  process.env.https_proxy ??
+  process.env.HTTP_PROXY ??
+  process.env.http_proxy ??
+  undefined
+
+const bot = new Bot(TOKEN, {
+  client: {
+    baseFetchConfig: PROXY_URL ? { proxy: PROXY_URL } as any : undefined,
+  },
+})
 let botUsername = ''
 
 type PendingEntry = {
@@ -434,7 +451,7 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: 'reply',
       description:
-        'Reply on Telegram. Pass chat_id from the inbound message. Optionally pass reply_to (message_id) for threading, and files (absolute paths) to attach images or documents.',
+        'Reply on Telegram. Pass chat_id from the inbound message. Optionally pass reply_to (message_id) for threading, message_thread_id to keep the reply inside a forum topic, and files (absolute paths) to attach images or documents.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -443,6 +460,10 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
           reply_to: {
             type: 'string',
             description: 'Message ID to thread under. Use message_id from the inbound <channel> block.',
+          },
+          message_thread_id: {
+            type: 'string',
+            description: 'Forum topic ID. Pass the message_thread_id from the inbound <channel> block to keep replies inside the same topic. If not provided, defaults to TELEGRAM_TOPIC_IDS when it has exactly one entry.',
           },
           files: {
             type: 'array',
@@ -514,6 +535,12 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         const files = (args.files as string[] | undefined) ?? []
         const format = (args.format as string | undefined) ?? 'text'
         const parseMode = format === 'markdownv2' ? 'MarkdownV2' as const : undefined
+        const message_thread_id = args.message_thread_id != null
+          ? Number(args.message_thread_id)
+          : (DEFAULT_TOPIC_ID ?? undefined)
+        const threadOpts = Number.isFinite(message_thread_id as number) && (message_thread_id as number) > 0
+          ? { message_thread_id: message_thread_id as number }
+          : {}
 
         assertAllowedChat(chat_id)
 
@@ -541,6 +568,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
             const sent = await bot.api.sendMessage(chat_id, chunks[i], {
               ...(shouldReplyTo ? { reply_parameters: { message_id: reply_to } } : {}),
               ...(parseMode ? { parse_mode: parseMode } : {}),
+              ...threadOpts,
             })
             sentIds.push(sent.message_id)
           }
@@ -556,9 +584,10 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         for (const f of files) {
           const ext = extname(f).toLowerCase()
           const input = new InputFile(f)
-          const opts = reply_to != null && replyMode !== 'off'
+          const baseOpts = reply_to != null && replyMode !== 'off'
             ? { reply_parameters: { message_id: reply_to } }
-            : undefined
+            : {}
+          const opts = { ...baseOpts, ...threadOpts }
           if (PHOTO_EXTS.has(ext)) {
             const sent = await bot.api.sendPhoto(chat_id, input, opts)
             sentIds.push(sent.message_id)
@@ -637,9 +666,6 @@ function shutdown(): void {
   if (shuttingDown) return
   shuttingDown = true
   process.stderr.write('telegram channel: shutting down\n')
-  try {
-    if (parseInt(readFileSync(PID_FILE, 'utf8'), 10) === process.pid) rmSync(PID_FILE)
-  } catch {}
   // bot.stop() signals the poll loop to end; the current getUpdates request
   // may take up to its long-poll timeout to return. Force-exit after 2s.
   setTimeout(() => process.exit(0), 2000)
@@ -649,19 +675,6 @@ process.stdin.on('end', shutdown)
 process.stdin.on('close', shutdown)
 process.on('SIGTERM', shutdown)
 process.on('SIGINT', shutdown)
-process.on('SIGHUP', shutdown)
-
-// Orphan watchdog: stdin events above don't reliably fire when the parent
-// chain (`bun run` wrapper → shell → us) is severed by a crash. Poll for
-// reparenting (POSIX) or a dead stdin pipe and self-terminate.
-const bootPpid = process.ppid
-setInterval(() => {
-  const orphaned =
-    (process.platform !== 'win32' && process.ppid !== bootPpid) ||
-    process.stdin.destroyed ||
-    process.stdin.readableEnded
-  if (orphaned) shutdown()
-}, 5000).unref()
 
 // Commands are DM-only. Responding in groups would: (1) leak pairing codes via
 // /status to other group members, (2) confirm bot presence in non-allowlisted
@@ -913,6 +926,14 @@ async function handleInbound(
   const from = ctx.from!
   const chat_id = String(ctx.chat!.id)
   const msgId = ctx.message?.message_id
+  const thread_id = ctx.message?.message_thread_id
+
+  // Multi-session topic filter. If TELEGRAM_TOPIC_IDS is set, only deliver
+  // messages whose message_thread_id is in the allow-list. Drop everything
+  // else so other Claude Code sessions listening on different topics handle it.
+  if (TOPIC_FILTER) {
+    if (thread_id == null || !TOPIC_FILTER.has(thread_id)) return
+  }
 
   // Permission-reply intercept: if this looks like "yes xxxxx" for a
   // pending permission request, emit the structured event instead of
@@ -961,6 +982,7 @@ async function handleInbound(
       meta: {
         chat_id,
         ...(msgId != null ? { message_id: String(msgId) } : {}),
+        ...(thread_id != null ? { message_thread_id: String(thread_id) } : {}),
         user: from.username ?? String(from.id),
         user_id: String(from.id),
         ts: new Date((ctx.message?.date ?? 0) * 1000).toISOString(),
@@ -985,17 +1007,14 @@ bot.catch(err => {
   process.stderr.write(`telegram channel: handler error (polling continues): ${err.error}\n`)
 })
 
-// Retry polling with backoff on any error. Previously only 409 was retried —
-// a single ETIMEDOUT/ECONNRESET/DNS failure rejected bot.start(), the catch
-// returned, and polling stopped permanently while the process stayed alive
-// (MCP stdin keeps it running). Outbound tools kept working but the bot was
-// deaf to inbound messages until a full restart.
+// 409 Conflict = another getUpdates consumer is still active (zombie from a
+// previous session, or a second Claude Code instance). Retry with backoff
+// until the slot frees up instead of crashing on the first rejection.
 void (async () => {
   for (let attempt = 1; ; attempt++) {
     try {
       await bot.start({
         onStart: info => {
-          attempt = 0
           botUsername = info.username
           process.stderr.write(`telegram channel: polling as @${info.username}\n`)
           void bot.api.setMyCommands(
@@ -1010,23 +1029,21 @@ void (async () => {
       })
       return // bot.stop() was called — clean exit from the loop
     } catch (err) {
-      if (shuttingDown) return
+      if (err instanceof GrammyError && err.error_code === 409) {
+        const delay = Math.min(1000 * attempt, 15000)
+        const detail = attempt === 1
+          ? ' — another instance is polling (zombie session, or a second Claude Code running?)'
+          : ''
+        process.stderr.write(
+          `telegram channel: 409 Conflict${detail}, retrying in ${delay / 1000}s\n`,
+        )
+        await new Promise(r => setTimeout(r, delay))
+        continue
+      }
       // bot.stop() mid-setup rejects with grammy's "Aborted delay" — expected, not an error.
       if (err instanceof Error && err.message === 'Aborted delay') return
-      const is409 = err instanceof GrammyError && err.error_code === 409
-      if (is409 && attempt >= 8) {
-        process.stderr.write(
-          `telegram channel: 409 Conflict persists after ${attempt} attempts — ` +
-          `another poller is holding the bot token (stray 'bun server.ts' process or a second session). Exiting.\n`,
-        )
-        return
-      }
-      const delay = Math.min(1000 * attempt, 15000)
-      const detail = is409
-        ? `409 Conflict${attempt === 1 ? ' — another instance is polling (zombie session, or a second Claude Code running?)' : ''}`
-        : `polling error: ${err}`
-      process.stderr.write(`telegram channel: ${detail}, retrying in ${delay / 1000}s\n`)
-      await new Promise(r => setTimeout(r, delay))
+      process.stderr.write(`telegram channel: polling failed: ${err}\n`)
+      return
     }
   }
 })()
