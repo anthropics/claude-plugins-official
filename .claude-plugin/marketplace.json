@@ -824,6 +824,16 @@
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/linear"
     },
     {
+      "name": "llm-wiki",
+      "description": "Maintains an LLM-authored wiki as a DAG of pages kept in sync with your codebase. Tracks code changes, reconciles stale pages, lints the wiki graph, and supports EIS (Executable Implementation Spec) authoring.",
+      "category": "development",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/esxr/llm-wiki.git"
+      },
+      "homepage": "https://github.com/esxr/llm-wiki"
+    },
+    {
       "name": "lua-lsp",
       "description": "Lua language server for code intelligence",
       "version": "1.0.0",
