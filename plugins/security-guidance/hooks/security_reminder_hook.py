@@ -68,7 +68,7 @@ Other risky inputs to be careful with:
     },
     {
         "ruleName": "child_process_exec",
-        "substrings": ["child_process.exec", "exec(", "execSync("],
+        "substrings": ["child_process.exec", "execSync("],
         "reminder": """⚠️ Security Warning: Using child_process.exec() can lead to command injection vulnerabilities.
 
 This codebase provides a safer alternative: src/utils/execFileNoThrow.ts
