@@ -268,6 +268,42 @@ def main():
             shown_warnings.add(warning_key)
             save_state(session_id, shown_warnings)
 
+            # Refine innerHTML_xss behaviour:
+            #   1. Silent skip when the file is under a doc / test / examples
+            #      context — the rule's threat model (XSS via untrusted input
+            #      reaching the DOM of an end user) does not apply.
+            #   2. Elsewhere, downgrade from a hard block (stderr + exit 2) to
+            #      a non-blocking reminder (stdout JSON + exit 0, consumed as
+            #      additionalContext). The agent still sees the warning but
+            #      is not blocked from completing the turn.
+            # All other rules retain their original blocking semantics.
+            if rule_name == "innerHTML_xss":
+                doc_like_segments = (
+                    "/docs/", "/doc/",
+                    "/examples/", "/example/",
+                    "/test/", "/tests/", "/__tests__/",
+                    "/spec/", "/specs/",
+                    "/fixtures/", "/fixture/",
+                    "/stories/", "/storybook/",
+                )
+                if any(seg in file_path for seg in doc_like_segments):
+                    sys.exit(0)
+
+                hook_output = {
+                    "hookSpecificOutput": {
+                        "hookEventName": "PreToolUse",
+                        "additionalContext": (
+                            reminder
+                            + "\n\n(Non-blocking reminder. Proceed if the "
+                            "right-hand side is a string literal, a const "
+                            "value from the same file, or passes through an "
+                            "escape or sanitize helper.)"
+                        ),
+                    }
+                }
+                print(json.dumps(hook_output))
+                sys.exit(0)
+
             # Output the warning to stderr and block execution
             print(reminder, file=sys.stderr)
             sys.exit(2)  # Block tool execution (exit code 2 for PreToolUse hooks)
