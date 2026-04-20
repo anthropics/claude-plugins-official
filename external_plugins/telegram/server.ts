@@ -86,6 +86,26 @@ const PERMISSION_REPLY_RE = /^\s*(y|yes|n|no)\s+([a-km-z]{5})\s*$/i
 const bot = new Bot(TOKEN)
 let botUsername = ''
 
+// Optional poll-loop heartbeat for external watchdogs. When
+// TELEGRAM_PLUGIN_HEARTBEAT is set, the plugin writes the current unix
+// timestamp to that path on every successful getUpdates round-trip
+// (including empty-array polls). External monitors can watch the file's
+// mtime to detect a stalled polling loop — a failure mode that is not
+// observable from outside the process (the bun process stays alive and
+// keeps its HTTPS socket open). No-op when the env var is unset, so
+// there is zero cost for users who don't need it.
+const HEARTBEAT_PATH = process.env.TELEGRAM_PLUGIN_HEARTBEAT
+if (HEARTBEAT_PATH) {
+  try { mkdirSync(join(HEARTBEAT_PATH, '..'), { recursive: true }) } catch {}
+  bot.api.config.use(async (prev, method, payload, signal) => {
+    const result = await prev(method, payload, signal)
+    if (method === 'getUpdates') {
+      try { writeFileSync(HEARTBEAT_PATH, String(Math.floor(Date.now() / 1000))) } catch {}
+    }
+    return result
+  })
+}
+
 type PendingEntry = {
   senderId: string
   chatId: string
