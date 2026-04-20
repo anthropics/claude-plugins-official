@@ -1,0 +1,9 @@
+{
+  "name": "cc-safe-setup",
+  "description": "Safety hooks for Claude Code. One command installs 8 essential hooks that block rm -rf, force-push, credential leaks, and token waste. 703 example hooks covering every major risk pattern. Based on 800+ hours of autonomous operation data.",
+  "author": {
+    "name": "yurukusa"
+  },
+  "homepage": "https://yurukusa.github.io/cc-safe-setup/",
+  "repository": "https://github.com/yurukusa/cc-safe-setup"
+}
