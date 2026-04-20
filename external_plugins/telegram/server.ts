@@ -365,6 +365,7 @@ function chunk(text: string, limit: number, mode: 'length' | 'newline'): string[
 // .jpg/.jpeg/.png/.gif/.webp go as photos (Telegram compresses + shows inline);
 // everything else goes as documents (raw file, no compression).
 const PHOTO_EXTS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp'])
+const VOICE_EXTS = new Set(['.ogg', '.oga', '.opus'])
 
 const mcp = new Server(
   { name: 'telegram', version: '1.0.0' },
@@ -434,7 +435,7 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: 'reply',
       description:
-        'Reply on Telegram. Pass chat_id from the inbound message. Optionally pass reply_to (message_id) for threading, and files (absolute paths) to attach images or documents.',
+        'Reply on Telegram. Pass chat_id from the inbound message. Optionally pass reply_to (message_id) for threading, and files (absolute paths) to attach images, voice notes (.ogg/.opus/.oga), or documents.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -561,6 +562,9 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
             : undefined
           if (PHOTO_EXTS.has(ext)) {
             const sent = await bot.api.sendPhoto(chat_id, input, opts)
+            sentIds.push(sent.message_id)
+          } else if (VOICE_EXTS.has(ext)) {
+            const sent = await bot.api.sendVoice(chat_id, input, opts)
             sentIds.push(sent.message_id)
           } else {
             const sent = await bot.api.sendDocument(chat_id, input, opts)
