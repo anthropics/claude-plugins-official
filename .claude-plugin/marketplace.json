@@ -86,9 +86,10 @@
     {
       "name": "amplitude",
       "source": {
-        "source": "url",
+        "source": "git-subdir",
         "url": "https://github.com/amplitude/mcp-marketplace.git",
-        "sha": "be54ccb66b10593721dd3a31e47b2db20ea02d2f"
+        "path": "plugins/amplitude",
+        "ref": "main"
       },
       "description": "Use Amplitude as an expert analyst — instrument Amplitude, discover product opportunities, analyze charts, create dashboards, manage experiments, and understand users and accounts.",
       "category": "monitoring",
