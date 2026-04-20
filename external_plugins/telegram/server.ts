@@ -653,15 +653,34 @@ process.on('SIGHUP', shutdown)
 
 // Orphan watchdog: stdin events above don't reliably fire when the parent
 // chain (`bun run` wrapper → shell → us) is severed by a crash. Poll for
-// reparenting (POSIX) or a dead stdin pipe and self-terminate.
+// reparenting (POSIX), a dead stdin pipe, or parent process absence and
+// self-terminate.
+//
+// Three independent detectors cover different failure modes:
+//   1. ppid change  — classic POSIX reparenting (parent dies, child gets new ppid)
+//   2. stdin dead   — parent closed the pipe (works when event loop is healthy)
+//   3. /proc liveness — sync read of /proc/<ppid>/stat catches cases where
+//      Bun preserves the original ppid after parent death (#1452) and where
+//      event-loop starvation prevents stdin handlers from firing
 const bootPpid = process.ppid
+const parentAliveSync = (pid: number): boolean => {
+  if (process.platform === 'win32') return true
+  try {
+    const stat = readFileSync(`/proc/${pid}/stat`, 'utf8')
+    const state = stat.match(/\) (\w) /)?.[1]
+    return state !== 'Z' && state !== undefined
+  } catch {
+    return false
+  }
+}
 setInterval(() => {
   const orphaned =
     (process.platform !== 'win32' && process.ppid !== bootPpid) ||
     process.stdin.destroyed ||
-    process.stdin.readableEnded
+    process.stdin.readableEnded ||
+    !parentAliveSync(bootPpid)
   if (orphaned) shutdown()
-}, 5000).unref()
+}, 2000).unref()
 
 // Commands are DM-only. Responding in groups would: (1) leak pairing codes via
 // /status to other group members, (2) confirm bot presence in non-allowlisted
