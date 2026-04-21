@@ -1216,6 +1216,20 @@
       "homepage": "https://github.com/qodo-ai/qodo-skills.git"
     },
     {
+      "name": "qt-development-skills",
+      "description": "Agentic engineering skills for Qt software development — Qt C++/QML code review, QML coding, and Qt C++/QML code documentation.",
+      "author": {
+        "name": "Qt Group"
+      },
+      "category": "development",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/TheQtCompanyRnD/agent-skills.git",
+        "sha": "62a98e2339e6eefcff108cfc3fe9db8a7301856c"
+      },
+      "homepage": "https://www.qt.io/"
+    },
+    {
       "name": "railway",
       "description": "Deploy and manage apps, databases, and infrastructure on Railway. Covers project setup, deploys, environment configuration, networking, troubleshooting, and monitoring.",
       "category": "deployment",
