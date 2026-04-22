@@ -27,12 +27,37 @@ COMPLETION_PROMISE=$(echo "$FRONTMATTER" | grep '^completion_promise:' | sed 's/
 # Session isolation: the state file is project-scoped, but the Stop hook
 # fires in every Claude Code session in that project. If another session
 # started the loop, this session must not block (or touch the state file).
-# Legacy state files without session_id fall through (preserves old behavior).
-STATE_SESSION=$(echo "$FRONTMATTER" | grep '^session_id:' | sed 's/session_id: *//' || true)
+# The state file starts as `pending` because env vars aren't a guaranteed
+# channel at setup time; ownership is claimed by the first Stop hook that
+# sees it and enforced thereafter.
 HOOK_SESSION=$(echo "$HOOK_INPUT" | jq -r '.session_id // ""')
-if [[ -n "$STATE_SESSION" ]] && [[ "$STATE_SESSION" != "$HOOK_SESSION" ]]; then
+if [[ -z "$HOOK_SESSION" ]]; then
   exit 0
 fi
+
+STATE_SESSION=$(echo "$FRONTMATTER" | grep '^session_id:' | sed 's/session_id: *//' || true)
+
+case "$STATE_SESSION" in
+  pending)
+    # Atomic claim via sed|mv — racing hooks each write their own id; the
+    # last mv wins and the loop ends up bound to exactly one session.
+    TEMP_FILE="${RALPH_STATE_FILE}.tmp.$$"
+    sed "s/^session_id: pending$/session_id: $HOOK_SESSION/" \
+      "$RALPH_STATE_FILE" > "$TEMP_FILE"
+    mv "$TEMP_FILE" "$RALPH_STATE_FILE"
+    ;;
+  "$HOOK_SESSION")
+    :
+    ;;
+  "")
+    echo "⚠️  Ralph loop: state file has no session_id — removing as corrupted" >&2
+    rm "$RALPH_STATE_FILE"
+    exit 0
+    ;;
+  *)
+    exit 0
+    ;;
+esac
 
 # Validate numeric fields before arithmetic operations
 if [[ ! "$ITERATION" =~ ^[0-9]+$ ]]; then
