@@ -25,13 +25,21 @@ MAX_ITERATIONS=$(echo "$FRONTMATTER" | grep '^max_iterations:' | sed 's/max_iter
 COMPLETION_PROMISE=$(echo "$FRONTMATTER" | grep '^completion_promise:' | sed 's/completion_promise: *//' | sed 's/^"\(.*\)"$/\1/')
 
 # Session isolation: the state file is project-scoped, but the Stop hook
-# fires in every Claude Code session in that project. If another session
-# started the loop, this session must not block (or touch the state file).
-# Legacy state files without session_id fall through (preserves old behavior).
+# fires in every Claude Code session in that project. The setup script
+# cannot capture the session id at loop start (no CLAUDE_CODE_SESSION_ID
+# env var is exposed to the slash-command Bash context), so session_id
+# is written empty. The first Stop hook fire adopts its session as owner;
+# subsequent fires from other sessions see the populated id and bail out.
 STATE_SESSION=$(echo "$FRONTMATTER" | grep '^session_id:' | sed 's/session_id: *//' || true)
 HOOK_SESSION=$(echo "$HOOK_INPUT" | jq -r '.session_id // ""')
-if [[ -n "$STATE_SESSION" ]] && [[ "$STATE_SESSION" != "$HOOK_SESSION" ]]; then
-  exit 0
+if [[ -n "$STATE_SESSION" ]]; then
+  if [[ "$STATE_SESSION" != "$HOOK_SESSION" ]]; then
+    exit 0
+  fi
+elif [[ -n "$HOOK_SESSION" ]]; then
+  TEMP_FILE="${RALPH_STATE_FILE}.tmp.$$"
+  sed "s/^session_id:.*/session_id: $HOOK_SESSION/" "$RALPH_STATE_FILE" > "$TEMP_FILE"
+  mv "$TEMP_FILE" "$RALPH_STATE_FILE"
 fi
 
 # Validate numeric fields before arithmetic operations
