@@ -96,6 +96,19 @@
       "homepage": "https://github.com/amplitude/mcp-marketplace"
     },
     {
+      "name": "apollo",
+      "description": "Prospect, enrich leads, load outreach sequences, and query sales analytics with Apollo.io — one-click MCP server integration for Claude Code and Cowork.",
+      "author": {
+        "name": "Apollo.io"
+      },
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/apolloio/apollo-mcp-plugin.git"
+      },
+      "homepage": "https://www.apollo.io/"
+    },
+    {
       "name": "asana",
       "description": "Asana project management integration. Create and manage tasks, search projects, update assignments, track progress, and integrate your development workflow with Asana's work management platform.",
       "category": "productivity",
