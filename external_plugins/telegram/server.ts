@@ -451,8 +451,8 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
           },
           format: {
             type: 'string',
-            enum: ['text', 'markdownv2'],
-            description: "Rendering mode. 'markdownv2' enables Telegram formatting (bold, italic, code, links). Caller must escape special chars per MarkdownV2 rules. Default: 'text' (plain, no escaping needed).",
+            enum: ['text', 'markdownv2', 'html'],
+            description: "Rendering mode. 'markdownv2' enables Telegram formatting (bold, italic, code, links) — caller must escape 17 special chars. 'html' enables <b>/<i>/<u>/<s>/<code>/<pre>/<a href> tags — caller only escapes & < > inside content. Default: 'text' (plain, no escaping).",
           },
         },
         required: ['chat_id', 'text'],
@@ -493,8 +493,8 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
           text: { type: 'string' },
           format: {
             type: 'string',
-            enum: ['text', 'markdownv2'],
-            description: "Rendering mode. 'markdownv2' enables Telegram formatting (bold, italic, code, links). Caller must escape special chars per MarkdownV2 rules. Default: 'text' (plain, no escaping needed).",
+            enum: ['text', 'markdownv2', 'html'],
+            description: "Rendering mode. 'markdownv2' enables Telegram formatting (bold, italic, code, links) — caller must escape 17 special chars. 'html' enables <b>/<i>/<u>/<s>/<code>/<pre>/<a href> tags — caller only escapes & < > inside content. Default: 'text' (plain, no escaping).",
           },
         },
         required: ['chat_id', 'message_id', 'text'],
@@ -513,7 +513,10 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         const reply_to = args.reply_to != null ? Number(args.reply_to) : undefined
         const files = (args.files as string[] | undefined) ?? []
         const format = (args.format as string | undefined) ?? 'text'
-        const parseMode = format === 'markdownv2' ? 'MarkdownV2' as const : undefined
+        const parseMode =
+          format === 'markdownv2' ? 'MarkdownV2' as const :
+          format === 'html' ? 'HTML' as const :
+          undefined
 
         assertAllowedChat(chat_id)
 
@@ -602,7 +605,10 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
       case 'edit_message': {
         assertAllowedChat(args.chat_id as string)
         const editFormat = (args.format as string | undefined) ?? 'text'
-        const editParseMode = editFormat === 'markdownv2' ? 'MarkdownV2' as const : undefined
+        const editParseMode =
+          editFormat === 'markdownv2' ? 'MarkdownV2' as const :
+          editFormat === 'html' ? 'HTML' as const :
+          undefined
         const edited = await bot.api.editMessageText(
           args.chat_id as string,
           Number(args.message_id),
