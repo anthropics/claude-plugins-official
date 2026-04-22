@@ -72,6 +72,20 @@
       "homepage": "https://github.com/AikidoSec/aikido-claude-plugin"
     },
     {
+      "name": "alloydb",
+      "description": "Create, connect, and interact with an AlloyDB for PostgreSQL database and data.",
+      "author": {
+        "name": "Google LLC"
+      },
+      "category": "database",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/gemini-cli-extensions/alloydb.git",
+        "sha": "be8f5ca61cf8cbb4ac350bcfef7fa63fbd18401c"
+      },
+      "homepage": "https://cloud.google.com/alloydb"
+    },
+    {
       "name": "amazon-location-service",
       "description": "Guide developers through adding maps, places search, geocoding, routing, and other geospatial features with Amazon Location Service, including authentication setup, SDK integration, and best practices.",
       "category": "location",
