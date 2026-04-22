@@ -184,13 +184,18 @@ class RuleEngine:
         """Extract field value from tool input or hook input data.
 
         Args:
-            field: Field name like "command", "new_text", "file_path", "reason", "transcript"
+            field: Field name like "command", "new_text", "file_path", "reason", "transcript",
+                   or a dotted path "tool_response.<key>" to inspect a PostToolUse tool result
+                   (e.g. "tool_response.exitCode", "tool_response.stdout", "tool_response.stderr").
             tool_name: Tool being used (may be empty for Stop events)
             tool_input: Tool input dict
-            input_data: Full hook input (for accessing transcript_path, reason, etc.)
+            input_data: Full hook input (for accessing transcript_path, reason, tool_response, etc.)
 
         Returns:
-            Field value as string, or None if not found
+            Field value as string, or None if not found. None causes the enclosing
+            condition to fail, which naturally filters PreToolUse events for rules
+            that reference `tool_response.*` fields (they're only present in
+            PostToolUse payloads).
         """
         # Direct tool_input fields
         if field in tool_input:
@@ -201,6 +206,22 @@ class RuleEngine:
 
         # For Stop events and other non-tool events, check input_data
         if input_data:
+            # tool_response.<key> — PostToolUse inspection of the executed tool's result.
+            # Lets rules gate on outcomes (e.g. exitCode==0) instead of only inputs.
+            # Returns None for PreToolUse (no tool_response key yet), so rules using
+            # these fields naturally fire only on the Post side.
+            if field.startswith('tool_response.'):
+                tool_response = input_data.get('tool_response')
+                if not isinstance(tool_response, dict):
+                    return None
+                subkey = field[len('tool_response.'):]
+                if subkey not in tool_response:
+                    return None
+                value = tool_response[subkey]
+                if isinstance(value, str):
+                    return value
+                return str(value)
+
             # Stop event specific fields
             if field == 'reason':
                 return input_data.get('reason', '')
