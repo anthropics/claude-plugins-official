@@ -258,6 +258,40 @@ Use environment variables instead of hardcoded values.
 **For stop events:**
 - Use general matching on session state
 
+**For PostToolUse (gating on tool results):**
+- `tool_response.<key>` — inspect the executed tool's result dict.
+  - `tool_response.exitCode` — Bash exit code (compared as string: `"0"`, `"1"`, …)
+  - `tool_response.stdout` — Bash stdout
+  - `tool_response.stderr` — Bash stderr
+- Returns `None` on PreToolUse, so any condition on `tool_response.*`
+  naturally gates the rule to PostToolUse — no extra event filtering needed.
+
+### Example 4: Plan-sync reminder on successful IaC apply (PostToolUse)
+
+```markdown
+---
+name: plan-sync-on-success
+enabled: true
+event: bash
+action: warn
+tool_matcher: Bash
+conditions:
+  - field: command
+    operator: regex_match
+    pattern: terraform\s+apply|ansible-playbook\s+\S+\.ya?ml
+  - field: tool_response.exitCode
+    operator: equals
+    pattern: "0"
+---
+
+✅ IaC change applied — update the affected plan/docs in one commit.
+```
+
+**Why it fires only on success:** The `tool_response.exitCode` condition is
+only satisfied on PostToolUse (the field doesn't exist on PreToolUse), so
+the rule automatically skips the pre-invocation evaluation and only matches
+when the actual exit code is 0.
+
 ## Management
 
 ### Enable/Disable Rules

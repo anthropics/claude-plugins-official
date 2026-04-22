@@ -86,6 +86,15 @@ You're adding an API key to a .env file. Ensure this file is in .gitignore!
 - `field`: Which field to check
   - For bash: `command`
   - For file: `file_path`, `new_text`, `old_text`, `content`
+  - For prompt: `user_prompt`
+  - For stop: `reason`, `transcript`
+  - **PostToolUse result (any tool):** `tool_response.<key>` — inspect the executed tool's result. Examples:
+    - `tool_response.exitCode` — Bash exit code (numeric, compared as string)
+    - `tool_response.stdout` — Bash stdout
+    - `tool_response.stderr` — Bash stderr
+    - Returns `None` on PreToolUse (no `tool_response` yet), so any rule that
+      references `tool_response.*` only fires on the Post side — no extra
+      event gating needed.
 - `operator`: How to match
   - `regex_match`: Regex pattern matching
   - `contains`: Substring check
@@ -219,6 +228,46 @@ Production deployment checklist:
 - [ ] Monitoring ready?
 ```
 
+### PostToolUse (gating on tool results)
+
+`event: bash` and `event: file` rules are evaluated on both PreToolUse and
+PostToolUse. By adding a `tool_response.<key>` condition, a rule becomes
+PostToolUse-only automatically — the field is `None` before the tool runs,
+so the condition short-circuits.
+
+**Plan-sync reminder after a successful IaC apply:**
+
+```markdown
+---
+name: plan-sync-on-success
+enabled: true
+event: bash
+action: warn
+tool_matcher: Bash
+conditions:
+  - field: command
+    operator: regex_match
+    pattern: terraform\s+apply|ansible-playbook\s+\S+\.ya?ml
+  - field: tool_response.exitCode
+    operator: equals
+    pattern: "0"
+---
+
+✅ **IaC change applied successfully — Plan-Sync-Pflicht**
+
+Update every affected `docs/parts/part-XX-<slug>/{index,plan,dod,rollout-history,handoff}.md` in one commit.
+```
+
+**Common `tool_response.*` fields on Bash:**
+- `tool_response.exitCode` — numeric exit code (compared as string: `"0"`, `"1"`, …)
+- `tool_response.stdout` — captured stdout
+- `tool_response.stderr` — captured stderr
+
+**Why it works without event filtering:** PreToolUse payloads don't include
+a `tool_response` key. The condition evaluates to `None`, the rule doesn't
+match, and nothing is emitted. Only the PostToolUse evaluation sees the
+exit code and fires.
+
 ## Pattern Writing Tips
 
 ### Regex Basics
@@ -325,6 +374,7 @@ See `${CLAUDE_PLUGIN_ROOT}/examples/` for complete examples:
 - `dangerous-rm.local.md` - Block dangerous rm commands
 - `console-log-warning.local.md` - Warn about console.log
 - `sensitive-files-warning.local.md` - Warn about editing .env files
+- `plan-sync-on-success.local.md` - PostToolUse reminder gated on `tool_response.exitCode == 0`
 
 ## Quick Reference
 
@@ -369,6 +419,8 @@ Warning message
 - Bash: `command`
 - File: `file_path`, `new_text`, `old_text`, `content`
 - Prompt: `user_prompt`
+- Stop: `reason`, `transcript`
+- PostToolUse result: `tool_response.<key>` (e.g. `tool_response.exitCode`, `tool_response.stdout`, `tool_response.stderr`)
 
 **Operators:**
 - `regex_match`, `contains`, `equals`, `not_contains`, `starts_with`, `ends_with`
