@@ -803,7 +803,17 @@ client.on('interactionCreate', async (interaction: Interaction) => {
 })
 
 client.on('messageCreate', msg => {
-  if (msg.author.bot) return
+  if (msg.author.bot) {
+    // Drop messages from bots unless the bot's user ID is explicitly listed
+    // in the channel's allowFrom (for guild channels) or the top-level
+    // allowFrom (for DMs). Without this carve-out, trusted bots like a
+    // PM/summarizer sharing a channel with Claude are silently ignored
+    // even when paired via /discord:access.
+    const access = loadAccess()
+    const channelAllowed = access.groups?.[msg.channelId]?.allowFrom?.includes(msg.author.id) ?? false
+    const globalAllowed = (access.allowFrom ?? []).includes(msg.author.id)
+    if (!channelAllowed && !globalAllowed) return
+  }
   handleInbound(msg).catch(e => process.stderr.write(`discord: handleInbound failed: ${e}\n`))
 })
 
