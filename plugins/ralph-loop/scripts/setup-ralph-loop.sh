@@ -9,6 +9,7 @@ set -euo pipefail
 PROMPT_PARTS=()
 MAX_ITERATIONS=0
 COMPLETION_PROMISE="null"
+LOOP_NAME=""
 
 # Parse options and positional arguments
 while [[ $# -gt 0 ]]; do
@@ -26,6 +27,9 @@ ARGUMENTS:
 OPTIONS:
   --max-iterations <n>           Maximum iterations before auto-stop (default: unlimited)
   --completion-promise '<text>'  Promise phrase (USE QUOTES for multi-word)
+  --name <name>                  Named loop (alphanumeric, hyphens, underscores)
+                                 Default: scoped to current session ID
+                                 Use to: run multiple loops, or resume after a crash
   -h, --help                     Show this help message
 
 DESCRIPTION:
@@ -34,27 +38,36 @@ DESCRIPTION:
 
   To signal completion, you must output: <promise>YOUR_PHRASE</promise>
 
+  LOOP ISOLATION
+  By default each session gets its own loop — multiple Claude Code windows
+  in the same project will not interfere with each other.
+
+  Use --name to share a loop across sessions (e.g. resume after a crash):
+    /ralph-loop --name my-task "Fix the auth bug"   # start
+    /ralph-loop --name my-task "Fix the auth bug"   # resume from another session
+
   Use this for:
   - Interactive iteration where you want to see progress
   - Tasks requiring self-correction and refinement
-  - Learning how Ralph works
+  - Running independent tasks in parallel sessions
 
 EXAMPLES:
   /ralph-loop Build a todo API --completion-promise 'DONE' --max-iterations 20
   /ralph-loop --max-iterations 10 Fix the auth bug
   /ralph-loop Refactor cache layer  (runs forever)
-  /ralph-loop --completion-promise 'TASK COMPLETE' Create a REST API
+  /ralph-loop --name auth-fix Fix the auth bug --max-iterations 20
+  /ralph-loop --name api-work Build a REST API --completion-promise 'DONE'
 
 STOPPING:
   Only by reaching --max-iterations or detecting --completion-promise
-  No manual stop - Ralph runs infinitely by default!
+  Use /cancel-ralph to stop immediately
 
 MONITORING:
-  # View current iteration:
-  grep '^iteration:' .claude/ralph-loop.local.md
+  # List all active loops:
+  ls .claude/ralph-loop-*.local.md
 
-  # View full state:
-  head -10 .claude/ralph-loop.local.md
+  # View full state of a named loop:
+  head -10 .claude/ralph-loop-my-task.local.md
 HELP_EOF
       exit 0
       ;;
@@ -101,6 +114,25 @@ HELP_EOF
       COMPLETION_PROMISE="$2"
       shift 2
       ;;
+    --name)
+      if [[ -z "${2:-}" ]]; then
+        echo "❌ Error: --name requires a value" >&2
+        echo "" >&2
+        echo "   Valid examples:" >&2
+        echo "     --name auth-fix" >&2
+        echo "     --name my_task_1" >&2
+        echo "" >&2
+        echo "   Allowed characters: letters, numbers, hyphens, underscores" >&2
+        exit 1
+      fi
+      if ! [[ "$2" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+        echo "❌ Error: --name must contain only letters, numbers, hyphens, or underscores" >&2
+        echo "   Got: $2" >&2
+        exit 1
+      fi
+      LOOP_NAME="$2"
+      shift 2
+      ;;
     *)
       # Non-option argument - collect all as prompt parts
       PROMPT_PARTS+=("$1")
@@ -127,8 +159,18 @@ if [[ -z "$PROMPT" ]]; then
   exit 1
 fi
 
-# Create state file for stop hook (markdown with YAML frontmatter)
+# Determine state file path
+# --name: explicit shared name (cross-session resume, parallel named loops)
+# default: session-scoped (isolates concurrent sessions in same project)
 mkdir -p .claude
+if [[ -n "$LOOP_NAME" ]]; then
+  RALPH_STATE_FILE=".claude/ralph-loop-${LOOP_NAME}.local.md"
+  LOOP_ID="$LOOP_NAME"
+else
+  SESSION_ID="${CLAUDE_CODE_SESSION_ID:-default}"
+  RALPH_STATE_FILE=".claude/ralph-loop-${SESSION_ID}.local.md"
+  LOOP_ID="$SESSION_ID"
+fi
 
 # Quote completion promise for YAML if it contains special chars or is not null
 if [[ -n "$COMPLETION_PROMISE" ]] && [[ "$COMPLETION_PROMISE" != "null" ]]; then
@@ -137,10 +179,11 @@ else
   COMPLETION_PROMISE_YAML="null"
 fi
 
-cat > .claude/ralph-loop.local.md <<EOF
+cat > "$RALPH_STATE_FILE" <<EOF
 ---
 active: true
 iteration: 1
+loop_id: $LOOP_ID
 session_id: ${CLAUDE_CODE_SESSION_ID:-}
 max_iterations: $MAX_ITERATIONS
 completion_promise: $COMPLETION_PROMISE_YAML
@@ -151,10 +194,12 @@ $PROMPT
 EOF
 
 # Output setup message
+LOOP_LABEL=$(if [[ -n "$LOOP_NAME" ]]; then echo "name=$LOOP_NAME (shared)"; else echo "session-scoped"; fi)
 cat <<EOF
 🔄 Ralph loop activated in this session!
 
-Iteration: 1
+Loop:          $LOOP_LABEL
+Iteration:     1
 Max iterations: $(if [[ $MAX_ITERATIONS -gt 0 ]]; then echo $MAX_ITERATIONS; else echo "unlimited"; fi)
 Completion promise: $(if [[ "$COMPLETION_PROMISE" != "null" ]]; then echo "${COMPLETION_PROMISE//\"/} (ONLY output when TRUE - do not lie!)"; else echo "none (runs forever)"; fi)
 
@@ -162,7 +207,7 @@ The stop hook is now active. When you try to exit, the SAME PROMPT will be
 fed back to you. You'll see your previous work in files, creating a
 self-referential loop where you iteratively improve on the same task.
 
-To monitor: head -10 .claude/ralph-loop.local.md
+To monitor: head -10 $RALPH_STATE_FILE
 
 ⚠️  WARNING: This loop cannot be stopped manually! It will run infinitely
     unless you set --max-iterations or --completion-promise.

@@ -8,12 +8,46 @@ set -euo pipefail
 
 # Read hook input from stdin (advanced stop hook API)
 HOOK_INPUT=$(cat)
+HOOK_SESSION=$(echo "$HOOK_INPUT" | jq -r '.session_id // ""')
 
-# Check if ralph-loop is active
-RALPH_STATE_FILE=".claude/ralph-loop.local.md"
+# Find the state file for this session.
+# State files are named .claude/ralph-loop-<id>.local.md where <id> is either
+# a session ID (default, session-scoped) or a user-supplied --name (shared).
+#
+# Search strategy:
+#   1. Session-scoped file: ralph-loop-<HOOK_SESSION>.local.md  (exact match)
+#   2. Named files: any ralph-loop-*.local.md whose session_id matches HOOK_SESSION
+#      (this session is "attached" to a named loop it started)
+#
+# Legacy fallback: ralph-loop.local.md (pre-1.1 state files, no session scoping)
 
-if [[ ! -f "$RALPH_STATE_FILE" ]]; then
-  # No active loop - allow exit
+RALPH_STATE_FILE=""
+
+# 1. Session-scoped file (fast path)
+CANDIDATE=".claude/ralph-loop-${HOOK_SESSION}.local.md"
+if [[ -f "$CANDIDATE" ]]; then
+  RALPH_STATE_FILE="$CANDIDATE"
+fi
+
+# 2. Named loop files — find one whose session_id matches this session
+if [[ -z "$RALPH_STATE_FILE" ]] && compgen -G ".claude/ralph-loop-*.local.md" > /dev/null 2>&1; then
+  for f in .claude/ralph-loop-*.local.md; do
+    FM=$(sed -n '/^---$/,/^---$/{ /^---$/d; p; }' "$f" 2>/dev/null || true)
+    FILE_SESSION=$(echo "$FM" | grep '^session_id:' | sed 's/session_id: *//' || true)
+    if [[ "$FILE_SESSION" == "$HOOK_SESSION" ]]; then
+      RALPH_STATE_FILE="$f"
+      break
+    fi
+  done
+fi
+
+# 3. Legacy fallback
+if [[ -z "$RALPH_STATE_FILE" ]] && [[ -f ".claude/ralph-loop.local.md" ]]; then
+  RALPH_STATE_FILE=".claude/ralph-loop.local.md"
+fi
+
+if [[ -z "$RALPH_STATE_FILE" ]]; then
+  # No active loop for this session - allow exit
   exit 0
 fi
 
@@ -23,16 +57,6 @@ ITERATION=$(echo "$FRONTMATTER" | grep '^iteration:' | sed 's/iteration: *//')
 MAX_ITERATIONS=$(echo "$FRONTMATTER" | grep '^max_iterations:' | sed 's/max_iterations: *//')
 # Extract completion_promise and strip surrounding quotes if present
 COMPLETION_PROMISE=$(echo "$FRONTMATTER" | grep '^completion_promise:' | sed 's/completion_promise: *//' | sed 's/^"\(.*\)"$/\1/')
-
-# Session isolation: the state file is project-scoped, but the Stop hook
-# fires in every Claude Code session in that project. If another session
-# started the loop, this session must not block (or touch the state file).
-# Legacy state files without session_id fall through (preserves old behavior).
-STATE_SESSION=$(echo "$FRONTMATTER" | grep '^session_id:' | sed 's/session_id: *//' || true)
-HOOK_SESSION=$(echo "$HOOK_INPUT" | jq -r '.session_id // ""')
-if [[ -n "$STATE_SESSION" ]] && [[ "$STATE_SESSION" != "$HOOK_SESSION" ]]; then
-  exit 0
-fi
 
 # Validate numeric fields before arithmetic operations
 if [[ ! "$ITERATION" =~ ^[0-9]+$ ]]; then
