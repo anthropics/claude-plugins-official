@@ -30,6 +30,34 @@ COMPLETION_PROMISE=$(echo "$FRONTMATTER" | grep '^completion_promise:' | sed 's/
 # Legacy state files without session_id fall through (preserves old behavior).
 STATE_SESSION=$(echo "$FRONTMATTER" | grep '^session_id:' | sed 's/session_id: *//' || true)
 HOOK_SESSION=$(echo "$HOOK_INPUT" | jq -r '.session_id // ""')
+
+# Pending-claim: setup.sh writes session_id: PENDING plus a claim_token,
+# and echoes the token to stdout. That stdout lands in the originating
+# session's transcript. On first Stop in each session, grep this session's
+# own transcript for the token — only the session that ran setup.sh will
+# find it. That session claims the loop by rewriting session_id to its own.
+# Other sessions see no token and exit 0 without blocking or touching state.
+if [[ "$STATE_SESSION" == "PENDING" ]]; then
+  CLAIM_TOKEN=$(echo "$FRONTMATTER" | grep '^claim_token:' | sed 's/claim_token: *//' || true)
+  PENDING_TRANSCRIPT=$(echo "$HOOK_INPUT" | jq -r '.transcript_path // ""')
+  if [[ -z "$CLAIM_TOKEN" ]] || [[ -z "$HOOK_SESSION" ]] || [[ ! -f "$PENDING_TRANSCRIPT" ]]; then
+    exit 0
+  fi
+  if ! grep -qF "$CLAIM_TOKEN" "$PENDING_TRANSCRIPT"; then
+    # Not the originating session — don't claim, don't block.
+    exit 0
+  fi
+  # Claim: rewrite session_id, drop claim_token. Atomic via temp+mv.
+  CLAIM_TMP="${RALPH_STATE_FILE}.claim.$$"
+  awk -v sid="$HOOK_SESSION" '
+    /^session_id:/ { print "session_id: " sid; next }
+    /^claim_token:/ { next }
+    { print }
+  ' "$RALPH_STATE_FILE" > "$CLAIM_TMP"
+  mv "$CLAIM_TMP" "$RALPH_STATE_FILE"
+  STATE_SESSION="$HOOK_SESSION"
+fi
+
 if [[ -n "$STATE_SESSION" ]] && [[ "$STATE_SESSION" != "$HOOK_SESSION" ]]; then
   exit 0
 fi

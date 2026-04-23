@@ -137,11 +137,20 @@ else
   COMPLETION_PROMISE_YAML="null"
 fi
 
+# Generate a unique claim token. The token is written to the state file AND
+# printed to stdout — setup.sh stdout is captured into the current session's
+# transcript jsonl. On first Stop, each session's hook greps its own transcript
+# for this token; only the originating session finds it and claims the loop.
+# This avoids relying on $CLAUDE_CODE_SESSION_ID, which Claude Code does not
+# export to slash-command bash contexts.
+CLAIM_TOKEN=$(openssl rand -hex 16 2>/dev/null || uuidgen | tr -d '-' | tr '[:upper:]' '[:lower:]')
+
 cat > .claude/ralph-loop.local.md <<EOF
 ---
 active: true
 iteration: 1
-session_id: ${CLAUDE_CODE_SESSION_ID:-}
+session_id: PENDING
+claim_token: $CLAIM_TOKEN
 max_iterations: $MAX_ITERATIONS
 completion_promise: $COMPLETION_PROMISE_YAML
 started_at: "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -149,6 +158,8 @@ started_at: "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 $PROMPT
 EOF
+
+echo "Ralph claim token: $CLAIM_TOKEN"
 
 # Output setup message
 cat <<EOF
