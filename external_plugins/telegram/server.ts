@@ -26,6 +26,7 @@ import { join, extname, sep } from 'path'
 const STATE_DIR = process.env.TELEGRAM_STATE_DIR ?? join(homedir(), '.claude', 'channels', 'telegram')
 const ACCESS_FILE = join(STATE_DIR, 'access.json')
 const APPROVED_DIR = join(STATE_DIR, 'approved')
+const PENDING_DIR = join(STATE_DIR, 'pending-notifications')
 const ENV_FILE = join(STATE_DIR, '.env')
 
 // Load ~/.claude/channels/telegram/.env into process.env. Real env wins.
@@ -341,15 +342,22 @@ function checkApprovals(): void {
     void bot.api.sendMessage(senderId, "Paired! Say hi to Claude.").then(
       () => rmSync(file, { force: true }),
       err => {
-        process.stderr.write(`telegram channel: failed to send approval confirm: ${err}\n`)
-        // Remove anyway — don't loop on a broken send.
-        rmSync(file, { force: true })
+        // Do NOT remove the file on failure — leave it so the next 5s tick
+        // retries. The previous behavior dropped the approval confirmation
+        // AND its file marker on transient sendMessage failures, so an
+        // allowlisted user would think their pairing was rejected.
+        process.stderr.write(`telegram channel: approval confirm send failed for ${senderId}: ${err} — will retry\n`)
       },
     )
   }
 }
 
 if (!STATIC) setInterval(checkApprovals, 5000).unref()
+
+// Retry queued inbound notifications every 15s. Covers the window where the
+// MCP transport was temporarily busy but is now live again. unref() so the
+// drain interval doesn't keep the process alive by itself.
+setInterval(() => { void drainPendingNotifications() }, 15000).unref()
 
 // Telegram caps messages at 4096 chars. Split long replies, preferring
 // paragraph boundaries when chunkMode is 'newline'.
@@ -642,6 +650,11 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
 
 await mcp.connect(new StdioServerTransport())
 
+// Drain any notifications that accumulated while this process was down.
+// Messages from a crashed prior instance get delivered as soon as the new
+// MCP transport is live.
+void drainPendingNotifications()
+
 // When Claude Code closes the MCP connection, stdin gets EOF. Without this
 // the bot keeps polling forever as a zombie, holding the token and blocking
 // the next session with 409 Conflict.
@@ -897,6 +910,65 @@ function safeName(s: string | undefined): string | undefined {
   return s?.replace(/[<>\[\]\r\n;]/g, '_')
 }
 
+// Persist a failed inbound notification to disk so drainPendingNotifications
+// can retry on the next interval. Previously the inbound notification was
+// sent as fire-and-forget (mcp.notification().catch(...)) and silently
+// dropped if the MCP transport flickered — common after long idle periods.
+// Queue is bounded at MAX_PENDING_NOTIFICATIONS files; oldest is evicted to
+// avoid disk fill.
+const MAX_PENDING_NOTIFICATIONS = 1000
+
+function queueFailedNotification(params: unknown): void {
+  try {
+    mkdirSync(PENDING_DIR, { recursive: true, mode: 0o700 })
+    let files: string[]
+    try {
+      files = readdirSync(PENDING_DIR).sort()
+    } catch {
+      files = []
+    }
+    while (files.length >= MAX_PENDING_NOTIFICATIONS) {
+      const oldest = files.shift()
+      if (oldest) rmSync(join(PENDING_DIR, oldest), { force: true })
+    }
+    const name = `${Date.now()}-${randomBytes(4).toString('hex')}.json`
+    writeFileSync(join(PENDING_DIR, name), JSON.stringify(params))
+  } catch (err) {
+    process.stderr.write(`telegram channel: failed to queue notification for retry: ${err}\n`)
+  }
+}
+
+async function drainPendingNotifications(): Promise<void> {
+  let files: string[]
+  try {
+    files = readdirSync(PENDING_DIR).filter(f => f.endsWith('.json')).sort()
+  } catch {
+    return
+  }
+  for (const f of files) {
+    const path = join(PENDING_DIR, f)
+    let params: unknown
+    try {
+      params = JSON.parse(readFileSync(path, 'utf8'))
+    } catch {
+      // Corrupt file — drop it rather than blocking the queue forever.
+      rmSync(path, { force: true })
+      continue
+    }
+    try {
+      await mcp.notification({
+        method: 'notifications/claude/channel',
+        params: params as Record<string, unknown>,
+      })
+      rmSync(path, { force: true })
+    } catch (err) {
+      // MCP still unhappy — stop, try again next tick.
+      process.stderr.write(`telegram channel: drain halted at ${f}: ${err}\n`)
+      return
+    }
+  }
+}
+
 async function handleInbound(
   ctx: Context,
   text: string,
@@ -960,29 +1032,37 @@ async function handleInbound(
 
   // image_path goes in meta only — an in-content "[image attached — read: PATH]"
   // annotation is forgeable by any allowlisted sender typing that string.
-  mcp.notification({
-    method: 'notifications/claude/channel',
-    params: {
-      content: text,
-      meta: {
-        chat_id,
-        ...(msgId != null ? { message_id: String(msgId) } : {}),
-        user: from.username ?? String(from.id),
-        user_id: String(from.id),
-        ts: new Date((ctx.message?.date ?? 0) * 1000).toISOString(),
-        ...(imagePath ? { image_path: imagePath } : {}),
-        ...(attachment ? {
-          attachment_kind: attachment.kind,
-          attachment_file_id: attachment.file_id,
-          ...(attachment.size != null ? { attachment_size: String(attachment.size) } : {}),
-          ...(attachment.mime ? { attachment_mime: attachment.mime } : {}),
-          ...(attachment.name ? { attachment_name: attachment.name } : {}),
-        } : {}),
-      },
+  const params = {
+    content: text,
+    meta: {
+      chat_id,
+      ...(msgId != null ? { message_id: String(msgId) } : {}),
+      user: from.username ?? String(from.id),
+      user_id: String(from.id),
+      ts: new Date((ctx.message?.date ?? 0) * 1000).toISOString(),
+      ...(imagePath ? { image_path: imagePath } : {}),
+      ...(attachment ? {
+        attachment_kind: attachment.kind,
+        attachment_file_id: attachment.file_id,
+        ...(attachment.size != null ? { attachment_size: String(attachment.size) } : {}),
+        ...(attachment.mime ? { attachment_mime: attachment.mime } : {}),
+        ...(attachment.name ? { attachment_name: attachment.name } : {}),
+      } : {}),
     },
-  }).catch(err => {
-    process.stderr.write(`telegram channel: failed to deliver inbound to Claude: ${err}\n`)
-  })
+  }
+  // Awaited delivery with on-failure queuing. The previous fire-and-forget
+  // pattern lost messages whenever the MCP transport flickered — a primary
+  // driver of "bot goes silent" reports. Failed notifications go to
+  // PENDING_DIR and are drained by drainPendingNotifications on the next tick.
+  try {
+    await mcp.notification({
+      method: 'notifications/claude/channel',
+      params,
+    })
+  } catch (err) {
+    process.stderr.write(`telegram channel: inbound delivery failed (${err}) — queued for retry\n`)
+    queueFailedNotification(params)
+  }
 }
 
 // Without this, any throw in a message handler stops polling permanently
