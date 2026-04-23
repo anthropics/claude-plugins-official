@@ -8,9 +8,10 @@ for a set of queries. Outputs results as JSON.
 import argparse
 import json
 import os
-import select
+import queue as queue_mod
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -65,7 +66,7 @@ def run_single_query(
             f"# {skill_name}\n\n"
             f"This skill handles: {skill_description}\n"
         )
-        command_file.write_text(command_content)
+        command_file.write_text(command_content, encoding="utf-8")
 
         cmd = [
             "claude",
@@ -92,33 +93,44 @@ def run_single_query(
 
         triggered = False
         start_time = time.time()
-        buffer = ""
         # Track state for stream event detection
         pending_tool_name = None
         accumulated_json = ""
 
+        # Windows-compat: threading.Thread + queue.Queue for stdout line reads.
+        # select.select() only supports sockets (not pipes) on Windows, raising
+        # WinError 10093. readline() in a daemon thread is cross-platform.
+        line_queue: queue_mod.Queue = queue_mod.Queue()
+
+        def _stdout_reader(stdout, q):
+            try:
+                for raw in iter(stdout.readline, b""):
+                    q.put(raw.decode("utf-8", errors="replace"))
+            except Exception:
+                pass
+            finally:
+                q.put(None)
+
+        reader_thread = threading.Thread(
+            target=_stdout_reader,
+            args=(process.stdout, line_queue),
+            daemon=True,
+        )
+        reader_thread.start()
+
         try:
             while time.time() - start_time < timeout:
-                if process.poll() is not None:
-                    remaining = process.stdout.read()
-                    if remaining:
-                        buffer += remaining.decode("utf-8", errors="replace")
-                    break
-
-                ready, _, _ = select.select([process.stdout], [], [], 1.0)
-                if not ready:
+                try:
+                    raw_line = line_queue.get(timeout=1.0)
+                except queue_mod.Empty:
+                    if process.poll() is not None:
+                        break
                     continue
-
-                chunk = os.read(process.stdout.fileno(), 8192)
-                if not chunk:
+                if raw_line is None:
                     break
-                buffer += chunk.decode("utf-8", errors="replace")
-
-                while "\n" in buffer:
-                    line, buffer = buffer.split("\n", 1)
-                    line = line.strip()
-                    if not line:
-                        continue
+                line = raw_line.strip()
+                if not line:
+                    continue
 
                     try:
                         event = json.loads(line)
@@ -269,7 +281,7 @@ def main():
     parser.add_argument("--verbose", action="store_true", help="Print progress to stderr")
     args = parser.parse_args()
 
-    eval_set = json.loads(Path(args.eval_set).read_text())
+    eval_set = json.loads(Path(args.eval_set).read_text(encoding="utf-8"))
     skill_path = Path(args.skill_path)
 
     if not (skill_path / "SKILL.md").exists():
