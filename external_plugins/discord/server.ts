@@ -22,6 +22,7 @@ import {
   GatewayIntentBits,
   Partials,
   ChannelType,
+  ActivityType,
   ButtonBuilder,
   ButtonStyle,
   ActionRowBuilder,
@@ -87,6 +88,16 @@ const client = new Client({
   ],
   // DMs arrive as partial channels — messageCreate never fires without this.
   partials: [Partials.Channel],
+  // Presence must be set at construction time so the bot appears online on
+  // the first gateway IDENTIFY. Without this the bot stays "offline" in
+  // member lists even while actively processing messages.
+  presence: {
+    status: 'online',
+    activities: [{
+      name: 'DMs',
+      type: ActivityType.Listening,
+    }],
+  },
 })
 
 type PendingEntry = {
