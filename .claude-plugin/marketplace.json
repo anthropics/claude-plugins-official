@@ -72,6 +72,20 @@
       "homepage": "https://github.com/AikidoSec/aikido-claude-plugin"
     },
     {
+      "name": "aiven",
+      "description": "Easily deploy managed PostgreSQL, Kafka, OpenSearch, Clickhouse, and other databases, streaming, and apps through Aiven. Free tier available, up and running in minutes.",
+      "author": {
+        "name": "Aiven"
+      },
+      "category": "database",
+      "source": {
+        "source": "github",
+        "repo": "aiven/aiven-ai-plugins",
+        "commit": "d2a7697b53826588d0faf795f39d2aa2362330da"
+      },
+      "homepage": "https://aiven.io"
+    },
+    {
       "name": "alloydb",
       "description": "Create, connect, and interact with an AlloyDB for PostgreSQL database and data.",
       "author": {
