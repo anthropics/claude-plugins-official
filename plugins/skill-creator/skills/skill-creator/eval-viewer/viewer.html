@@ -8,6 +8,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600&family=Lora:wght@400;500&display=swap" rel="stylesheet">
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js" integrity="sha384-EnyY0/GSHQGSxSgMwaIPzSESbqoOLSexfnSMN2AP+39Ckmn92stwABZynq1JyzdT" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.5/dist/purify.min.js"></script>
   <style>
     :root {
       --bg: #faf9f5;
@@ -179,6 +181,80 @@
       height: 600px;
       border: none;
     }
+    .output-file-content .rendered-md {
+      font-size: 0.9375rem;
+      line-height: 1.6;
+      color: var(--text);
+      max-width: 72ch;
+    }
+    .output-file-content .rendered-md h1,
+    .output-file-content .rendered-md h2,
+    .output-file-content .rendered-md h3,
+    .output-file-content .rendered-md h4 {
+      margin: 1.25em 0 0.5em;
+      line-height: 1.25;
+    }
+    .output-file-content .rendered-md h1 { font-size: 1.5rem; border-bottom: 1px solid var(--border); padding-bottom: 0.3em; }
+    .output-file-content .rendered-md h2 { font-size: 1.25rem; border-bottom: 1px solid var(--border); padding-bottom: 0.3em; }
+    .output-file-content .rendered-md h3 { font-size: 1.1rem; }
+    .output-file-content .rendered-md h4 { font-size: 1rem; }
+    .output-file-content .rendered-md p { margin: 0.75em 0; }
+    .output-file-content .rendered-md code {
+      background: #f3efe0;
+      padding: 0.1em 0.3em;
+      border-radius: 3px;
+      font-size: 0.875em;
+      font-family: 'SF Mono', SFMono-Regular, Consolas, 'Liberation Mono', Menlo, monospace;
+    }
+    .output-file-content .rendered-md pre {
+      background: #f3efe0;
+      padding: 0.75em 1em;
+      border-radius: 4px;
+      overflow-x: auto;
+      white-space: pre;
+      font-size: 0.8125rem;
+    }
+    .output-file-content .rendered-md pre code {
+      background: transparent;
+      padding: 0;
+      white-space: pre;
+    }
+    .output-file-content .rendered-md blockquote {
+      border-left: 4px solid var(--border);
+      padding: 0.3em 0 0.3em 1em;
+      margin: 0.75em 0;
+      color: var(--muted, #666);
+    }
+    .output-file-content .rendered-md table {
+      border-collapse: collapse;
+      margin: 0.75em 0;
+      font-size: 0.875rem;
+    }
+    .output-file-content .rendered-md th,
+    .output-file-content .rendered-md td {
+      border: 1px solid var(--border);
+      padding: 0.4em 0.8em;
+      text-align: left;
+    }
+    .output-file-content .rendered-md th { background: #f3efe0; }
+    .output-file-content .rendered-md ul,
+    .output-file-content .rendered-md ol { padding-left: 1.5em; margin: 0.5em 0; }
+    .output-file-content .rendered-md li { margin: 0.2em 0; }
+    .output-file-content .rendered-md a { color: #4a6cf7; }
+    .output-file-content .rendered-md hr { border: none; border-top: 1px solid var(--border); margin: 1.5em 0; }
+    .md-toggle {
+      display: inline-block;
+      margin-left: 0.5rem;
+      padding: 0.1rem 0.5rem;
+      font-size: 0.75rem;
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      background: var(--surface);
+      color: var(--text);
+      cursor: pointer;
+      user-select: none;
+    }
+    .md-toggle:hover { background: #f3efe0; }
     .output-file-content table {
       border-collapse: collapse;
       font-size: 0.8125rem;
@@ -793,9 +869,56 @@
         content.className = "output-file-content";
 
         if (file.type === "text") {
-          const pre = document.createElement("pre");
-          pre.textContent = file.content;
-          content.appendChild(pre);
+          const isMarkdown = /\.(md|markdown)$/i.test(file.name);
+          const canRender =
+            isMarkdown &&
+            typeof marked !== "undefined" &&
+            typeof DOMPurify !== "undefined";
+          if (canRender) {
+            // Render mode: sanitize via DOMPurify.sanitize returning a DOM fragment
+            // (no innerHTML, no text → HTML assignment — DOMPurify handles escaping).
+            const rendered = document.createElement("div");
+            rendered.className = "rendered-md";
+            let appended = false;
+            try {
+              const htmlString = marked.parse(file.content, { gfm: true, breaks: false });
+              const fragment = DOMPurify.sanitize(htmlString, { RETURN_DOM_FRAGMENT: true });
+              rendered.appendChild(fragment);
+              appended = true;
+            } catch (e) {
+              appended = false;
+            }
+            if (!appended) {
+              const pre = document.createElement("pre");
+              pre.textContent = file.content;
+              rendered.appendChild(pre);
+            }
+
+            // Raw mode (hidden initially)
+            const raw = document.createElement("pre");
+            raw.textContent = file.content;
+            raw.style.display = "none";
+
+            // Toggle button injected into the header
+            const toggle = document.createElement("span");
+            toggle.className = "md-toggle";
+            toggle.textContent = "View raw";
+            let showingRaw = false;
+            toggle.addEventListener("click", () => {
+              showingRaw = !showingRaw;
+              rendered.style.display = showingRaw ? "none" : "";
+              raw.style.display = showingRaw ? "" : "none";
+              toggle.textContent = showingRaw ? "View rendered" : "View raw";
+            });
+            header.appendChild(toggle);
+
+            content.appendChild(rendered);
+            content.appendChild(raw);
+          } else {
+            const pre = document.createElement("pre");
+            pre.textContent = file.content;
+            content.appendChild(pre);
+          }
         } else if (file.type === "image") {
           const img = document.createElement("img");
           img.src = file.data_uri;
