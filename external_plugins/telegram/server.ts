@@ -551,10 +551,25 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
               reply_to != null &&
               replyMode !== 'off' &&
               (replyMode === 'all' || i === 0)
-            const sent = await bot.api.sendMessage(chat_id, chunks[i], {
-              ...(shouldReplyTo ? { reply_parameters: { message_id: reply_to } } : {}),
-              ...(parseMode ? { parse_mode: parseMode } : {}),
-            })
+            let sent
+            try {
+              sent = await bot.api.sendMessage(chat_id, chunks[i], {
+                ...(shouldReplyTo ? { reply_parameters: { message_id: reply_to } } : {}),
+                ...(parseMode ? { parse_mode: parseMode } : {}),
+              })
+            } catch (parseErr: any) {
+              // MarkdownV2 has strict escape requirements. Telegram returns 400 when
+              // unescaped special chars are present. Retry as plain text so the
+              // message always gets through rather than being silently dropped.
+              if (parseMode && parseErr?.error_code === 400) {
+                process.stderr.write(`telegram channel: ${parseMode} failed, retrying as plain text\n`)
+                sent = await bot.api.sendMessage(chat_id, chunks[i], {
+                  ...(shouldReplyTo ? { reply_parameters: { message_id: reply_to } } : {}),
+                })
+              } else {
+                throw parseErr
+              }
+            }
             sentIds.push(sent.message_id)
           }
         } catch (err) {
