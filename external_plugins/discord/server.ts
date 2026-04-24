@@ -872,6 +872,29 @@ async function handleInbound(msg: Message): Promise<void> {
   // forgeable by any allowlisted sender typing that string.
   const content = msg.content || (atts.length > 0 ? '(attachment)' : '')
 
+  // Reply reference — if the user pressed Reply on a prior message,
+  // propagate the referenced message id (plus author + content excerpt
+  // when resolvable) so the model can see which message this reply is
+  // threaded under. Without this, the model only sees flat-chronological
+  // messages and can't disambiguate when the user replies to an older one.
+  const replyMeta: Record<string, string> = {}
+  if (msg.reference?.messageId) {
+    replyMeta.reply_to = msg.reference.messageId
+    // msg.reference.resolved is populated when Discord bundles the
+    // referenced message; otherwise fetch it. Failures are non-fatal —
+    // the id alone is still useful for threading context.
+    try {
+      const ref = msg.reference.resolved ??
+        (await msg.channel.messages.fetch(msg.reference.messageId).catch(() => null))
+      if (ref) {
+        replyMeta.reply_to_author = ref.author.username
+        replyMeta.reply_to_excerpt = (ref.content || '').slice(0, 80)
+      }
+    } catch {
+      // non-fatal — reply_to id alone is still useful
+    }
+  }
+
   mcp.notification({
     method: 'notifications/claude/channel',
     params: {
@@ -883,6 +906,7 @@ async function handleInbound(msg: Message): Promise<void> {
         user_id: msg.author.id,
         ts: msg.createdAt.toISOString(),
         ...(atts.length > 0 ? { attachment_count: String(atts.length), attachments: atts.join('; ') } : {}),
+        ...replyMeta,
       },
     },
   }).catch(err => {
