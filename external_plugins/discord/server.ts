@@ -233,6 +233,35 @@ function noteSent(id: string): void {
   }
 }
 
+// Typing-indicator keepalive. Discord expires the indicator ~10s after the
+// last sendTyping, but Claude can take 20s+ to produce a reply, leaving the
+// user staring at a dead "…". On inbound we start a heartbeat that refreshes
+// every 7s and stops the moment the reply/react tool fires for that chat.
+// A 2-minute safety cap handles the "Claude went silent" path so the
+// indicator never hangs indefinitely.
+const TYPING_REFRESH_MS = 7000
+const TYPING_MAX_DURATION_MS = 2 * 60 * 1000
+type TypingHandle = { interval: ReturnType<typeof setInterval>; safety: ReturnType<typeof setTimeout> }
+const typingHeartbeats = new Map<string, TypingHandle>()
+
+function startTypingHeartbeat(channel: unknown, chatId: string): void {
+  if (!channel || typeof channel !== 'object' || !('sendTyping' in channel)) return
+  const send = (channel as { sendTyping: () => Promise<unknown> }).sendTyping.bind(channel)
+  stopTypingHeartbeat(chatId) // reset so a fresh inbound gets a full safety window
+  void send().catch(() => {}) // fire once immediately
+  const interval = setInterval(() => void send().catch(() => {}), TYPING_REFRESH_MS)
+  const safety = setTimeout(() => stopTypingHeartbeat(chatId), TYPING_MAX_DURATION_MS)
+  typingHeartbeats.set(chatId, { interval, safety })
+}
+
+function stopTypingHeartbeat(chatId: string): void {
+  const handle = typingHeartbeats.get(chatId)
+  if (!handle) return
+  clearInterval(handle.interval)
+  clearTimeout(handle.safety)
+  typingHeartbeats.delete(chatId)
+}
+
 async function gate(msg: Message): Promise<GateResult> {
   const access = loadAccess()
   const pruned = pruneExpired(access)
@@ -608,6 +637,11 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         const reply_to = args.reply_to as string | undefined
         const files = (args.files as string[] | undefined) ?? []
 
+        // Stop the "…" heartbeat before sending — Discord clears its own
+        // typing state on send, but killing the interval here prevents a
+        // stale refresh landing just after our message.
+        stopTypingHeartbeat(chat_id)
+
         const ch = await fetchAllowedChannel(chat_id)
         if (!('send' in ch)) throw new Error('channel is not sendable')
 
@@ -678,6 +712,9 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         return { content: [{ type: 'text', text: out }] }
       }
       case 'react': {
+        // A react-only turn is Claude's final signal too — stop the heartbeat
+        // so typing doesn't keep pulsing until the 2-min safety cap.
+        stopTypingHeartbeat(args.chat_id as string)
         const ch = await fetchAllowedChannel(args.chat_id as string)
         const msg = await ch.messages.fetch(args.message_id as string)
         await msg.react(args.emoji as string)
@@ -848,10 +885,10 @@ async function handleInbound(msg: Message): Promise<void> {
     return
   }
 
-  // Typing indicator — signals "processing" until we reply (or ~10s elapses).
-  if ('sendTyping' in msg.channel) {
-    void msg.channel.sendTyping().catch(() => {})
-  }
+  // Typing indicator — refreshes every 7s until the reply/react tool fires
+  // for this chat, so Claude's 20s+ thinking latency doesn't leave the user
+  // staring at a dead "…". See startTypingHeartbeat() for the lifecycle.
+  startTypingHeartbeat(msg.channel, chat_id)
 
   // Ack reaction — lets the user know we're processing. Fire-and-forget.
   const access = result.access
