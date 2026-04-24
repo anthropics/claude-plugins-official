@@ -750,6 +750,20 @@
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/plugins/frontend-design"
     },
     {
+      "name": "fullstory",
+      "description": "Connect Claude to Fullstory to query behavioral analytics, session replays, and customer experience insights.",
+      "author": {
+        "name": "Fullstory"
+      },
+      "category": "monitoring",
+      "source": {
+        "source": "github",
+        "repo": "fullstorydev/fullstory-skills",
+        "commit": "1ec5865e7ab1449f9a0859d164c4b6a8c53b6e2f"
+      },
+      "homepage": "https://www.fullstory.com"
+    },
+    {
       "name": "github",
       "description": "Official GitHub MCP server for repository management. Create issues, manage pull requests, review code, search repositories, and interact with GitHub's full API directly from Claude Code.",
       "category": "productivity",
