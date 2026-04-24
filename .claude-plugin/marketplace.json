@@ -1558,6 +1558,20 @@
       "homepage": "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/session-report"
     },
     {
+      "name": "shepherd",
+      "description": "Track, preserve, and clean up background processes Claude Code's Bash tool leaves running. Session-scoped tracking, stash/unstash, RAM/port awareness, surgical kill.",
+      "author": {
+        "name": "gorkemuz"
+      },
+      "category": "development",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/mgorkemuz/claude-code-shepherd.git",
+        "sha": "7a429a4479889ba75e2892bda15d9ec48f5ca000"
+      },
+      "homepage": "https://github.com/mgorkemuz/claude-code-shepherd"
+    },
+    {
       "name": "shopify",
       "description": "Shopify developer tools for Claude Code — search Shopify docs, generate and validate GraphQL, Liquid, and UI extension code",
       "author": {
