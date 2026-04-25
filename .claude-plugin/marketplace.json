@@ -1930,3 +1930,14 @@
     }
   ]
 }
+,
+    {
+      "name": "fashion-agent",
+      "description": "Personal AI fashion stylist — outfit recommendations, style tips, deal negotiation, and real product links from Google Shopping and Amazon.",
+      "category": "lifestyle",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/swati-cm/fashion-agent-plugin.git"
+      },
+      "homepage": "https://github.com/swati-cm/fashion-agent-plugin"
+    }
