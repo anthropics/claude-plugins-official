@@ -1927,6 +1927,38 @@
         "url": "https://github.com/zscaler/zscaler-mcp-server.git"
       },
       "homepage": "https://github.com/zscaler/zscaler-mcp-server"
+    },
+    {
+      "name": "artibot",
+      "description": "Cognitive orchestration OS for Claude Code with hierarchical 3-layer memory (working/episodic/semantic), GRPO-RLVR self-learning routing (linear/MLP/joint policies), MCP server (stdio + skills/agents/memory bridges), parallel agent teams (29 agents, 100 skills, 56 commands), 11-stage runtime middleware, dual-process cognitive router, OTEL observability, and zero external DB / data sovereignty by design. ~6800 tests, 4 design docs, MIT.",
+      "author": {
+        "name": "Artience"
+      },
+      "category": "development",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/Yoodaddy0311/artibot.git",
+        "path": "plugins/artibot",
+        "ref": "v3.9.0",
+        "sha": "d36d5c90ca7294ad10fda39d4d46f30a74b313a7"
+      },
+      "homepage": "https://github.com/Yoodaddy0311/artibot"
+    },
+    {
+      "name": "artibot-cowork",
+      "description": "Marketing/content vertical of Artibot — 41 skills covering long-form writing (blog/case-study/column/thought-leadership/interview), AEO/GEO 2026 optimization, AI-slop reviewer (25 KR + 15 EN patterns), Korean market specialization (Naver/Kakao), ad compliance (PIPA/FTC/GDPR), schema generator, voice calibration, content pipeline, and SEO/CRO. Composes with artibot core via plugin synergy. MIT.",
+      "author": {
+        "name": "Artience"
+      },
+      "category": "marketing",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/Yoodaddy0311/artibot.git",
+        "path": "plugins/artibot-cowork",
+        "ref": "v3.9.0",
+        "sha": "d36d5c90ca7294ad10fda39d4d46f30a74b313a7"
+      },
+      "homepage": "https://github.com/Yoodaddy0311/artibot/tree/main/plugins/artibot-cowork"
     }
   ]
 }
