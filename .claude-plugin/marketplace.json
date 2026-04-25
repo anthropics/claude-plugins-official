@@ -1754,6 +1754,19 @@
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/terraform"
     },
     {
+      "name": "trade-router",
+      "description": "Non-custodial Solana swap & limit-order MCP server. 21 tools (swap, limit, trailing, TWAP, DCA, combo orders) across Raydium, PumpSwap, Orca, and Meteora. Jito MEV-protected. Ed25519 server-message verification. Private key never leaves the agent.",
+      "category": "development",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/TradeRouter/trade-router-mcp.git",
+        "path": "claude-plugin",
+        "ref": "main",
+        "sha": "f11a25aaf51fe448afc9f150ef5a042f021efd9f"
+      },
+      "homepage": "https://traderouter.ai"
+    },
+    {
       "name": "typescript-lsp",
       "description": "TypeScript/JavaScript language server for enhanced code intelligence",
       "version": "1.0.0",
