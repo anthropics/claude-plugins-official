@@ -97,3 +97,68 @@ assistant needs earlier context, it will ask you to paste or summarize.
 This also means there's no `download_attachment` tool for historical messages
 — photos are downloaded eagerly on arrival since there's no way to fetch them
 later.
+
+## Daemon mode (experimental)
+
+By default the plugin runs one MCP server per Claude Code session over stdio.
+That couples the bot's lifetime to a single session and creates a few
+documented problems: stdio drops cause silent disconnects (#1388, #1416,
+#1478), and any sibling `claude` session opened on the same machine will
+SIGTERM the active poller via `bot.pid` (#1481).
+
+`--transport http` runs the plugin as a **long-running daemon** that owns the
+Telegram bot continuously. Any number of Claude Code sessions can connect to
+it over local HTTP without spawning their own bun process.
+
+```sh
+# Run manually
+bun ~/.claude/plugins/cache/claude-plugins-official/telegram/<version>/server.ts \
+  --transport http --port 7341
+```
+
+While the daemon is running, it writes a `daemon.lock` in the state dir.
+Stdio-mode sessions detect the lock at startup and exit cleanly, so even if
+the plugin stays enabled in `settings.json` no sibling session will fight
+the daemon for the `bot.pid` lock.
+
+Connect Claude Code by adding an HTTP MCP entry to your project or user
+config (this is in addition to — or instead of — the plugin's auto-loaded
+stdio entry):
+
+```json
+{
+  "mcpServers": {
+    "telegram-daemon": {
+      "type": "http",
+      "url": "http://127.0.0.1:7341/mcp"
+    }
+  }
+}
+```
+
+### macOS launchd unit
+
+A sample launchd plist that keeps the daemon running across reboots is in
+[`contrib/launchd/com.anthropic.claude-telegram-daemon.plist`](./contrib/launchd/com.anthropic.claude-telegram-daemon.plist).
+Adjust the bun and plugin paths for your install, then:
+
+```sh
+cp contrib/launchd/com.anthropic.claude-telegram-daemon.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.anthropic.claude-telegram-daemon.plist
+launchctl start com.anthropic.claude-telegram-daemon
+```
+
+### Limitations of this prototype
+
+- **Localhost-only**, no auth on the HTTP endpoint. Anyone with shell access
+  to the box can drive the bot. Don't expose port 7341 outside `127.0.0.1`.
+- **One client at a time** is the supported case — the SDK transport tracks
+  one MCP session at a time. Concurrent sessions may interfere.
+- **No buffered replay** — inbound messages received while no session is
+  connected are dropped on the floor (after the existing typing indicator).
+  Telegram's `getUpdates` queue still holds them, so they'll appear on next
+  client connect, but there's no persisted queue yet.
+- **No "operator offline" auto-reply** — sender sees no acknowledgement when
+  no client is connected.
+
+These are tracked as future work in the parent issue.

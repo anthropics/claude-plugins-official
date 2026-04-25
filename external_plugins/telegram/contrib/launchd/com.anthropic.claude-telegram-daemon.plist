@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Sample launchd LaunchAgent for the Telegram channel plugin in HTTP daemon mode.
+
+  Adjust:
+    - Path to bun (use `which bun` to find yours; common locations:
+      /Users/<you>/.bun/bin/bun, /opt/homebrew/bin/bun, /usr/local/bin/bun)
+    - Path to server.ts (replace <version> with the installed plugin version,
+      e.g. ~/.claude/plugins/cache/claude-plugins-official/telegram/0.0.6/server.ts)
+    - Replace YOUR_USERNAME with your macOS username
+
+  Install:
+    cp this file to ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.anthropic.claude-telegram-daemon.plist
+    launchctl start com.anthropic.claude-telegram-daemon
+
+  Verify:
+    curl -s http://127.0.0.1:7341/mcp -X POST \
+      -H "Content-Type: application/json" \
+      -H "Accept: application/json, text/event-stream" \
+      -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"check","version":"1.0"}}}' \
+      -o /dev/null -w "%{http_code}\n"
+  Should print 200.
+
+  Logs:
+    tail -f /Users/YOUR_USERNAME/.claude/channels/telegram/daemon.log
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.anthropic.claude-telegram-daemon</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/YOUR_USERNAME/.bun/bin/bun</string>
+        <string>run</string>
+        <string>/Users/YOUR_USERNAME/.claude/plugins/cache/claude-plugins-official/telegram/0.0.6/server.ts</string>
+        <string>--transport</string>
+        <string>http</string>
+        <string>--port</string>
+        <string>7341</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/YOUR_USERNAME/.claude/channels/telegram/daemon.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/YOUR_USERNAME/.claude/channels/telegram/daemon.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HOME</key>
+        <string>/Users/YOUR_USERNAME</string>
+        <key>PATH</key>
+        <string>/Users/YOUR_USERNAME/.bun/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/YOUR_USERNAME/.claude/channels/telegram</string>
+</dict>
+</plist>

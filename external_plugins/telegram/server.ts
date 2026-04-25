@@ -11,6 +11,7 @@
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import {
   ListToolsRequestSchema,
   CallToolRequestSchema,
@@ -19,14 +20,59 @@ import { z } from 'zod'
 import { Bot, GrammyError, InlineKeyboard, InputFile, type Context } from 'grammy'
 import type { ReactionTypeEmoji } from 'grammy/types'
 import { randomBytes } from 'crypto'
-import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, statSync, renameSync, realpathSync, chmodSync } from 'fs'
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, statSync, renameSync, realpathSync, chmodSync, existsSync } from 'fs'
 import { homedir } from 'os'
 import { join, extname, sep } from 'path'
+import { createServer as createHttpServer } from 'http'
 
 const STATE_DIR = process.env.TELEGRAM_STATE_DIR ?? join(homedir(), '.claude', 'channels', 'telegram')
 const ACCESS_FILE = join(STATE_DIR, 'access.json')
 const APPROVED_DIR = join(STATE_DIR, 'approved')
 const ENV_FILE = join(STATE_DIR, '.env')
+const DAEMON_LOCK = join(STATE_DIR, 'daemon.lock')
+
+// Transport selection — defaults to stdio (current behavior).
+// `--transport http [--port N]` runs as a daemon: a single long-running
+// process owns the Telegram poller and serves MCP over local HTTP, so any
+// number of Claude Code sessions can connect/reconnect without spawning
+// their own bun and SIGTERM-ing the existing one (root cause of #1481).
+type Transport = 'stdio' | 'http'
+const DEFAULT_HTTP_PORT = 7341
+
+function parseArgs(): { transport: Transport; port: number } {
+  const argv = process.argv.slice(2)
+  let transport: Transport = 'stdio'
+  let port = DEFAULT_HTTP_PORT
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i]
+    if (a === '--transport') {
+      const v = argv[++i]
+      if (v === 'http' || v === 'stdio') transport = v
+      else {
+        process.stderr.write(`telegram channel: unknown --transport "${v}" (expected "stdio" or "http")\n`)
+        process.exit(2)
+      }
+    } else if (a === '--port') {
+      const v = parseInt(argv[++i] ?? '', 10)
+      if (Number.isFinite(v) && v > 0 && v < 65536) port = v
+      else {
+        process.stderr.write(`telegram channel: invalid --port\n`)
+        process.exit(2)
+      }
+    } else if (a === '--help' || a === '-h') {
+      process.stdout.write(
+        `Usage: bun server.ts [--transport stdio|http] [--port N]\n` +
+        `  --transport stdio   (default) one process per Claude Code session\n` +
+        `  --transport http    daemon mode — single process serves MCP over local HTTP\n` +
+        `  --port N            port for HTTP mode (default ${DEFAULT_HTTP_PORT})\n`,
+      )
+      process.exit(0)
+    }
+  }
+  return { transport, port }
+}
+
+const ARGS = parseArgs()
 
 // Load ~/.claude/channels/telegram/.env into process.env. Real env wins.
 // Plugin-spawned servers don't get an env block — this is where the token lives.
@@ -53,11 +99,36 @@ if (!TOKEN) {
 const INBOX_DIR = join(STATE_DIR, 'inbox')
 const PID_FILE = join(STATE_DIR, 'bot.pid')
 
+mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 })
+
+// If a daemon (HTTP-mode server) is already running, stdio sessions must NOT
+// poll — they would 409-conflict and, worse, kill the daemon via the bot.pid
+// SIGTERM dance below. Yield cleanly: tools won't be available in this stdio
+// session, but daemon-mode users opt in by configuring a separate HTTP MCP
+// entry that points at 127.0.0.1:<port>.
+if (ARGS.transport === 'stdio' && existsSync(DAEMON_LOCK)) {
+  try {
+    const daemonPid = parseInt(readFileSync(DAEMON_LOCK, 'utf8'), 10)
+    if (daemonPid > 1) process.kill(daemonPid, 0) // alive?
+    process.stderr.write(
+      `telegram channel: HTTP daemon detected (pid=${daemonPid}) — this stdio instance will exit.\n` +
+      `  Connect Claude Code to the daemon via an HTTP MCP entry instead.\n`,
+    )
+    process.exit(0)
+  } catch {
+    // Stale lock — daemon died without cleanup. Remove and continue.
+    try { rmSync(DAEMON_LOCK, { force: true }) } catch {}
+  }
+}
+
 // Telegram allows exactly one getUpdates consumer per token. If a previous
 // session crashed (SIGKILL, terminal closed) its server.ts grandchild can
 // survive as an orphan and hold the slot forever, so every new session sees
 // 409 Conflict. Kill any stale holder before we start polling.
-mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 })
+//
+// In HTTP daemon mode, the daemon is the *sole* poller — but if a user
+// accidentally starts two daemons, we still want the latest one to win, so
+// keep the same lockfile semantics.
 try {
   const stale = parseInt(readFileSync(PID_FILE, 'utf8'), 10)
   if (stale > 1 && stale !== process.pid) {
@@ -67,6 +138,10 @@ try {
   }
 } catch {}
 writeFileSync(PID_FILE, String(process.pid))
+
+if (ARGS.transport === 'http') {
+  writeFileSync(DAEMON_LOCK, String(process.pid), { mode: 0o600 })
+}
 
 // Last-resort safety net — without these the process dies silently on any
 // unhandled promise rejection. With them it logs and keeps serving tools.
@@ -640,41 +715,106 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
   }
 })
 
-await mcp.connect(new StdioServerTransport())
-
-// When Claude Code closes the MCP connection, stdin gets EOF. Without this
-// the bot keeps polling forever as a zombie, holding the token and blocking
-// the next session with 409 Conflict.
+// Hoisted so the bot.start() retry loop at the bottom of the file can check
+// it across both transport branches without recomputing scope.
 let shuttingDown = false
-function shutdown(): void {
-  if (shuttingDown) return
-  shuttingDown = true
-  process.stderr.write('telegram channel: shutting down\n')
-  try {
-    if (parseInt(readFileSync(PID_FILE, 'utf8'), 10) === process.pid) rmSync(PID_FILE)
-  } catch {}
-  // bot.stop() signals the poll loop to end; the current getUpdates request
-  // may take up to its long-poll timeout to return. Force-exit after 2s.
-  setTimeout(() => process.exit(0), 2000)
-  void Promise.resolve(bot.stop()).finally(() => process.exit(0))
-}
-process.stdin.on('end', shutdown)
-process.stdin.on('close', shutdown)
-process.on('SIGTERM', shutdown)
-process.on('SIGINT', shutdown)
-process.on('SIGHUP', shutdown)
 
-// Orphan watchdog: stdin events above don't reliably fire when the parent
-// chain (`bun run` wrapper → shell → us) is severed by a crash. Poll for
-// reparenting (POSIX) or a dead stdin pipe and self-terminate.
-const bootPpid = process.ppid
-setInterval(() => {
-  const orphaned =
-    (process.platform !== 'win32' && process.ppid !== bootPpid) ||
-    process.stdin.destroyed ||
-    process.stdin.readableEnded
-  if (orphaned) shutdown()
-}, 5000).unref()
+if (ARGS.transport === 'http') {
+  // Daemon mode — listen on 127.0.0.1 and serve MCP over Streamable HTTP.
+  // Stateless transport: each request stands alone, no per-session state to
+  // shard. One Server instance handles all clients. Localhost-only — no auth
+  // on the HTTP endpoint by design (this prototype). Anyone with shell on
+  // the box already has the bot token.
+  // Stateful mode: server issues an Mcp-Session-Id on initialize, client
+  // sends it back on every subsequent request. This is what Claude Code's
+  // HTTP MCP client expects. Session state lives in-memory in the transport.
+  const transport = new StreamableHTTPServerTransport({
+    sessionIdGenerator: () => randomBytes(16).toString('hex'),
+  })
+  transport.onerror = err => {
+    process.stderr.write(`telegram channel: transport error: ${err.message}\n`)
+  }
+  await mcp.connect(transport)
+
+  // The SDK's StreamableHTTPServerTransport wraps @hono/node-server's
+  // getRequestListener internally — it converts the Node req into a Web
+  // Standard Request and reads the body itself. Don't pre-drain; just hand
+  // the streams over.
+  const httpServer = createHttpServer((req, res) => {
+    void (async () => {
+      try {
+        await transport.handleRequest(req, res)
+      } catch (err) {
+        process.stderr.write(`telegram channel: HTTP handler error: ${err instanceof Error ? err.stack : err}\n`)
+        if (!res.headersSent) {
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ jsonrpc: '2.0', error: { code: -32603, message: 'Internal error' } }))
+        } else {
+          res.end()
+        }
+      }
+    })()
+  })
+
+  httpServer.listen(ARGS.port, '127.0.0.1', () => {
+    process.stderr.write(`telegram channel: HTTP daemon listening on 127.0.0.1:${ARGS.port}\n`)
+    process.stderr.write(`  Configure Claude Code MCP with: { "type": "http", "url": "http://127.0.0.1:${ARGS.port}/mcp" }\n`)
+  })
+
+  function shutdownHttp(): void {
+    if (shuttingDown) return
+    shuttingDown = true
+    process.stderr.write('telegram channel: daemon shutting down\n')
+    try {
+      if (parseInt(readFileSync(PID_FILE, 'utf8'), 10) === process.pid) rmSync(PID_FILE)
+    } catch {}
+    try {
+      if (parseInt(readFileSync(DAEMON_LOCK, 'utf8'), 10) === process.pid) rmSync(DAEMON_LOCK)
+    } catch {}
+    httpServer.close()
+    setTimeout(() => process.exit(0), 2000)
+    void Promise.resolve(bot.stop()).finally(() => process.exit(0))
+  }
+  process.on('SIGTERM', shutdownHttp)
+  process.on('SIGINT', shutdownHttp)
+  process.on('SIGHUP', shutdownHttp)
+  // No stdin handlers, no orphan watchdog — daemon has no parent to watch.
+} else {
+  await mcp.connect(new StdioServerTransport())
+
+  // When Claude Code closes the MCP connection, stdin gets EOF. Without this
+  // the bot keeps polling forever as a zombie, holding the token and blocking
+  // the next session with 409 Conflict.
+  function shutdown(): void {
+    if (shuttingDown) return
+    shuttingDown = true
+    process.stderr.write('telegram channel: shutting down\n')
+    try {
+      if (parseInt(readFileSync(PID_FILE, 'utf8'), 10) === process.pid) rmSync(PID_FILE)
+    } catch {}
+    // bot.stop() signals the poll loop to end; the current getUpdates request
+    // may take up to its long-poll timeout to return. Force-exit after 2s.
+    setTimeout(() => process.exit(0), 2000)
+    void Promise.resolve(bot.stop()).finally(() => process.exit(0))
+  }
+  process.stdin.on('end', shutdown)
+  process.stdin.on('close', shutdown)
+  process.on('SIGTERM', shutdown)
+  process.on('SIGINT', shutdown)
+  process.on('SIGHUP', shutdown)
+
+  // Orphan watchdog: stdin events above don't reliably fire when the parent
+  // chain (`bun run` wrapper → shell → us) is severed by a crash. Poll for
+  // reparenting (POSIX) or a dead stdin pipe and self-terminate.
+  const bootPpid = process.ppid
+  setInterval(() => {
+    const orphaned =
+      (process.platform !== 'win32' && process.ppid !== bootPpid) ||
+      process.stdin.destroyed ||
+      process.stdin.readableEnded
+    if (orphaned) shutdown()
+  }, 5000).unref()
+}
 
 // Commands are DM-only. Responding in groups would: (1) leak pairing codes via
 // /status to other group members, (2) confirm bot presence in non-allowlisted
