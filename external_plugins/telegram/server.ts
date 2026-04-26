@@ -573,9 +573,11 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
             ? { reply_parameters: { message_id: reply_to } }
             : undefined
           if (PHOTO_EXTS.has(ext)) {
+            await bot.api.sendChatAction(chat_id, 'upload_photo').catch(() => {})
             const sent = await bot.api.sendPhoto(chat_id, input, opts)
             sentIds.push(sent.message_id)
           } else {
+            await bot.api.sendChatAction(chat_id, 'upload_document').catch(() => {})
             const sent = await bot.api.sendDocument(chat_id, input, opts)
             sentIds.push(sent.message_id)
           }
