@@ -26,8 +26,12 @@ except ImportError as e:
 def main():
     """Main entry point for PostToolUse hook."""
     try:
-        # Read input from stdin
-        input_data = json.load(sys.stdin)
+        # Read stdin as raw bytes and decode as UTF-8.
+        # Avoids Windows-locale mis-decoding (e.g. cp936 / gbk on zh-CN) of
+        # the UTF-8 JSON payload Claude Code emits, which produces spurious
+        # JSONDecodeError ("Expecting ',' delimiter") when tool outputs
+        # contain non-ASCII characters.
+        input_data = json.loads(sys.stdin.buffer.read().decode('utf-8'))
 
         # Determine event type based on tool
         tool_name = input_data.get('tool_name', '')
