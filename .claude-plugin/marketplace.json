@@ -1712,7 +1712,8 @@
       "category": "development",
       "source": {
         "source": "url",
-        "url": "https://github.com/obra/superpowers.git"
+        "url": "https://github.com/obra/superpowers.git",
+        "sha": "6efe32c9e2dd002d0c394e861e0529675d1ab32e"
       },
       "homepage": "https://github.com/obra/superpowers.git"
     },
