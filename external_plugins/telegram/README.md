@@ -70,6 +70,36 @@ See **[ACCESS.md](./ACCESS.md)** for DM policies, groups, mention detection, del
 
 Quick reference: IDs are **numeric user IDs** (get yours from [@userinfobot](https://t.me/userinfobot)). Default policy is `pairing`. `ackReaction` only accepts Telegram's fixed emoji whitelist.
 
+## Streaming responses back (optional)
+
+By default the bot only forwards **inbound** messages — sending replies
+requires the assistant to call the `reply` tool explicitly. For long
+multi-tool turns that means the user sees nothing on Telegram until the
+turn finishes.
+
+The bundled `telegram_forward.py` hook (in [`hooks/`](./hooks/)) automates
+the return path. With it installed, every assistant text block is shipped
+back to the originating chat — *during* the turn (after each tool call) and
+at the *end* of the turn — without the model having to call `reply` for
+narration. See [hooks/README.md](./hooks/README.md) for details.
+
+Enable it with one skill call:
+
+```
+/telegram:stream enable
+```
+
+Disable / uninstall:
+
+```
+/telegram:stream disable     # un-wire from settings.json (keep the script)
+/telegram:stream uninstall   # un-wire AND delete the script
+/telegram:stream             # status only
+```
+
+The hook is fast, idempotent, and watermarked by assistant-message UUID, so
+it's safe to leave running alongside other hooks.
+
 ## Tools exposed to the assistant
 
 | Tool | Purpose |
