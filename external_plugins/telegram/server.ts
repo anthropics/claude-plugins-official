@@ -86,6 +86,28 @@ const PERMISSION_REPLY_RE = /^\s*(y|yes|n|no)\s+([a-km-z]{5})\s*$/i
 const bot = new Bot(TOKEN)
 let botUsername = ''
 
+// Persistent typing indicator: Telegram clears the typing action after ~5s,
+// so re-ping every 4s while we're working. Cleared once the reply tool sends
+// a message, or after a 10-minute safety timeout.
+const typingTickers = new Map<string | number, { interval: ReturnType<typeof setInterval>; timeout: ReturnType<typeof setTimeout> }>()
+function startTyping(chat_id: string | number) {
+  stopTyping(chat_id)
+  void bot.api.sendChatAction(chat_id, 'typing').catch(() => {})
+  const interval = setInterval(() => {
+    void bot.api.sendChatAction(chat_id, 'typing').catch(() => {})
+  }, 4000)
+  const timeout = setTimeout(() => stopTyping(chat_id), 10 * 60 * 1000)
+  typingTickers.set(chat_id, { interval, timeout })
+}
+function stopTyping(chat_id: string | number) {
+  const t = typingTickers.get(chat_id)
+  if (t) {
+    clearInterval(t.interval)
+    clearTimeout(t.timeout)
+    typingTickers.delete(chat_id)
+  }
+}
+
 type PendingEntry = {
   senderId: string
   chatId: string
@@ -544,6 +566,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         const replyMode = access.replyToMode ?? 'first'
         const chunks = chunk(text, limit, mode)
         const sentIds: number[] = []
+        stopTyping(chat_id)
 
         try {
           for (let i = 0; i < chunks.length; i++) {
@@ -942,8 +965,8 @@ async function handleInbound(
     return
   }
 
-  // Typing indicator — signals "processing" until we reply (or ~5s elapses).
-  void bot.api.sendChatAction(chat_id, 'typing').catch(() => {})
+  // Typing indicator — re-pings every 4s until we reply or hit a 10-min safety timeout.
+  startTyping(chat_id)
 
   // Ack reaction — lets the user know we're processing. Fire-and-forget.
   // Telegram only accepts a fixed emoji whitelist — if the user configures
