@@ -27,10 +27,10 @@ You need to execute the following bash commands to clean up stale local branches
    Execute this command:
    ```bash
    # Process all [gone] branches, removing '+' prefix if present
-   git branch -v | grep '\[gone\]' | sed 's/^[+* ]//' | awk '{print $1}' | while read branch; do
+   git branch -v | grep '\[gone\]' | sed 's/^[+* ]//' | cut -d' ' -f1 | while read branch; do
      echo "Processing branch: $branch"
      # Find and remove worktree if it exists
-     worktree=$(git worktree list | grep "\\[$branch\\]" | awk '{print $1}')
+     worktree=$(git worktree list | grep "\\[$branch\\]" | cut -d' ' -f1)
      if [ ! -z "$worktree" ] && [ "$worktree" != "$(git rev-parse --show-toplevel)" ]; then
        echo "  Removing worktree: $worktree"
        git worktree remove --force "$worktree"
