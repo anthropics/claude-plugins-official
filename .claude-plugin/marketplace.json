@@ -1369,6 +1369,21 @@
       "homepage": "https://quarkus.io"
     },
     {
+      "name": "rails-query",
+      "description": "Run read-only database queries against a Ruby on Rails 8.2+ app's database via `rails query` — ActiveRecord or SQL, schema/model introspection, EXPLAIN, pagination, and remote execution via Kamal.",
+      "author": {
+        "name": "Lewis Buckley",
+        "url": "https://github.com/lewispb"
+      },
+      "category": "development",
+      "source": {
+        "source": "github",
+        "repo": "lewispb/rails-query-skill",
+        "commit": "0f53fa861089e1f46097db9a92aea311f340c355"
+      },
+      "homepage": "https://github.com/lewispb/rails-query-skill"
+    },
+    {
       "name": "railway",
       "description": "Deploy and manage apps, databases, and infrastructure on Railway. Covers project setup, deploys, environment configuration, networking, troubleshooting, and monitoring.",
       "category": "deployment",
