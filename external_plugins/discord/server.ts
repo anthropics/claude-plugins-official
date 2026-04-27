@@ -595,6 +595,20 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
         required: ['channel'],
       },
     },
+    {
+      name: 'start_thread',
+      description:
+        'Create a new Discord thread in an allowlisted channel and post a seed message. Use this to give a bot-to-bot conversation its own thread instead of cluttering a parent channel. Returns thread_id and the seed message id; reply with chat_id=<thread_id> to continue.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          channel_id: { type: 'string', description: 'Parent channel id; must not itself be a thread.' },
+          name: { type: 'string', description: 'Thread name, ≤100 chars (Discord truncates anyway).' },
+          seed_message: { type: 'string', description: 'First message posted into the new thread.' },
+        },
+        required: ['channel_id', 'name', 'seed_message'],
+      },
+    },
   ],
 }))
 
@@ -653,6 +667,27 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
             ? `sent (id: ${sentIds[0]})`
             : `sent ${sentIds.length} parts (ids: ${sentIds.join(', ')})`
         return { content: [{ type: 'text', text: result }] }
+      }
+      case 'start_thread': {
+        const channel_id = args.channel_id as string
+        const name = (args.name as string).slice(0, 100)
+        const seed_message = args.seed_message as string
+        const ch = await fetchAllowedChannel(channel_id)
+        const anyCh = ch as any
+        if (typeof anyCh.isThread === 'function' && anyCh.isThread()) {
+          throw new Error('cannot create a thread inside a thread')
+        }
+        if (!anyCh.threads || typeof anyCh.threads.create !== 'function') {
+          throw new Error('channel does not support threads')
+        }
+        const thread = await anyCh.threads.create({ name, autoArchiveDuration: 1440 })
+        const sent = await thread.send({ content: seed_message })
+        noteSent(sent.id)
+        return {
+          content: [
+            { type: 'text', text: `created thread ${thread.id}, seeded message ${sent.id}` },
+          ],
+        }
       }
       case 'fetch_messages': {
         const ch = await fetchAllowedChannel(args.channel as string)
@@ -803,7 +838,18 @@ client.on('interactionCreate', async (interaction: Interaction) => {
 })
 
 client.on('messageCreate', msg => {
-  if (msg.author.bot) return
+  // Always ignore our own messages (loop prevention).
+  if (msg.author.id === client.user?.id) return
+  // Other bots (peer instances, third-party) only deliver if the channel
+  // policy opts in via { allowBots: true }. Default-closed: keeps random
+  // bots in shared channels from triggering the model.
+  if (msg.author.bot) {
+    const channelId = msg.channel.isThread()
+      ? msg.channel.parentId ?? msg.channelId
+      : msg.channelId
+    const policy = loadAccess().groups[channelId]
+    if (!policy || !policy.allowBots) return
+  }
   handleInbound(msg).catch(e => process.stderr.write(`discord: handleInbound failed: ${e}\n`))
 })
 
@@ -872,6 +918,12 @@ async function handleInbound(msg: Message): Promise<void> {
   // forgeable by any allowlisted sender typing that string.
   const content = msg.content || (atts.length > 0 ? '(attachment)' : '')
 
+  // Thread-routing hints for the model. is_thread tells it whether to
+  // continue with reply (in-thread) or open a new thread via start_thread.
+  // parent_channel_id is the channel a new thread should be created under.
+  const isThread = msg.channel.isThread()
+  const parentChannelId = isThread ? (msg.channel.parentId ?? '') : chat_id
+
   mcp.notification({
     method: 'notifications/claude/channel',
     params: {
@@ -882,6 +934,8 @@ async function handleInbound(msg: Message): Promise<void> {
         user: msg.author.username,
         user_id: msg.author.id,
         ts: msg.createdAt.toISOString(),
+        is_thread: String(isThread),
+        parent_channel_id: parentChannelId,
         ...(atts.length > 0 ? { attachment_count: String(atts.length), attachments: atts.join('; ') } : {}),
       },
     },
