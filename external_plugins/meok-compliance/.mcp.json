@@ -1,0 +1,42 @@
+{
+  "meok-eu-ai-act-governance": {
+    "type": "stdio",
+    "command": "uvx",
+    "args": ["meok-governance-engine-mcp"]
+  },
+  "meok-watermark-attest": {
+    "type": "stdio",
+    "command": "uvx",
+    "args": ["meok-watermark-attest-mcp"]
+  },
+  "meok-dpia-edpb": {
+    "type": "stdio",
+    "command": "uvx",
+    "args": ["meok-dpia-edpb-template-mcp"]
+  },
+  "meok-nis2-de-register": {
+    "type": "stdio",
+    "command": "uvx",
+    "args": ["meok-nis2-de-register-mcp"]
+  },
+  "meok-cra-annex-iv": {
+    "type": "stdio",
+    "command": "uvx",
+    "args": ["meok-cra-annex-iv-classifier-mcp"]
+  },
+  "meok-omnibus-tracker": {
+    "type": "stdio",
+    "command": "uvx",
+    "args": ["meok-omnibus-tracker-mcp"]
+  },
+  "meok-mcp-injection-scan": {
+    "type": "stdio",
+    "command": "uvx",
+    "args": ["meok-mcp-injection-scan-mcp"]
+  },
+  "meok-attestation-verify": {
+    "type": "stdio",
+    "command": "uvx",
+    "args": ["meok-attestation-verify"]
+  }
+}

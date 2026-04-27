@@ -1,0 +1,8 @@
+{
+  "name": "meok-compliance",
+  "description": "EU AI Act, DORA, NIS2, EU CRA, GDPR compliance pack. Generates Annex IV technical documentation, EDPB harmonised DPIAs, Article 50 watermark attestations, NIS2-DE BSI register payloads, CRA Annex IV classifiers, and HMAC-signed compliance certificates auditors can verify by URL.",
+  "author": {
+    "name": "MEOK AI Labs (CSOAI LTD)",
+    "url": "https://meok.ai"
+  }
+}
