@@ -1,0 +1,7 @@
+{
+  "name": "community-ops",
+  "description": "Architecture skill for building a community ops platform \u2014 a bidirectional hub that aggregates data from Discord, ticketing, CRM, and billing into a single surface, with actions that write back to your tools.",
+  "author": {
+    "name": "Ryan Crowe"
+  }
+}
