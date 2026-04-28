@@ -1,0 +1,9 @@
+{
+  "name": "code-simplifier",
+  "version": "1.0.0",
+  "description": "Agent that simplifies and refines code for clarity, consistency, and maintainability while preserving functionality",
+  "author": {
+    "name": "Anthropic",
+    "email": "support@anthropic.com"
+  }
+}

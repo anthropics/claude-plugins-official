@@ -1,0 +1,35 @@
+name: Validate Frontmatter
+
+on:
+  pull_request:
+    paths:
+      - '**/agents/*.md'
+      - '**/skills/*/SKILL.md'
+      - '**/commands/*.md'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: cd .github/scripts && bun install yaml
+
+      - name: Get changed frontmatter files
+        id: changed
+        run: |
+          # Use diff-filter=AMRC to exclude deleted files (D) - only Added, Modified, Renamed, Copied
+          FILES=$(gh pr diff ${{ github.event.pull_request.number }} --name-only --diff-filter=AMRC | grep -E '(agents/.*\.md|skills/.*/SKILL\.md|commands/.*\.md)$' || true)
+          echo "files<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$FILES" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Validate frontmatter
+        if: steps.changed.outputs.files != ''
+        run: |
+          echo "${{ steps.changed.outputs.files }}" | xargs bun .github/scripts/validate-frontmatter.ts

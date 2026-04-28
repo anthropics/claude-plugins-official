@@ -1,10 +1,12 @@
 ---
-description: An example slash command that demonstrates command frontmatter options
+description: An example slash command that demonstrates command frontmatter options (legacy format)
 argument-hint: <required-arg> [optional-arg]
 allowed-tools: [Read, Glob, Grep, Bash]
 ---
 
-# Example Command
+# Example Command (Legacy `commands/` Format)
+
+> **Note:** This demonstrates the legacy `commands/*.md` layout. For new plugins, prefer the `skills/<name>/SKILL.md` directory format (see `skills/example-command/SKILL.md` in this plugin). Both are loaded identically — the only difference is file layout.
 
 This command demonstrates slash command structure and frontmatter options.
 

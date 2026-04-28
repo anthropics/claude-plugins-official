@@ -6,13 +6,13 @@ A comprehensive toolkit for developing Claude Code plugins with expert guidance 
 
 The plugin-dev toolkit provides seven specialized skills to help you build high-quality Claude Code plugins:
 
-1. **Hook Development** - Advanced hooks API and event-driven automation
-2. **MCP Integration** - Model Context Protocol server integration
-3. **Plugin Structure** - Plugin organization and manifest configuration
-4. **Plugin Settings** - Configuration patterns using .claude/plugin-name.local.md files
-5. **Command Development** - Creating slash commands with frontmatter and arguments
-6. **Agent Development** - Creating autonomous agents with AI-assisted generation
-7. **Skill Development** - Creating skills with progressive disclosure and strong triggers
+1. **hook-development** - Advanced hooks API and event-driven automation
+2. **mcp-integration** - Model Context Protocol server integration
+3. **plugin-structure** - Plugin organization and manifest configuration
+4. **plugin-settings** - Configuration patterns using .claude/plugin-name.local.md files
+5. **command-development** - Creating slash commands with frontmatter and arguments
+6. **agent-development** - Creating autonomous agents with AI-assisted generation
+7. **skill-development** - Creating skills with progressive disclosure and strong triggers
 
 Each skill follows best practices with progressive disclosure: lean core documentation, detailed references, working examples, and utility scripts.
 
@@ -53,7 +53,7 @@ Use this workflow for structured, high-quality plugin development from concept t
 
 ## Skills
 
-### 1. Hook Development
+### 1. hook-development
 
 **Trigger phrases:** "create a hook", "add a PreToolUse hook", "validate tool use", "implement prompt-based hooks", "${CLAUDE_PLUGIN_ROOT}", "block dangerous commands"
 
@@ -73,7 +73,7 @@ Use this workflow for structured, high-quality plugin development from concept t
 
 **Use when:** Creating event-driven automation, validating operations, or enforcing policies in your plugin.
 
-### 2. MCP Integration
+### 2. mcp-integration
 
 **Trigger phrases:** "add MCP server", "integrate MCP", "configure .mcp.json", "Model Context Protocol", "stdio/SSE/HTTP server", "connect external service"
 
@@ -92,7 +92,7 @@ Use this workflow for structured, high-quality plugin development from concept t
 
 **Use when:** Integrating external services, APIs, databases, or tools into your plugin.
 
-### 3. Plugin Structure
+### 3. plugin-structure
 
 **Trigger phrases:** "plugin structure", "plugin.json manifest", "auto-discovery", "component organization", "plugin directory layout"
 
@@ -111,7 +111,7 @@ Use this workflow for structured, high-quality plugin development from concept t
 
 **Use when:** Starting a new plugin, organizing components, or configuring the plugin manifest.
 
-### 4. Plugin Settings
+### 4. plugin-settings
 
 **Trigger phrases:** "plugin settings", "store plugin configuration", ".local.md files", "plugin state files", "read YAML frontmatter", "per-project plugin settings"
 
@@ -120,7 +120,7 @@ Use this workflow for structured, high-quality plugin development from concept t
 - YAML frontmatter + markdown body structure
 - Parsing techniques for bash scripts (sed, awk, grep patterns)
 - Temporarily active hooks (flag files and quick-exit)
-- Real-world examples from multi-agent-swarm and ralph-wiggum plugins
+- Real-world examples from multi-agent-swarm and ralph-loop plugins
 - Atomic file updates and validation
 - Gitignore and lifecycle management
 
@@ -132,7 +132,7 @@ Use this workflow for structured, high-quality plugin development from concept t
 
 **Use when:** Making plugins configurable, storing per-project state, or implementing user preferences.
 
-### 5. Command Development
+### 5. command-development
 
 **Trigger phrases:** "create a slash command", "add a command", "command frontmatter", "define command arguments", "organize commands"
 
@@ -151,7 +151,7 @@ Use this workflow for structured, high-quality plugin development from concept t
 
 **Use when:** Creating slash commands, defining command arguments, or organizing plugin commands.
 
-### 6. Agent Development
+### 6. agent-development
 
 **Trigger phrases:** "create an agent", "add an agent", "write a subagent", "agent frontmatter", "when to use description", "agent examples", "autonomous agent"
 
@@ -172,7 +172,7 @@ Use this workflow for structured, high-quality plugin development from concept t
 
 **Use when:** Creating autonomous agents, defining agent behavior, or implementing AI-assisted agent generation.
 
-### 7. Skill Development
+### 7. skill-development
 
 **Trigger phrases:** "create a skill", "add a skill to plugin", "write a new skill", "improve skill description", "organize skill content"
 
@@ -286,11 +286,11 @@ The hook-development skill includes production-ready utilities:
 ### Working Examples
 
 Every skill provides working examples:
-- **Hook Development**: 3 complete hook scripts (bash, write validation, context loading)
-- **MCP Integration**: 3 server configurations (stdio, SSE, HTTP)
-- **Plugin Structure**: 3 plugin layouts (minimal, standard, advanced)
-- **Plugin Settings**: 3 examples (read-settings hook, create-settings command, templates)
-- **Command Development**: 10 complete command examples (review, test, deploy, docs, etc.)
+- **hook-development**: 3 complete hook scripts (bash, write validation, context loading)
+- **mcp-integration**: 3 server configurations (stdio, SSE, HTTP)
+- **plugin-structure**: 3 plugin layouts (minimal, standard, advanced)
+- **plugin-settings**: 3 examples (read-settings hook, create-settings command, templates)
+- **command-development**: 10 complete command examples (review, test, deploy, docs, etc.)
 
 ## Documentation Standards
 

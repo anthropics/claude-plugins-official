@@ -1,5 +1,5 @@
 ---
-name: Plugin Settings
+name: plugin-settings
 description: This skill should be used when the user asks about "plugin settings", "store plugin configuration", "user-configurable plugin", ".local.md files", "plugin state files", "read YAML frontmatter", "per-project plugin settings", or wants to make plugin behavior configurable. Documents the .claude/plugin-name.local.md pattern for storing plugin-specific configuration with YAML frontmatter and markdown content.
 version: 0.1.0
 ---
@@ -449,7 +449,7 @@ Coordinate with auth-agent on shared types.
 - Sends notifications to coordinator if enabled
 - Allows quick activation/deactivation via `enabled: true/false`
 
-### ralph-wiggum Plugin
+### ralph-loop Plugin
 
 **.claude/ralph-loop.local.md:**
 ```markdown
@@ -512,7 +512,7 @@ fi
 For detailed implementation patterns:
 
 - **`references/parsing-techniques.md`** - Complete guide to parsing YAML frontmatter and markdown bodies
-- **`references/real-world-examples.md`** - Deep dive into multi-agent-swarm and ralph-wiggum implementations
+- **`references/real-world-examples.md`** - Deep dive into multi-agent-swarm and ralph-loop implementations
 
 ### Example Files
 

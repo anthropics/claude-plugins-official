@@ -7,32 +7,24 @@ A comprehensive example plugin demonstrating Claude Code extension options.
 ```
 example-plugin/
 ├── .claude-plugin/
-│   └── plugin.json        # Plugin metadata
-├── .mcp.json              # MCP server configuration
-├── commands/
-│   └── example-command.md # Slash command definition
-└── skills/
-    └── example-skill/
-        └── SKILL.md       # Skill definition
+│   └── plugin.json            # Plugin metadata
+├── .mcp.json                  # MCP server configuration
+├── skills/
+│   ├── example-skill/
+│   │   └── SKILL.md           # Model-invoked skill (contextual guidance)
+│   └── example-command/
+│       └── SKILL.md           # User-invoked skill (slash command)
+└── commands/
+    └── example-command.md     # Legacy slash command format (see note below)
 ```
 
 ## Extension Options
 
-### Commands (`commands/`)
-
-Slash commands are user-invoked via `/command-name`. Define them as markdown files with frontmatter:
-
-```yaml
----
-description: Short description for /help
-argument-hint: <arg1> [optional-arg]
-allowed-tools: [Read, Glob, Grep]
----
-```
-
 ### Skills (`skills/`)
 
-Skills are model-invoked capabilities. Create a `SKILL.md` in a subdirectory:
+Skills are the preferred format for both model-invoked capabilities and user-invoked slash commands. Create a `SKILL.md` in a subdirectory:
+
+**Model-invoked skill** (activated by task context):
 
 ```yaml
 ---
@@ -41,6 +33,21 @@ description: Trigger conditions for this skill
 version: 1.0.0
 ---
 ```
+
+**User-invoked skill** (slash command — `/skill-name`):
+
+```yaml
+---
+name: skill-name
+description: Short description for /help
+argument-hint: <arg1> [optional-arg]
+allowed-tools: [Read, Glob, Grep]
+---
+```
+
+### Commands (`commands/`) — legacy
+
+> **Note:** The `commands/*.md` layout is a legacy format. It is loaded identically to `skills/<name>/SKILL.md` — the only difference is file layout. For new plugins, prefer the `skills/` directory format. This plugin keeps `commands/example-command.md` as a reference for the legacy layout.
 
 ### MCP Servers (`.mcp.json`)
 

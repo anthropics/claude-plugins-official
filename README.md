@@ -25,7 +25,7 @@ Internal plugins are developed by Anthropic team members. See `/plugins/example-
 
 ### External Plugins
 
-Third-party partners can submit plugins for inclusion in the marketplace. External plugins must meet quality and security standards for approval.
+Third-party partners can submit plugins for inclusion in the marketplace. External plugins must meet quality and security standards for approval. To submit a new plugin, use the [plugin directory submission form](https://clau.de/plugin-directory-submission).
 
 ## Plugin Structure
 
@@ -41,6 +41,10 @@ plugin-name/
 ├── skills/              # Skill definitions (optional)
 └── README.md            # Documentation
 ```
+
+## License
+
+Please see each linked plugin for the relevant LICENSE file.
 
 ## Documentation
 
