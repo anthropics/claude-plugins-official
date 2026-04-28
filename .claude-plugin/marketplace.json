@@ -2061,6 +2061,19 @@
         "url": "https://github.com/zscaler/zscaler-mcp-server.git"
       },
       "homepage": "https://github.com/zscaler/zscaler-mcp-server"
+    },
+    {
+      "name": "algovault-skills",
+      "description": "20 Agent Skills over AlgoVault MCP — composite trade verdict (signal + confidence + regime + factors), funding-rate arbitrage scanning, and market regime detection across 5 exchanges (Hyperliquid, Binance, Bybit, OKX, Bitget). Every signal Merkle-anchored on Base L2 with public verification at /track-record.",
+      "author": {
+        "name": "AlgoVault Labs"
+      },
+      "category": "automation",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/AlgoVaultLabs/algovault-skills.git"
+      },
+      "homepage": "https://algovault.com"
     }
   ]
 }
