@@ -196,7 +196,12 @@ def extract_frontmatter(content: str) -> tuple[Dict[str, Any], str]:
 
 
 def load_rules(event: Optional[str] = None) -> List[Rule]:
-    """Load all hookify rules from .claude directory.
+    """Load all hookify rules from .claude directories.
+
+    Scans both <cwd>/.claude/ (project-scoped rules) and ~/.claude/
+    (user-wide rules). Files surfaced in both locations (e.g. via
+    symlinks) are deduplicated by resolved path so each rule is
+    only loaded once.
 
     Args:
         event: Optional event filter ("bash", "file", "stop", etc.)
@@ -206,9 +211,20 @@ def load_rules(event: Optional[str] = None) -> List[Rule]:
     """
     rules = []
 
-    # Find all hookify.*.local.md files
-    pattern = os.path.join('.claude', 'hookify.*.local.md')
-    files = glob.glob(pattern)
+    # Find all hookify.*.local.md files in project- and user-scope dirs
+    search_dirs = [
+        os.path.join('.claude'),
+        os.path.expanduser(os.path.join('~', '.claude')),
+    ]
+    seen = set()
+    files = []
+    for d in search_dirs:
+        for f in glob.glob(os.path.join(d, 'hookify.*.local.md')):
+            real = os.path.realpath(f)
+            if real in seen:
+                continue
+            seen.add(real)
+            files.append(f)
 
     for file_path in files:
         try:
