@@ -7,6 +7,7 @@ This hook checks for security patterns in file edits and warns about potential v
 import json
 import os
 import random
+import re
 import sys
 from datetime import datetime
 
@@ -101,6 +102,12 @@ Only use exec() if you absolutely need shell features and the input is guarantee
     {
         "ruleName": "react_dangerously_set_html",
         "substrings": ["dangerouslySetInnerHTML"],
+        # Skip the warning when the only use is the canonical JSON-LD pattern.
+        # Recognized-safe per Next.js / Google structured-data docs.
+        "safe_pattern": re.compile(
+            r'type\s*=\s*"application/ld\+json"[^>]*dangerouslySetInnerHTML\s*=\s*\{\{\s*__html\s*:\s*JSON\.stringify\(',
+            re.IGNORECASE | re.DOTALL,
+        ),
         "reminder": "⚠️ Security Warning: dangerouslySetInnerHTML can lead to XSS vulnerabilities if used with untrusted content. Ensure all content is properly sanitized using an HTML sanitizer library like DOMPurify, or use safe alternatives.",
     },
     {
@@ -194,6 +201,9 @@ def check_patterns(file_path, content):
         if "substrings" in pattern and content:
             for substring in pattern["substrings"]:
                 if substring in content:
+                    safe = pattern.get("safe_pattern")
+                    if safe and safe.search(content):
+                        break  # known-safe form, skip this rule
                     return pattern["ruleName"], pattern["reminder"]
 
     return None, None
