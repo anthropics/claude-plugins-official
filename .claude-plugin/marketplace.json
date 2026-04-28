@@ -529,6 +529,22 @@
       "homepage": "https://github.com/coderabbitai/claude-plugin.git"
     },
     {
+      "name": "coding-skills",
+      "description": "Ten Anthropic Agent Skills for software engineering — running-tdd-cycles (red-green-refactor TDD across Python, JS/TS, Go, Java, Ruby, Rust, Solidity), reviewing-changes (layered code + security + architecture review with severity-ranked findings), designing-architecture (ecosystem-researched TDD-ready implementation plans), managing-github-issues (spec-driven PM via dependency-linked task issues), committing-changes (feature-branch + PR + commit-msg hook discipline), plus per-language conventions for Python, Go, Solidity, shell, and engineering-philosophy for design-tradeoff judgement. Each skill ships canonical SKILL.md + optional scripts and reference docs; co-activate workflow + rule skills automatically.",
+      "author": {
+        "name": "swell-agents",
+        "email": "swell_ai@pm.me",
+        "url": "https://github.com/swell-agents"
+      },
+      "category": "development",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/swell-agents/coding-skills.git",
+        "ref": "v1.0.0"
+      },
+      "homepage": "https://github.com/swell-agents/coding-skills"
+    },
+    {
       "name": "commit-commands",
       "description": "Commands for git commit workflows including commit, push, and PR creation",
       "author": {
