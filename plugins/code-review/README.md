@@ -14,12 +14,17 @@ Performs automated code review on a pull request using multiple specialized agen
 
 **What it does:**
 1. Checks if review is needed (skips closed, draft, trivial, or already-reviewed PRs)
-2. Gathers relevant CLAUDE.md guideline files from the repository
+2. Gathers relevant guideline files from the repository — root and per-directory CLAUDE.md, plus SOUL.md / AGENTS.md / SKILL.md when present (many projects split behavioral and coding rules across separate files)
 3. Summarizes the pull request changes
-4. Launches 4 parallel agents to independently review:
-   - **Agents #1 & #2**: Audit for CLAUDE.md compliance
-   - **Agent #3**: Scan for obvious bugs in changes
-   - **Agent #4**: Analyze git blame/history for context-based issues
+4. Launches 8 parallel agents to independently review:
+   - **Agent #1** (Sonnet): Guideline-file compliance (CLAUDE.md + related)
+   - **Agent #2** (Sonnet): Shallow scan for obvious bugs in the changes
+   - **Agent #3** (Sonnet): Git blame / history context analysis
+   - **Agent #4** (Sonnet): Comments on prior PRs that touched these files
+   - **Agent #5** (Sonnet): Adherence to in-code guidance comments
+   - **Agent #6** (Sonnet, *diff-coherence*): Compares the PR narrative (title / body / commit messages) against `gh pr diff` and flags **claimed-missing** (the PR asserts a change the diff does not contain — a subagent-fabrication signature) and **silent-scope-creep** (substantive edits unmentioned in the narrative)
+   - **Agent #7** (Haiku, *cross-device integrity*): Pattern-scans the diff for portability hazards — hardcoded absolute paths with usernames, hostnames, ports, OS-specific assumptions without a guard
+   - **Agent #8** (Haiku, *smoke / static-check*): Runs `python -m py_compile`, `bash -n`, `node --check` on script-like files in the diff. Static syntax check only — does not execute, install dependencies, or attempt full TypeScript compilation
 5. Scores each issue 0-100 for confidence level
 6. Filters out issues below 80 confidence threshold
 7. Posts review comment with high-confidence issues only
@@ -42,11 +47,14 @@ Performs automated code review on a pull request using multiple specialized agen
 ```
 
 **Features:**
-- Multiple independent agents for comprehensive review
+- 8 independent reviewers (6 Sonnet semantic, 2 Haiku mechanical) for comprehensive coverage
 - Confidence-based scoring reduces false positives (threshold: 80)
-- CLAUDE.md compliance checking with explicit guideline verification
+- Guideline compliance across CLAUDE.md / SOUL.md / AGENTS.md / SKILL.md
 - Bug detection focused on changes (not pre-existing issues)
 - Historical context analysis via git blame
+- **Diff-coherence audit** — detects fabricated change claims (e.g., a subagent reports completion but the work didn't land in the diff)
+- **Cross-device integrity** — flags hardcoded paths, usernames, ports that won't survive a teammate's machine
+- **Static-check smoke** — runs syntax-only validation on changed scripts
 - Automatic skipping of closed, draft, or already-reviewed PRs
 - Links directly to code with full SHA and line ranges
 
@@ -219,10 +227,9 @@ Edit `commands/code-review.md` to add or modify agent tasks:
 ## Technical Details
 
 ### Agent architecture
-- **2x CLAUDE.md compliance agents**: Redundancy for guideline checks
-- **1x bug detector**: Focused on obvious bugs in changes only
-- **1x history analyzer**: Context from git blame and history
-- **Nx confidence scorers**: One per issue for independent scoring
+- **6x Sonnet reviewers** (semantic): guideline compliance, bug scan, git history, prior-PR comments, in-code guidance, diff-coherence
+- **2x Haiku reviewers** (mechanical): cross-device integrity (path/username pattern scan), static-check smoke (`py_compile` / `bash -n` / `node --check`)
+- **Nx Haiku confidence scorers**: One per issue for independent 0–100 scoring
 
 ### Scoring system
 - Each issue independently scored 0-100
