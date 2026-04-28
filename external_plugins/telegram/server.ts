@@ -598,18 +598,24 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         const file_id = args.file_id as string
         const file = await bot.api.getFile(file_id)
         if (!file.file_path) throw new Error('Telegram returned no file_path — file may have expired')
-        const url = `https://api.telegram.org/file/bot${TOKEN}/${file.file_path}`
-        const res = await fetch(url)
-        if (!res.ok) throw new Error(`download failed: HTTP ${res.status}`)
-        const buf = Buffer.from(await res.arrayBuffer())
-        // file_path is from Telegram (trusted), but strip to safe chars anyway
-        // so nothing downstream can be tricked by an unexpected extension.
+        // Local Bot API mode (--local) returns file_path as an absolute filesystem path.
+        // The cloud download URL does not work for local-mode files, so read directly.
+        const isLocalAbsolutePath = API_ROOT && file.file_path.startsWith('/')
         const rawExt = file.file_path.includes('.') ? file.file_path.split('.').pop()! : 'bin'
         const ext = rawExt.replace(/[^a-zA-Z0-9]/g, '') || 'bin'
         const uniqueId = (file.file_unique_id ?? '').replace(/[^a-zA-Z0-9_-]/g, '') || 'dl'
         const path = join(INBOX_DIR, `${Date.now()}-${uniqueId}.${ext}`)
         mkdirSync(INBOX_DIR, { recursive: true })
-        writeFileSync(path, buf)
+        if (isLocalAbsolutePath) {
+          const buf = readFileSync(file.file_path)
+          writeFileSync(path, buf)
+        } else {
+          const url = `https://api.telegram.org/file/bot${TOKEN}/${file.file_path}`
+          const res = await fetch(url)
+          if (!res.ok) throw new Error(`download failed: HTTP ${res.status}`)
+          const buf = Buffer.from(await res.arrayBuffer())
+          writeFileSync(path, buf)
+        }
         return { content: [{ type: 'text', text: path }] }
       }
       case 'edit_message': {
@@ -799,13 +805,23 @@ bot.on('message:photo', async ctx => {
     try {
       const file = await ctx.api.getFile(best.file_id)
       if (!file.file_path) return undefined
-      const url = `https://api.telegram.org/file/bot${TOKEN}/${file.file_path}`
-      const res = await fetch(url)
-      const buf = Buffer.from(await res.arrayBuffer())
+      const isLocalAbsolutePath = API_ROOT && file.file_path.startsWith('/')
       const ext = file.file_path.split('.').pop() ?? 'jpg'
       const path = join(INBOX_DIR, `${Date.now()}-${best.file_unique_id}.${ext}`)
       mkdirSync(INBOX_DIR, { recursive: true })
-      writeFileSync(path, buf)
+      if (isLocalAbsolutePath) {
+        const buf = readFileSync(file.file_path)
+        writeFileSync(path, buf)
+      } else {
+        const url = `https://api.telegram.org/file/bot${TOKEN}/${file.file_path}`
+        const res = await fetch(url)
+        if (!res.ok) {
+          process.stderr.write(`telegram channel: photo download HTTP ${res.status}\n`)
+          return undefined
+        }
+        const buf = Buffer.from(await res.arrayBuffer())
+        writeFileSync(path, buf)
+      }
       return path
     } catch (err) {
       process.stderr.write(`telegram channel: photo download failed: ${err}\n`)
