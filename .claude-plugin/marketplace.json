@@ -2037,6 +2037,20 @@
       "homepage": "https://developer.wordpress.com/wordpress-com-claude-code-plugin/"
     },
     {
+      "name": "youdotcom-agent-skills",
+      "description": "You.com agent skills for web search, research with citations, and content extraction. Guided integrations for Vercel AI SDK, Claude Agent SDK, OpenAI Agents SDK, crewAI, LangChain, Microsoft Teams.ai, direct REST API, and bash CLI.",
+      "author": {
+        "name": "You.com"
+      },
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/youdotcom-oss/agent-skills.git",
+        "sha": "362d510732362bd679e1647f72f734ca2d2fa710"
+      },
+      "homepage": "https://you.com"
+    },
+    {
       "name": "zapier",
       "description": "Connect 8,000+ apps to your AI workflow. Discover, enable, and execute Zapier actions directly from your client.",
       "category": "productivity",
