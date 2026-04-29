@@ -535,9 +535,9 @@
       "category": "productivity",
       "source": {
         "source": "url",
-        "url": "https://github.com/coderabbitai/claude-plugin.git"
+        "url": "https://github.com/coderabbitai/skills.git"
       },
-      "homepage": "https://github.com/coderabbitai/claude-plugin.git"
+      "homepage": "https://github.com/coderabbitai/skills"
     },
     {
       "name": "commit-commands",
