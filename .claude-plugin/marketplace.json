@@ -934,6 +934,20 @@
       "homepage": "https://github.com/huggingface/skills.git"
     },
     {
+      "name": "hyperframes",
+      "description": "HyperFrames by HeyGen. Write HTML, render video. Compositions, GSAP animations, captions, voiceovers, audio-reactive visuals, and website-to-video capture.",
+      "author": {
+        "name": "HeyGen"
+      },
+      "category": "development",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/heygen-com/hyperframes.git",
+        "sha": "eb065260dc23cbd5d87904b4fcf3e55fbc2f2647"
+      },
+      "homepage": "https://hyperframes.heygen.com"
+    },
+    {
       "name": "imessage",
       "description": "iMessage messaging bridge with built-in access control. Reads chat.db directly, sends via AppleScript. Manage pairing, allowlists, and policy via /imessage:access.",
       "category": "productivity",
