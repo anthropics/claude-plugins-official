@@ -540,6 +540,22 @@
       "homepage": "https://github.com/coderabbitai/claude-plugin.git"
     },
     {
+      "name": "coinpaprika",
+      "description": "Cryptocurrency market data from CoinPaprika — real-time prices, OHLCV, exchanges, and contract lookups for 12,000+ coins across 350+ exchanges. 29 MCP tools, 1 skill, 1 agent. Free tier, no API key needed.",
+      "author": {
+        "name": "CoinPaprika"
+      },
+      "category": "database",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/coinpaprika/claude-marketplace.git",
+        "path": "plugins/coinpaprika-claude-plugin",
+        "ref": "main",
+        "sha": "2992307bdbc917585267247d0712eca793590f61"
+      },
+      "homepage": "https://coinpaprika.com"
+    },
+    {
       "name": "commit-commands",
       "description": "Commands for git commit workflows including commit, push, and PR creation",
       "author": {
@@ -676,6 +692,22 @@
         "ref": "main"
       },
       "homepage": "https://github.com/awslabs/agent-plugins"
+    },
+    {
+      "name": "dexpaprika",
+      "description": "DeFi data from DexPaprika — DEXes, liquidity pools, tokens, OHLCV, and trading data across 34+ blockchains with real-time SSE streaming. 14 MCP tools, 4 skills, 1 agent. Free, no API key needed.",
+      "author": {
+        "name": "CoinPaprika"
+      },
+      "category": "database",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/coinpaprika/claude-marketplace.git",
+        "path": "plugins/dexpaprika-claude-plugin",
+        "ref": "main",
+        "sha": "2992307bdbc917585267247d0712eca793590f61"
+      },
+      "homepage": "https://dexpaprika.com"
     },
     {
       "name": "discord",
