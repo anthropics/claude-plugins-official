@@ -125,6 +125,11 @@ Only use exec() if you absolutely need shell features and the input is guarantee
     },
 ]
 
+# Documentation file extensions where substring matches indicate descriptive
+# prose (vulnerability writeups, examples, audit notes), not executable code.
+# Path-based patterns still fire on these; only content-based checks are skipped.
+DOCUMENTATION_EXTENSIONS = (".md", ".markdown", ".mdx", ".txt", ".rst", ".adoc")
+
 
 def get_state_file(session_id):
     """Get session-specific state file path."""
@@ -184,11 +189,17 @@ def check_patterns(file_path, content):
     """Check if file path or content matches any security patterns."""
     # Normalize path by removing leading slashes
     normalized_path = file_path.lstrip("/")
+    is_doc_file = normalized_path.lower().endswith(DOCUMENTATION_EXTENSIONS)
 
     for pattern in SECURITY_PATTERNS:
         # Check path-based patterns
         if "path_check" in pattern and pattern["path_check"](normalized_path):
             return pattern["ruleName"], pattern["reminder"]
+
+        # Substring patterns target executable code; documentation files contain
+        # the same strings as descriptive text, so skip content-based checks.
+        if is_doc_file:
+            continue
 
         # Check content-based patterns
         if "substrings" in pattern and content:
