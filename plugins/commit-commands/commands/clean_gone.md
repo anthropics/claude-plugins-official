@@ -8,12 +8,14 @@ You need to execute the following bash commands to clean up stale local branches
 
 ## Commands to Execute
 
-1. **First, list branches to identify any with [gone] status**
+1. **First, prune stale remote-tracking refs, then list branches to identify any with [gone] status**
    Execute this command:
    ```bash
-   git branch -v
+   git fetch --prune origin && git branch -v
    ```
-   
+
+   The `--prune` step is required: branches deleted on the remote (e.g. by GitHub's auto-delete-after-merge) only show up as `[gone]` locally after `git fetch --prune` updates the remote-tracking refs. Without it, deleted branches still appear as `[behind N]` and the cleanup loop below silently skips them.
+
    Note: Branches with a '+' prefix have associated worktrees and must have their worktrees removed before deletion.
 
 2. **Next, identify worktrees that need to be removed for [gone] branches**
@@ -25,12 +27,19 @@ You need to execute the following bash commands to clean up stale local branches
 3. **Finally, remove worktrees and delete [gone] branches (handles both regular and worktree branches)**
    Execute this command:
    ```bash
-   # Process all [gone] branches, removing '+' prefix if present
-   git branch -v | grep '\[gone\]' | sed 's/^[+* ]//' | awk '{print $1}' | while read branch; do
+   # Process all [gone] branches, removing '+' / '*' / ' ' prefix marker if present.
+   # Notes:
+   #   - We use `read -r branch _` instead of `awk '{print $1}'` because the slash-command
+   #     harness substitutes `$1` (positional arg) and would strip it from the rendered prompt.
+   #   - We parse `git worktree list --porcelain` instead of plain `git worktree list`
+   #     because the plain output is space-separated and breaks on worktree paths
+   #     containing spaces (e.g. "/Users/me/My Project/...").
+   git branch -v | grep '\[gone\]' | sed 's/^[+* ]//' | while read -r branch _; do
      echo "Processing branch: $branch"
-     # Find and remove worktree if it exists
-     worktree=$(git worktree list | grep "\\[$branch\\]" | awk '{print $1}')
-     if [ ! -z "$worktree" ] && [ "$worktree" != "$(git rev-parse --show-toplevel)" ]; then
+     # Find the worktree (if any) for this branch using porcelain output.
+     # Porcelain emits 3-line records: `worktree <path>`, `HEAD <sha>`, `branch refs/heads/<name>`.
+     worktree=$(git worktree list --porcelain | grep -B 2 "^branch refs/heads/${branch}$" | sed -n 's/^worktree //p')
+     if [ -n "$worktree" ] && [ "$worktree" != "$(git rev-parse --show-toplevel)" ]; then
        echo "  Removing worktree: $worktree"
        git worktree remove --force "$worktree"
      fi
