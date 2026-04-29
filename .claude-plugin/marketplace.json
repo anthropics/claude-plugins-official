@@ -1653,6 +1653,20 @@
       "homepage": "https://www.sanity.io"
     },
     {
+      "name": "sap-mdk-server",
+      "description": "MCP server for SAP Mobile Development Kit (MDK). Build and modify MDK applications with AI assistance — schema lookups, action validation, rule editing, and project scaffolding.",
+      "author": {
+        "name": "SAP"
+      },
+      "category": "development",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/SAP/mdk-mcp-server.git",
+        "sha": "af81fe6c2421c5748388c65241da6a1b319a2c8f"
+      },
+      "homepage": "https://help.sap.com/docs/MDK"
+    },
+    {
       "name": "searchfit-seo",
       "description": "Free AI-powered SEO toolkit — audit websites, plan content strategy, optimize pages, generate schema markup, cluster keywords, and track AI visibility. Works with any website or codebase.",
       "source": {
