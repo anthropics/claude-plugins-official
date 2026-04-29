@@ -1,0 +1,12 @@
+{
+  "name": "addness",
+  "version": "1.0.0",
+  "description": "Connect Claude Code to Addness goals, tasks, comments, deliverables, notifications, and activity through the official Addness MCP server.",
+  "author": {
+    "name": "Addness, Inc.",
+    "url": "https://www.addness.com"
+  },
+  "homepage": "https://www.addness.com",
+  "license": "MIT",
+  "keywords": ["goals", "tasks", "mcp", "workspace", "execution", "team"]
+}

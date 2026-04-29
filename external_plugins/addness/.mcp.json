@@ -1,0 +1,6 @@
+{
+  "addness": {
+    "type": "http",
+    "url": "https://vt.api.addness.com/mcp"
+  }
+}
