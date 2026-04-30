@@ -86,6 +86,65 @@ const PERMISSION_REPLY_RE = /^\s*(y|yes|n|no)\s+([a-km-z]{5})\s*$/i
 const bot = new Bot(TOKEN)
 let botUsername = ''
 
+// === Typing keepalive ========================================================
+// Telegram's sendChatAction(typing) animation lasts ~5 seconds, then fades. The
+// inbound handler used to fire it once per message, which left the chat silent
+// while Claude was still working on anything that took longer than 5s — voice
+// transcription, file downloads, any tool chain. This keepalive loop pings every
+// TYPING_REFRESH_MS so the user sees a live indicator for the full duration of
+// the work, and self-extinguishes on whichever of these comes first:
+//   1. `reply` — Claude has sent the answer; the user can see it now.
+//   2. Plugin shutdown — stdin closes / SIGTERM / orphan watchdog fires.
+//   3. TYPING_HARD_CAP_MS without any MCP tool call from Claude. Paranoid
+//      fail-safe: if a bug in the cleanup path ever leaves the loop orphaned,
+//      the user shouldn't see "typing..." forever after the bot died. Every
+//      tool call from Claude resets this deadline, so during real work it
+//      never trips.
+const TYPING_REFRESH_MS = 4_000
+const TYPING_HARD_CAP_MS = 10 * 60 * 1000
+type TypingEntry = {
+  interval: ReturnType<typeof setInterval>
+  deadline: ReturnType<typeof setTimeout>
+}
+const typingLoops = new Map<string, TypingEntry>()
+
+function clearTypingLoop(chat_id: string): void {
+  const entry = typingLoops.get(chat_id)
+  if (!entry) return
+  clearInterval(entry.interval)
+  clearTimeout(entry.deadline)
+  typingLoops.delete(chat_id)
+}
+
+function startTyping(chat_id: string): void {
+  // Refresh cleanly if one is already running, instead of stacking intervals.
+  clearTypingLoop(chat_id)
+  void bot.api.sendChatAction(chat_id, 'typing').catch(() => {})
+  const interval = setInterval(() => {
+    void bot.api.sendChatAction(chat_id, 'typing').catch(() => {})
+  }, TYPING_REFRESH_MS)
+  const deadline = setTimeout(() => clearTypingLoop(chat_id), TYPING_HARD_CAP_MS)
+  typingLoops.set(chat_id, { interval, deadline })
+}
+
+function stopTyping(chat_id: string): void {
+  clearTypingLoop(chat_id)
+}
+
+// Reset the hard-cap deadline on every active loop. Called from each MCP tool
+// call — any sign of life from Claude means we shouldn't time the indicator
+// out. download_attachment has no chat_id, hence the bump-all approach.
+function bumpTypingDeadlines(): void {
+  for (const [chat_id, entry] of typingLoops.entries()) {
+    clearTimeout(entry.deadline)
+    entry.deadline = setTimeout(() => clearTypingLoop(chat_id), TYPING_HARD_CAP_MS)
+  }
+}
+
+function clearAllTypingLoops(): void {
+  for (const chat_id of [...typingLoops.keys()]) clearTypingLoop(chat_id)
+}
+
 type PendingEntry = {
   senderId: string
   chatId: string
@@ -518,6 +577,8 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
 
 mcp.setRequestHandler(CallToolRequestSchema, async req => {
   const args = (req.params.arguments ?? {}) as Record<string, unknown>
+  // Any tool call is proof-of-life from Claude — push the typing watchdog out.
+  bumpTypingDeadlines()
   try {
     switch (req.params.name) {
       case 'reply': {
@@ -580,6 +641,11 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
             sentIds.push(sent.message_id)
           }
         }
+
+        // The user can see the answer now — stop the typing indicator. If
+        // Claude replies again later (multi-turn), the next inbound message
+        // will start a fresh loop.
+        stopTyping(chat_id)
 
         const result =
           sentIds.length === 1
@@ -650,6 +716,9 @@ function shutdown(): void {
   if (shuttingDown) return
   shuttingDown = true
   process.stderr.write('telegram channel: shutting down\n')
+  // Cancel any active typing indicators so users don't see "typing..." linger
+  // after the bot is gone.
+  clearAllTypingLoops()
   try {
     if (parseInt(readFileSync(PID_FILE, 'utf8'), 10) === process.pid) rmSync(PID_FILE)
   } catch {}
@@ -942,8 +1011,9 @@ async function handleInbound(
     return
   }
 
-  // Typing indicator — signals "processing" until we reply (or ~5s elapses).
-  void bot.api.sendChatAction(chat_id, 'typing').catch(() => {})
+  // Typing indicator — kept alive on a 4s refresh loop until reply() fires,
+  // the plugin shuts down, or the watchdog hard-cap trips. See startTyping().
+  startTyping(chat_id)
 
   // Ack reaction — lets the user know we're processing. Fire-and-forget.
   // Telegram only accepts a fixed emoji whitelist — if the user configures
