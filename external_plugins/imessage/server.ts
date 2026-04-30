@@ -162,6 +162,25 @@ const qChatInfo = db.query<{ display_name: string | null; style: number }, [stri
   SELECT display_name, style FROM chat WHERE guid = ?
 `)
 
+// Routing info for AppleScript send. macOS Tahoe (26.x) drops self-chat and
+// many inactive DMs from Messages.app's AppleScript `chat id` selector — sends
+// fail with -1728 even when the guid is in chat.db. The `buddy` form via
+// service still works for DMs, so route DMs via buddy and reserve `chat id`
+// for groups (which only resolve via chat id, not buddy).
+//
+// chat.style: 45 = DM, 43 = group.
+const qChatRouting = db.query<{ service_name: string | null; style: number | null }, [string]>(`
+  SELECT service_name, style FROM chat WHERE guid = ? LIMIT 1
+`)
+
+// DM participant handle (the other party). For group chats use chat id instead.
+const qDmHandle = db.query<{ id: string }, [string]>(`
+  SELECT h.id FROM handle h
+  JOIN chat_handle_join chj ON chj.handle_id = h.ROWID
+  JOIN chat c ON c.ROWID = chj.chat_id
+  WHERE c.guid = ? LIMIT 1
+`)
+
 type AttRow = { filename: string | null; mime_type: string | null; transfer_name: string | null }
 const qAttachments = db.query<AttRow, [number]>(`
   SELECT a.filename, a.mime_type, a.transfer_name
@@ -415,11 +434,47 @@ if (!STATIC) setInterval(checkApprovals, 5000).unref()
 
 // Text and chat GUID go through argv — AppleScript `on run` receives them as a
 // list, so no escaping of user content into source is ever needed.
-const SEND_SCRIPT = `on run argv
+//
+// Two send paths (see qChatRouting comment for why):
+//   * SEND_BUDDY_*  — DMs, via `buddy of service`. Works on Tahoe self-chat.
+//   * SEND_GROUP_*  — groups, via `chat id`. Buddy form has no group analogue.
+const SEND_BUDDY_SCRIPT = `on run argv
+  set t to item 1 of argv
+  set h to item 2 of argv
+  set svcName to item 3 of argv
+  tell application "Messages"
+    if svcName is "iMessage" then
+      set svc to 1st service whose service type is iMessage
+    else if svcName is "SMS" then
+      set svc to 1st service whose service type is SMS
+    else
+      error "imessage channel: unsupported service: " & svcName
+    end if
+    send t to buddy h of svc
+  end tell
+end run`
+
+const SEND_BUDDY_FILE_SCRIPT = `on run argv
+  set p to POSIX file (item 1 of argv)
+  set h to item 2 of argv
+  set svcName to item 3 of argv
+  tell application "Messages"
+    if svcName is "iMessage" then
+      set svc to 1st service whose service type is iMessage
+    else if svcName is "SMS" then
+      set svc to 1st service whose service type is SMS
+    else
+      error "imessage channel: unsupported service: " & svcName
+    end if
+    send p to buddy h of svc
+  end tell
+end run`
+
+const SEND_GROUP_SCRIPT = `on run argv
   tell application "Messages" to send (item 1 of argv) to chat id (item 2 of argv)
 end run`
 
-const SEND_FILE_SCRIPT = `on run argv
+const SEND_GROUP_FILE_SCRIPT = `on run argv
   tell application "Messages" to send (POSIX file (item 1 of argv)) to chat id (item 2 of argv)
 end run`
 
@@ -456,21 +511,43 @@ function consumeEcho(chatGuid: string, key: string): boolean {
   return true
 }
 
+// Resolve DM routing for a chat guid. Returns null for group chats or guids
+// the chat.db doesn't recognise — caller falls back to the chat-id path.
+function dmRouting(chatGuid: string): { handle: string; service: string } | null {
+  const row = qChatRouting.get(chatGuid)
+  if (!row || row.style !== 45 || !row.service_name) return null
+  const handle = qDmHandle.get(chatGuid)?.id
+  if (!handle) return null
+  return { handle, service: row.service_name }
+}
+
 function sendText(chatGuid: string, text: string): string | null {
-  const res = spawnSync('osascript', ['-', text, chatGuid], {
-    input: SEND_SCRIPT,
-    encoding: 'utf8',
-  })
+  const dm = dmRouting(chatGuid)
+  const res = dm
+    ? spawnSync('osascript', ['-', text, dm.handle, dm.service], {
+        input: SEND_BUDDY_SCRIPT,
+        encoding: 'utf8',
+      })
+    : spawnSync('osascript', ['-', text, chatGuid], {
+        input: SEND_GROUP_SCRIPT,
+        encoding: 'utf8',
+      })
   if (res.status !== 0) return res.stderr.trim() || `osascript exit ${res.status}`
   trackEcho(chatGuid, text)
   return null
 }
 
 function sendAttachment(chatGuid: string, filePath: string): string | null {
-  const res = spawnSync('osascript', ['-', filePath, chatGuid], {
-    input: SEND_FILE_SCRIPT,
-    encoding: 'utf8',
-  })
+  const dm = dmRouting(chatGuid)
+  const res = dm
+    ? spawnSync('osascript', ['-', filePath, dm.handle, dm.service], {
+        input: SEND_BUDDY_FILE_SCRIPT,
+        encoding: 'utf8',
+      })
+    : spawnSync('osascript', ['-', filePath, chatGuid], {
+        input: SEND_GROUP_FILE_SCRIPT,
+        encoding: 'utf8',
+      })
   if (res.status !== 0) return res.stderr.trim() || `osascript exit ${res.status}`
   trackEcho(chatGuid, '\x00att')
   return null
