@@ -284,19 +284,6 @@ function gate(ctx: Context): GateResult {
   return { action: 'drop' }
 }
 
-// Like gate() but for bot commands: no pairing side effects, just allow/drop.
-function dmCommandGate(ctx: Context): { access: Access; senderId: string } | null {
-  if (ctx.chat?.type !== 'private') return null
-  if (!ctx.from) return null
-  const senderId = String(ctx.from.id)
-  const access = loadAccess()
-  const pruned = pruneExpired(access)
-  if (pruned) saveAccess(access)
-  if (access.dmPolicy === 'disabled') return null
-  if (access.dmPolicy === 'allowlist' && !access.allowFrom.includes(senderId)) return null
-  return { access, senderId }
-}
-
 function isMentioned(ctx: Context, extraPatterns?: string[]): boolean {
   const entities = ctx.message?.entities ?? ctx.message?.caption_entities ?? []
   const text = ctx.message?.text ?? ctx.message?.caption ?? ''
@@ -397,7 +384,7 @@ const mcp = new Server(
     instructions: [
       'The sender reads Telegram, not this session. Anything you want them to see must go through the reply tool — your transcript output never reaches their chat.',
       '',
-      'Messages from Telegram arrive as <channel source="telegram" chat_id="..." message_id="..." user="..." ts="...">. If the tag has an image_path attribute, Read that file — it is a photo the sender attached. If the tag has attachment_file_id, call download_attachment with that file_id to fetch the file, then Read the returned path. Reply with the reply tool — pass chat_id back. Use reply_to (set to a message_id) only when replying to an earlier message; the latest message doesn\'t need a quote-reply, omit reply_to for normal responses.',
+      'Messages from Telegram arrive as <channel source="telegram" chat_id="..." message_id="..." user="..." ts="...">. If the tag has an image_path attribute, Read that file — it is a photo the sender attached. If the tag has attachment_file_id, call download_attachment with that file_id to fetch the file, then Read the returned path. If the tag has forwarded="true", the user forwarded someone else\'s message — original attribution lives in forward_type (user|hidden_user|chat|channel), forward_from_name / forward_from_chat / forward_from_chat_id / forward_from_id / forward_date / forward_message_id / forward_author / forward_from_username depending on origin type; treat the content as quoted from the forwarded source, not the forwarder\'s own words. If the tag has reply_to_message_id, the sender is replying to another message — reply_to_user / reply_to_username / reply_to_user_id / reply_to_date identify the original author, reply_to_text (≤500 chars) carries the text being replied to, reply_to_attachment_kind + reply_to_attachment_file_id give the file_id of any attachment on the replied-to message (call download_attachment to fetch), and reply_to_forwarded="true" plus reply_to_forward_* fields appear when the replied-to message was itself a forward. Reply with the reply tool — pass chat_id back. Use reply_to (set to a message_id) only when replying to an earlier message; the latest message doesn\'t need a quote-reply, omit reply_to for normal responses.',
       '',
       'reply accepts file paths (files: ["/abs/path.png"]) for attachments. Use react to add emoji reactions, and edit_message for interim progress updates. Edits don\'t trigger push notifications — when a long task completes, send a new reply so the user\'s device pings.',
       '',
@@ -682,7 +669,12 @@ setInterval(() => {
 // the gate's behavior for unrecognized groups.
 
 bot.command('start', async ctx => {
-  if (!dmCommandGate(ctx)) return
+  if (ctx.chat?.type !== 'private') return
+  const access = loadAccess()
+  if (access.dmPolicy === 'disabled') {
+    await ctx.reply(`This bot isn't accepting new connections.`)
+    return
+  }
   await ctx.reply(
     `This bot bridges Telegram to a Claude Code session.\n\n` +
     `To pair:\n` +
@@ -693,7 +685,7 @@ bot.command('start', async ctx => {
 })
 
 bot.command('help', async ctx => {
-  if (!dmCommandGate(ctx)) return
+  if (ctx.chat?.type !== 'private') return
   await ctx.reply(
     `Messages you send here route to a paired Claude Code session. ` +
     `Text and photos are forwarded; replies and reactions come back.\n\n` +
@@ -703,12 +695,14 @@ bot.command('help', async ctx => {
 })
 
 bot.command('status', async ctx => {
-  const gated = dmCommandGate(ctx)
-  if (!gated) return
-  const { access, senderId } = gated
+  if (ctx.chat?.type !== 'private') return
+  const from = ctx.from
+  if (!from) return
+  const senderId = String(from.id)
+  const access = loadAccess()
 
   if (access.allowFrom.includes(senderId)) {
-    const name = ctx.from!.username ? `@${ctx.from!.username}` : senderId
+    const name = from.username ? `@${from.username}` : senderId
     await ctx.reply(`Paired as ${name}.`)
     return
   }
@@ -958,6 +952,128 @@ async function handleInbound(
 
   const imagePath = downloadImage ? await downloadImage() : undefined
 
+  // Forward attribution — if the user forwarded a message into this chat,
+  // Telegram populates `forward_origin` (Bot API 7.0+, unified across the
+  // 4 origin types: user / hidden_user / chat / channel). Expose that to
+  // Claude so it can distinguish "user typed this" vs "user is forwarding
+  // someone else's text" and knows the original source.
+  //
+  // Safety: names / signatures / chat titles are all attacker-controlled
+  // (whoever produced the original message). Run safeName over every
+  // string that enters the <channel> tag so newlines, `;`, `[]`, `<>`
+  // can't break out of attribute syntax.
+  const fwd = ctx.message?.forward_origin
+  const forwardMeta: Record<string, string> = {}
+  if (fwd) {
+    forwardMeta.forwarded = 'true'
+    forwardMeta.forward_type = fwd.type
+    forwardMeta.forward_date = new Date(fwd.date * 1000).toISOString()
+    if (fwd.type === 'user') {
+      const u = fwd.sender_user
+      const name = [u.first_name, u.last_name].filter(Boolean).join(' ')
+      if (name) forwardMeta.forward_from_name = safeName(name) ?? ''
+      if (u.username) forwardMeta.forward_from_username = safeName(u.username) ?? ''
+      forwardMeta.forward_from_id = String(u.id)
+    } else if (fwd.type === 'hidden_user') {
+      forwardMeta.forward_from_name = safeName(fwd.sender_user_name) ?? ''
+    } else if (fwd.type === 'chat') {
+      const c: any = fwd.sender_chat
+      const title = c?.title ?? c?.first_name ?? ''
+      if (title) forwardMeta.forward_from_chat = safeName(title) ?? ''
+      if (c?.id != null) forwardMeta.forward_from_chat_id = String(c.id)
+      if (fwd.author_signature) forwardMeta.forward_author = safeName(fwd.author_signature) ?? ''
+    } else if (fwd.type === 'channel') {
+      const c: any = fwd.chat
+      if (c?.title) forwardMeta.forward_from_chat = safeName(c.title) ?? ''
+      if (c?.id != null) forwardMeta.forward_from_chat_id = String(c.id)
+      forwardMeta.forward_message_id = String(fwd.message_id)
+      if (fwd.author_signature) forwardMeta.forward_author = safeName(fwd.author_signature) ?? ''
+    }
+  }
+
+  // Reply attribution — if this message replies to another message, carry
+  // the referenced message's key fields so Claude can reason about the
+  // thread. Telegram Bot API attaches the full `reply_to_message` object
+  // on each reply. Expose id / author / date / text / attachment /
+  // forward-origin (the replied-to message might itself be a forward).
+  //
+  // Text is truncated to 500 chars — enough context without blowing up
+  // the <channel> tag. All strings go through safeName() per the same
+  // tag-injection concern as forward attribution below.
+  const rep: any = (ctx.message as any)?.reply_to_message
+  const replyMeta: Record<string, string> = {}
+  if (rep) {
+    replyMeta.reply_to_message_id = String(rep.message_id)
+    if (rep.from) {
+      const n = [rep.from.first_name, rep.from.last_name].filter(Boolean).join(' ')
+      if (n) replyMeta.reply_to_user = safeName(n) ?? ''
+      if (rep.from.username) replyMeta.reply_to_username = safeName(rep.from.username) ?? ''
+      replyMeta.reply_to_user_id = String(rep.from.id)
+    }
+    if (typeof rep.date === 'number') {
+      replyMeta.reply_to_date = new Date(rep.date * 1000).toISOString()
+    }
+    // A: text / caption, 500-char cap
+    const rtText: string = rep.text ?? rep.caption ?? ''
+    if (rtText) replyMeta.reply_to_text = safeName(rtText.slice(0, 500)) ?? ''
+    // B: attachments — give Claude a file_id it can download later
+    if (Array.isArray(rep.photo) && rep.photo.length > 0) {
+      const best = rep.photo[rep.photo.length - 1]
+      replyMeta.reply_to_attachment_kind = 'photo'
+      if (best?.file_id) replyMeta.reply_to_attachment_file_id = String(best.file_id)
+    } else if (rep.document?.file_id) {
+      replyMeta.reply_to_attachment_kind = 'document'
+      replyMeta.reply_to_attachment_file_id = String(rep.document.file_id)
+      if (rep.document.mime_type) replyMeta.reply_to_attachment_mime = String(rep.document.mime_type)
+      if (rep.document.file_name) replyMeta.reply_to_attachment_name = safeName(rep.document.file_name) ?? ''
+    } else if (rep.video?.file_id) {
+      replyMeta.reply_to_attachment_kind = 'video'
+      replyMeta.reply_to_attachment_file_id = String(rep.video.file_id)
+    } else if (rep.voice?.file_id) {
+      replyMeta.reply_to_attachment_kind = 'voice'
+      replyMeta.reply_to_attachment_file_id = String(rep.voice.file_id)
+    } else if (rep.audio?.file_id) {
+      replyMeta.reply_to_attachment_kind = 'audio'
+      replyMeta.reply_to_attachment_file_id = String(rep.audio.file_id)
+    } else if (rep.video_note?.file_id) {
+      replyMeta.reply_to_attachment_kind = 'video_note'
+      replyMeta.reply_to_attachment_file_id = String(rep.video_note.file_id)
+    } else if (rep.sticker?.file_id) {
+      replyMeta.reply_to_attachment_kind = 'sticker'
+      replyMeta.reply_to_attachment_file_id = String(rep.sticker.file_id)
+    }
+    // C: replied-to message is itself a forward — surface original origin
+    const rfwd: any = rep.forward_origin
+    if (rfwd) {
+      replyMeta.reply_to_forwarded = 'true'
+      replyMeta.reply_to_forward_type = String(rfwd.type)
+      if (typeof rfwd.date === 'number') {
+        replyMeta.reply_to_forward_date = new Date(rfwd.date * 1000).toISOString()
+      }
+      if (rfwd.type === 'user' && rfwd.sender_user) {
+        const u = rfwd.sender_user
+        const n = [u.first_name, u.last_name].filter(Boolean).join(' ')
+        if (n) replyMeta.reply_to_forward_from_name = safeName(n) ?? ''
+        if (u.username) replyMeta.reply_to_forward_from_username = safeName(u.username) ?? ''
+        if (u.id != null) replyMeta.reply_to_forward_from_id = String(u.id)
+      } else if (rfwd.type === 'hidden_user' && rfwd.sender_user_name) {
+        replyMeta.reply_to_forward_from_name = safeName(rfwd.sender_user_name) ?? ''
+      } else if (rfwd.type === 'chat' && rfwd.sender_chat) {
+        const c = rfwd.sender_chat
+        const title = c.title ?? c.first_name ?? ''
+        if (title) replyMeta.reply_to_forward_from_chat = safeName(title) ?? ''
+        if (c.id != null) replyMeta.reply_to_forward_from_chat_id = String(c.id)
+        if (rfwd.author_signature) replyMeta.reply_to_forward_author = safeName(rfwd.author_signature) ?? ''
+      } else if (rfwd.type === 'channel' && rfwd.chat) {
+        const c = rfwd.chat
+        if (c.title) replyMeta.reply_to_forward_from_chat = safeName(c.title) ?? ''
+        if (c.id != null) replyMeta.reply_to_forward_from_chat_id = String(c.id)
+        if (rfwd.message_id != null) replyMeta.reply_to_forward_message_id = String(rfwd.message_id)
+        if (rfwd.author_signature) replyMeta.reply_to_forward_author = safeName(rfwd.author_signature) ?? ''
+      }
+    }
+  }
+
   // image_path goes in meta only — an in-content "[image attached — read: PATH]"
   // annotation is forgeable by any allowlisted sender typing that string.
   mcp.notification({
@@ -978,6 +1094,8 @@ async function handleInbound(
           ...(attachment.mime ? { attachment_mime: attachment.mime } : {}),
           ...(attachment.name ? { attachment_name: attachment.name } : {}),
         } : {}),
+        ...forwardMeta,
+        ...replyMeta,
       },
     },
   }).catch(err => {
