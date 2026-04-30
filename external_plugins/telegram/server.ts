@@ -779,11 +779,13 @@ bot.on('callback_query:data', async ctx => {
 })
 
 bot.on('message:text', async ctx => {
-  await handleInbound(ctx, ctx.message.text, undefined)
+  await handleInbound(ctx, expandTextLinks(ctx.message.text, ctx.message.entities), undefined)
 })
 
 bot.on('message:photo', async ctx => {
-  const caption = ctx.message.caption ?? '(photo)'
+  const caption = ctx.message.caption
+    ? expandTextLinks(ctx.message.caption, ctx.message.caption_entities)
+    : '(photo)'
   // Defer download until after the gate approves — any user can send photos,
   // and we don't want to burn API quota or fill the inbox for dropped messages.
   await handleInbound(ctx, caption, async () => {
@@ -811,7 +813,9 @@ bot.on('message:photo', async ctx => {
 bot.on('message:document', async ctx => {
   const doc = ctx.message.document
   const name = safeName(doc.file_name)
-  const text = ctx.message.caption ?? `(document: ${name ?? 'file'})`
+  const text = ctx.message.caption
+    ? expandTextLinks(ctx.message.caption, ctx.message.caption_entities)
+    : `(document: ${name ?? 'file'})`
   await handleInbound(ctx, text, undefined, {
     kind: 'document',
     file_id: doc.file_id,
@@ -823,7 +827,9 @@ bot.on('message:document', async ctx => {
 
 bot.on('message:voice', async ctx => {
   const voice = ctx.message.voice
-  const text = ctx.message.caption ?? '(voice message)'
+  const text = ctx.message.caption
+    ? expandTextLinks(ctx.message.caption, ctx.message.caption_entities)
+    : '(voice message)'
   await handleInbound(ctx, text, undefined, {
     kind: 'voice',
     file_id: voice.file_id,
@@ -835,7 +841,9 @@ bot.on('message:voice', async ctx => {
 bot.on('message:audio', async ctx => {
   const audio = ctx.message.audio
   const name = safeName(audio.file_name)
-  const text = ctx.message.caption ?? `(audio: ${safeName(audio.title) ?? name ?? 'audio'})`
+  const text = ctx.message.caption
+    ? expandTextLinks(ctx.message.caption, ctx.message.caption_entities)
+    : `(audio: ${safeName(audio.title) ?? name ?? 'audio'})`
   await handleInbound(ctx, text, undefined, {
     kind: 'audio',
     file_id: audio.file_id,
@@ -847,7 +855,9 @@ bot.on('message:audio', async ctx => {
 
 bot.on('message:video', async ctx => {
   const video = ctx.message.video
-  const text = ctx.message.caption ?? '(video)'
+  const text = ctx.message.caption
+    ? expandTextLinks(ctx.message.caption, ctx.message.caption_entities)
+    : '(video)'
   await handleInbound(ctx, text, undefined, {
     kind: 'video',
     file_id: video.file_id,
@@ -889,6 +899,32 @@ type AttachmentMeta = {
 // or forge a second meta entry.
 function safeName(s: string | undefined): string | undefined {
   return s?.replace(/[<>\[\]\r\n;]/g, '_')
+}
+
+// Expand inline hyperlinks ([label](url)) into the text payload so the
+// receiving Claude session can see the URL. Telegram delivers the visible
+// label in `text` / `caption` and stashes the underlying URL inside
+// `entities[].url` for `text_link`-typed entities. Without this expansion
+// the URL is lost and the user has to paste it again as plain text.
+//
+// Plain `url`-typed entities (raw URLs the user typed) are already in the
+// text and need no special handling — they're only listed in entities for
+// rendering. We only expand `text_link`.
+//
+// Entities are sorted descending by offset before splicing so earlier
+// replacements don't shift later offsets.
+function expandTextLinks(text: string, entities?: ReadonlyArray<{ type: string; offset: number; length: number; url?: string }>): string {
+  if (!entities?.length) return text
+  const links = entities
+    .filter(e => e.type === 'text_link' && e.url)
+    .slice()
+    .sort((a, b) => b.offset - a.offset)
+  let out = text
+  for (const e of links) {
+    const label = out.slice(e.offset, e.offset + e.length)
+    out = out.slice(0, e.offset) + `[${label}](${e.url})` + out.slice(e.offset + e.length)
+  }
+  return out
 }
 
 async function handleInbound(
@@ -1013,8 +1049,10 @@ async function handleInbound(
     if (typeof rep.date === 'number') {
       replyMeta.reply_to_date = new Date(rep.date * 1000).toISOString()
     }
-    // A: text / caption, 500-char cap
-    const rtText: string = rep.text ?? rep.caption ?? ''
+    // A: text / caption, 500-char cap. Expand text_link entities so any
+    // inline hyperlinks in the replied-to message keep their URL.
+    const rtRaw: string = rep.text ?? rep.caption ?? ''
+    const rtText = expandTextLinks(rtRaw, rep.entities ?? rep.caption_entities)
     if (rtText) replyMeta.reply_to_text = safeName(rtText.slice(0, 500)) ?? ''
     // B: attachments — give Claude a file_id it can download later
     if (Array.isArray(rep.photo) && rep.photo.length > 0) {
