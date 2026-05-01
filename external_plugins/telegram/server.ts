@@ -86,6 +86,19 @@ const PERMISSION_REPLY_RE = /^\s*(y|yes|n|no)\s+([a-km-z]{5})\s*$/i
 const bot = new Bot(TOKEN)
 let botUsername = ''
 
+// Heartbeat — addresses the silent polling-death failure mode (bot.start()
+// resolves without bot.stop() called, leaving the process alive for MCP stdin
+// but deaf to inbound updates). The actual root-cause fix is below near the
+// polling-loop retry. Heartbeat instrumentation is defense-in-depth so external
+// watchdogs can detect a stall via stat() on the sentinel file's mtime, without
+// log-parsing.
+const HEARTBEAT_FILE = join(STATE_DIR, 'heartbeat.touch')
+let lastPollActivity = Date.now()
+bot.use(async (_ctx, next) => {
+  lastPollActivity = Date.now()
+  await next()
+})
+
 type PendingEntry = {
   senderId: string
   chatId: string
@@ -676,6 +689,34 @@ setInterval(() => {
   if (orphaned) shutdown()
 }, 5000).unref()
 
+// Heartbeat tick — write the most recent poll-activity timestamp to a sentinel
+// file every 60s. External watchdogs detect stale-mtime > 120s as "polling
+// stalled, bot is deaf, restart needed."
+setInterval(() => {
+  if (shuttingDown) return
+  const now = Date.now()
+  const idleMs = now - lastPollActivity
+  try {
+    writeFileSync(HEARTBEAT_FILE, JSON.stringify({
+      ts: now,
+      iso: new Date(now).toISOString(),
+      lastPollActivity,
+      lastPollActivityIso: new Date(lastPollActivity).toISOString(),
+      idleMs,
+      botUsername,
+      pid: process.pid,
+    }) + '\n')
+  } catch {}
+  // Warn-only; recovery is via external watchdog or full restart. 5 min idle is
+  // normal for a quiet bot; 10 min suggests something's wrong upstream.
+  if (idleMs > 600_000) {
+    process.stderr.write(
+      `telegram channel: WARN polling idle for ${Math.round(idleMs/1000)}s ` +
+      `(>10min). Bot may be deaf to inbound; investigate.\n`,
+    )
+  }
+}, 60_000).unref()
+
 // Commands are DM-only. Responding in groups would: (1) leak pairing codes via
 // /status to other group members, (2) confirm bot presence in non-allowlisted
 // groups, (3) spam channels the operator never approved. Silent drop matches
@@ -1003,6 +1044,7 @@ void (async () => {
         onStart: info => {
           attempt = 0
           botUsername = info.username
+          lastPollActivity = Date.now()
           process.stderr.write(`telegram channel: polling as @${info.username}\n`)
           void bot.api.setMyCommands(
             [
@@ -1014,7 +1056,24 @@ void (async () => {
           ).catch(() => {})
         },
       })
-      return // bot.stop() was called — clean exit from the loop
+      // bot.start() returned — but only treat as clean exit when shutdown was
+      // signaled. Otherwise this is the silent polling-death failure mode:
+      // grammy's poller resolved without throwing and without bot.stop() being
+      // called, which leaves the process alive for MCP stdin while the bot
+      // stops receiving inbound updates. Outbound bot.api.* calls keep working
+      // (so the MCP looks healthy from outside), but inbound is deaf until full
+      // process restart.
+      //
+      // Observed 7 times across 10 days in field use, including post-reconnect
+      // stalls within ~10 min of process start. The original code's `return`
+      // here treated any resolution as clean shutdown, which is the bug.
+      // Retry instead: re-enter the for-loop so polling restarts.
+      if (shuttingDown) return
+      process.stderr.write(
+        `telegram channel: WARN bot.start() returned without shutdown signal — ` +
+        `silent-stall pattern, restarting polling (attempt ${attempt + 1})\n`,
+      )
+      // fall through to next iteration (no throw, no return) — outer for loop retries
     } catch (err) {
       if (shuttingDown) return
       // bot.stop() mid-setup rejects with grammy's "Aborted delay" — expected, not an error.
