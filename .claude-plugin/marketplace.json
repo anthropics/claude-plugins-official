@@ -24,16 +24,6 @@
       "homepage": "https://42crunch.com"
     },
     {
-      "name": "adlc",
-      "description": "Agentforce Agent Development Life Cycle — author, discover, scaffold, deploy, test, and optimize .agent files",
-      "category": "development",
-      "source": {
-        "source": "url",
-        "url": "https://github.com/SalesforceAIResearch/agentforce-adlc.git"
-      },
-      "homepage": "https://github.com/SalesforceAIResearch/agentforce-adlc"
-    },
-    {
       "name": "adobe-for-creativity",
       "description": "Harness Adobe's creative AI-powered tools to edit images, automate design workflows, and bring creative visions to life — from background removal to vectorization and professional retouching.",
       "author": {
@@ -69,6 +59,16 @@
       "source": "./plugins/agent-sdk-dev",
       "category": "development",
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/plugins/agent-sdk-dev"
+    },
+    {
+      "name": "agentforce-adlc",
+      "description": "Agentforce Agent Development Life Cycle — author, discover, scaffold, deploy, test, and optimize .agent files",
+      "category": "development",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/SalesforceAIResearch/agentforce-adlc.git"
+      },
+      "homepage": "https://github.com/SalesforceAIResearch/agentforce-adlc"
     },
     {
       "name": "ai-firstify",
