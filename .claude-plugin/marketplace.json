@@ -691,6 +691,22 @@
       "homepage": "https://github.com/awslabs/agent-plugins"
     },
     {
+      "name": "desktop-commander",
+      "description": "MCP server for terminal commands, process management, and file operations across text, code, PDF, DOCX, Excel, images, and structured data.",
+      "author": {
+        "name": "Desktop Commander"
+      },
+      "category": "productivity",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/wonderwhy-er/DesktopCommanderMCP.git",
+        "path": "plugins/claude",
+        "ref": "main",
+        "sha": "8c03d3392d1633923057f4492f2b5014e2c4a6bf"
+      },
+      "homepage": "https://desktopcommander.app"
+    },
+    {
       "name": "discord",
       "description": "Discord messaging bridge with built-in access control. Manage pairing, allowlists, and policy via /discord:access.",
       "category": "productivity",
