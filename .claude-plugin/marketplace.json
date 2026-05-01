@@ -450,6 +450,20 @@
       "homepage": "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/claude-md-management"
     },
     {
+      "name": "cloud-finops",
+      "description": "Expert FinOps guidance for cloud, AI, SaaS, and data-platform spend (multi-provider, model-agnostic). 21 reference files spanning AWS, Azure, GCP, Anthropic, Bedrock, Azure OpenAI, Vertex AI, Databricks, Microsoft Fabric, Snowflake, OCI, AI coding tools, GreenOps, FinOps Framework 2024+2026, SaaS asset management, and ITAM. Refreshed bi-monthly via an automated pipeline scanning 29 cloud and FinOps sources.",
+      "author": {
+        "name": "OptimNow",
+        "url": "https://optimnow.io"
+      },
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/OptimNow/cloud-finops-skills.git"
+      },
+      "homepage": "https://github.com/OptimNow/cloud-finops-skills"
+    },
+    {
       "name": "cloud-sql-postgresql",
       "description": "Create, connect, and interact with a Cloud SQL for PostgreSQL database and data.",
       "author": {
