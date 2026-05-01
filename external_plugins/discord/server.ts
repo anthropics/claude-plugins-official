@@ -87,6 +87,9 @@ const client = new Client({
   ],
   // DMs arrive as partial channels — messageCreate never fires without this.
   partials: [Partials.Channel],
+  // Without an explicit presence in IDENTIFY, Discord renders the bot as
+  // offline (grey dot) to other users even with a healthy gateway connection.
+  presence: { status: 'online' },
 })
 
 type PendingEntry = {
@@ -803,7 +806,19 @@ client.on('interactionCreate', async (interaction: Interaction) => {
 })
 
 client.on('messageCreate', msg => {
-  if (msg.author.bot) return
+  if (msg.author.bot) {
+    // Default: drop bot authors to prevent loops with random integrations.
+    // Exception: the bot's user ID is explicitly allowlisted (global DM
+    // allowFrom or any per-channel-group allowFrom). gate() still applies
+    // the full channel/mention policy after this, so this only widens
+    // *who* may be allowlisted, not what they can do once allowlisted.
+    const access = loadAccess()
+    const inGlobal = access.allowFrom.includes(msg.author.id)
+    const inAnyGroup = Object.values(access.groups).some(
+      g => (g.allowFrom ?? []).includes(msg.author.id),
+    )
+    if (!inGlobal && !inAnyGroup) return
+  }
   handleInbound(msg).catch(e => process.stderr.write(`discord: handleInbound failed: ${e}\n`))
 })
 
