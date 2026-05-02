@@ -1,8 +1,4 @@
 #!/usr/bin/env bun/*
-
-*//*
-
-*/
 /**
  * Discord channel for Claude Code.
  *
