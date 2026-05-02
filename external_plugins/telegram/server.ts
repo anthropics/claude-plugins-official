@@ -41,6 +41,13 @@ try {
 
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN
 const STATIC = process.env.TELEGRAM_ACCESS_MODE === 'static'
+// Optional: restrict permission prompts (and the Allow/Deny callback) to a
+// single chat. When set, only this chat sees `🔐 Permission: ...` requests
+// and only this chat can authorize them. Other allowlisted senders can still
+// chat with the bot but can't approve tool calls on the owner's behalf.
+// Useful in shared-allowlist setups where a partner / family member is
+// paired but should not be blasted with permission prompts.
+const OWNER_CHAT_ID = process.env.TELEGRAM_OWNER_CHAT_ID
 
 if (!TOKEN) {
   process.stderr.write(
@@ -434,7 +441,12 @@ mcp.setNotificationHandler(
       .text('See more', `perm:more:${request_id}`)
       .text('✅ Allow', `perm:allow:${request_id}`)
       .text('❌ Deny', `perm:deny:${request_id}`)
-    for (const chat_id of access.allowFrom) {
+    // OWNER_CHAT_ID restricts permission prompts to a single chat so paired
+    // secondaries don't get blasted with "🔐 Permission: ..." messages.
+    // Falls back to the legacy behavior (broadcast to all allowlisted chats)
+    // when OWNER_CHAT_ID is unset, preserving backward compatibility.
+    const recipients = OWNER_CHAT_ID ? [OWNER_CHAT_ID] : access.allowFrom
+    for (const chat_id of recipients) {
       void bot.api.sendMessage(chat_id, text, { reply_markup: keyboard }).catch(e => {
         process.stderr.write(`permission_request send to ${chat_id} failed: ${e}\n`)
       })
@@ -737,6 +749,13 @@ bot.on('callback_query:data', async ctx => {
   }
   const access = loadAccess()
   const senderId = String(ctx.from.id)
+  // When OWNER_CHAT_ID is configured, only the owner can authorize tool
+  // calls. Other allowlisted senders may DM the bot but can't approve on
+  // the owner's behalf.
+  if (OWNER_CHAT_ID && senderId !== OWNER_CHAT_ID) {
+    await ctx.answerCallbackQuery({ text: 'Not authorized.' }).catch(() => {})
+    return
+  }
   if (!access.allowFrom.includes(senderId)) {
     await ctx.answerCallbackQuery({ text: 'Not authorized.' }).catch(() => {})
     return

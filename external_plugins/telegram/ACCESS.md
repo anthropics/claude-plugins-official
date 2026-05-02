@@ -6,6 +6,8 @@ By default, a DM from an unknown sender triggers **pairing**: the bot replies wi
 
 All state lives in `~/.claude/channels/telegram/access.json`. The `/telegram:access` skill commands edit this file; the server re-reads it on every inbound message, so changes take effect without a restart. Set `TELEGRAM_ACCESS_MODE=static` to pin config to what was on disk at boot (pairing is unavailable in static mode since it requires runtime writes).
 
+Set `TELEGRAM_OWNER_CHAT_ID=<numeric chat id>` to restrict permission prompts to a single chat. Without it, every allowlisted DM receives `🔐 Permission: ...` requests and any of them can authorize. With it, only the owner sees the prompts and only the owner's Allow/Deny clicks are honored — useful when a partner or family member is paired but should not be able to authorize tool calls or be blasted with permission noise.
+
 ## At a glance
 
 | | |
