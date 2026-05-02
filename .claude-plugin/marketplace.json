@@ -1875,6 +1875,19 @@
       "homepage": "https://sourcegraph.com"
     },
     {
+      "name": "speakai",
+      "description": "Search transcripts, summarize meetings, extract quotes, create clips, and manage Speak AI media through MCP.",
+      "author": {
+        "name": "Speak AI"
+      },
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/speakai/speakai-mcp.git"
+      },
+      "homepage": "https://mcp.speakai.co"
+    },
+    {
       "name": "spotify-ads-api",
       "description": "Manage Spotify ad campaigns with natural language. Create campaigns, ad sets, ads, pull reports, and handle OAuth — all through conversation.",
       "category": "productivity",
