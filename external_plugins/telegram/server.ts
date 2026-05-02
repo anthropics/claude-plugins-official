@@ -53,17 +53,42 @@ if (!TOKEN) {
 const INBOX_DIR = join(STATE_DIR, 'inbox')
 const PID_FILE = join(STATE_DIR, 'bot.pid')
 
-// Telegram allows exactly one getUpdates consumer per token. If a previous
-// session crashed (SIGKILL, terminal closed) its server.ts grandchild can
-// survive as an orphan and hold the slot forever, so every new session sees
-// 409 Conflict. Kill any stale holder before we start polling.
+// Telegram allows exactly one getUpdates consumer per token. Two scenarios
+// can land us in startup with bot.pid populated:
+//   (a) prior session crashed (SIGKILL, terminal closed) and its server.ts
+//       grandchild is an orphan — we should claim the slot.
+//   (b) a concurrent sibling is alive and serving (e.g. a parent harness
+//       with this plugin loaded, while a child `claude -p` invocation also
+//       loads its own copy) — we must NOT kill it; we exit cleanly so the
+//       sibling keeps serving.
+// The previous logic always SIGTERMed the holder when alive, which broke
+// case (b): the child plugin would assassinate the parent's plugin and then
+// die with the child claude process, leaving the parent without a poller.
+function isOurPlugin(pid: number): boolean {
+  try {
+    // Linux only. cmdline is NUL-separated argv; the plugin always runs as
+    // `bun server.ts`, so this match is specific enough not to false-match
+    // a recycled PID assigned to an unrelated bun-running process.
+    const cmdline = readFileSync(`/proc/${pid}/cmdline`, 'utf8')
+    return cmdline.includes('server.ts')
+  } catch {}
+  // No /proc (macOS) or no permission. Fall back to liveness only — the
+  // conservative choice: assume an alive PID is our sibling and exit.
+  // False-positive cost: a few seconds of no polling until next restart.
+  // False-negative cost (the previous code's behavior): we assassinate the
+  // sibling. Conservative wins.
+  try { process.kill(pid, 0); return true } catch { return false }
+}
+
 mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 })
 try {
-  const stale = parseInt(readFileSync(PID_FILE, 'utf8'), 10)
-  if (stale > 1 && stale !== process.pid) {
-    process.kill(stale, 0)
-    process.stderr.write(`telegram channel: replacing stale poller pid=${stale}\n`)
-    process.kill(stale, 'SIGTERM')
+  const holder = parseInt(readFileSync(PID_FILE, 'utf8'), 10)
+  if (holder > 1 && holder !== process.pid) {
+    if (isOurPlugin(holder)) {
+      process.stderr.write(`telegram channel: live poller pid=${holder} owns the slot; exiting cleanly\n`)
+      process.exit(0)
+    }
+    process.stderr.write(`telegram channel: claiming slot (prior pid=${holder} dead or recycled)\n`)
   }
 } catch {}
 writeFileSync(PID_FILE, String(process.pid))
