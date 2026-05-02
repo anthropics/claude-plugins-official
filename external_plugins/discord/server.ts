@@ -1,4 +1,8 @@
-#!/usr/bin/env bun
+#!/usr/bin/env bun/*
+
+*//*
+
+*/
 /**
  * Discord channel for Claude Code.
  *
@@ -120,6 +124,37 @@ type Access = {
   chunkMode?: 'length' | 'newline'
 }
 
+const accessSchema = z
+  .object({
+    dmPolicy: z.enum(['pairing', 'allowlist', 'disabled']).optional(),
+    allowFrom: z.array(z.string()).optional(),
+    groups: z
+      .record(
+        z.object({
+          requireMention: z.boolean().optional(),
+          allowFrom: z.array(z.string()).optional(),
+        }),
+      )
+      .optional(),
+    pending: z
+      .record(
+        z.object({
+          senderId: z.string(),
+          chatId: z.string(),
+          createdAt: z.number(),
+          expiresAt: z.number(),
+          replies: z.number(),
+        }),
+      )
+      .optional(),
+    mentionPatterns: z.array(z.string()).optional(),
+    ackReaction: z.string().optional(),
+    replyToMode: z.enum(['off', 'first', 'all']).optional(),
+    textChunkLimit: z.number().optional(),
+    chunkMode: z.enum(['length', 'newline']).optional(),
+  })
+  .passthrough()
+
 function defaultAccess(): Access {
   return {
     dmPolicy: 'pairing',
@@ -151,7 +186,16 @@ function assertSendable(f: string): void {
 function readAccessFile(): Access {
   try {
     const raw = readFileSync(ACCESS_FILE, 'utf8')
-    const parsed = JSON.parse(raw) as Partial<Access>
+    const decoded = JSON.parse(raw)
+    const validated = accessSchema.safeParse(decoded)
+    if (!validated.success) {
+      try { renameSync(ACCESS_FILE, `${ACCESS_FILE}.corrupt-${Date.now()}`) } catch {}
+      process.stderr.write(
+        `discord: access.json failed validation, moved aside. Starting fresh.\n`
+      )
+      return defaultAccess()
+    }
+    const parsed = validated.data as Partial<Access>
     return {
       dmPolicy: parsed.dmPolicy ?? 'pairing',
       allowFrom: parsed.allowFrom ?? [],
