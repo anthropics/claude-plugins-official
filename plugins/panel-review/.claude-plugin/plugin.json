@@ -1,0 +1,8 @@
+{
+  "name": "panel-review",
+  "description": "2-pass code review system: Defense pass (correctness + tests + security) and Adversary pass (attack orientation). Classifies risk tier automatically, spawns structured reviews with exact file:line findings and named test signatures.",
+  "author": {
+    "name": "ragsvasan",
+    "url": "https://github.com/ragsvasan/panel-review"
+  }
+}
