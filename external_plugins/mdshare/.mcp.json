@@ -1,0 +1,6 @@
+{
+  "mdshare": {
+    "command": "npx",
+    "args": ["-y", "mdshare-mcp"]
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "mdshare",
+  "description": "Free markdown sharing via MCP. Upload markdown files to mdshare.live and get shareable URLs with four permission tiers (admin/edit/comment/view), inline-anchored comments, real-time sync, and 90-day expiry — no login required. The MCP server uses file_path so large markdown files don't burn conversation tokens.",
+  "author": {
+    "name": "UrbanMorph",
+    "email": "sathya@urbanmorph.com"
+  },
+  "homepage": "https://mdshare.live",
+  "repository": "https://github.com/urbanmorph/mdshare",
+  "license": "MIT",
+  "keywords": ["markdown", "sharing", "collaboration", "mcp", "file_path"]
+}
