@@ -1,5 +1,6 @@
 {
   "name": "serena",
+  "version": "1.0.0",
   "description": "Semantic code analysis MCP server providing intelligent code understanding, refactoring suggestions, and codebase navigation through language server protocol integration.",
   "author": {
     "name": "Oraios"

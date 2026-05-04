@@ -1,5 +1,6 @@
 {
   "name": "commit-commands",
+  "version": "1.0.0",
   "description": "Streamline your git workflow with simple commands for committing, pushing, and creating pull requests",
   "author": {
     "name": "Anthropic",

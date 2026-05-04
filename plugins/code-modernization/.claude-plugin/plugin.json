@@ -1,5 +1,6 @@
 {
   "name": "code-modernization",
+  "version": "1.0.0",
   "description": "Modernize legacy codebases (COBOL, legacy Java/C++, monolith web apps) with a structured assess → map → extract-rules → reimagine → transform → harden workflow and specialist review agents",
   "author": {
     "name": "Anthropic",

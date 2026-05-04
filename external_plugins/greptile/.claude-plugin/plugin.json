@@ -1,5 +1,6 @@
 {
   "name": "greptile",
+  "version": "1.0.0",
   "description": "AI code review agent for GitHub and GitLab. View and resolve Greptile's PR review comments directly from Claude Code.",
   "author": {
     "name": "Greptile",
