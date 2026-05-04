@@ -561,6 +561,21 @@
       ]
     },
     {
+      "name": "createya-mcp",
+      "description": "100+ AI models via a single MCP server — FLUX, Kling, Runway, Sora 2, Veo 3.1, Midjourney, Higgsfield, Seedance and more. Includes Creative Director skill for photo shoots, lookbooks, UGC video, e-commerce content, and character sheets.",
+      "author": {
+        "name": "Createya",
+        "url": "https://createya.ai"
+      },
+      "category": "design",
+      "source": {
+        "source": "github",
+        "repo": "Createya-ai/createya-mcp",
+        "commit": "7082a0400aca46e44e2677bf9b4a041c0edb8561"
+      },
+      "homepage": "https://createya.ai"
+    },
+    {
       "name": "crowdstrike-falcon-foundry",
       "description": "CrowdStrike Falcon Foundry development skills for building cybersecurity applications on the Falcon platform. Includes UI development, collections, functions, workflows, API integration, security patterns, and debugging workflows.",
       "author": {
