@@ -58,15 +58,25 @@ const PID_FILE = join(STATE_DIR, 'bot.pid')
 // survive as an orphan and hold the slot forever, so every new session sees
 // 409 Conflict. Kill any stale holder before we start polling.
 mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 })
+// True if this instance owns polling. False in send-only mode (a live primary
+// already holds the slot — killing it would break the user's active session).
+let isPollingInstance = true
 try {
-  const stale = parseInt(readFileSync(PID_FILE, 'utf8'), 10)
-  if (stale > 1 && stale !== process.pid) {
-    process.kill(stale, 0)
-    process.stderr.write(`telegram channel: replacing stale poller pid=${stale}\n`)
-    process.kill(stale, 'SIGTERM')
+  const existing = parseInt(readFileSync(PID_FILE, 'utf8'), 10)
+  if (existing > 1 && existing !== process.pid) {
+    try {
+      process.kill(existing, 0) // throws if dead
+      // Primary is alive — defer to it, run send-only (outbound tools work, no polling).
+      process.stderr.write(`telegram channel: primary poller pid=${existing} is active, running in send-only mode\n`)
+      isPollingInstance = false
+    } catch {
+      // Stale zombie — take over.
+      process.stderr.write(`telegram channel: replacing stale poller pid=${existing}\n`)
+      process.kill(existing, 'SIGTERM')
+    }
   }
 } catch {}
-writeFileSync(PID_FILE, String(process.pid))
+if (isPollingInstance) writeFileSync(PID_FILE, String(process.pid))
 
 // Last-resort safety net — without these the process dies silently on any
 // unhandled promise rejection. With them it logs and keeps serving tools.
@@ -996,7 +1006,7 @@ bot.catch(err => {
 // returned, and polling stopped permanently while the process stayed alive
 // (MCP stdin keeps it running). Outbound tools kept working but the bot was
 // deaf to inbound messages until a full restart.
-void (async () => {
+if (isPollingInstance) void (async () => {
   for (let attempt = 1; ; attempt++) {
     try {
       await bot.start({
