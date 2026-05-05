@@ -713,16 +713,6 @@
       "source": "./external_plugins/discord"
     },
     {
-      "name": "elixir-ls-lsp",
-      "description": "Elixir language server (ElixirLS) for Claude Code — provides code intelligence and diagnostics for .ex, .exs, and .heex files.",
-      "source": {
-        "source": "url",
-        "url": "https://github.com/MikaelFangel/claude-elixir-ls-lsp.git",
-        "sha": "806a6eeeb88b9a306a59b3212a1d5d88aa5c70af"
-      },
-      "homepage": "https://elixir-lsp.github.io/elixir-ls/"
-    },
-    {
       "name": "exa",
       "description": "Exa AI web search, deep research, and content extraction. Provides MCP tools and research skills for comprehensive web search, people discovery, company research, academic papers, and more.",
       "author": {
