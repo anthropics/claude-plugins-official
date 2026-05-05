@@ -2096,16 +2096,6 @@
       "homepage": "https://docs.versori.com/latest/ai-tooling/overview"
     },
     {
-      "name": "voila-api",
-      "description": "Definitive guide for the Voila API. Covers shipment creation (Manual/Smart Shipping), real-time tracking, detailed history, manifesting, collections, webhooks, and third-party integrations (Sorted, Peoplevox, Mintsoft, Veeqo, JD).",
-      "source": {
-        "source": "url",
-        "url": "https://github.com/TSedmanDC/Voila-API-Skill.git",
-        "sha": "422c7beb772a0de4592a204584e0e990fc5dc139"
-      },
-      "homepage": "https://github.com/TSedmanDC/Voila-API-Skill"
-    },
-    {
       "name": "windsor-ai",
       "description": "Connect Claude Code to 325+ business data sources via Windsor.ai. Query marketing, sales, CRM, ecommerce, finance, and analytics data from Google Ads, Meta, HubSpot, Salesforce, Shopify, Stripe, and hundreds more — directly from your terminal.",
       "author": {
