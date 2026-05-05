@@ -834,16 +834,6 @@
       "homepage": "https://www.firetiger.com/"
     },
     {
-      "name": "flint",
-      "description": "Build and manage websites with Flint's AI website builder through natural conversation.",
-      "source": {
-        "source": "url",
-        "url": "https://github.com/tryflint/claude-code-plugin.git",
-        "sha": "f3d56e33ed2fb3ed9b4f02e0fc65d0a79b24bf4d"
-      },
-      "homepage": "https://www.tryflint.com/docs/claude-code-plugin"
-    },
-    {
       "name": "followrabbit",
       "description": "Cloud cost optimization for GCP infrastructure. Review changes for cost impact and auto-apply savings recommendations using the followrabbit CLI.",
       "source": {
