@@ -1419,16 +1419,6 @@
       "homepage": "https://posthog.com/docs/model-context-protocol"
     },
     {
-      "name": "postiz",
-      "description": "Social media automation CLI for scheduling posts, managing integrations, uploading media, and tracking analytics across 28+ platforms including X, LinkedIn, Reddit, YouTube, TikTok, Instagram, and more",
-      "source": {
-        "source": "url",
-        "url": "https://github.com/gitroomhq/postiz-agent.git",
-        "sha": "37d627244c53a4b3a7ca94c52cc2db13aaaf468e"
-      },
-      "homepage": "https://postiz.com/agent"
-    },
-    {
       "name": "postman",
       "description": "Full API lifecycle management for Claude Code. Sync collections, generate client code, discover APIs, run tests, create mocks, publish docs, and audit security. Powered by the Postman MCP Server.",
       "category": "development",
