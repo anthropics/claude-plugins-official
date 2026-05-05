@@ -71,18 +71,6 @@
       "homepage": "https://github.com/SalesforceAIResearch/agentforce-adlc"
     },
     {
-      "name": "ai-firstify",
-      "description": "AI-first project auditor and re-engineer based on the 9 design principles and 7 design patterns from the TechWolf AI-First Bootcamp",
-      "source": {
-        "source": "git-subdir",
-        "url": "https://github.com/techwolf-ai/ai-first-toolkit.git",
-        "path": "plugins/ai-firstify",
-        "ref": "main",
-        "sha": "852272ec21cebab98202df967dffee127209b6bc"
-      },
-      "homepage": "https://ai-first.techwolf.ai"
-    },
-    {
       "name": "ai-plugins",
       "description": "Set up endorctl and use Endor Labs to scan, prioritize, and fix security risks across your software supply chain",
       "source": {
