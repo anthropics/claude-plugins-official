@@ -49,17 +49,6 @@
       "homepage": "https://github.com/adobe/skills/tree/main/plugins/creative-cloud/adobe-for-creativity"
     },
     {
-      "name": "adspirer-ads-agent",
-      "description": "Cross-platform ad management for Google Ads, Meta Ads, TikTok Ads, and LinkedIn Ads. 91 tools for keyword research, campaign creation, performance analysis, and budget optimization.",
-      "category": "productivity",
-      "source": {
-        "source": "url",
-        "url": "https://github.com/amekala/adspirer-mcp-plugin.git",
-        "sha": "c40623f1aa7b568e960d3f2e2558a6fcf10e6c18"
-      },
-      "homepage": "https://www.adspirer.com"
-    },
-    {
       "name": "agent-sdk-dev",
       "description": "Development kit for working with the Claude Agent SDK",
       "author": {
