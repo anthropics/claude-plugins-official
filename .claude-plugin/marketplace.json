@@ -594,6 +594,22 @@
       }
     },
     {
+      "name": "cybrix-deploy",
+      "description": "Deploy the current static site to a live HTTPS URL via Cybrix. Detects Next.js export, Astro, Vite, Hugo, Eleventy, and plain HTML. Returns a live URL on *.cbrx.cc in under 60 seconds.",
+      "author": {
+        "name": "CYBRIX LLC"
+      },
+      "category": "development",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/cybrixcc/cybrix-skills.git",
+        "path": "plugins/cybrix-deploy",
+        "ref": "master",
+        "sha": "60001d54d0042cb0e0824ab8eca01472674ab62f"
+      },
+      "homepage": "https://cybrix.cc"
+    },
+    {
       "name": "data",
       "description": "Data engineering for Apache Airflow and Astronomer. Author DAGs with best practices, debug pipeline failures, trace data lineage, profile tables, migrate Airflow 2 to 3, and manage local and cloud deployments.",
       "category": "development",
