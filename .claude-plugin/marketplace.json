@@ -1289,16 +1289,6 @@
       "homepage": "https://github.com/makenotion/claude-code-notion-plugin"
     },
     {
-      "name": "opsera-devsecops",
-      "description": "Opsera DevSecOps Agent — AI-powered architecture analysis, security scanning, compliance auditing, and SQL security for your codebase. Free trial included.",
-      "source": {
-        "source": "url",
-        "url": "https://github.com/opsera-agents/opsera-devsecops.git",
-        "sha": "e797228134ee7d3199594eb0ee5a659df40c91da"
-      },
-      "homepage": "https://opsera.ai/agents"
-    },
-    {
       "name": "optibot",
       "description": "AI code review that catches production-breaking bugs, business logic issues, and security vulnerabilities — directly in Claude Code.",
       "source": {
