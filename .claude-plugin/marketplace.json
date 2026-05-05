@@ -1299,16 +1299,6 @@
       "homepage": "https://opsera.ai/agents"
     },
     {
-      "name": "optibot",
-      "description": "AI code review that catches production-breaking bugs, business logic issues, and security vulnerabilities — directly in Claude Code.",
-      "source": {
-        "source": "url",
-        "url": "https://github.com/Optimal-AI/optibot-skill.git",
-        "sha": "ce2be448ee713606aa653fc93ef2f98a200fe327"
-      },
-      "homepage": "https://getoptimal.ai"
-    },
-    {
       "name": "oracle-ai-data-platform-workbench-spark-connectors",
       "description": "Oracle AI Data Platform Workbench Spark connectors for Claude Code. 18 connector skills covering every data source workbench customers commonly need: Oracle Autonomous DB family (ALH/ADW/ATP) via wallet/IAM-DB-Token/API-key, ExaCS, Fusion ERP REST, Fusion BICC, EPM Cloud Planning, Essbase 21c, OCI Streaming (Kafka), OCI Object Storage, Apache Iceberg, plus external systems (PostgreSQL, MySQL/HeatWave, SQL Server, Snowflake, Azure ADLS Gen2, AWS S3, generic REST, custom JDBC, Excel). Live-validated on the workbench `tpcds` cluster (Spark 3.5.0): 17 PASS / 4 ship-as-is out of 21 test rows.",
       "author": {
