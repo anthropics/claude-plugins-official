@@ -930,18 +930,6 @@
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/greptile"
     },
     {
-      "name": "helius",
-      "description": "Build on Solana with Helius — live blockchain tools, expert coding patterns, and autonomous account signup",
-      "source": {
-        "source": "git-subdir",
-        "url": "https://github.com/helius-labs/core-ai.git",
-        "path": "helius-plugin",
-        "ref": "main",
-        "sha": "d9d252497bcf1e4bd5073a76715cd50a8353f9c3"
-      },
-      "homepage": "https://www.helius.dev/docs"
-    },
-    {
       "name": "hookify",
       "description": "Easily create custom hooks to prevent unwanted behaviors by analyzing conversation patterns or from explicit instructions. Define rules via simple markdown files.",
       "author": {
