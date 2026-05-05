@@ -1270,15 +1270,6 @@
       "homepage": "https://github.com/nvsecurity/nightvision-skills"
     },
     {
-      "name": "nimble",
-      "description": "Nimble web data toolkit — search, extract, map, crawl the web and work with structured data agents",
-      "source": {
-        "source": "url",
-        "url": "https://github.com/Nimbleway/agent-skills.git"
-      },
-      "homepage": "https://docs.nimbleway.com/integrations/agent-skills/plugin-installation"
-    },
-    {
       "name": "notion",
       "description": "Notion workspace integration. Search pages, create and update documents, manage databases, and access your team's knowledge base directly from Claude Code for seamless documentation workflows.",
       "category": "productivity",
