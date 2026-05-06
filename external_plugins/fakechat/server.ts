@@ -132,6 +132,19 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
 
 await mcp.connect(new StdioServerTransport())
 
+let shuttingDown = false
+
+function shutdown() {
+  if (shuttingDown) return
+  shuttingDown = true
+  process.exit(0)
+}
+
+process.stdin.on('end', shutdown)
+process.stdin.on('close', shutdown)
+process.on('SIGINT', shutdown)
+process.on('SIGTERM', shutdown)
+
 function deliver(id: string, text: string, file?: { path: string; name: string }): void {
   // file_path goes in meta only — an in-content "[attached — Read: PATH]"
   // annotation is forgeable by typing that string into the UI.
