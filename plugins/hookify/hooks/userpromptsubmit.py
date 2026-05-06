@@ -36,8 +36,15 @@ def main():
         engine = RuleEngine()
         result = engine.evaluate_rules(rules, input_data)
 
-        # Always output JSON (even if empty)
-        print(json.dumps(result), file=sys.stdout)
+        # Claude Code routes UserPromptSubmit injected text through additionalContext.
+        if result.get('systemMessage'):
+            additional_context = result.pop('systemMessage')
+            result.setdefault('hookSpecificOutput', {})
+            result['hookSpecificOutput'].setdefault('hookEventName', 'UserPromptSubmit')
+            result['hookSpecificOutput']['additionalContext'] = additional_context
+
+        if result:
+            print(json.dumps(result), file=sys.stdout)
 
     except Exception as e:
         error_output = {
