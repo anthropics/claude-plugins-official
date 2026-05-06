@@ -2157,20 +2157,6 @@
       "homepage": "https://github.com/vercel/vercel-plugin"
     },
     {
-      "name": "versori-skills",
-      "description": "Skills for building data integrations using the Versori platform and versori-run SDK. Claude can bootstrap projects, configure systems and connections, generate type-safe TypeScript workflows, run local validation via Deno, and deploy to production — with a research-first approach that grounds code generation in gathered API documentation.",
-      "author": {
-        "name": "Versori"
-      },
-      "category": "development",
-      "source": {
-        "source": "url",
-        "url": "https://github.com/versori/cli.git",
-        "sha": "134cf334c3065509eee39a5361fd0bcf969dc867"
-      },
-      "homepage": "https://docs.versori.com/latest/ai-tooling/overview"
-    },
-    {
       "name": "voila-api",
       "description": "Definitive guide for the Voila API. Covers shipment creation (Manual/Smart Shipping), real-time tracking, detailed history, manifesting, collections, webhooks, and third-party integrations (Sorted, Peoplevox, Mintsoft, Veeqo, JD).",
       "source": {
