@@ -856,16 +856,6 @@
       "homepage": "https://www.tryflint.com/docs/claude-code-plugin"
     },
     {
-      "name": "followrabbit",
-      "description": "Cloud cost optimization for GCP infrastructure. Review changes for cost impact and auto-apply savings recommendations using the followrabbit CLI.",
-      "source": {
-        "source": "url",
-        "url": "https://github.com/followrabbit-ai/awesome-rabbit.git",
-        "sha": "6926154501300d348a7b50d47479648fe87985b6"
-      },
-      "homepage": "https://subscriptions.agentic.followrabbit.ai/"
-    },
-    {
       "name": "frontend-design",
       "description": "Create distinctive, production-grade frontend interfaces with high design quality. Generates creative, polished code that avoids generic AI aesthetics.",
       "author": {
