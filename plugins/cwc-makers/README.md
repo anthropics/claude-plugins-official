@@ -4,7 +4,7 @@ Seamless onboarding for the [Code-with-Claude Makers](https://claude.com/cwc-mak
 
 ## What it does
 
-Plug in your M5Stack Cardputer-Adv over USB-C, type `/start-making`, and Claude will:
+Plug in your M5Stack Cardputer-Adv over USB-C, type `/maker-setup`, and Claude will:
 
 1. Clone [`moremas/build-with-claude`](https://github.com/moremas/build-with-claude)
 2. Detect the device, flash UIFlow 2.0 firmware, and install the Claude Buddy + Hello + Snake app bundle
@@ -23,11 +23,11 @@ Then ask Claude to build whatever you want next — a magic 8-ball, a pixel pet,
 
 | Path | Type | User-invocable | Purpose |
 |------|------|----------------|---------|
-| `commands/start-making.md` | slash command | ✅ `/start-making` | Entry point — clone repo + run full onboarding |
+| `commands/maker-setup.md` | slash command | ✅ `/maker-setup` | Entry point — clone repo + run full onboarding |
 | `skills/m5-onboard/` | skill | ✅ `/m5-onboard` | Full provisioning playbook (detect, flash, install, every gotcha) |
 | `skills/cardputer-buddy/` | skill | ✅ `/cardputer-buddy` | Iterate on apps after onboarding (push, tail, REPL) |
 
-`/start-making` is the intended entry point; the skills are also auto-triggered by Claude when relevant. Skill content is vendored from the upstream repo so Claude has the domain knowledge in-context without symlinking anything into `~/.claude/skills/`.
+`/maker-setup` is the intended entry point; the skills are also auto-triggered by Claude when relevant. Skill content is vendored from the upstream repo so Claude has the domain knowledge in-context without symlinking anything into `~/.claude/skills/`.
 
 ## Prerequisites
 
