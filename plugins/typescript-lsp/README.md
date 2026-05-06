@@ -1,6 +1,6 @@
 # typescript-lsp
 
-TypeScript/JavaScript language server for Claude Code, providing code intelligence features like go-to-definition, find references, and error checking.
+TypeScript/JavaScript language server for Claude Code, providing code intelligence features like go-to-definition, find references, hover information, symbol search, and call hierarchy.
 
 ## Supported Extensions
 `.ts`, `.tsx`, `.js`, `.jsx`, `.mts`, `.cts`, `.mjs`, `.cjs`
