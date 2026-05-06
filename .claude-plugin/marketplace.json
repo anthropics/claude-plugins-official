@@ -232,10 +232,11 @@
       ]
     },
     {
-      "name": "auth0",
-      "description": "Add authentication to any app with Auth0. This plugin detects your framework, scaffolds the right Auth0 SDK integration, and guides you through login, logout, sessions, and protected routes — using current SDK patterns.",
+      "name": "Auth0",
+      "description": "Enterprise-grade auth, easy to implement. Add login, SSO, MFA, and access control to any app with framework-aware guidance.",
       "author": {
-        "name": "Auth0"
+        "name": "Auth0",
+        "url": "https://auth0.com"
       },
       "category": "security",
       "source": {
@@ -244,7 +245,7 @@
         "path": "plugins/auth0",
         "ref": "main"
       },
-      "homepage": "https://auth0.com/docs/quickstart/agent-skills"
+      "homepage": "https://auth0.com"
     },
     {
       "name": "autofix-bot",
