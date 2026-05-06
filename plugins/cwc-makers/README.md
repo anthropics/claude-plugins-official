@@ -31,7 +31,7 @@ Then ask Claude to build whatever you want next — a magic 8-ball, a pixel pet,
 
 ## Prerequisites
 
-Python 3.10+ and git on the host machine. The onboarding scripts auto-install `esptool` on first run; `pyserial` is vendored in the upstream repo.
+Python 3.10+ on the host machine (git is optional — `/maker-setup` falls back to a curl+tar download if it's missing). The onboarding scripts auto-install `esptool` on first run; `pyserial` is vendored in the upstream repo.
 
 ## License
 

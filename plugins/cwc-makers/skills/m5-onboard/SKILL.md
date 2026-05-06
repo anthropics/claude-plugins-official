@@ -130,17 +130,9 @@ Once `m5-onboard go` finishes at the `DONE` banner, the device is ready to use o
 
 `onboard.py` runs a preflight check at startup: if `esptool` (or, in the rare prune-vendor case, `pyserial`) is missing, it lists what's needed and asks the user whether to install now. On `Y` (or Enter) it runs `python -m pip install --user <missing>` in the current interpreter, then verifies. Inside a venv the `--user` flag is dropped so the install lands in the venv's site-packages. Non-interactive callers (piped stdin) get a manual-install hint instead of a prompt.
 
-Python itself has to exist before this skill can do anything — you can't bootstrap an interpreter from inside one. Same story for `git` (needed once, to clone the skill and bundle repos). Claude's responsible for detecting both and installing whatever's missing *before* running any `scripts/*.py` invocation. Detection is just running `python3 --version` / `python --version` and `git --version` — if either fails, Claude fetches them with the host's native package manager before anything else.
+Python itself has to exist before this skill can do anything — you can't bootstrap an interpreter from inside one. `git` is **not** required — the `/maker-setup` command falls back to downloading the GitHub tarball with `curl`+`tar` (both pre-installed on macOS, Linux, and Windows 10+) when `git --version` fails. Claude's responsible for detecting Python and installing it if missing *before* running any `scripts/*.py` invocation. Detection is just running `python3 --version` / `python --version` — if it fails, Claude fetches Python with the host's native package manager before anything else.
 
-**Per-OS dependency bootstrap (Claude's responsibility if missing):**
-
-*Git:*
-
-- **Windows** — `winget install -e --id Git.Git --silent --accept-source-agreements --accept-package-agreements`. Adds `git.exe` to PATH; may need a new shell for it to be visible.
-- **macOS** — `/usr/bin/git` ships with Xcode Command Line Tools; `git --version` on a fresh macOS triggers the tools installer automatically. If you want to avoid the GUI prompt, install via `xcode-select --install` (still opens a dialog) or `brew install git`.
-- **Linux** — `sudo apt-get install -y git` / `sudo dnf install -y git` / `sudo pacman -S --noconfirm git`.
-
-*Python:*
+**Per-OS Python bootstrap (Claude's responsibility if missing):**
 
 - **Windows** — `winget install -e --id Python.Python.3.13 --silent --accept-source-agreements --accept-package-agreements`. Takes ~30 seconds, no UI, gets PATH right. If the current shell can't see `python` afterwards, tell the user to close and reopen the terminal (Windows updates PATH only on new shells).
 - **macOS** — Python 3 is usually pre-installed as `/usr/bin/python3` on any current macOS (shipped by Apple). If for some reason it isn't, `brew install python@3.13` via Homebrew is the go-to; if Homebrew itself is missing, offer to install it via `/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"` (but only if the user confirms — Homebrew is a larger commitment than winget).
