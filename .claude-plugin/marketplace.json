@@ -905,16 +905,6 @@
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/gitlab"
     },
     {
-      "name": "goodmem",
-      "description": "GoodMem memory infrastructure for AI agents. Use Python SDK skills to write code that manages embedders, spaces, and memories, or use MCP tools to perform GoodMem operations directly via natural language.",
-      "source": {
-        "source": "url",
-        "url": "https://github.com/PAIR-Systems-Inc/goodmem-claude-code-plugin.git",
-        "sha": "4e23ab2b3bc7cb4167c99e10d9640ad7089744d7"
-      },
-      "homepage": "https://github.com/PAIR-Systems-Inc/goodmem-claude-code-plugin"
-    },
-    {
       "name": "gopls-lsp",
       "description": "Go language server for code intelligence and refactoring",
       "version": "1.0.0",
