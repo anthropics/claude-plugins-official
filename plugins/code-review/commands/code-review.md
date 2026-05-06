@@ -8,10 +8,11 @@ Provide a code review for the given pull request.
 
 To do this, follow these steps precisely:
 
-1. Use a Haiku agent to check if the pull request (a) is closed, (b) is a draft, (c) does not need a code review (eg. because it is an automated pull request, or is very simple and obviously ok), or (d) already has a code review from you from earlier. If so, do not proceed.
-2. Use another Haiku agent to give you a list of file paths to (but not the contents of) any relevant CLAUDE.md files from the codebase: the root CLAUDE.md file (if one exists), as well as any CLAUDE.md files in the directories whose files the pull request modified
-3. Use a Haiku agent to view the pull request, and ask the agent to return a summary of the change
-4. Then, launch 5 parallel Sonnet agents to independently code review the change. The agents should do the following, then return a list of issues and the reason each issue was flagged (eg. CLAUDE.md adherence, bug, historical git context, etc.):
+0. Run `pwd` and record the result as `{cwd}`. Determine the target pull request number as `{pr_number}` from the user's explicit argument, or from the `PR_NUMBER` environment variable if no argument was provided. Use this same `{pr_number}` for every `gh pr view`, `gh pr diff`, and `gh pr comment` command. Do not use `gh pr list` or "most recent open PR" to choose the target pull request.
+1. Use a Haiku agent to check if pull request `{pr_number}` (a) is closed, (b) is a draft, (c) does not need a code review (eg. because it is an automated pull request, or is very simple and obviously ok), or (d) already has a code review from you from earlier. Tell the agent to work from `{cwd}` and to inspect only `gh pr view {pr_number}`. If the pull request is ineligible, do not proceed.
+2. Use another Haiku agent to give you a list of file paths to (but not the contents of) any relevant CLAUDE.md files from the codebase at `{cwd}`: the root CLAUDE.md file (if one exists), as well as any CLAUDE.md files in the directories whose files pull request `{pr_number}` modified.
+3. Use a Haiku agent to view pull request `{pr_number}` from `{cwd}`, and ask the agent to return a summary of the change.
+4. Then, launch 5 parallel Sonnet agents to independently code review pull request `{pr_number}` from `{cwd}`. The agents should do the following, then return a list of issues and the reason each issue was flagged (eg. CLAUDE.md adherence, bug, historical git context, etc.):
    a. Agent #1: Audit the changes to make sure they compily with the CLAUDE.md. Note that CLAUDE.md is guidance for Claude as it writes code, so not all instructions will be applicable during code review.
    b. Agent #2: Read the file changes in the pull request, then do a shallow scan for obvious bugs. Avoid reading extra context beyond the changes, focusing just on the changes themselves. Focus on large bugs, and avoid small issues and nitpicks. Ignore likely false positives.
    c. Agent #3: Read the git blame and history of the code modified, to identify any bugs in light of that historical context
@@ -24,8 +25,8 @@ To do this, follow these steps precisely:
    d. 75: Highly confident. The agent double checked the issue, and verified that it is very likely it is a real issue that will be hit in practice. The existing approach in the PR is insufficient. The issue is very important and will directly impact the code's functionality, or it is an issue that is directly mentioned in the relevant CLAUDE.md.
    e. 100: Absolutely certain. The agent double checked the issue, and confirmed that it is definitely a real issue, that will happen frequently in practice. The evidence directly confirms this.
 6. Filter out any issues with a score less than 80. If there are no issues that meet this criteria, do not proceed.
-7. Use a Haiku agent to repeat the eligibility check from #1, to make sure that the pull request is still eligible for code review.
-8. Finally, use the gh bash command to comment back on the pull request with the result. When writing your comment, keep in mind to:
+7. Use a Haiku agent to repeat the eligibility check from #1 against pull request `{pr_number}`, to make sure that the pull request is still eligible for code review.
+8. Finally, use the gh bash command to comment back on pull request `{pr_number}` with the result. When writing your comment, keep in mind to:
    a. Keep your output brief
    b. Avoid emojis
    c. Link and cite relevant code, files, and URLs
