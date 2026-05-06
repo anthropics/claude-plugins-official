@@ -206,9 +206,15 @@ def load_rules(event: Optional[str] = None) -> List[Rule]:
     """
     rules = []
 
-    # Find all hookify.*.local.md files
-    pattern = os.path.join('.claude', 'hookify.*.local.md')
-    files = glob.glob(pattern)
+    # Find all hookify.*.local.md files in project (.claude/) and global (~/.claude/)
+    project_pattern = os.path.join('.claude', 'hookify.*.local.md')
+    global_pattern = os.path.join(os.path.expanduser('~'), '.claude', 'hookify.*.local.md')
+    project_files = glob.glob(project_pattern)
+    global_files = glob.glob(global_pattern)
+
+    # Project files take precedence over global files with the same basename
+    project_basenames = {os.path.basename(f) for f in project_files}
+    files = project_files + [f for f in global_files if os.path.basename(f) not in project_basenames]
 
     for file_path in files:
         try:
@@ -248,7 +254,7 @@ def load_rule_file(file_path: str) -> Optional[Rule]:
         Rule object or None if file is invalid.
     """
     try:
-        with open(file_path, 'r') as f:
+        with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
 
         frontmatter, message = extract_frontmatter(content)

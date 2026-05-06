@@ -223,9 +223,10 @@ class RuleEngine:
                     except UnicodeDecodeError as e:
                         print(f"Warning: Encoding error in transcript {transcript_path}: {e}", file=sys.stderr)
                         return ''
-            elif field == 'user_prompt':
+            elif field == 'user_prompt' or field == 'prompt':
                 # For UserPromptSubmit events
-                return input_data.get('user_prompt', '')
+                # Claude Code official key is 'prompt'; 'user_prompt' kept for legacy rule compat
+                return input_data.get('prompt') or input_data.get('user_prompt', '')
 
         # Handle special cases by tool type
         if tool_name == 'Bash':
