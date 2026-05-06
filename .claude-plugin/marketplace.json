@@ -595,7 +595,7 @@
     },
     {
       "name": "cwc-makers",
-      "description": "Onboard a Code-with-Claude Makers Cardputer with one /keep-thinking command — clones the build-with-claude repo, flashes UIFlow firmware, and installs the Claude Buddy app bundle.",
+      "description": "Onboard a Code-with-Claude Makers Cardputer with one /start-making command — clones the build-with-claude repo, flashes UIFlow firmware, and installs the Claude Buddy app bundle.",
       "version": "1.0.0",
       "author": {
         "name": "Anthropic",

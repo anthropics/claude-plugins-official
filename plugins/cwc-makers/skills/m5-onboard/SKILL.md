@@ -9,7 +9,7 @@ This skill automates the full cold-start workflow for an M5Stack ESP32 device: d
 
 ## Where the scripts live
 
-This skill ships as part of the `cwc-makers` plugin for reference, but the executable scripts and the `buddy/` app bundle live in a local clone of https://github.com/moremas/build-with-claude (the `/keep-thinking` command creates this clone). Run every `scripts/*.py` invocation below from inside that clone's `onboard/` directory so `--apps buddy` resolves to the sibling `buddy/device/` payload.
+This skill ships as part of the `cwc-makers` plugin for reference, but the executable scripts and the `buddy/` app bundle live in a local clone of https://github.com/moremas/build-with-claude (the `/start-making` command creates this clone). Run every `scripts/*.py` invocation below from inside that clone's `onboard/` directory so `--apps buddy` resolves to the sibling `buddy/device/` payload.
 
 
 ## When to use
