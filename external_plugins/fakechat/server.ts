@@ -132,6 +132,18 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
 
 await mcp.connect(new StdioServerTransport())
 
+// Exit when stdio closes or a termination signal arrives, so the bun server
+// doesn't outlive its parent Claude Code process and orphan-hold the port.
+const die = (why: string): never => {
+  process.stderr.write(`fakechat: shutting down (${why})\n`)
+  process.exit(0)
+}
+process.stdin.on('end', () => die('stdin end'))
+process.stdin.on('close', () => die('stdin close'))
+process.on('SIGTERM', () => die('SIGTERM'))
+process.on('SIGINT', () => die('SIGINT'))
+process.on('SIGHUP', () => die('SIGHUP'))
+
 function deliver(id: string, text: string, file?: { path: string; name: string }): void {
   // file_path goes in meta only — an in-content "[attached — Read: PATH]"
   // annotation is forgeable by typing that string into the UI.
