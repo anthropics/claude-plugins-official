@@ -1473,16 +1473,6 @@
       "homepage": "https://prisma.io"
     },
     {
-      "name": "product-tracking-skills",
-      "description": "AI agent skills that make SaaS products data-ready for product analytics — from codebase scan to tracking plan to working instrumentation code.",
-      "source": {
-        "source": "url",
-        "url": "https://github.com/Accoil/product-tracking-skills.git",
-        "sha": "341f8cf47d8b5dda550222152377c50aee34c723"
-      },
-      "homepage": "https://www.accoil.com/product-tracking"
-    },
-    {
       "name": "pydantic-ai",
       "description": "Write accurate Pydantic AI code from the start. Up-to-date patterns, decision trees, and common gotchas for agents, tools, structured output, streaming, and multi-agent apps.",
       "category": "development",
