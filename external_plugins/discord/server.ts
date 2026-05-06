@@ -595,6 +595,44 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
         required: ['channel'],
       },
     },
+    {
+      name: 'pin_message',
+      description:
+        "Pin a message in its Discord channel so it stays visible above the active feed. Useful for keeping a 'current options' or 'current state' summary easy to find. Requires the bot to have Manage Messages permission in the channel; Discord caps each channel at 50 pins. Pair with unpin_message + list_pinned to rotate stale pins.",
+      inputSchema: {
+        type: 'object',
+        properties: {
+          chat_id: { type: 'string' },
+          message_id: { type: 'string' },
+        },
+        required: ['chat_id', 'message_id'],
+      },
+    },
+    {
+      name: 'unpin_message',
+      description:
+        "Unpin a previously-pinned message. Use to retire a stale 'current options' summary before pinning a new one.",
+      inputSchema: {
+        type: 'object',
+        properties: {
+          chat_id: { type: 'string' },
+          message_id: { type: 'string' },
+        },
+        required: ['chat_id', 'message_id'],
+      },
+    },
+    {
+      name: 'list_pinned',
+      description:
+        "List currently pinned messages in a Discord channel. Returns oldest-pin-first with message IDs and content snippets. Useful before pin_message to check the 50-pin ceiling, or to find a previous 'current options' pin to unpin.",
+      inputSchema: {
+        type: 'object',
+        properties: {
+          chat_id: { type: 'string' },
+        },
+        required: ['chat_id'],
+      },
+    },
   ],
 }))
 
@@ -703,6 +741,46 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         }
         return {
           content: [{ type: 'text', text: `downloaded ${lines.length} attachment(s):\n${lines.join('\n')}` }],
+        }
+      }
+      case 'pin_message': {
+        const ch = await fetchAllowedChannel(args.chat_id as string)
+        const msg = await ch.messages.fetch(args.message_id as string)
+        if (msg.pinned) {
+          return { content: [{ type: 'text', text: `already pinned (id: ${msg.id})` }] }
+        }
+        await msg.pin()
+        return { content: [{ type: 'text', text: `pinned (id: ${msg.id})` }] }
+      }
+      case 'unpin_message': {
+        const ch = await fetchAllowedChannel(args.chat_id as string)
+        const msg = await ch.messages.fetch(args.message_id as string)
+        if (!msg.pinned) {
+          return { content: [{ type: 'text', text: `not pinned (id: ${msg.id})` }] }
+        }
+        await msg.unpin()
+        return { content: [{ type: 'text', text: `unpinned (id: ${msg.id})` }] }
+      }
+      case 'list_pinned': {
+        const ch = await fetchAllowedChannel(args.chat_id as string)
+        if (!('messages' in ch)) throw new Error('channel does not support messages.fetchPinned')
+        const pinned = await ch.messages.fetchPinned()
+        const me = client.user?.id
+        const arr = [...pinned.values()].reverse()  // oldest pin first
+        const out =
+          arr.length === 0
+            ? '(no pinned messages)'
+            : arr
+                .map(m => {
+                  const who = m.author.id === me ? 'me' : m.author.username
+                  const text = m.content.replace(/[\r\n]+/g, ' ⏎ ').slice(0, 120)
+                  return `[pinned ${m.createdAt.toISOString()}] ${who}: ${text}  (id: ${m.id})`
+                })
+                .join('\n')
+        return {
+          content: [
+            { type: 'text', text: `${arr.length}/50 pins\n${out}` },
+          ],
         }
       }
       default:
