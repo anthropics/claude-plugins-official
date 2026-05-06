@@ -365,22 +365,6 @@
       "homepage": "https://docs.brightdata.com"
     },
     {
-      "name": "cds-mcp",
-      "description": "AI-assisted development of SAP Cloud Application Programming Model (CAP) projects. Search CDS models and CAP documentation.",
-      "author": {
-        "name": "SAP SE",
-        "email": "ospo@sap.com",
-        "url": "https://www.sap.com"
-      },
-      "category": "development",
-      "source": {
-        "source": "url",
-        "url": "https://github.com/cap-js/mcp-server.git",
-        "sha": "4d59d7070a52761a9b8028cbe710c8d7477cbc92"
-      },
-      "homepage": "https://cap.cloud.sap/"
-    },
-    {
       "name": "chrome-devtools-mcp",
       "description": "Control and inspect a live Chrome browser from your coding agent. Record performance traces, analyze network requests, check console messages with source-mapped stack traces, and automate browser actions with Puppeteer.",
       "category": "development",
