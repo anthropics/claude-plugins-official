@@ -1612,16 +1612,6 @@
       "homepage": "https://help.sap.com/docs/MDK"
     },
     {
-      "name": "searchfit-seo",
-      "description": "Free AI-powered SEO toolkit — audit websites, plan content strategy, optimize pages, generate schema markup, cluster keywords, and track AI visibility. Works with any website or codebase.",
-      "source": {
-        "source": "url",
-        "url": "https://github.com/searchfit/searchfit-seo.git",
-        "sha": "ced1a99a9fadfc10aa573a05829fc1bd357d4e4c"
-      },
-      "homepage": "https://searchfit.ai"
-    },
-    {
       "name": "security-guidance",
       "description": "Security reminder hook that warns about potential security issues when editing files, including command injection, XSS, and unsafe code patterns",
       "author": {
