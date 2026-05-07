@@ -2243,6 +2243,19 @@
       "homepage": "https://github.com/zapier/zapier-mcp/tree/main/plugins/zapier"
     },
     {
+      "name": "zilliz",
+      "description": "Zilliz Cloud management plugin with 14 skills covering cluster lifecycle, collection schema, vector search, index tuning, bulk import, RBAC, backups, and monitoring.",
+      "author": {
+        "name": "Zilliz"
+      },
+      "category": "database",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/zilliztech/zilliz-plugin.git"
+      },
+      "homepage": "https://docs.zilliz.com"
+    },
+    {
       "name": "zoom-plugin",
       "description": "Claude plugin for planning, building, and debugging Zoom integrations across REST APIs, SDKs, webhooks, bots, and MCP workflows.",
       "category": "development",
