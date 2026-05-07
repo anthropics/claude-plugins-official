@@ -8,25 +8,38 @@ You need to execute the following bash commands to clean up stale local branches
 
 ## Commands to Execute
 
-1. **First, list branches to identify any with [gone] status**
+1. **First, prune stale remote-tracking refs so `[gone]` markers are accurate**
    Execute this command:
+
    ```bash
-   git branch -v
+   git fetch --prune
    ```
-   
+
+   Without this, branches whose remote counterpart was deleted may not yet show `[gone]` in the next step.
+
+2. **Next, list branches to identify any with [gone] status**
+   Execute this command:
+
+   ```bash
+   git branch -vv
+   ```
+
+   The `-vv` (double-v) flag is required: `[gone]` markers only appear with `-vv`, not with single `-v`.
+
    Note: Branches with a '+' prefix have associated worktrees and must have their worktrees removed before deletion.
 
-2. **Next, identify worktrees that need to be removed for [gone] branches**
+3. **Then, identify worktrees that need to be removed for [gone] branches**
    Execute this command:
+
    ```bash
    git worktree list
    ```
 
-3. **Finally, remove worktrees and delete [gone] branches (handles both regular and worktree branches)**
+4. **Finally, remove worktrees and delete [gone] branches (handles both regular and worktree branches)**
    Execute this command:
    ```bash
    # Process all [gone] branches, removing '+' prefix if present
-   git branch -v | grep '\[gone\]' | sed 's/^[+* ]//' | awk '{print $1}' | while read branch; do
+   git branch -vv | grep '\[gone\]' | sed 's/^[+* ]//' | awk '{print $1}' | while read branch; do
      echo "Processing branch: $branch"
      # Find and remove worktree if it exists
      worktree=$(git worktree list | grep "\\[$branch\\]" | awk '{print $1}')
@@ -50,4 +63,3 @@ After executing these commands, you will:
 - Provide feedback on which worktrees and branches were removed
 
 If no branches are marked as [gone], report that no cleanup was needed.
-
