@@ -1595,17 +1595,6 @@
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/plugins/ralph-loop"
     },
     {
-      "name": "rc",
-      "description": "Configure RevenueCat projects, apps, products, entitlements, and offerings directly from Claude Code. Manage your in-app purchase backend without leaving your development workflow.",
-      "category": "development",
-      "source": {
-        "source": "url",
-        "url": "https://github.com/RevenueCat/rc-claude-code-plugin.git",
-        "sha": "af7cb77996aee4e7e3c109c5afec81f716139032"
-      },
-      "homepage": "https://www.revenuecat.com"
-    },
-    {
       "name": "remember",
       "description": "Continuous memory for Claude Code. Extracts, summarizes, and compresses conversations into tiered daily logs. Claude remembers what you did yesterday.",
       "source": {
@@ -1617,12 +1606,13 @@
     },
     {
       "name": "revenuecat",
-      "description": "Configure RevenueCat projects, apps, products, entitlements, and offerings directly from Claude Code. Manage your in-app purchase backend without leaving your development workflow.",
+      "description": "Configure RevenueCat projects, products, entitlements, and offerings directly from your AI coding assistant. Access data about your revenue, conversion funnel, and experiments. Manage your in-app purchase monetization without leaving your agent.",
       "category": "development",
       "source": {
-        "source": "url",
-        "url": "https://github.com/RevenueCat/rc-claude-code-plugin.git",
-        "sha": "af7cb77996aee4e7e3c109c5afec81f716139032"
+        "source": "git-subdir",
+        "url": "https://github.com/RevenueCat/ai-toolkit.git",
+        "path": "revenuecat",
+        "ref": "main"
       },
       "homepage": "https://www.revenuecat.com"
     },
