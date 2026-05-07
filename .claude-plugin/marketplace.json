@@ -71,18 +71,6 @@
       "homepage": "https://github.com/SalesforceAIResearch/agentforce-adlc"
     },
     {
-      "name": "ai-firstify",
-      "description": "AI-first project auditor and re-engineer based on the 9 design principles and 7 design patterns from the TechWolf AI-First Bootcamp",
-      "source": {
-        "source": "git-subdir",
-        "url": "https://github.com/techwolf-ai/ai-first-toolkit.git",
-        "path": "plugins/ai-firstify",
-        "ref": "main",
-        "sha": "852272ec21cebab98202df967dffee127209b6bc"
-      },
-      "homepage": "https://ai-first.techwolf.ai"
-    },
-    {
       "name": "ai-plugins",
       "description": "Set up endorctl and use Endor Labs to scan, prioritize, and fix security risks across your software supply chain",
       "source": {
@@ -594,6 +582,18 @@
       }
     },
     {
+      "name": "cwc-makers",
+      "description": "Onboard a Code-with-Claude Makers Cardputer with one /maker-setup command — clones the build-with-claude repo, flashes UIFlow firmware, and installs the Claude Buddy app bundle.",
+      "version": "1.0.0",
+      "author": {
+        "name": "Anthropic",
+        "email": "support@anthropic.com"
+      },
+      "source": "./plugins/cwc-makers",
+      "category": "productivity",
+      "homepage": "https://claude.com/cwc-makers"
+    },
+    {
       "name": "data",
       "description": "Data engineering for Apache Airflow and Astronomer. Author DAGs with best practices, debug pipeline failures, trace data lineage, profile tables, migrate Airflow 2 to 3, and manage local and cloud deployments.",
       "category": "development",
@@ -713,16 +713,6 @@
       "source": "./external_plugins/discord"
     },
     {
-      "name": "elixir-ls-lsp",
-      "description": "Elixir language server (ElixirLS) for Claude Code — provides code intelligence and diagnostics for .ex, .exs, and .heex files.",
-      "source": {
-        "source": "url",
-        "url": "https://github.com/MikaelFangel/claude-elixir-ls-lsp.git",
-        "sha": "806a6eeeb88b9a306a59b3212a1d5d88aa5c70af"
-      },
-      "homepage": "https://elixir-lsp.github.io/elixir-ls/"
-    },
-    {
       "name": "exa",
       "description": "Exa AI web search, deep research, and content extraction. Provides MCP tools and research skills for comprehensive web search, people discovery, company research, academic papers, and more.",
       "author": {
@@ -824,16 +814,6 @@
       "homepage": "https://github.com/firecrawl/firecrawl-claude-plugin.git"
     },
     {
-      "name": "firetiger",
-      "description": "Claude Code plugin for Firetiger observability workflows and MCP-powered investigations.",
-      "source": {
-        "source": "url",
-        "url": "https://github.com/firetiger-oss/claude-plugin.git",
-        "sha": "51421ce20adc7c30eb014e6847c7087ed34cb879"
-      },
-      "homepage": "https://www.firetiger.com/"
-    },
-    {
       "name": "flint",
       "description": "Build and manage websites with Flint's AI website builder through natural conversation.",
       "source": {
@@ -842,16 +822,6 @@
         "sha": "f3d56e33ed2fb3ed9b4f02e0fc65d0a79b24bf4d"
       },
       "homepage": "https://www.tryflint.com/docs/claude-code-plugin"
-    },
-    {
-      "name": "followrabbit",
-      "description": "Cloud cost optimization for GCP infrastructure. Review changes for cost impact and auto-apply savings recommendations using the followrabbit CLI.",
-      "source": {
-        "source": "url",
-        "url": "https://github.com/followrabbit-ai/awesome-rabbit.git",
-        "sha": "6926154501300d348a7b50d47479648fe87985b6"
-      },
-      "homepage": "https://subscriptions.agentic.followrabbit.ai/"
     },
     {
       "name": "frontend-design",
@@ -893,16 +863,6 @@
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/gitlab"
     },
     {
-      "name": "goodmem",
-      "description": "GoodMem memory infrastructure for AI agents. Use Python SDK skills to write code that manages embedders, spaces, and memories, or use MCP tools to perform GoodMem operations directly via natural language.",
-      "source": {
-        "source": "url",
-        "url": "https://github.com/PAIR-Systems-Inc/goodmem-claude-code-plugin.git",
-        "sha": "4e23ab2b3bc7cb4167c99e10d9640ad7089744d7"
-      },
-      "homepage": "https://github.com/PAIR-Systems-Inc/goodmem-claude-code-plugin"
-    },
-    {
       "name": "gopls-lsp",
       "description": "Go language server for code intelligence and refactoring",
       "version": "1.0.0",
@@ -928,18 +888,6 @@
       "category": "development",
       "source": "./external_plugins/greptile",
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/greptile"
-    },
-    {
-      "name": "helius",
-      "description": "Build on Solana with Helius — live blockchain tools, expert coding patterns, and autonomous account signup",
-      "source": {
-        "source": "git-subdir",
-        "url": "https://github.com/helius-labs/core-ai.git",
-        "path": "helius-plugin",
-        "ref": "main",
-        "sha": "d9d252497bcf1e4bd5073a76715cd50a8353f9c3"
-      },
-      "homepage": "https://www.helius.dev/docs"
     },
     {
       "name": "hookify",
@@ -1289,16 +1237,6 @@
       "homepage": "https://github.com/makenotion/claude-code-notion-plugin"
     },
     {
-      "name": "opsera-devsecops",
-      "description": "Opsera DevSecOps Agent — AI-powered architecture analysis, security scanning, compliance auditing, and SQL security for your codebase. Free trial included.",
-      "source": {
-        "source": "url",
-        "url": "https://github.com/opsera-agents/opsera-devsecops.git",
-        "sha": "e797228134ee7d3199594eb0ee5a659df40c91da"
-      },
-      "homepage": "https://opsera.ai/agents"
-    },
-    {
       "name": "oracle-ai-data-platform-workbench-spark-connectors",
       "description": "Oracle AI Data Platform Workbench Spark connectors for Claude Code. 18 connector skills covering every data source workbench customers commonly need: Oracle Autonomous DB family (ALH/ADW/ATP) via wallet/IAM-DB-Token/API-key, ExaCS, Fusion ERP REST, Fusion BICC, EPM Cloud Planning, Essbase 21c, OCI Streaming (Kafka), OCI Object Storage, Apache Iceberg, plus external systems (PostgreSQL, MySQL/HeatWave, SQL Server, Snowflake, Azure ADLS Gen2, AWS S3, generic REST, custom JDBC, Excel). Live-validated on the workbench `tpcds` cluster (Spark 3.5.0): 17 PASS / 4 ship-as-is out of 21 test rows.",
       "author": {
@@ -1451,16 +1389,6 @@
       "homepage": "https://prisma.io"
     },
     {
-      "name": "product-tracking-skills",
-      "description": "AI agent skills that make SaaS products data-ready for product analytics — from codebase scan to tracking plan to working instrumentation code.",
-      "source": {
-        "source": "url",
-        "url": "https://github.com/Accoil/product-tracking-skills.git",
-        "sha": "341f8cf47d8b5dda550222152377c50aee34c723"
-      },
-      "homepage": "https://www.accoil.com/product-tracking"
-    },
-    {
       "name": "pydantic-ai",
       "description": "Write accurate Pydantic AI code from the start. Up-to-date patterns, decision trees, and common gotchas for agents, tools, structured output, streaming, and multi-agent apps.",
       "category": "development",
@@ -1532,21 +1460,6 @@
         "url": "https://github.com/quarkusio/quarkus-agent-mcp.git"
       },
       "homepage": "https://quarkus.io"
-    },
-    {
-      "name": "rails-query",
-      "description": "Run read-only database queries against a Ruby on Rails 8.2+ app's database via `rails query` — ActiveRecord or SQL, schema/model introspection, EXPLAIN, pagination, and remote execution via Kamal.",
-      "author": {
-        "name": "Lewis Buckley",
-        "url": "https://github.com/lewispb"
-      },
-      "category": "development",
-      "source": {
-        "source": "github",
-        "repo": "lewispb/rails-query-skill",
-        "commit": "0f53fa861089e1f46097db9a92aea311f340c355"
-      },
-      "homepage": "https://github.com/lewispb/rails-query-skill"
     },
     {
       "name": "railway",
@@ -1687,16 +1600,6 @@
         "sha": "af81fe6c2421c5748388c65241da6a1b319a2c8f"
       },
       "homepage": "https://help.sap.com/docs/MDK"
-    },
-    {
-      "name": "searchfit-seo",
-      "description": "Free AI-powered SEO toolkit — audit websites, plan content strategy, optimize pages, generate schema markup, cluster keywords, and track AI visibility. Works with any website or codebase.",
-      "source": {
-        "source": "url",
-        "url": "https://github.com/searchfit/searchfit-seo.git",
-        "sha": "ced1a99a9fadfc10aa573a05829fc1bd357d4e4c"
-      },
-      "homepage": "https://searchfit.ai"
     },
     {
       "name": "security-guidance",
@@ -1993,6 +1896,69 @@
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/terraform"
     },
     {
+      "name": "twilio-developer-kit",
+      "description": "Twilio Skills provide procedural knowledge for AI coding agents — which APIs to use, in what order, and what to avoid. Covers SMS, Voice, WhatsApp, Verify, SendGrid, Compliance, and 30+ products.",
+      "author": {
+        "name": "Twilio"
+      },
+      "category": "development",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/twilio/ai.git",
+        "sha": "137c4679855d31115a8509b93a3887b8bb317da9"
+      },
+      "strict": false,
+      "skills": [
+        "./skills/sendgrid/twilio-sendgrid-account-setup",
+        "./skills/sendgrid/twilio-sendgrid-deliverability-advisor",
+        "./skills/sendgrid/twilio-sendgrid-email-send",
+        "./skills/sendgrid/twilio-sendgrid-email-settings",
+        "./skills/sendgrid/twilio-sendgrid-engagement-quality",
+        "./skills/sendgrid/twilio-sendgrid-inbound-parse",
+        "./skills/sendgrid/twilio-sendgrid-suppressions",
+        "./skills/sendgrid/twilio-sendgrid-webhooks",
+        "./skills/twilio/twilio-account-setup",
+        "./skills/twilio/twilio-call-recordings",
+        "./skills/twilio/twilio-cli-reference",
+        "./skills/twilio/twilio-compliance-onboarding",
+        "./skills/twilio/twilio-compliance-traffic",
+        "./skills/twilio/twilio-conference-calls",
+        "./skills/twilio/twilio-content-template-builder",
+        "./skills/twilio/twilio-conversations-classic-api",
+        "./skills/twilio/twilio-debugging-observability",
+        "./skills/twilio/twilio-email-deliverability-advisor",
+        "./skills/twilio/twilio-iam-auth-setup",
+        "./skills/twilio/twilio-identity-verification-advisor",
+        "./skills/twilio/twilio-lookup-phone-intelligence",
+        "./skills/twilio/twilio-marketing-promotions-advisor",
+        "./skills/twilio/twilio-messaging-channel-advisor",
+        "./skills/twilio/twilio-messaging-overview",
+        "./skills/twilio/twilio-messaging-services",
+        "./skills/twilio/twilio-messaging-webhooks",
+        "./skills/twilio/twilio-notifications-alerts-advisor",
+        "./skills/twilio/twilio-numbers-senders",
+        "./skills/twilio/twilio-organizations-setup",
+        "./skills/twilio/twilio-rcs-messaging",
+        "./skills/twilio/twilio-regulatory-compliance-bundles",
+        "./skills/twilio/twilio-reliability-patterns",
+        "./skills/twilio/twilio-security-api-auth",
+        "./skills/twilio/twilio-security-compliance-hipaa",
+        "./skills/twilio/twilio-security-hardening",
+        "./skills/twilio/twilio-send-message",
+        "./skills/twilio/twilio-sms-isv-setup",
+        "./skills/twilio/twilio-sms-send-message",
+        "./skills/twilio/twilio-taskrouter-routing",
+        "./skills/twilio/twilio-verify-send-otp",
+        "./skills/twilio/twilio-voice-conversation-relay",
+        "./skills/twilio/twilio-voice-outbound-calls",
+        "./skills/twilio/twilio-voice-twiml",
+        "./skills/twilio/twilio-webhook-architecture",
+        "./skills/twilio/twilio-whatsapp-manage-senders",
+        "./skills/twilio/twilio-whatsapp-send-message"
+      ],
+      "homepage": "https://www.twilio.com"
+    },
+    {
       "name": "typescript-lsp",
       "description": "TypeScript/JavaScript language server for enhanced code intelligence",
       "version": "1.0.0",
@@ -2084,16 +2050,6 @@
         "sha": "134cf334c3065509eee39a5361fd0bcf969dc867"
       },
       "homepage": "https://docs.versori.com/latest/ai-tooling/overview"
-    },
-    {
-      "name": "voila-api",
-      "description": "Definitive guide for the Voila API. Covers shipment creation (Manual/Smart Shipping), real-time tracking, detailed history, manifesting, collections, webhooks, and third-party integrations (Sorted, Peoplevox, Mintsoft, Veeqo, JD).",
-      "source": {
-        "source": "url",
-        "url": "https://github.com/TSedmanDC/Voila-API-Skill.git",
-        "sha": "422c7beb772a0de4592a204584e0e990fc5dc139"
-      },
-      "homepage": "https://github.com/TSedmanDC/Voila-API-Skill"
     },
     {
       "name": "windsor-ai",
