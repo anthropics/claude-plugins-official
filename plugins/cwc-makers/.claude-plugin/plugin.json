@@ -1,0 +1,21 @@
+{
+  "name": "cwc-makers",
+  "version": "1.0.0",
+  "description": "Seamless onboarding for the Code-with-Claude Makers Cardputer: one /maker-setup command clones the build-with-claude repo, flashes UIFlow firmware, and installs the Claude Buddy app bundle onto a freshly-plugged-in M5Stack Cardputer-Adv.",
+  "author": {
+    "name": "Anthropic",
+    "email": "support@anthropic.com"
+  },
+  "homepage": "https://claude.com/cwc-makers",
+  "repository": "https://github.com/moremas/build-with-claude",
+  "license": "Apache-2.0",
+  "keywords": [
+    "cardputer",
+    "m5stack",
+    "esp32",
+    "hardware",
+    "maker",
+    "onboarding",
+    "cwc"
+  ]
+}
