@@ -814,16 +814,6 @@
       "homepage": "https://github.com/firecrawl/firecrawl-claude-plugin.git"
     },
     {
-      "name": "firetiger",
-      "description": "Claude Code plugin for Firetiger observability workflows and MCP-powered investigations.",
-      "source": {
-        "source": "url",
-        "url": "https://github.com/firetiger-oss/claude-plugin.git",
-        "sha": "51421ce20adc7c30eb014e6847c7087ed34cb879"
-      },
-      "homepage": "https://www.firetiger.com/"
-    },
-    {
       "name": "flint",
       "description": "Build and manage websites with Flint's AI website builder through natural conversation.",
       "source": {
