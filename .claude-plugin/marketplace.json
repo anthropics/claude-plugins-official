@@ -217,16 +217,6 @@
       "homepage": "https://auth0.com/docs/quickstart/agent-skills"
     },
     {
-      "name": "autofix-bot",
-      "description": "Code review agent that detects security vulnerabilities, code quality issues, and hardcoded secrets. Combines 5,000+ static analyzers to scan your code and dependencies for CVEs.",
-      "author": {
-        "name": "DeepSource Corp"
-      },
-      "category": "security",
-      "source": "./external_plugins/autofix-bot",
-      "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/autofix-bot"
-    },
-    {
       "name": "aws-agents",
       "description": "Build, deploy, and operate AI agents on AWS. Skills for scaffolding agents with Amazon Bedrock AgentCore, connecting tools, memory, policies, evaluation, debugging, and production hardening.",
       "author": {
