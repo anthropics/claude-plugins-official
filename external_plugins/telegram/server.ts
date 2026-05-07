@@ -83,7 +83,11 @@ process.on('uncaughtException', err => {
 // Strict: no bare yes/no (conversational), no prefix/suffix chatter.
 const PERMISSION_REPLY_RE = /^\s*(y|yes|n|no)\s+([a-km-z]{5})\s*$/i
 
-const bot = new Bot(TOKEN)
+// Cap grammy's default 500s timeout. handlePollingError silently swallows non-401/409
+// errors via debugErr (debug pkg, no stderr), so a stale fetch can hold the long-poll lease
+// for up to 500s before AbortError fires. 90s leaves 30s long-poll wait + 60s slack and
+// bounds silent-retry recovery. See https://github.com/anthropics/claude-plugins-official/issues/1766
+const bot = new Bot(TOKEN, { client: { timeoutSeconds: 90 } })
 let botUsername = ''
 
 type PendingEntry = {
