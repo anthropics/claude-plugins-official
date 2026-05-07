@@ -1116,6 +1116,20 @@
       "homepage": "https://github.com/Shopify/liquid-skills/tree/main/plugins/liquid-skills"
     },
     {
+      "name": "llmsend",
+      "description": "Send messages between Claude Code sessions running related projects via tmux + an inbox-file convention. Two-channel design — a durable inbox/ file as the record, plus a live tmux send-keys notification (kitty CSI u submit escape) so the recipient picks up the message at their next prompt. Ideal for coordinating sibling projects each running their own Claude Code instance.",
+      "author": {
+        "name": "Peter Marreck"
+      },
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/pmarreck/llmsend.git",
+        "sha": "cadddff73cb1f72f35fd57e3d88cea1c755d5f15"
+      },
+      "homepage": "https://github.com/pmarreck/llmsend"
+    },
+    {
       "name": "logfire",
       "description": "Add Logfire observability to Python applications with auto-instrumentation for FastAPI, httpx, asyncpg, SQLAlchemy, and more",
       "author": {
