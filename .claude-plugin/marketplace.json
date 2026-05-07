@@ -483,6 +483,19 @@
       "homepage": "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/claude-md-management"
     },
     {
+      "name": "clickhouse",
+      "description": "Connect Claude to your ClickHouse Cloud databases. Browse organizations, services, databases, and table schemas. Run read-only SQL queries against your data and get instant analytical answers. Monitor service backups, review billing costs, and inspect ClickPipe configurations - all through natural conversation.",
+      "author": {
+        "name": "ClickHouse"
+      },
+      "category": "database",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/ClickHouse/clickhouse-claude-code-plugin.git"
+      },
+      "homepage": "https://github.com/ClickHouse/clickhouse-claude-code-plugin"
+    },
+    {
       "name": "cloud-sql-postgresql",
       "description": "Create, connect, and interact with a Cloud SQL for PostgreSQL database and data.",
       "author": {
