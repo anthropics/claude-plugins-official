@@ -1,0 +1,8 @@
+{
+  "name": "managed-agents",
+  "description": "Claude Managed Agents Development Plugin",
+  "author": {
+    "name": "Anthropic",
+    "email": "support@anthropic.com"
+  }
+}
