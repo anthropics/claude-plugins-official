@@ -106,6 +106,30 @@ Parse `$ARGUMENTS` (space-separated). If empty or unrecognized, show status.
 
 1. Read, `delete groups[<channelId>]`, write.
 
+### `group append <channelId> <senderId>` (optional: extra IDs)
+
+Append one or more sender IDs to an existing group's `allowFrom` (preserves
+existing members). Use this when adding a collaborator to an already-configured
+channel — `group add` replaces the list, which would drop existing members.
+
+1. Read access.json. If `groups[<channelId>]` doesn't exist, tell the user
+   to run `group add <channelId> --allow <senderId>` first; do not create.
+2. For each sender ID arg, append to `groups[<channelId>].allowFrom` (dedupe).
+3. Write back.
+4. Confirm: which IDs were added (skipping any that were already present).
+
+### `group rm-allow <channelId> <senderId>` (optional: extra IDs)
+
+Symmetric inverse of `group append`. Remove one or more sender IDs from an
+existing group's `allowFrom` without touching the rest of the entry.
+
+1. Read access.json. If `groups[<channelId>]` doesn't exist, tell the user;
+   nothing to do.
+2. For each sender ID arg, filter `groups[<channelId>].allowFrom` to exclude
+   it.
+3. Write back.
+4. Confirm: which IDs were removed (skipping any that weren't present).
+
 ### `set <key> <value>`
 
 Delivery/UX config. Supported keys: `ackReaction`, `replyToMode`,
