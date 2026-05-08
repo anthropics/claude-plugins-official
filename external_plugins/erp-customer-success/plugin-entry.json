@@ -1,0 +1,26 @@
+{
+  "name": "erp-customer-success",
+  "description": "Customer Success toolkit for ERP platforms — onboarding, health scoring, ticket triage, churn detection, renewal playbooks, and QBR generation. Works with SAP, Oracle, Microsoft Dynamics, NetSuite, and other major ERP systems.",
+  "version": "1.0.0",
+  "author": {
+    "name": "Himanshu Bisht",
+    "email": "himanshu.bishtt@gmail.com"
+  },
+  "source": {
+    "type": "github",
+    "repo": "8791588841/erp-customer-success-plugin"
+  },
+  "keywords": [
+    "erp",
+    "customer-success",
+    "onboarding",
+    "churn",
+    "health-score",
+    "qbr",
+    "renewal",
+    "sap",
+    "oracle",
+    "dynamics",
+    "netsuite"
+  ]
+}
