@@ -10,8 +10,19 @@ hide-from-slash-command-tool: "true"
 Execute the setup script to initialize the Ralph loop:
 
 ```!
-"${CLAUDE_PLUGIN_ROOT}/scripts/setup-ralph-loop.sh" $ARGUMENTS
+RALPH_RAW_ARGS=$(cat <<'RALPH_EOF'
+$ARGUMENTS
+RALPH_EOF
+)
+export RALPH_RAW_ARGS
+"${CLAUDE_PLUGIN_ROOT}/scripts/setup-ralph-loop.sh"
 ```
+
+The single-quoted heredoc delimiter (`'RALPH_EOF'`) prevents bash from
+interpreting any shell metacharacters in `$ARGUMENTS` — parens, semicolons,
+backticks, quotes — so prompts like "refactor (auth, session) layer" no longer
+crash the parser. The setup script tokenizes `$RALPH_RAW_ARGS` itself with
+`shlex` rather than relying on bash word splitting.
 
 Please work on the task. When you try to exit, the Ralph loop will feed the SAME PROMPT back to you for the next iteration. You'll see your previous work in files and git history, allowing you to iterate and improve.
 

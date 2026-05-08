@@ -10,6 +10,35 @@ PROMPT_PARTS=()
 MAX_ITERATIONS=0
 COMPLETION_PROMISE="null"
 
+# If invoked via the slash command, $ARGUMENTS is captured into RALPH_RAW_ARGS
+# by a single-quoted heredoc to keep shell metacharacters (parens, semicolons,
+# backticks, quotes) literal. We then tokenize that string ourselves using
+# Python's shlex — POSIX-style splitting without invoking a shell — so the
+# user's prompt is never word-split by bash. When invoked directly with
+# positional args, fall back to "$@" for backwards compatibility.
+if [[ -n "${RALPH_RAW_ARGS:-}" ]]; then
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "❌ Error: python3 is required to parse Ralph arguments safely." >&2
+    echo "   Install python3, or invoke setup-ralph-loop.sh directly with positional args." >&2
+    exit 1
+  fi
+  mapfile -t _RALPH_TOKENS < <(python3 -c '
+import os, shlex, sys
+try:
+    print("\n".join(shlex.split(os.environ.get("RALPH_RAW_ARGS", ""))))
+except ValueError as e:
+    print(f"shlex error: {e}", file=sys.stderr)
+    sys.exit(2)
+')
+  PY_EXIT=$?
+  if [[ $PY_EXIT -ne 0 ]]; then
+    echo "❌ Error: Could not tokenize Ralph arguments (unbalanced quotes?)." >&2
+    echo "   Raw input: $RALPH_RAW_ARGS" >&2
+    exit 1
+  fi
+  set -- "${_RALPH_TOKENS[@]}"
+fi
+
 # Parse options and positional arguments
 while [[ $# -gt 0 ]]; do
   case $1 in
