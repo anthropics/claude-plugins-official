@@ -16,7 +16,7 @@ import {
   CallToolRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
-import { Bot, GrammyError, InlineKeyboard, InputFile, type Context } from 'grammy'
+import { Bot, GrammyError, InlineKeyboard, type Context } from 'grammy'
 import type { ReactionTypeEmoji } from 'grammy/types'
 import { randomBytes } from 'crypto'
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, statSync, renameSync, realpathSync, chmodSync } from 'fs'
@@ -566,19 +566,40 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
 
         // Files go as separate messages (Telegram doesn't mix text+file in one
         // sendMessage call). Thread under reply_to if present.
+        //
+        // grammY 1.42 routes uploads through node-fetch v2, which fails with
+        // ECONNRESET on Bun (1.3.x) and ETIMEDOUT on Node 20 when posting
+        // multipart bodies to api.telegram.org. The runtime's native fetch
+        // handles the same upload fine, so we bypass grammY for sendPhoto/
+        // sendDocument and call the Bot API directly. Text-only sends stay
+        // on grammY (sendMessage works fine, no multipart).
         for (const f of files) {
           const ext = extname(f).toLowerCase()
-          const input = new InputFile(f)
-          const opts = reply_to != null && replyMode !== 'off'
-            ? { reply_parameters: { message_id: reply_to } }
-            : undefined
-          if (PHOTO_EXTS.has(ext)) {
-            const sent = await bot.api.sendPhoto(chat_id, input, opts)
-            sentIds.push(sent.message_id)
-          } else {
-            const sent = await bot.api.sendDocument(chat_id, input, opts)
-            sentIds.push(sent.message_id)
+          const isPhoto = PHOTO_EXTS.has(ext)
+          const apiMethod = isPhoto ? 'sendPhoto' : 'sendDocument'
+          const fieldName = isPhoto ? 'photo' : 'document'
+
+          const fd = new FormData()
+          fd.append('chat_id', String(chat_id))
+          // Bun.file() returns a streamable Blob — works with native fetch FormData.
+          // On non-Bun runtimes, fall back to reading bytes once.
+          const fileBlob =
+            typeof (globalThis as any).Bun !== 'undefined'
+              ? (globalThis as any).Bun.file(f)
+              : new Blob([readFileSync(f)])
+          const fileName = f.split(sep).pop() ?? 'file'
+          fd.append(fieldName, fileBlob, fileName)
+          if (reply_to != null && replyMode !== 'off') {
+            fd.append('reply_parameters', JSON.stringify({ message_id: reply_to }))
           }
+
+          const url = `https://api.telegram.org/bot${TOKEN}/${apiMethod}`
+          const res = await fetch(url, { method: 'POST', body: fd })
+          const json = (await res.json()) as { ok: boolean; result?: { message_id: number }; description?: string; error_code?: number }
+          if (!json.ok || !json.result) {
+            throw new Error(`${apiMethod} failed: ${json.error_code ?? res.status} ${json.description ?? res.statusText}`)
+          }
+          sentIds.push(json.result.message_id)
         }
 
         const result =
