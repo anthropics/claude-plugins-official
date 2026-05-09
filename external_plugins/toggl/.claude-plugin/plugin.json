@@ -1,0 +1,10 @@
+{
+  "name": "toggl",
+  "description": "Toggl Track time tracking for Claude Code — log and query time entries via natural language",
+  "version": "1.1.1",
+  "author": {
+    "name": "run-as-root GmbH",
+    "email": "vlad.podorozhnyi@run-as-root.sh"
+  },
+  "keywords": ["toggl", "time-tracking", "productivity"]
+}

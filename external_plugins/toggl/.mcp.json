@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "toggl": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/index.js"]
+    }
+  }
+}
