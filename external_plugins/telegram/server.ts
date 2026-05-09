@@ -56,14 +56,28 @@ const PID_FILE = join(STATE_DIR, 'bot.pid')
 // Telegram allows exactly one getUpdates consumer per token. If a previous
 // session crashed (SIGKILL, terminal closed) its server.ts grandchild can
 // survive as an orphan and hold the slot forever, so every new session sees
-// 409 Conflict. Kill any stale holder before we start polling.
+// 409 Conflict. Reclaim the slot only when the recorded pid is dead — never
+// SIGTERM a live sibling, since Claude Code spawns one MCP child per agent
+// context (worktree subagents, parallel sessions, multi-project laptops),
+// and killing a live sibling drops its tools mid-task with no recovery.
 mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 })
 try {
   const stale = parseInt(readFileSync(PID_FILE, 'utf8'), 10)
   if (stale > 1 && stale !== process.pid) {
-    process.kill(stale, 0)
-    process.stderr.write(`telegram channel: replacing stale poller pid=${stale}\n`)
-    process.kill(stale, 'SIGTERM')
+    let alive = false
+    try {
+      process.kill(stale, 0)
+      alive = true
+    } catch {
+      // ESRCH — recorded pid is gone. Reclaim.
+    }
+    if (alive) {
+      // Live sibling owns the slot. Step aside; the polling retry loop below
+      // will see a 409 once and exit cleanly via the existing 8-attempt cap.
+      process.stderr.write(`telegram channel: pid=${stale} owns the slot, exiting\n`)
+      process.exit(0)
+    }
+    process.stderr.write(`telegram channel: reclaiming dead poller pid=${stale}\n`)
   }
 } catch {}
 writeFileSync(PID_FILE, String(process.pid))
