@@ -1,0 +1,11 @@
+{
+  "name": "ctx",
+  "description": "Cross-session memory for Claude Code — trigger-driven context retrieval. G1 (decision timeline from git log) + G2 (docs/code search) with BM25 + semantic rerank. Hooks-based plugin with one-command setup via pip.",
+  "author": {
+    "name": "jaytoone",
+    "email": "be2jay67@gmail.com"
+  },
+  "repository": "https://github.com/jaytoone/CTX",
+  "homepage": "https://github.com/jaytoone/CTX",
+  "license": "MIT"
+}
