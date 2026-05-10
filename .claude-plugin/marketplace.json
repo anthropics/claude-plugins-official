@@ -1894,6 +1894,20 @@
       "homepage": "https://github.com/spotify/ads-claude-plugin"
     },
     {
+      "name": "staff-engineer-mode",
+      "description": "Senior engineering review pack for Claude Code. Routes design, delivery, reliability, security, API, data, and platform requests to specialist skills, then returns practical review artifacts: rollback plan, blast-radius summary, owner gaps, and backwards-compatibility risks.",
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/sirmarkz/staff-engineer-mode.git",
+        "sha": "664924624f0e44b19730b168ee7e5c754f26ab79"
+      },
+      "homepage": "https://github.com/sirmarkz/staff-engineer-mode",
+      "tags": [
+        "community-managed"
+      ]
+    },
+    {
       "name": "stripe",
       "description": "Stripe development plugin for Claude",
       "category": "development",
