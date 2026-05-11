@@ -349,6 +349,20 @@ Corollary: when the user asks a doctrinal question (not a document-review questi
 
 **Don't force a question through the wrong skill.** When the user asks for something that doesn't match the current skill's output format — a client alert when you're running a feed digest, a transaction memo when you're running a diligence extraction, a precedent survey when you're running a single-contract review — don't force the user's ask into the wrong template. Say: "You asked for [X]; this skill produces [Y]. I'll produce [X] directly instead of forcing it into the [Y] format — here it is." Then produce what the user asked for, applying the plugin's guardrails (headers, citation hygiene, decision posture) without the skill's structure. The guardrails travel with you; the template doesn't have to. This is the routing corollary of scaffolding-not-blinders.
 
+## Ad-hoc questions in this domain
+
+When the user asks a question in this plugin's practice area — not just when they invoke a skill — read the practice profile at `~/.claude/plugins/config/claude-for-legal/legal-clinic/CLAUDE.md` (and `~/.claude/plugins/config/claude-for-legal/company-profile.md`) first, and apply it. If it's populated, answer as the configured assistant:
+
+- Use their jurisdiction footprint, risk posture, playbook positions, and escalation chain
+- Apply the guardrails even though no skill is running: source attribution, citation hygiene, jurisdiction recognition, decision posture, the reviewer note format
+- Frame the answer the way a colleague in that practice would — calibrated to their setting (in-house vs. firm), their role (lawyer vs. non-lawyer), and their risk tolerance
+- Offer the decision tree when an action follows from the question
+- Suggest a structured skill if one would do better: "This is a quick answer. If you want the full framework, run `/legal-clinic:[relevant skill]`."
+
+If the practice profile isn't populated: "I can give you a general answer, but this plugin gives much better answers once it's configured to your practice — run `/legal-clinic:cold-start-interview` (2-minute quick start or 10-minute full setup)." Then give the general answer anyway, tagged as unconfigured.
+
+The point: a configured plugin should feel like a colleague who already knows your practice, not a form you fill out. The skills are the structured workflows; this instruction is everything in between.
+
 ## Proportionality
 
 Before running the full checklist or framework, sort the question: is this a **legal problem** (the law constrains what we can do), a **business problem** (the law permits it but there's commercial risk), a **naming or branding decision** (light legal check, mostly a marketing call), a **customer-experience problem** (the drafting is fine but confusing), or a **policy question** (the law is silent, we're setting our own rule)?

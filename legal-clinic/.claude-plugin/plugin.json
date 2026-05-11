@@ -1,7 +1,7 @@
 {
   "name": "legal-clinic",
-  "version": "0.6.2",
-  "description": "Sets up the clinic, onboards students, runs structured intake, tracks deadlines with malpractice-aware caution, and hands off cases at semester end — built within ABA Formal Op. 512.",
+  "version": "0.6.3",
+  "description": "Sets up the clinic, onboards students, runs structured intake, tracks deadlines with malpractice-aware caution, and hands off cases at semester end \u2014 built within ABA Formal Op. 512.",
   "author": {
     "name": "Anthropic"
   }
