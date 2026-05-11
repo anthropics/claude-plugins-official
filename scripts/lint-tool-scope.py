@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright 2026 Anthropic PBC.
+# SPDX-License-Identifier: Apache-2.0
 """Assert orchestrator `agent.yaml` files ship with scoped tool configs.
 
 Runs over every `managed-agent-cookbooks/*/agent.yaml` and checks the
