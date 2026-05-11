@@ -1,0 +1,36 @@
+name: "CLA Assistant"
+on:
+  issue_comment:
+    types: [created]
+  pull_request_target:
+    types: [opened, closed, synchronize]
+permissions:
+  actions: write
+  contents: write
+  pull-requests: write
+  statuses: write
+jobs:
+  CLAAssistant:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: "CLA Assistant"
+        if: (github.event.comment.body == 'recheck' || github.event.comment.body == 'I have read the CLA Document and I hereby sign the CLA') || github.event_name == 'pull_request_target'
+        # Upstream contributor-assistant/github-action was archived 2026-03-23
+        # still on Node 20 (deprecated 2026-06-02). This fork bumps to Node 24
+        # and adds: an impersonation guard (PR opener must be an author or
+        # co-author of at least one commit), Co-authored-by trailer support,
+        # email-based allowlist matching, automatic retry of transient
+        # GitHub 5xx errors, and actionable unlinked-email guidance.
+        uses: iainmcgin/cla-github-action@3e58ace6af840f66fcd80f68c08d76559140df5e # v3.0.0 (sha-pinned)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          path-to-document: "https://github.com/${{ github.repository }}/blob/main/CLA.md"
+          path-to-signatures: "signatures/cla.json"
+          branch: "cla-signatures"
+          # noreply@anthropic.com is the email AI assistants use on
+          # Co-authored-by trailers (e.g. Claude). Allowlisting it suppresses
+          # the synthetic co-author from the CLA check; the PR opener still
+          # has to sign.
+          allowlist: "iainmcgin,dependabot[bot],github-actions[bot],renovate[bot],noreply@anthropic.com"

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright 2026 Anthropic PBC.
+# Copyright 2026 Anthropic PBC
 # SPDX-License-Identifier: Apache-2.0
 """Reference event loop for cross-agent handoffs between managed agents.
 

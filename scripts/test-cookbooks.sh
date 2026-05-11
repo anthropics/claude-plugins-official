@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright 2026 Anthropic PBC.
+# Copyright 2026 Anthropic PBC
 # SPDX-License-Identifier: Apache-2.0
 # Dry-run every managed-agent cookbook and assert the resolved POST /v1/agents
 # bodies are well-formed: valid JSON, depth-1, non-empty system prompts, no
