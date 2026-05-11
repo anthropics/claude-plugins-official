@@ -52,21 +52,103 @@ if (!TOKEN) {
 }
 const INBOX_DIR = join(STATE_DIR, 'inbox')
 const PID_FILE = join(STATE_DIR, 'bot.pid')
+const HEARTBEAT_FILE = join(STATE_DIR, 'bot.heartbeat')
+const HEARTBEAT_INTERVAL_MS = 5000
+const HEARTBEAT_STALE_MS = 15000
 
-// Telegram allows exactly one getUpdates consumer per token. If a previous
-// session crashed (SIGKILL, terminal closed) its server.ts grandchild can
-// survive as an orphan and hold the slot forever, so every new session sees
-// 409 Conflict. Kill any stale holder before we start polling.
+// Telegram allows exactly one getUpdates consumer per token. Three startup cases:
+//
+//  (1) Healthy peer holds the slot — bot.pid is alive AND bot.heartbeat is
+//      fresh (< HEARTBEAT_STALE_MS old). Another Claude Code session is
+//      already polling and writing its own heartbeat. We stay alive as a
+//      no-op MCP server with zero tools so the harness reports a successful
+//      (empty) start instead of a failed server. Without this yield, every
+//      concurrent session that loads the plugin would SIGTERM the previous
+//      one (see PR #1349), and the bot would flap whenever a second `claude`
+//      is launched — including non-`--channels` sessions that load the
+//      plugin incidentally.
+//
+//  (2) Stale/wedged/zombie holder — bot.pid is alive but heartbeat is absent
+//      or stale. Matches the crashed-session zombie case PR #1349 targeted:
+//      SIGTERM and replace.
+//
+//  (3) No holder — fresh claim.
+function readHeartbeatAgeMs(): number {
+  try {
+    const stamp = parseInt(readFileSync(HEARTBEAT_FILE, 'utf8'), 10)
+    if (!Number.isFinite(stamp)) return Infinity
+    return Date.now() - stamp
+  } catch { return Infinity }
+}
+function touchHeartbeat(): void {
+  // Atomic via temp+rename so a concurrent reader never sees an empty file.
+  try {
+    const tmp = HEARTBEAT_FILE + '.tmp'
+    writeFileSync(tmp, String(Date.now()))
+    renameSync(tmp, HEARTBEAT_FILE)
+  } catch {}
+}
 mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 })
+let isShim = false
+let shimPeer = 0
+let shimAge = 0
 try {
-  const stale = parseInt(readFileSync(PID_FILE, 'utf8'), 10)
-  if (stale > 1 && stale !== process.pid) {
-    process.kill(stale, 0)
-    process.stderr.write(`telegram channel: replacing stale poller pid=${stale}\n`)
-    process.kill(stale, 'SIGTERM')
+  const peer = parseInt(readFileSync(PID_FILE, 'utf8'), 10)
+  if (peer > 1 && peer !== process.pid) {
+    process.kill(peer, 0)
+    const age = readHeartbeatAgeMs()
+    if (age < HEARTBEAT_STALE_MS) {
+      isShim = true
+      shimPeer = peer
+      shimAge = age
+    } else {
+      process.stderr.write(
+        `telegram channel: replacing stale poller pid=${peer} ` +
+        `(heartbeat ${age === Infinity ? 'absent' : age + 'ms old'})\n`,
+      )
+      process.kill(peer, 'SIGTERM')
+    }
   }
 } catch {}
+
+if (isShim) {
+  process.stderr.write(
+    `telegram channel: another session is polling (pid=${shimPeer}, ` +
+    `heartbeat age=${shimAge}ms); this MCP will register no tools. ` +
+    `Telegram tools are only available in the host session.\n`,
+  )
+  // Stay alive as a no-op MCP server with zero tools. We deliberately do
+  // not start the bot, write a heartbeat, or claim bot.pid: the host
+  // session owns those. Exits on stdin close / parent reparenting like the
+  // host's orphan watchdog.
+  const shim = new Server(
+    { name: 'telegram', version: '0.0.7-shim' },
+    { capabilities: { tools: {} } },
+  )
+  shim.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: [] }))
+  const shimExit = () => process.exit(0)
+  process.stdin.on('end', shimExit)
+  process.stdin.on('close', shimExit)
+  process.on('SIGTERM', shimExit)
+  process.on('SIGINT', shimExit)
+  process.on('SIGHUP', shimExit)
+  const shimBootPpid = process.ppid
+  setInterval(() => {
+    if ((process.platform !== 'win32' && process.ppid !== shimBootPpid) ||
+        process.stdin.destroyed || process.stdin.readableEnded) {
+      process.exit(0)
+    }
+  }, 5000).unref()
+  await shim.connect(new StdioServerTransport())
+  // Block module loading so the rest of server.ts (bot setup, host MCP)
+  // never executes in shim mode.
+  await new Promise<never>(() => {})
+}
+
 writeFileSync(PID_FILE, String(process.pid))
+touchHeartbeat()
+const heartbeatTimer = setInterval(touchHeartbeat, HEARTBEAT_INTERVAL_MS)
+heartbeatTimer.unref()
 
 // Last-resort safety net — without these the process dies silently on any
 // unhandled promise rejection. With them it logs and keeps serving tools.
@@ -650,8 +732,12 @@ function shutdown(): void {
   if (shuttingDown) return
   shuttingDown = true
   process.stderr.write('telegram channel: shutting down\n')
+  clearInterval(heartbeatTimer)
   try {
-    if (parseInt(readFileSync(PID_FILE, 'utf8'), 10) === process.pid) rmSync(PID_FILE)
+    if (parseInt(readFileSync(PID_FILE, 'utf8'), 10) === process.pid) {
+      rmSync(PID_FILE)
+      rmSync(HEARTBEAT_FILE, { force: true })
+    }
   } catch {}
   // bot.stop() signals the poll loop to end; the current getUpdates request
   // may take up to its long-poll timeout to return. Force-exit after 2s.
