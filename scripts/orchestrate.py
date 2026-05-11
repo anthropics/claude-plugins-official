@@ -53,6 +53,13 @@ ALLOWED_TARGETS = {
 # Closed schema of permitted handoff intents. Parameters are typed and
 # pattern-constrained. The orchestrator builds the steering prompt from a
 # per-intent template below — untrusted free text never becomes the prompt.
+#
+# Pattern rule: parameters that are interpolated into HANDOFF_TEMPLATES must
+# stay slug-shaped — no spaces. A space-permitting pattern lets a hostile
+# document smuggle a natural-language sentence into the steering prompt
+# through a field that looks like an ID. Descriptive context belongs in the
+# `note`/`event` fields, which are never interpolated and are wrapped in the
+# <agent-handoff> data frame before reaching the model.
 HANDOFF_INTENTS: dict[str, dict] = {
     "slack_send_message": {
         "required": ["channel", "report_path"],
@@ -79,7 +86,7 @@ HANDOFF_INTENTS: dict[str, dict] = {
         "required": ["matter_id"],
         "properties": {
             "matter_id": {"type": "string", "maxLength": 64,
-                          "pattern": r"^[A-Za-z0-9 ._/:#-]+$"},
+                          "pattern": r"^[A-Za-z0-9._/:#-]+$"},
             "note":      {"type": "string", "maxLength": 500},
         },
     },
@@ -87,7 +94,7 @@ HANDOFF_INTENTS: dict[str, dict] = {
         "required": [],
         "properties": {
             "clause": {"type": "string", "maxLength": 80,
-                       "pattern": r"^[A-Za-z0-9 ._/-]+$"},
+                       "pattern": r"^[A-Za-z0-9._/-]+$"},
             "note":   {"type": "string", "maxLength": 500},
         },
     },
@@ -271,7 +278,13 @@ def extract_handoff(text: str, source_agent: str = "unknown") -> dict | None:
     sanitized_event = sanitize_event(raw_event) if raw_event else ""
 
     # Build the steering input from the typed template — NOT from free text.
-    steering_input = HANDOFF_TEMPLATES[intent].format(**params)
+    # Render via format_map with a default so optional params that the
+    # template references (e.g. playbook_monitor's `clause`) degrade to an
+    # empty string instead of raising KeyError.
+    class _Defaulted(dict):
+        def __missing__(self, _key):  # noqa: D105 — small render shim
+            return ""
+    steering_input = HANDOFF_TEMPLATES[intent].format_map(_Defaulted(params))
     if sanitized_event:
         steering_input += "\n\n" + frame_handoff(source_agent, sanitized_event)
 
