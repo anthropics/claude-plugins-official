@@ -7,10 +7,16 @@ hide-from-slash-command-tool: "true"
 
 # Ralph Loop Command
 
-Execute the setup script to initialize the Ralph loop:
+Execute the setup script to initialize the Ralph loop. `$ARGUMENTS` is fed via a
+single-quoted heredoc on stdin so URLs (`?`, `&`), CJK words after `&`, and any
+other shell metachars in the user's prompt are NOT interpreted by zsh/bash
+during command-template expansion. The setup script's `--from-stdin` branch
+re-extracts `--max-iterations` / `--completion-promise` from the stdin body.
 
 ```!
-"${CLAUDE_PLUGIN_ROOT}/scripts/setup-ralph-loop.sh" $ARGUMENTS
+"${CLAUDE_PLUGIN_ROOT}/scripts/setup-ralph-loop.sh" --from-stdin <<'__RALPH_ARGS_END_5f8a2b__'
+$ARGUMENTS
+__RALPH_ARGS_END_5f8a2b__
 ```
 
 Please work on the task. When you try to exit, the Ralph loop will feed the SAME PROMPT back to you for the next iteration. You'll see your previous work in files and git history, allowing you to iterate and improve.

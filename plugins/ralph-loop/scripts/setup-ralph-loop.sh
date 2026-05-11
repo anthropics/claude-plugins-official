@@ -5,6 +5,57 @@
 
 set -euo pipefail
 
+# stdin transport: when invoked as `--from-stdin`, read the full prompt from
+# stdin and re-extract flags (`--max-iterations`, `--completion-promise`) from
+# the body. The slash-command template `ralph-loop.md` uses this path so URL
+# query strings (`?`, `&`) and CJK content in $ARGUMENTS are never interpreted
+# by zsh during command expansion.
+if [[ "${1:-}" == "--from-stdin" ]]; then
+  shift
+  STDIN_BODY=$(cat)
+  STDIN_MAX_ITERATIONS=""
+  STDIN_COMPLETION_PROMISE=""
+
+  if [[ "$STDIN_BODY" =~ (^|[[:space:]])--max-iterations[[:space:]]+([0-9]+)([[:space:]]|$) ]]; then
+    STDIN_MAX_ITERATIONS="${BASH_REMATCH[2]}"
+    STDIN_BODY=$(printf '%s' "$STDIN_BODY" | sed -E 's/(^|[[:space:]])--max-iterations[[:space:]]+[0-9]+/\1/')
+  fi
+
+  if [[ "$STDIN_BODY" =~ --completion-promise[[:space:]]+\'([^\']+)\' ]]; then
+    STDIN_COMPLETION_PROMISE="${BASH_REMATCH[1]}"
+    STDIN_BODY=$(printf '%s' "$STDIN_BODY" | sed -E "s/--completion-promise[[:space:]]+'[^']+'//")
+  elif [[ "$STDIN_BODY" =~ --completion-promise[[:space:]]+\"([^\"]+)\" ]]; then
+    STDIN_COMPLETION_PROMISE="${BASH_REMATCH[1]}"
+    STDIN_BODY=$(printf '%s' "$STDIN_BODY" | sed -E 's/--completion-promise[[:space:]]+"[^"]+"//')
+  elif [[ "$STDIN_BODY" =~ (^|[[:space:]])--completion-promise[[:space:]]+([^[:space:]]+) ]]; then
+    STDIN_COMPLETION_PROMISE="${BASH_REMATCH[2]}"
+    STDIN_BODY=$(printf '%s' "$STDIN_BODY" | sed -E 's/(^|[[:space:]])--completion-promise[[:space:]]+[^[:space:]]+/\1/')
+  fi
+
+  STDIN_BODY=$(printf '%s' "$STDIN_BODY" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')
+
+  # Strip a single layer of outer quotes if the prompt is fully wrapped in them
+  # (the convention of quoting multi-word slash-command args).
+  if [[ "${STDIN_BODY:0:1}" == '"' ]] && [[ "${STDIN_BODY: -1}" == '"' ]]; then
+    STDIN_BODY="${STDIN_BODY:1}"
+    STDIN_BODY="${STDIN_BODY%\"}"
+  elif [[ "${STDIN_BODY:0:1}" == "'" ]] && [[ "${STDIN_BODY: -1}" == "'" ]]; then
+    STDIN_BODY="${STDIN_BODY:1}"
+    STDIN_BODY="${STDIN_BODY%\'}"
+  fi
+
+  set --
+  if [[ -n "$STDIN_MAX_ITERATIONS" ]]; then
+    set -- "$@" --max-iterations "$STDIN_MAX_ITERATIONS"
+  fi
+  if [[ -n "$STDIN_COMPLETION_PROMISE" ]]; then
+    set -- "$@" --completion-promise "$STDIN_COMPLETION_PROMISE"
+  fi
+  if [[ -n "$STDIN_BODY" ]]; then
+    set -- "$@" "$STDIN_BODY"
+  fi
+fi
+
 # Parse arguments
 PROMPT_PARTS=()
 MAX_ITERATIONS=0
