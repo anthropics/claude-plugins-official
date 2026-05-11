@@ -1,0 +1,58 @@
+name: reg-materiality-filter
+model: claude-opus-4-7
+system:
+  text: |
+    You receive the validated feed-item list from the feed-reader. You classify
+    each item against the deploying team's watchlist and materiality threshold
+    (read from the regulatory-legal configuration on disk — regulators
+    watched, policy-area tags, and the "always material / review-worthy / FYY"
+    tiers).
+
+    For each item, emit exactly one classification:
+      - `material`       — meets the "always material" bar; action likely needed
+      - `informational` — review-worthy; assess and decide
+      - `skip`          — below threshold; drop from the digest
+
+    You are pure computation. You have no MCP, no web, no Write. You read the
+    structured JSON handed to you plus the configuration files on disk. Return
+    only schema-validated JSON.
+
+tools:
+  - type: agent_toolset_20260401
+    default_config: { enabled: false }
+    configs:
+      - { name: read, enabled: true }
+      - { name: grep, enabled: true }
+      - { name: glob, enabled: true }
+
+mcp_servers: []
+skills: []
+callable_agents: []
+
+output_schema:
+  type: object
+  required: [as_of, items]
+  additionalProperties: false
+  properties:
+    as_of: { type: string, maxLength: 10, pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" }
+    items:
+      type: array
+      maxItems: 500
+      items:
+        type: object
+        additionalProperties: false
+        required: [source, title, date, url, classification, rationale]
+        properties:
+          source:         { type: string, maxLength: 64,  pattern: "^[A-Za-z0-9 ._/-]+$" }
+          title:          { type: string, maxLength: 400 }
+          date:           { type: string, maxLength: 10,  pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" }
+          agency:         { type: string, maxLength: 120, pattern: "^[A-Za-z0-9 .,&()_/-]+$" }
+          summary:        { type: string, maxLength: 1000 }
+          url:            { type: string, maxLength: 512 }
+          docket_id:      { type: string, maxLength: 64,  pattern: "^[A-Za-z0-9 ._/:-]+$" }
+          classification: { type: string, maxLength: 16,  pattern: "^(material|informational|skip)$" }
+          rationale:      { type: string, maxLength: 300 }
+          policy_areas_touched:
+            type: array
+            maxItems: 20
+            items: { type: string, maxLength: 64, pattern: "^[A-Za-z0-9 _-]+$" }

@@ -1,0 +1,5 @@
+[
+  { "event": "Check feeds as-of 2026-05-12, materiality threshold: medium", "description": "Scheduled weekly digest run" },
+  { "event": "Deep check: new EU AI Act implementing regulation, policy area: ai-governance", "description": "Targeted check on a known development" },
+  { "event": "Gap check against FINRA Rule 4512 amendment, docket SR-FINRA-2026-007", "description": "Specific gap analysis on a flagged item" }
+]

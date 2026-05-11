@@ -1,0 +1,8 @@
+{
+  "name": "law-student",
+  "version": "0.4.2",
+  "description": "Drills Socratically, briefs cases, builds outlines, runs bar prep sessions tuned to your jurisdiction, grades IRAC practice, and plans the study schedule — without ever writing it for you.",
+  "author": {
+    "name": "Anthropic"
+  }
+}

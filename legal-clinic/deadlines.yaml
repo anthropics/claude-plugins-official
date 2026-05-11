@@ -1,0 +1,32 @@
+# Clinic deadline ledger — legal-clinic
+#
+# Populated by /legal-clinic:deadlines --add (or by extraction from /client-intake,
+# /draft, /status when those skills surface a deadline). Read by
+# /legal-clinic:deadlines --report for cross-case rollup.
+#
+# Missed deadlines in clinic work are malpractice exposure for the
+# supervising attorney. Treat this file as the operational record.
+#
+# ──────────────────────────────────────────────────────────────────────────
+# Schema
+# ──────────────────────────────────────────────────────────────────────────
+# - id:             string (slug: [case]-[short-description]-[YYYY-MM])
+#   case_id:        string — references the case / client in intake system
+#   case_name:      string — human-readable case name
+#   practice_area:  immigration | housing | family | consumer | criminal-defense | civil-rights | other
+#   type:           filing | hearing | statute-of-limitations | discovery | cure-period | response | notice | other
+#   description:    string — one-line what's due
+#   due_date:       YYYY-MM-DD
+#   time:           HH:MM (optional; for hearings or filing deadlines with specific cutoffs)
+#   timezone:       string (optional; default from CLAUDE.md jurisdiction)
+#   source:         string — where the deadline came from (court order, statute, client doc, etc.)
+#   owner_student:  string — which student owns this deadline
+#   owner_attorney: string — supervising attorney (usually from CLAUDE.md)
+#   status:         upcoming | today | overdue | completed | closed
+#   completed_date: YYYY-MM-DD | null
+#   notes:          string | null
+#   created:        YYYY-MM-DD
+#   created_by:     string — student who logged it
+# ──────────────────────────────────────────────────────────────────────────
+
+deadlines: []

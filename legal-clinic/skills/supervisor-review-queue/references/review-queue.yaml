@@ -1,0 +1,11 @@
+# Supervisor Review Queue
+# Everything flagged waits here. Supervisor approves or returns.
+# All actions logged — this is a clinic record.
+
+queue: []
+
+approved: []
+
+log: []
+
+# See SKILL.md for entry structure.

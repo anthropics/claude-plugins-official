@@ -1,0 +1,19 @@
+# Comment Period Tracker
+# Populated automatically by reg-feed-watcher when NPRMs are detected.
+# Managed via /regulatory-legal:comments
+
+comments:
+  - id: CMT-001
+    regulation: "[NPRM name + Federal Register citation]"
+    regulator: "[agency name]"
+    summary: "[one sentence — what this rulemaking proposes]"
+    link: "[Federal Register URL]"
+    comment_deadline: "2026-05-15"
+    detected: "2026-03-20"
+    decision: "undecided"  # undecided | filing | not-filing | filed | waived
+    owner: "[default comment decision owner from CLAUDE.md]"
+    owner_slack: "[Slack user ID or handle]"
+    notified: false
+    rationale: ""  # filled when decision is made
+    filed_at: null  # ISO datetime if filed
+    notes: ""

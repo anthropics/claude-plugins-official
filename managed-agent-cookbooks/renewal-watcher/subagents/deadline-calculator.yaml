@@ -1,0 +1,78 @@
+name: renewal-deadline-calculator
+model: claude-opus-4-7
+system:
+  text: |
+    You receive the validated contract list from the repo-reader. You perform
+    pure computation: for each contract, compute days-to-deadline (the earlier
+    of `cancel_by_date` or `expiration_date` minus today), classify urgency,
+    and cross-reference against the deploying team's renewal-tracker
+    configuration — lookahead windows, playbook positions for renewal pricing
+    and auto-renewal caps, and the escalation matrix.
+
+    Classify each contract into exactly one urgency tier:
+      - `overdue`       — deadline already passed
+      - `next_30_days`  — 1 to 30 days out
+      - `30_to_60_days` — 31 to 60 days out
+      - `60_to_90_days` — 61 to 90 days out
+      - `90_to_180_days`— 91 to 180 days out
+      - `outside_window`— beyond the configured lookahead (exclude from output)
+
+    For each alert, determine whether any of the deploying team's playbook
+    deviations are present (uncapped renewal price escalator, short notice
+    window, mismatch between notice mechanism and the team's standard, etc.),
+    and whether the escalation matrix requires routing to a named approver.
+
+    You are pure computation. You have no MCP, no web, no Write. You read the
+    structured JSON handed to you and the playbook configuration files on
+    disk. Return only schema-validated JSON.
+
+tools:
+  - type: agent_toolset_20260401
+    default_config: { enabled: false }
+    configs:
+      - { name: read, enabled: true }
+      - { name: grep, enabled: true }
+      - { name: glob, enabled: true }
+
+mcp_servers: []
+skills: []
+callable_agents: []
+
+output_schema:
+  type: object
+  required: [as_of, alerts]
+  additionalProperties: false
+  properties:
+    as_of: { type: string, maxLength: 10, pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" }
+    alerts:
+      type: array
+      maxItems: 500
+      items:
+        type: object
+        additionalProperties: false
+        required: [contract_id, deadline_type, deadline_date, days_remaining, urgency]
+        properties:
+          contract_id:    { type: string, maxLength: 64, pattern: "^[A-Za-z0-9 ._/:-]+$" }
+          counterparty:   { type: string, maxLength: 200, pattern: "^[A-Za-z0-9 .,&'()_/-]+$" }
+          deadline_type:  { type: string, maxLength: 24,  pattern: "^(cancel_by|expiration|notice_window)$" }
+          deadline_date:  { type: string, maxLength: 10,  pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" }
+          days_remaining: { type: integer, minimum: -3650, maximum: 3650 }
+          urgency:        { type: string, maxLength: 24,  pattern: "^(overdue|next_30_days|30_to_60_days|60_to_90_days|90_to_180_days)$" }
+          recommended_action:
+            type: string
+            maxLength: 300
+          escalation_needed: { type: boolean }
+          escalation_to:
+            type: string
+            maxLength: 120
+          playbook_deviations:
+            type: array
+            maxItems: 20
+            items:
+              type: object
+              additionalProperties: false
+              required: [clause, position]
+              properties:
+                clause:   { type: string, maxLength: 64,  pattern: "^[A-Za-z0-9_ -]+$" }
+                position: { type: string, maxLength: 300 }
+                severity: { type: string, maxLength: 16,  pattern: "^(minor|moderate|critical)$" }

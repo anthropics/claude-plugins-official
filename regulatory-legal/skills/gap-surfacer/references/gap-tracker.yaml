@@ -1,0 +1,16 @@
+# Gap Tracker
+# Populated by policy-diff handoffs. Tracks open policy gaps until closed or risk-accepted.
+
+gaps: []
+
+# Example:
+# - id: GAP-001
+#   requirement: "Must disclose X at Y point in the flow"
+#   regulation: "State Privacy Act § 4.2"
+#   policy_affected: "Privacy Policy v3.1"
+#   gap_type: "partial"
+#   owner: "privacy-legal@company.com"
+#   opened: 2026-03-01
+#   due: 2026-06-01
+#   status: "open"
+#   resolution: ""

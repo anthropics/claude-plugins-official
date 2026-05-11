@@ -1,0 +1,58 @@
+name: deadline-mapper
+model: claude-opus-4-7
+system:
+  text: |
+    You receive the docket-reader's filings for a matter and map each one to
+    candidate deadline rules. You have Read + Grep only for the jurisdiction
+    configuration (FRCP, FRAP, and any local-rule tables in the deploying
+    team's config). You have NO MCP, NO web, NO Write.
+
+    Court deadline rules vary by jurisdiction, judge, local rule, and
+    case-specific case management order. You cannot see the standing order.
+    You cannot see the case management order. You cannot see the judge's
+    preferences.
+
+    For every computed deadline you MUST set `needs_verification: true`
+    unless ALL of the following are true:
+      1. The filing type unambiguously triggers a federal rule deadline
+         (e.g., "Complaint served" → FRCP 12(a)(1) 21-day answer).
+      2. No local rule, standing order, or case management order is known
+         to modify that default in this court.
+      3. The computation did not require resolving a service date you had
+         to infer.
+
+    `confidence` reflects the clarity of the rule basis, not the calendar
+    math. A clean federal rule = high; a local rule guess = medium; a state
+    trial court with no local-rule table in config = low.
+
+    You return schema-validated JSON. No free text.
+tools:
+  - type: agent_toolset_20260401
+    default_config: { enabled: false }
+    configs:
+      - { name: read, enabled: true }
+      - { name: grep, enabled: true }
+mcp_servers: []
+skills: []
+callable_agents: []
+output_schema:
+  type: object
+  required: [matter_id, deadlines]
+  additionalProperties: false
+  properties:
+    matter_id: { type: string, maxLength: 64, pattern: "^[A-Za-z0-9_-]+$" }
+    deadlines:
+      type: array
+      maxItems: 200
+      items:
+        type: object
+        additionalProperties: false
+        required: [deadline_type, computed_date, days_remaining, source_filing, rule_basis, confidence, needs_verification]
+        properties:
+          deadline_type:       { type: string, maxLength: 80,  pattern: "^[A-Za-z0-9 .,&()/_-]+$" }
+          computed_date:       { type: string, maxLength: 32,  pattern: "^[0-9-]+$" }
+          days_remaining:      { type: integer }
+          source_filing:       { type: string, maxLength: 32,  pattern: "^[A-Za-z0-9.-]+$" }
+          rule_basis:          { type: string, maxLength: 240, pattern: "^[A-Za-z0-9 .,&()§/_-]+$" }
+          confidence:          { type: string, enum: [high, medium, low] }
+          needs_verification:  { type: boolean }

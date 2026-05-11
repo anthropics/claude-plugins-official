@@ -1,0 +1,25 @@
+# Renewal Register
+#
+# Populated by saas-msa-review (handoffs) and renewal-tracker Mode 3 ([CLM] scan).
+# Each entry tracks when a contract renews and when you have to cancel by.
+#
+# The renewal-watcher agent reads this weekly and posts what's coming up.
+
+renewals: []
+
+# Example entry (remove once real data exists):
+#
+# - counterparty: "Acme SaaS Inc."
+#   agreement: "Acme Platform Subscription Agreement"
+#   signed_date: 2025-06-15
+#   initial_term_end: 2026-06-15
+#   renewal_mechanism: "auto-renew annual"
+#   notice_period_days: 60
+#   cancel_by: 2026-04-16
+#   price_on_renewal: "then-current list (uncapped)"
+#   annual_value: 48000
+#   business_owner: "jane@company.com"
+#   clm_id: "IC-12345"
+#   docusign_envelope: "abc-123"
+#   status: "active"
+#   notes: "Pricing uncapped — revisit before renewal"

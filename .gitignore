@@ -1,2 +1,5 @@
-*.DS_Store
-.claude/
+.DS_Store
+*.skill
+/logs/
+/outputs/
+/.claude/

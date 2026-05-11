@@ -1,0 +1,64 @@
+# Portfolio Ledger — litigation-legal
+#
+# One entry per matter under `matters:`. Source of truth for /portfolio-status rollups.
+# Closed matters stay in this file (searchable history) but are filtered out
+# of active rollups by default. Edit via /litigation-legal:matter-intake,
+# /matter-update, and /matter-close — direct edits are fine but show your work in
+# the matter's history.md.
+#
+# ──────────────────────────────────────────────────────────────────────────
+# Schema
+# ──────────────────────────────────────────────────────────────────────────
+# - id:                string — slug, stable; matches matters/[slug]/ folder
+#   name:              string — display name
+#   type:              contract | employment | ip | regulatory | investigation | product | other
+#   role:              plaintiff | defendant | claimant | respondent | investigated
+#   counterparty:      string
+#   jurisdiction:      string — court or regulatory body
+#   status:            threatened | active | discovery | trial | appeal | closed
+#                      (resolution type is captured separately via `outcome` at close time;
+#                       `/matter-close` writes `outcome: settled` for resolved-via-settlement)
+#   stage:             string — free-text substage (e.g., "pleadings", "fact discovery")
+#   source:            demand-letter | complaint-served | subpoena | regulator-inquiry | internal-report | pre-suit-threat
+#   outside_counsel:
+#     firm:            string | null
+#     lead:            string | null
+#     email:           string | null     # NEW v2 — used by /oc-status email drafter
+#     engagement:      signed | pending | none
+#   conflicts:
+#     status:          cleared | pending | not-run | waived
+#     method:          corporate-legal | outside-counsel | system-check | informal | other
+#     cleared_by:      string | null
+#     cleared_date:    YYYY-MM-DD | null
+#     override:                                                          # NEW v2.1
+#       by:              string | null        # who authorized the bypass
+#       date:            YYYY-MM-DD | null
+#       rationale:       string | null        # permanent record; does not auto-expire
+#   risk:              critical | high | medium | low   (per CLAUDE.md risk matrix)
+#   materiality:       reserved | disclosed | monitored | none
+#   exposure_range:    string — e.g., "$2M–$5M" or "<$250K"
+#   internal_owners:
+#     business_lead:   string | null
+#     hr_partner:      string | null
+#     comms_contact:   string | null
+#   legal_hold:
+#     issued:          bool
+#     issued_date:     YYYY-MM-DD | null
+#     scope:           string | null
+#     custodians:      [string]            # NEW v2
+#     last_refresh:    YYYY-MM-DD | null   # NEW v2
+#     next_refresh:    YYYY-MM-DD | null   # NEW v2
+#     released:        YYYY-MM-DD | null   # NEW v2
+#   related_matters:   [string] | null     # NEW v2 — list of related matter slugs
+#   opened:            YYYY-MM-DD
+#   next_deadline:     YYYY-MM-DD | null
+#   last_updated:      YYYY-MM-DD
+#   path:              string — "matters/[slug]/"
+#
+# Closed matters additionally carry:
+#   closed:            YYYY-MM-DD
+#   outcome:           settled | dismissed | judgment-for-us | judgment-against-us | withdrawn | consolidated | other
+#   final_cost:        string | number
+# ──────────────────────────────────────────────────────────────────────────
+
+matters: []

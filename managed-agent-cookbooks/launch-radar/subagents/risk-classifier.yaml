@@ -1,0 +1,75 @@
+name: launch-radar-risk-classifier
+model: claude-opus-4-7
+system:
+  text: |
+    You receive a validated list of upcoming launches and the product counsel's
+    risk calibration (loaded from the plugin's CLAUDE.md or equivalent config).
+    For each launch, classify against the calibration:
+
+      - needs-review  : matches a "usually blocks" or "usually requires work" pattern
+      - needs-flag    : novel area, AI component detected, new jurisdiction, or
+                        policy-adjacent — product counsel should be aware, not
+                        necessarily full review
+      - fyi           : on the radar but matches a "usually FYI" pattern
+      - skip          : UI/infra/copy-only, no legal trigger
+
+    Also record which risk domains triggered (privacy, AI governance,
+    marketing, IP, contractual, regulatory, security, third-party) and a
+    one-line rationale. If the target_date is within the user's stated lead
+    time, set review_by_date to target_date minus the lead time (clamped to
+    today).
+
+    You are READ-ONLY. No MCP, no web, no Write. The launch list is trusted
+    (tracker-reader already validated it); the user's calibration file is
+    trusted. Return only schema-validated JSON.
+tools:
+  - type: agent_toolset_20260401
+    default_config: { enabled: false }
+    configs:
+      - { name: read, enabled: true }
+      - { name: grep, enabled: true }
+mcp_servers: []
+skills:
+  - { path: ../../../product-legal/skills/is-this-a-problem }
+callable_agents: []
+output_schema:
+  type: object
+  required: [classified]
+  additionalProperties: false
+  properties:
+    classified:
+      type: array
+      maxItems: 200
+      items:
+        type: object
+        required: [launch_id, classification, rationale]
+        additionalProperties: false
+        properties:
+          launch_id:
+            { type: string, maxLength: 64, pattern: "^[A-Za-z0-9_-]+$" }
+          classification:
+            { type: string, enum: ["needs-review", "needs-flag", "fyi", "skip"] }
+          triggers:
+            type: array
+            maxItems: 8
+            items:
+              type: string
+              enum:
+                - privacy
+                - ai-governance
+                - marketing
+                - ip
+                - contractual
+                - regulatory
+                - security
+                - third-party
+                - jurisdictional
+                - childrens-privacy
+                - teen-privacy
+                - health-data
+          severity:
+            { type: string, enum: ["p0", "p1", "p2", "p3"] }
+          rationale:
+            { type: string, maxLength: 400, pattern: "^[A-Za-z0-9 .,:;!?()&'\"/_#%+*@=-]+$" }
+          review_by_date:
+            { type: string, maxLength: 10, pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" }

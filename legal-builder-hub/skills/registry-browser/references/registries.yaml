@@ -1,0 +1,14 @@
+# Watched Registries
+# Default set. User adds more via /legal-builder-hub:registry-browser.
+
+registries:
+  - name: "lpm-skills"
+    url: "https://github.com/legalopsconsulting/lpm-skills"
+    description: "14 legal project management skills. Practice-area agnostic. From LegalOps Consulting."
+    type: "github-repo"
+    last_synced: null
+
+  # Add more as the ecosystem grows:
+  # - name: "awesome-legal-skills"
+  #   url: "https://github.com/..."
+  #   type: "github-repo"

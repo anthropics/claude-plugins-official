@@ -1,0 +1,47 @@
+{
+  "mcpServers": {
+    "Slack": {
+      "type": "http",
+      "url": "https://mcp.slack.com/mcp",
+      "title": "Slack",
+      "description": "Search messages, read channels, find discussions across your workspace."
+    },
+    "Google Drive": {
+      "type": "http",
+      "url": "https://drivemcp.googleapis.com/mcp/v1",
+      "title": "Google Drive",
+      "description": "Search, read, and fetch documents from Google Drive."
+    },
+    "CourtListener": {
+      "type": "http",
+      "url": "https://mcp.courtlistener.com/",
+      "title": "CourtListener",
+      "description": "Free Law Project's legal research platform — millions of U.S. court opinions, PACER dockets, judge profiles, oral arguments, and citation verification."
+    },
+    "Courtroom5": {
+      "type": "http",
+      "url": "https://mcp.courtroom5.com",
+      "description": "Courtroom5 — jurisdiction-aware guidance for self-represented litigants: case intake, deadline calculations, procedural next steps"
+    },
+    "Descrybe": {
+      "type": "http",
+      "url": "https://mcp.descrybe.com/mcp",
+      "title": "Descrybe",
+      "description": "Primary law research — search cases by concept or wording, find cases from citations, extract authorities, check treatment, verify quoted language."
+    },
+    "Lexis+ Protégé": {
+      "type": "http",
+      "url": "https://pdc1c-protegemcpapp.route53.lexis.com/mcp",
+      "title": "Lexis+",
+      "description": "Lexis+ legal research — case law, statutes, and Shepard's — with Protegé."
+    }
+  },
+  "recommendedCategories": [
+    "case-management",
+    "legal-research",
+    "case-law",
+    "licensing-boards",
+    "documents",
+    "chat"
+  ]
+}

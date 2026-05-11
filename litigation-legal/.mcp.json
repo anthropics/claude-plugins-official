@@ -1,0 +1,61 @@
+{
+  "mcpServers": {
+    "Slack": {
+      "type": "http",
+      "url": "https://mcp.slack.com/mcp",
+      "title": "Slack",
+      "description": "Search messages, read channels, find discussions across your workspace."
+    },
+    "Google Drive": {
+      "type": "http",
+      "url": "https://drivemcp.googleapis.com/mcp/v1",
+      "title": "Google Drive",
+      "description": "Search, read, and fetch documents from Google Drive."
+    },
+    "Lexis+ Protégé": {
+      "type": "http",
+      "url": "https://pdc1c-protegemcpapp.route53.lexis.com/mcp",
+      "title": "Lexis+",
+      "description": "Lexis+ legal research — case law, statutes, and Shepard's — with Protegé."
+    },
+    "Everlaw": {
+      "type": "http",
+      "url": "https://api.everlaw.com/v1/mcp",
+      "title": "Everlaw",
+      "description": "Search, organize, and retrieve documents from your Everlaw projects — metadata, keywords, document types — with review links."
+    },
+    "TopCounsel": {
+      "type": "http",
+      "url": "https://api.techgc.co/api/mcp/topcounsel",
+      "title": "TopCounsel",
+      "description": "Outside counsel recommendations from The L Suite — 5,000+ in-house counsel community sentiment, rankings, and expertise evidence."
+    },
+    "CourtListener": {
+      "type": "http",
+      "url": "https://mcp.courtlistener.com/",
+      "title": "CourtListener",
+      "description": "Free Law Project's legal research platform — millions of U.S. court opinions, PACER dockets, judge profiles, oral arguments, and citation verification."
+    },
+    "Aurora": {
+      "type": "http",
+      "url": "https://mcp.ai.consilio.com",
+      "title": "Aurora",
+      "description": "Read-only Consilio ediscovery — find matters, list workspaces, full-text search, AI-powered cross-matter investigations, every record cited to source."
+    },
+    "Trellis": {
+      "type": "http",
+      "url": "https://mcp.trellis.law/anthropic",
+      "title": "Trellis",
+      "description": "The largest state trial court dataset in the U.S. — dockets, rulings, verdicts, filings, judge and opposing counsel analytics, expert witness vetting."
+    }
+  },
+  "recommendedCategories": [
+    "ediscovery",
+    "legal-research",
+    "case-law",
+    "court-analytics",
+    "outside-counsel-network",
+    "documents",
+    "chat"
+  ]
+}

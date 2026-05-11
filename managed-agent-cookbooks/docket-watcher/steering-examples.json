@@ -1,0 +1,5 @@
+[
+  { "event": "Watch docket 2:26-cv-00315 in N.D. Cal., matter M-2026-042", "description": "Single-matter federal docket sweep" },
+  { "event": "Daily sweep: all active matters with hearings in next 14 days", "description": "Scheduled portfolio sweep for near-term hearings" },
+  { "event": "New filing detected: Motion to Dismiss in matter M-2026-042, compute opposition deadline", "description": "Event-triggered deadline computation for a specific filing" }
+]

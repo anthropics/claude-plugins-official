@@ -1,0 +1,8 @@
+{
+  "name": "corporate-legal",
+  "version": "0.5.2",
+  "description": "Runs M&A diligence at scale with cited tabular review, builds disclosure schedules and closing checklists, drafts board consents and minutes in house format, and tracks entity compliance deadlines across jurisdictions.",
+  "author": {
+    "name": "Anthropic"
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "name": "legal-builder-hub",
+  "version": "0.3.3",
+  "description": "Finds, evaluates, and installs community legal skills — with a security review gate before anything lands in your environment.",
+  "author": {
+    "name": "Anthropic"
+  }
+}

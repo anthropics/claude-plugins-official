@@ -1,0 +1,8 @@
+{
+  "name": "litigation-legal",
+  "version": "0.5.2",
+  "description": "Manages the litigation portfolio — matters, deadlines, holds, demands, outside counsel — and does the work: claim charts (patent and civil), chronologies, depo prep, privilege logs, brief drafting. Adapts to how you work litigation: in-house, firm, or solo.",
+  "author": {
+    "name": "Anthropic"
+  }
+}

@@ -1,0 +1,5 @@
+[
+  { "event": "Scan tracker for launches in next 6 weeks", "description": "Weekly radar — default horizon, all surfaces" },
+  { "event": "Triage: new Agent autonomy feature (PROJ-1234), is this a problem?", "description": "Single-ticket triage against the calibration table — runs the is-this-a-problem path end-to-end" },
+  { "event": "Re-scan after roadmap reprioritization, horizon: 4 weeks", "description": "Off-cadence refresh after a planning meeting shuffled launch dates" }
+]

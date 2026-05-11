@@ -1,0 +1,5 @@
+[
+  { "event": "Review folder /02-Contracts against schema ma-diligence", "description": "Grid mode — run the M&A diligence standard column set over the material contracts folder and produce the tabular review CSVs + summary." },
+  { "event": "Watch VDR for new uploads since 2026-05-01, flag Material Contracts and IP", "description": "Watch mode — list every new document since the cutoff, classify against request-list categories, flag anything high-priority, and write the update report." },
+  { "event": "Re-run grid for documents [DOC-001, DOC-002, DOC-003] with added column termination_for_convenience", "description": "Grid mode — schema edit + targeted re-run against a document subset, preserving prior rows for the untouched documents." }
+]

@@ -1,0 +1,86 @@
+name: diligence-normalizer
+model: claude-opus-4-7
+system:
+  text: |
+    You receive the full extracted table after fan-out and perform the
+    normalization pass described in the tabular-review skill — the pass
+    that catches the failure mode of every tabular-review tool: the same
+    clause interpreted inconsistently across documents.
+
+    For each `classify` column:
+      - Every `answered` value must appear in the options list. Values
+        that don't are outliers — flag them and suggest either the closest
+        option or `needs_review`.
+      - Scan for suspicious minority clusters. If 195 documents say
+        `consent_required` and 5 say `freely_assignable`, flag the 5 for
+        spot-check.
+
+    For each `date`, `duration`, and `currency` column:
+      - Check format consistency across rows. Flag mixed formats.
+      - Flag implausible values: 99-year terms, $0 caps, dates before
+        1900, currencies the deal does not transact in.
+
+    For each `verbatim` column:
+      - You cannot re-read the source — that is the extractor's scope.
+        But you can flag suspicious paraphrase tells: answers that include
+        "approximately", "essentially", summarizing adverbs, or square
+        brackets that were not present in the source prompt.
+
+    Return flags and per-column summary counts. Do not rewrite cells; only
+    suggest corrections. The grid-writer produces the final output; you
+    produce the flag list it writes into the `Flags` section of the
+    summary.
+
+    Read-only. No MCP. No Write. No outbound network. Return only schema-
+    conforming JSON.
+tools:
+  - type: agent_toolset_20260401
+    default_config: { enabled: false }
+    configs:
+      - { name: read, enabled: true }
+      - { name: grep, enabled: true }
+mcp_servers: []
+skills: []
+callable_agents: []
+output_schema:
+  type: object
+  required: [flags, column_summary]
+  additionalProperties: false
+  properties:
+    flags:
+      type: array
+      maxItems: 5000
+      items:
+        type: object
+        additionalProperties: false
+        required: [doc_id, column_id, issue]
+        properties:
+          doc_id:        { type: string, maxLength: 64,  pattern: "^[A-Za-z0-9_.-]+$" }
+          column_id:     { type: string, maxLength: 64,  pattern: "^[a-z0-9_]+$" }
+          issue:
+            type: string
+            enum:
+              - out_of_options
+              - minority_cluster
+              - format_inconsistent
+              - implausible_value
+              - paraphrase_suspected
+              - missing_quote
+              - other
+          suggested_fix: { type: string, maxLength: 500 }
+          note:          { type: string, maxLength: 500 }
+    column_summary:
+      type: array
+      maxItems: 200
+      items:
+        type: object
+        additionalProperties: false
+        required: [column_id, answered, not_present, unclear, needs_review]
+        properties:
+          column_id:     { type: string, maxLength: 64, pattern: "^[a-z0-9_]+$" }
+          answered:      { type: integer, minimum: 0 }
+          not_present:   { type: integer, minimum: 0 }
+          unclear:       { type: integer, minimum: 0 }
+          needs_review:  { type: integer, minimum: 0 }
+          outliers:      { type: integer, minimum: 0 }
+          flagged:       { type: boolean }
