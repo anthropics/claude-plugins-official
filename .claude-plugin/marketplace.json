@@ -19,7 +19,7 @@
         "url": "https://github.com/42Crunch-AI/claude-plugins.git",
         "path": "plugins/api-security-testing",
         "ref": "v1.0.1",
-        "sha": "56273e0e20762d76640838300a7431c4260cad32"
+        "sha": "8ef2b3351fb1340b7cf749003fc68bc39e07a7f9"
       },
       "homepage": "https://42crunch.com"
     },
@@ -35,7 +35,7 @@
         "url": "https://github.com/adobe/skills.git",
         "path": "plugins/creative-cloud/adobe-for-creativity",
         "ref": "main",
-        "sha": "0f1ad97af8b4de2107c2417184fc4c3114bda9d3"
+        "sha": "962fd1dbee913917a23352e9ea9405f3900d356a"
       },
       "homepage": "https://github.com/adobe/skills/tree/main/plugins/creative-cloud/adobe-for-creativity"
     },
@@ -57,7 +57,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/SalesforceAIResearch/agentforce-adlc.git",
-        "sha": "9ef4d9b1958d4ed21179017d0452a81ec13c1de2"
+        "sha": "d645d2c8ce0689a568224436061872ab9f0ab179"
       },
       "homepage": "https://github.com/SalesforceAIResearch/agentforce-adlc"
     },
@@ -91,7 +91,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/gemini-cli-extensions/alloydb.git",
-        "sha": "0723d3ada808fe8f33e1b2808fd7a843c3d63ad2"
+        "sha": "4a75653275b095fcacf1508796b0fee8cc758c07"
       },
       "homepage": "https://cloud.google.com/alloydb"
     },
@@ -104,7 +104,7 @@
         "url": "https://github.com/awslabs/agent-plugins.git",
         "path": "plugins/amazon-location-service",
         "ref": "main",
-        "sha": "6cfb70e55aa142a8eda66e6ef7966d5921bdf9a2"
+        "sha": "08bbd67c02fbbbcc84673efedad62c89c9865e3f"
       },
       "homepage": "https://github.com/awslabs/agent-plugins"
     },
@@ -149,7 +149,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/astronomer/agents.git",
-        "sha": "5935c4330dea4dfb8e93568956b10a543ecdb3d1"
+        "sha": "535a040ca9e27aaed6da13f0f959625fb3294820"
       },
       "homepage": "https://github.com/astronomer/agents"
     },
@@ -159,7 +159,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/atlanhq/agent-toolkit.git",
-        "sha": "acdf284da6aa98b14f8dad90a9827006d8df425c"
+        "sha": "790398c87378f128bdc74c31bb7ecfb8e4695f29"
       },
       "homepage": "https://docs.atlan.com/"
     },
@@ -201,7 +201,7 @@
         "url": "https://github.com/auth0/agent-skills.git",
         "path": "plugins/auth0",
         "ref": "main",
-        "sha": "f7724bf7984c5b00496cac0f54526bb1cf505dcb"
+        "sha": "9091b7ee0f6c23d7fda319788654c0c9761e3599"
       },
       "homepage": "https://auth0.com/docs/quickstart/agent-skills"
     },
@@ -217,7 +217,7 @@
         "url": "https://github.com/aws/agent-toolkit-for-aws.git",
         "path": "plugins/aws-agents",
         "ref": "main",
-        "sha": "750230758fbf23acd60d075dedd7ead4092127ce"
+        "sha": "b2520950040503a2d75afe23a0e2d30beff10912"
       },
       "homepage": "https://github.com/aws/agent-toolkit-for-aws"
     },
@@ -230,7 +230,7 @@
         "url": "https://github.com/awslabs/agent-plugins.git",
         "path": "plugins/aws-amplify",
         "ref": "main",
-        "sha": "6cfb70e55aa142a8eda66e6ef7966d5921bdf9a2"
+        "sha": "08bbd67c02fbbbcc84673efedad62c89c9865e3f"
       },
       "homepage": "https://github.com/awslabs/agent-plugins"
     },
@@ -246,7 +246,7 @@
         "url": "https://github.com/aws/agent-toolkit-for-aws.git",
         "path": "plugins/aws-core",
         "ref": "main",
-        "sha": "750230758fbf23acd60d075dedd7ead4092127ce"
+        "sha": "b2520950040503a2d75afe23a0e2d30beff10912"
       },
       "homepage": "https://github.com/aws/agent-toolkit-for-aws"
     },
@@ -262,7 +262,7 @@
         "url": "https://github.com/aws/agent-toolkit-for-aws.git",
         "path": "plugins/aws-data-analytics",
         "ref": "main",
-        "sha": "750230758fbf23acd60d075dedd7ead4092127ce"
+        "sha": "b2520950040503a2d75afe23a0e2d30beff10912"
       },
       "homepage": "https://github.com/aws/agent-toolkit-for-aws"
     },
@@ -291,7 +291,7 @@
         "url": "https://github.com/awslabs/agent-plugins.git",
         "path": "plugins/aws-serverless",
         "ref": "main",
-        "sha": "6cfb70e55aa142a8eda66e6ef7966d5921bdf9a2"
+        "sha": "08bbd67c02fbbbcc84673efedad62c89c9865e3f"
       },
       "homepage": "https://github.com/awslabs/agent-plugins"
     },
@@ -302,7 +302,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/microsoft/azure-skills.git",
-        "sha": "ed25b85a13ec001c53f538b07e0bfbe732673885"
+        "sha": "4ac35b40b0df5379f3735a4882d3716f998e403d"
       },
       "homepage": "https://github.com/microsoft/azure-skills"
     },
@@ -324,7 +324,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/base44/skills.git",
-        "sha": "c7039b37eca0e2916a565a7395040c00055bcf8b"
+        "sha": "ec420cf2edd2c7e9a523d5afe2e71498a6357fa4"
       },
       "homepage": "https://docs.base44.com"
     },
@@ -351,7 +351,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/box/box-for-ai.git",
-        "sha": "0fb23244e3c35cd562206c80eff1e22c456046ea"
+        "sha": "16f1a0427710b0812519ea634cd5ce6830bde8fc"
       },
       "homepage": "https://github.com/box/box-for-ai"
     },
@@ -361,7 +361,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/brightdata/skills.git",
-        "sha": "44b24797d82cfd535c5b97831d5c6ba86c9d60df"
+        "sha": "d0eeb1fbab809ffffe7c270186bd3eb78cf0c8ba"
       },
       "homepage": "https://docs.brightdata.com"
     },
@@ -372,7 +372,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/cap-js/mcp-server.git",
-        "sha": "4d59d7070a52761a9b8028cbe710c8d7477cbc92"
+        "sha": "8ce2e13ac70bd78415aedeaab0061af9396d3372"
       },
       "homepage": "https://cap.cloud.sap/"
     },
@@ -383,7 +383,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/ChromeDevTools/chrome-devtools-mcp.git",
-        "sha": "a1612be8e01401cf1711c64bc2ef5da5763ba956"
+        "sha": "be4a34c19abec571e0ae7abff8da5bac046ee9ad"
       },
       "homepage": "https://github.com/ChromeDevTools/chrome-devtools-mcp"
     },
@@ -475,7 +475,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/gemini-cli-extensions/cloud-sql-postgresql.git",
-        "sha": "69c0c820513d7f75a63eeb3ec84b01478037caeb"
+        "sha": "966f7b883998692d05389e4c3d3793412ca0659f"
       },
       "homepage": "https://cloud.google.com/sql"
     },
