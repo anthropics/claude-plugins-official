@@ -25,19 +25,30 @@ You need to execute the following bash commands to clean up stale local branches
 3. **Finally, remove worktrees and delete [gone] branches (handles both regular and worktree branches)**
    Execute this command:
    ```bash
-   # Process all [gone] branches, removing '+' prefix if present
-   git branch -v | grep '\[gone\]' | sed 's/^[+* ]//' | awk '{print $1}' | while read branch; do
-     echo "Processing branch: $branch"
-     # Find and remove worktree if it exists
-     worktree=$(git worktree list | grep "\\[$branch\\]" | awk '{print $1}')
-     if [ ! -z "$worktree" ] && [ "$worktree" != "$(git rev-parse --show-toplevel)" ]; then
-       echo "  Removing worktree: $worktree"
-       git worktree remove --force "$worktree"
-     fi
-     # Delete the branch
-     echo "  Deleting branch: $branch"
-     git branch -D "$branch"
-   done
+   # Process all [gone] branches, removing leading '*'/'+'/' ' markers and
+   # everything from the first whitespace onward, leaving just the branch
+   # name. Uses sed only — avoids awk's $1 field reference because some
+   # skill-rendering pipelines interpolate shell-style $N references and
+   # would expand $1 to empty before this command reaches the shell.
+   git branch -v \
+     | grep '\[gone\]' \
+     | sed -E 's/^[+* ]+//; s/[[:space:]].*//' \
+     | while read branch; do
+       echo "Processing branch: $branch"
+       # Find and remove worktree if it exists. grep -F treats brackets as
+       # literal (not regex), and sed strips everything from the first
+       # whitespace to extract the path column.
+       worktree=$(git worktree list | grep -F "[$branch]" | sed -E 's/[[:space:]].*//')
+       if [ ! -z "$worktree" ] && [ "$worktree" != "$(git rev-parse --show-toplevel)" ]; then
+         echo "  Removing worktree: $worktree"
+         git worktree remove --force "$worktree"
+       fi
+       # Delete the branch (will fail if it is the current worktree's
+       # checked-out branch — that's expected; user can switch to main
+       # and re-run, or leave it alone).
+       echo "  Deleting branch: $branch"
+       git branch -D "$branch"
+     done
    ```
 
 ## Expected Behavior
