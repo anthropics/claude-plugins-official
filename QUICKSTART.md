@@ -1,8 +1,15 @@
 # Quick Start
 
-**60 seconds.** This gets you from zip to your first useful output.
+**60 seconds.** This gets you to using your plugins.
 
-## Install
+## Install in Claude Cowork
+1. [Install Claude Desktop](https://claude.com/download)
+2. Get access to Claude Cowork
+3. Follow the instructions in the video below:
+
+https://github.com/user-attachments/assets/51394f0a-5277-4fe2-b81c-5c5e9ac876b5
+
+## Install in Claude Code
 
 1. **Open Claude Code** (in your terminal) or **Claude Cowork** (the desktop app). Not sure which you have? If you have a terminal window open with Claude in it, that's Claude Code.
 
