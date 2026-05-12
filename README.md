@@ -4,6 +4,12 @@ Reference agents, skills, and data connectors for the legal workflows we see mos
 
 > **New here?** Start with [QUICKSTART.md](QUICKSTART.md) — install in 60 seconds. This README is the full reference.
 
+## Getting started in Cowork
+- Install Claude Desktop
+- Get access to Claude Cowork
+
+https://github.com/user-attachments/assets/51394f0a-5277-4fe2-b81c-5c5e9ac876b5
+
 Everything here is available **two ways from one source**: install it as a [Claude Cowork](https://claude.com/product/cowork) or [Claude Code](https://claude.com/product/claude-code) plugin, or deploy it through the [Claude Managed Agents API](https://docs.claude.com/en/api/managed-agents) behind your own workflow engine. Same system prompt, same skills — you choose where it runs.
 
 > [!IMPORTANT]
