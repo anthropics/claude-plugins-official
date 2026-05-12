@@ -142,6 +142,8 @@ litigation-legal/         # portfolio, matters, holds, demands, depo prep, claim
 legal-clinic/             # clinic setup, student ramp, intake, deadlines, memos, handoffs
 law-student/              # Socratic drilling, outlining, IRAC, bar prep, flashcards
 legal-builder-hub/        # community skill discovery and install with a trust gate
+external_plugins/         # partner-built plugins maintained by their vendors
+  cocounsel-legal/        # Thomson Reuters — Westlaw Deep Research via the CoCounsel Legal MCP
 managed-agent-cookbooks/  # Claude Managed Agent cookbooks — one dir per scheduled agent
   diligence-grid/
   docket-watcher/
@@ -267,6 +269,14 @@ Grouped by where the work sits. Each plugin's cold-start interview is what tailo
 |---|---|
 | **[legal-builder-hub](./legal-builder-hub)** | Community skill discovery and install with a real trust layer — watched registries, a QA framework (`/legal-builder-hub:skills-qa`), SHA-pinned updates, and a mandatory trust check before anything lands in your environment. |
 
+### External / partner-built
+
+Plugins under [`external_plugins/`](./external_plugins) are built and maintained by their vendors. They install from this marketplace like any other plugin, but the vendor owns the code, the connector, and the support channel.
+
+| Plugin | Built by | What it adds |
+|---|---|---|
+| **[cocounsel-legal](./external_plugins/cocounsel-legal)** | Thomson Reuters | Westlaw Deep Research with fully cited reports — caselaw, statutes, regulations, Practical Law, and secondary sources across up to three U.S. jurisdictions per run. Requires a CoCounsel Legal subscription with the MCP connector enabled. Support: cocounselsupport@tr.com. |
+
 ## The trust layer for community legal skills
 
 The community is building legal skills fast — registries like LegalOps Consulting's `lpm-skills` and Lawvable already list dozens. But nobody certifies community skills, and a lawyer installing a random skill from GitHub is installing code that runs with access to their matter files, their practice profile, and their research connectors.
@@ -296,6 +306,7 @@ These plugins ship connectors for the systems legal teams live in. A connector g
 | **Slack** | Read channels, search, send messages and canvases | all plugins | Your workspace |
 | **Google Drive** | Read docs, sheets, slides; fetch by link | all plugins | Your account |
 | **Lexis+ Protégé** | Research, citations, shepardizing | `ai-governance-legal`, `legal-clinic`, `commercial-legal`, `employment-legal`, `ip-legal`, `litigation-legal`, `privacy-legal`, `product-legal`, `regulatory-legal`, `law-student` | Customer subscription |
+| **CoCounsel Legal (Thomson Reuters)** | Westlaw Deep Research — cited reports across caselaw, statutes, regulations, Practical Law | `cocounsel-legal` | Customer subscription; OAuth |
 | **Box** | Read files and folders in VDRs and matter rooms | `corporate-legal` | Your tenant |
 | **Ironclad** | Read the contract register, renewal dates, clauses | `commercial-legal` | Customer subscription |
 | **DocuSign / DocuSign CLM** | Envelope status, executed contracts, CLM metadata | `commercial-legal` | Customer subscription |
@@ -542,6 +553,12 @@ The full map across all plugins. The cold-start interview is the first thing to 
 | `/law-student:exam-forecast` | exam-forecast | Analyze past exams to forecast likely emphases |
 | `/law-student:study-plan` | study-plan | Build or update a long-term study plan |
 | `/law-student:session` | study-plan | Run a focused N-question session; update the plan |
+
+### cocounsel-legal (Thomson Reuters)
+
+| Command | Skill | What it does |
+|---|---|---|
+| `/cocounsel-legal:deep-research` | deep-research | Run Westlaw Deep Research — start, poll, and present a fully cited report |
 
 ## Contributing
 

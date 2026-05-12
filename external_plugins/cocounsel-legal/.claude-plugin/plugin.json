@@ -1,0 +1,9 @@
+{
+  "name": "cocounsel-legal",
+  "version": "0.1.0",
+  "description": "CoCounsel Legal delivers comprehensive Westlaw Deep Research reports with inline, linked citations to Westlaw and Practical Law sources.",
+  "author": {
+    "name": "Thomson Reuters",
+    "email": "labs@thomsonreuters.com"
+  }
+}
