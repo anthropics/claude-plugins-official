@@ -1864,6 +1864,20 @@
       "homepage": "https://shopify.dev"
     },
     {
+      "name": "sindri",
+      "description": "Bounded, target-driven optimization loops for any metric you can measure deterministically. Autonomous experiments, kept-or-reverted per git commit, auto-PR on success. Useful for bundle-size, latency, cost, or any CI-measurable target.",
+      "author": {
+        "name": "4KMetrics"
+      },
+      "category": "development",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/4KMetrics/sindri.git",
+        "sha": "95d2728f719c9c298c991322758b80d2dc14ddd4"
+      },
+      "homepage": "https://github.com/4KMetrics/sindri"
+    },
+    {
       "name": "skill-creator",
       "description": "Create new skills, improve existing skills, and measure skill performance. Use when users want to create a skill from scratch, update or optimize an existing skill, run evals to test a skill, or benchmark skill performance with variance analysis.",
       "author": {
