@@ -2137,6 +2137,20 @@
       "homepage": "https://github.com/vercel/vercel-plugin"
     },
     {
+      "name": "video-analyze",
+      "description": "Watch and analyze video files and video URLs (YouTube, Vimeo, TikTok, X/Twitter, Instagram, Twitch, Reddit, and any site yt-dlp supports). Extracts frames via ffmpeg and transcripts via whisper.cpp, with a YouTube-caption fast path for ~10x speedup. No third-party AI dependency — all processing is local. Adds a /video slash command and an auto-triggering skill that activates whenever Claude sees a video file path or video URL in the conversation.",
+      "author": {
+        "name": "sryharsha781-ctrl"
+      },
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/sryharsha781-ctrl/claude-video-analyze.git",
+        "sha": "2dce8c982f055981afcb9ff76c2dca9b04a3ab5d"
+      },
+      "homepage": "https://github.com/sryharsha781-ctrl/claude-video-analyze"
+    },
+    {
       "name": "windsor-ai",
       "description": "Connect Claude Code to 325+ business data sources via Windsor.ai. Query marketing, sales, CRM, ecommerce, finance, and analytics data from Google Ads, Meta, HubSpot, Salesforce, Shopify, Stripe, and hundreds more — directly from your terminal.",
       "author": {
