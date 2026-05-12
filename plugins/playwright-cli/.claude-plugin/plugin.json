@@ -1,0 +1,7 @@
+{
+  "name": "playwright-cli",
+  "description": "On-demand Playwright browser automation using globally installed Chromium. Navigate URLs, take screenshots, extract page content, fill forms, click elements, and run multi-step browser flows.",
+  "author": {
+    "name": "local"
+  }
+}
