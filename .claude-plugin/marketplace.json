@@ -673,7 +673,7 @@
     },
     {
       "name": "data-agent-kit-starter-pack",
-      "description": "Specialized suite of skills for data engineers on Google Cloud — architect data pipelines, transform data with dbt, write Spark and BigQuery SQL notebooks, and orchestrate end-to-end workflows across BigQuery, Spanner, BigLake, and Dataproc.",
+      "description": "This plugin provides a specialized suite of skills for data engineers and database practitioners working on Google Cloud. It acts as an expert assistant, allowing you to use natural language prompts in your preferred coding agent to architect complex data pipelines, transform data with dbt, write Spark and BigQuery SQL notebooks, and orchestrate end-to-end workflows across GCP's data ecosystem.",
       "author": {
         "name": "Google LLC"
       },
@@ -681,9 +681,9 @@
       "source": {
         "source": "url",
         "url": "https://github.com/gemini-cli-extensions/data-agent-kit-starter-pack.git",
-        "sha": "7bcfcb77435ec6d544b1131333f2297ca09c3930"
+        "sha": "a62990e3aedba86f04fe65a784d910f7fa48274f"
       },
-      "homepage": "https://cloud.google.com/bigquery"
+      "homepage": "https://github.com/gemini-cli-extensions/data-agent-kit-starter-pack"
     },
     {
       "name": "data-engineering",
