@@ -591,6 +591,21 @@
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/plugins/commit-commands"
     },
     {
+      "name": "context-handoff",
+      "description": "Save and resume Claude Code session state via timestamped handoff.md files. Triggers conservatively on context-exhaustion signals or explicit /handoff invocation.",
+      "author": {
+        "name": "se4thvin",
+        "url": "https://github.com/se4thvin"
+      },
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/se4thvin/context-handoff.git",
+        "sha": "bce68a882c7baf12cc6673b6eed9b6d4a1d5c80a"
+      },
+      "homepage": "https://github.com/se4thvin/context-handoff"
+    },
+    {
       "name": "context7",
       "description": "Upstash Context7 MCP server for up-to-date documentation lookup. Pull version-specific documentation and code examples directly from source repositories into your LLM context.",
       "category": "development",
