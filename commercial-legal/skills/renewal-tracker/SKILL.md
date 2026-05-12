@@ -15,7 +15,7 @@ Surfaces what's renewing and when you have to cancel by.
 
 ## Instructions
 
-1. **Read `references/renewal-register.yaml`** in this skill's directory.
+1. **Read `~/.claude/plugins/config/claude-for-legal/commercial-legal/renewal-register.yaml`** (the config directory — survives plugin updates).
 
 2. **Default mode:** Mode 2 — what's coming up in the next 90 days, grouped by urgency using half-open intervals so each deadline lands in exactly one band: 🔴 0–13 days, 🟠 14–44 days, 🟡 45–89 days. Days 14, 45, and 90 are boundaries — each belongs to exactly one band, not two.
 
@@ -51,7 +51,7 @@ This skill maintains the renewal register and surfaces what's coming.
 
 ## The register
 
-Lives at `references/renewal-register.yaml` in this skill's directory. Each entry:
+Lives at `~/.claude/plugins/config/claude-for-legal/commercial-legal/renewal-register.yaml` (the config directory — survives plugin updates). Each entry:
 
 ```yaml
 - counterparty: "Acme SaaS Inc."

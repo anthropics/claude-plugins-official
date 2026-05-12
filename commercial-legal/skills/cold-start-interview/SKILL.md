@@ -123,7 +123,7 @@ Before asking anything else, show the fork-first preamble — 3-4 short lines, n
 Wait for the user's pick before showing anything else.
 
 <!-- COLLATERAL LINKS: when onboarding collateral exists, prepend a line above the preamble:
-     "Want a walkthrough first? [Watch the 3-minute intro](URL) or [read the getting-started guide](URL), then come back and run /setup." -->
+     "Want a walkthrough first? [Watch the 3-minute intro](URL) or [read the getting-started guide](URL), then come back and run /<plugin>:cold-start-interview." -->
 
 ## After the user picks quick or full
 

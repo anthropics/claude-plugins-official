@@ -102,7 +102,7 @@ Open with the fork-first preamble. Keep it to 3-4 short lines. Ask quick-or-full
 >
 > **2 minutes** gets you your role, practice setting, jurisdiction, and which IP areas you actually work in (trademark, patent, copyright, trade secret, OSS), plus working defaults for enforcement posture, approval thresholds, and brand watch. **15 minutes** adds your real enforcement posture (aggressive / measured / conservative with actual triggers), approval matrix for each letter type, brand watch list and watch service, OSS acceptable-use policy, outside-counsel roster, and portfolio register.
 >
-> Quick or full? (Upgrade any time with `/setup --full`.)
+> Quick or full? (Upgrade any time with `/cold-start-interview --full`.)
 
 **Quick start path:** ask only Part 0 (role, practice setting, integrations) and Part 1 (practice-area mix). Write the config with `[DEFAULT]` markers on everything else. Close with: "Done. You can start using the commands now. I've used sensible defaults for enforcement posture, approval thresholds, and brand watch. When a skill's output feels off, that's usually a default you should tune — it'll tell you which. Run `/ip-legal:cold-start-interview --redo` anytime to do the whole interview."
 
@@ -459,7 +459,7 @@ After writing the practice profile, close with this note:
 > - When a skill's output feels off, that's usually a position to tune. The output will tell you which one.
 > - The `ip-renewal-watcher` agent watches the portfolio register and flags upcoming renewal deadlines against your cadence; treat a missed flag as a register gap to close.
 > - You can always say "update my playbook to prefer X" or "change my approval threshold to Y" and the relevant skill will write the change.
-> - Run `/setup --redo <section>` to re-interview one part, or edit the config file directly.
+> - Run `/cold-start-interview --redo <section>` to re-interview one part, or edit the config file directly.
 >
 > Ten minutes of setup gets you a working profile. A month of use gets you one that reads like you wrote it yourself.
 

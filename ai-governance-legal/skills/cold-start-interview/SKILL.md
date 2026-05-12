@@ -82,7 +82,7 @@ Open with the fork-first preamble. Keep it to 3-4 short lines. Ask quick-or-full
 >
 > **2 minutes** gets you your role, practice setting, and which AI regulatory regimes apply (EU AI Act, NIST, state AI laws), plus working defaults for use-case triage thresholds, AIA format, and vendor AI positions. **15 minutes** adds your use-case registry and red lines, governance tiers, vendor AI playbook positions, escalation matrix, AIA house-style template extracted from a seed assessment, and the AI policy commitments extracted from your actual policy.
 >
-> Quick or full? (Upgrade any time with `/setup --full`.)
+> Quick or full? (Upgrade any time with `/cold-start-interview --full`.)
 
 **Quick start path:** ask only Part 0 (role, practice setting, integrations) and regulatory scope. Write the config with `[DEFAULT]` markers on everything else. Close with: "Done. You can start using the commands now. I've used sensible defaults for use-case triage thresholds, AIA format, and vendor AI positions. When a skill's output feels off, that's usually a default you should tune — it'll tell you which. Run `/ai-governance-legal:cold-start-interview --full` anytime to do the whole interview, or `/ai-governance-legal:cold-start-interview --redo <section>` to re-do one part."
 
@@ -665,7 +665,7 @@ After writing the practice profile, close with this note:
 > - When a skill's output feels off, that's usually a position to tune. The output will tell you which one.
 > - The `policy-monitor` agent watches for drift between your AI governance policy and your practice, and proposes updates.
 > - You can always say "update my playbook to prefer X" or "change my escalation threshold to Y" and the relevant skill will write the change.
-> - Run `/setup --redo <section>` to re-interview one part, or edit the config file directly.
+> - Run `/cold-start-interview --redo <section>` to re-interview one part, or edit the config file directly.
 >
 > Ten minutes of setup gets you a working profile. A month of use gets you one that reads like you wrote it yourself.
 

@@ -198,6 +198,9 @@ Silence about known doubt is as misleading as confident assertion. The hole the 
 
 A wrong premise propagated through three paragraphs of analysis is harder to catch than a wrong premise flagged at sentence one. Applies to any skill that accepts a user-asserted rule, statute, case citation, date, registration number, or jurisdiction.
 
+**When disagreeing with a cited statute, quote the text or decline to characterize it.** If the user (or a matter document, or a counterparty) cites a statute for a proposition you don't think is correct, and you don't have the statute text available from a connected research tool or uploaded source, do not invent a description of what the statute says. Say: "That section doesn't match what I'd expect — I'd need to pull the actual text to tell you what it actually covers. `[statute unretrieved — verify]`" Then either (a) retrieve the text via the configured research tool and quote it, (b) ask the user to paste the text, or (c) flag for attorney review. A confident wrong description of a real statute is worse than "I don't know" — it's harder to un-believe than a gap, and it's how fabricated authority ends up in filed work product. Applies in every skill that characterizes a statute, regulation, or rule.
+
+
 **Pre-flight check before any skill that cites authority.** Test whether a research connector (Lexis+, Westlaw, CourtListener, or a statute/regulator MCP) is actually responding, not just configured. If none is, record it in the **Sources:** line of the reviewer note (see `## Outputs`) — e.g., `not connected — cites from training knowledge, verify before relying`. Do not emit a standalone banner above the header. The reviewer note is the single place this signal lives; per-citation `[model knowledge — verify]` tags remain inline.
 
 **Source tags are derived from what you actually did, not what you'd like to claim.**

@@ -62,7 +62,7 @@ Each plugin learns your playbook through a setup interview, writes it to a pract
 ## Stuck?
 
 - **"Command not found"** after install → you forgot step 4. Restart Claude Code.
-- **"Run setup first"** → run `/<plugin>:setup` before any other command.
+- **"Run setup first"** → run `/<plugin>:cold-start-interview` before any other command.
 - **Citations flagged `[verify]`** → connect a research tool (step 6). Without one, every cite is from training data, not a current database.
 - **"I can't read [file]"** → most often this means the plugin is project-scoped and the file is outside the project folder. See "Install user-scoped, not project-scoped" above — reinstall user-scoped or move the file into the project folder.
 - **The plugin doesn't do X** → run `/legal-builder-hub:related-skills-surfacer` to find a better match, or check the plugin's README for "What this plugin does not do."

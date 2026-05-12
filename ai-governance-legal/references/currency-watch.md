@@ -16,11 +16,12 @@ AI law moves faster than model training data. Before relying on an effective dat
 | Maine | LD 2082 | Signed April 13, 2026. Prohibits AI-delivered therapy without licensed professional. | ME Legislature |
 | Tennessee | SB 837 | "Person" in TN Code does not include AI. | TN Legislature |
 | NYC | Local Law 144 | In force. Annual bias audit for AEDT in hiring/promotion. | NYC DCWP |
-| Illinois | AIPA / HB 3773 | Video interview consent; 2026 amendments pending. | IL General Assembly |
+| Illinois | AIPA (820 ILCS 42) | Video interview consent — in force since 2020. | IL General Assembly |
+| Illinois | HB 3773 (Human Rights Act AI amendment) | In force Jan 1, 2026. Employers may not use AI to discriminate in hiring, promotion, discipline, discharge. Notice required. Distinct from AIPA. | IL Dept of Human Rights |
 
 ## EU AI Act implementation
 
-- **Digital Omnibus (provisional agreement May 7, 2026):** national sandbox deadline → Aug 2, 2027; transparency grace period shortened to 3 months (new deadline Dec 2, 2026); new prohibition on AI-generated NCII/CSAM. Broader high-risk deferrals still being negotiated as of late April.
+- **Digital Omnibus (provisional agreement May 7, 2026):** national sandbox deadline → Aug 2, 2027; transparency grace period shortened to 3 months (new deadline Dec 2, 2026); new prohibition on AI-generated NCII/CSAM. The May 7 provisional agreement settled the high-risk deferrals; final text pending Council/Parliament formal adoption. `[verify adoption status]`
 - **Implementing acts:** check EUR-Lex for the latest Commission implementing regulations on conformity assessment, standards, and the AI Office.
 - **National transposition:** Germany, France, Netherlands, Ireland most active. Check national DPA sites.
 
