@@ -582,6 +582,9 @@ mcp.setNotificationHandler(
     }),
   }),
   async ({ params }) => {
+    // Opt-out: set IMESSAGE_RELAY_PERMISSIONS=off to silence the relay.
+    // Default behavior preserved — every permission request still goes to self-chat.
+    if (process.env.IMESSAGE_RELAY_PERMISSIONS === 'off') return
     const { request_id, tool_name, description, input_preview } = params
     // input_preview is unbearably long for Write/Edit; show only for Bash
     // where the command itself is the dangerous part.

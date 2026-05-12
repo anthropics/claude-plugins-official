@@ -65,6 +65,7 @@ Handles are phone numbers (`+15551234567`) or Apple ID emails (`them@icloud.com`
 | `IMESSAGE_ALLOW_SMS` | `false` | Accept inbound SMS/RCS in addition to iMessage. **Off by default because SMS sender IDs are spoofable** — a forged SMS from your own number would otherwise bypass access control. Only enable if you understand the risk. |
 | `IMESSAGE_ACCESS_MODE` | — | Set to `static` to disable runtime pairing and read `access.json` only. |
 | `IMESSAGE_STATE_DIR` | `~/.claude/channels/imessage` | Override where `access.json` and pairing state live. |
+| `IMESSAGE_RELAY_PERMISSIONS` | `on` | Set to `off` to silence permission-request relays to self-chat. Default behavior — one self-chat iMessage per permission request — is preserved when unset. Useful for at-desk vs. away-from-desk shell aliases. |
 
 ## Access control
 
