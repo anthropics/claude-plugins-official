@@ -7,6 +7,7 @@ Reference agents, skills, and data connectors for the legal workflows we see mos
 ## Getting started in Cowork
 - Install Claude Desktop
 - Get access to Claude Cowork
+- Follow the instructions in the video below:
 
 https://github.com/user-attachments/assets/51394f0a-5277-4fe2-b81c-5c5e9ac876b5
 
