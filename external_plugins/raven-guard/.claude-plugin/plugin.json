@@ -1,0 +1,10 @@
+{
+  "name": "raven-guard",
+  "description": "Production protection layer for Claude Code. Hard-blocks destructive operations (force push, DROP TABLE, TRUNCATE, Terraform state edits). Watches git, database, infrastructure, firewall, and observability layers with P1/P2/P3 incident SLAs. Requires raven.",
+  "author": {
+    "name": "Giggso Inc",
+    "url": "https://github.com/giggsoinc"
+  },
+  "homepage": "https://github.com/giggsoinc/raven-guard",
+  "keywords": ["security", "enterprise", "governance", "production", "incident-management", "guard", "database", "git-protection"]
+}

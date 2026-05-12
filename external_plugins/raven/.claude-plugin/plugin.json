@@ -1,0 +1,10 @@
+{
+  "name": "raven",
+  "description": "Enterprise AI coding discipline platform for Claude Code. Enforce architecture rules, detect secrets, scan CVEs, manage approval flows, and run encrypted audit logs across distributed dev teams.",
+  "author": {
+    "name": "Giggso Inc",
+    "url": "https://github.com/giggsoinc"
+  },
+  "homepage": "https://github.com/giggsoinc/raven",
+  "keywords": ["security", "enterprise", "governance", "cve", "secrets", "audit", "compliance", "hooks"]
+}
