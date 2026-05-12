@@ -25,7 +25,6 @@ Connectors shipped in the default `.mcp.json` of each plugin:
 |---|---|
 | **Slack** | all 12 |
 | **Google Drive** (`gdrive`) | all 12 |
-| **Lexis+ Protégé** (`lexis-protege`) | ai-governance-legal, legal-clinic, commercial-legal, employment-legal, ip-legal, litigation-legal, privacy-legal, product-legal, regulatory-legal, law-student |
 | **CourtListener** | legal-clinic, ip-legal, litigation-legal, law-student |
 | **Descrybe** | legal-clinic, ip-legal, law-student |
 | **Definely** | commercial-legal, corporate-legal |

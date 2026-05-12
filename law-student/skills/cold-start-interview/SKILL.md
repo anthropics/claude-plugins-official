@@ -280,7 +280,7 @@ This solves the cold-start problem (the supervisor doesn't know what to do first
 
 **In either case:**
 - If LIMITED DATA flagged: "Practice Profile is thin — the downstream skills will be generic until more materials are added. Biggest gaps: [list]. Want to flag the top thing to gather?"
-- **Before your first citation-heavy session, connect a research tool if you have one.** Say: "Before your first IRAC practice or case brief that leans on citations: if you have a research connector (Lexis+, CourtListener), wire it up. Without one, I'll flag every citation as unverified — cross-check against your casebook or bar-prep service. In Cowork: Settings → Connectors."
+- **Before your first citation-heavy session, connect a research tool if you have one.** Say: "Before your first IRAC practice or case brief that leans on citations: if you have a research connector (CourtListener), wire it up. Without one, I'll flag every citation as unverified — cross-check against your casebook or bar-prep service. In Cowork: Settings → Connectors."
 
 <!-- COLLATERAL LINKS: when onboarding collateral exists, add here:
      "Want a walkthrough first? [Watch the 3-minute intro](URL) or [read the getting-started guide](URL)." -->

@@ -27,7 +27,6 @@ tools:
       - { name: glob, enabled: true }
 
 mcp_servers:
-  - { type: url, name: lexis-protege, url: "${LEXIS_PROTEGE_MCP_URL}" }
   - { type: url, name: gdrive, url: "${GDRIVE_MCP_URL}" }
 
 skills:

@@ -25,8 +25,7 @@ sued over marks that passed a knockout search.
 3. Run intake (mark, goods/services, classes, jurisdictions, visual/stylization).
 4. Knockout check for intrinsic bars — generic, descriptive, deceptive,
    geographic, surname, false connection, prohibited matter, functional.
-5. Similar-marks search against what's connected (Solve Intelligence, Lexis+,
-   CourtListener, Descrybe, or whatever MCP is available). If nothing is
+5. Similar-marks search against what's connected (Solve Intelligence, CourtListener, Descrybe, or whatever MCP is available). If nothing is
    connected, say so in the output and proceed with the factor analysis only.
 6. Walk the applicable circuit's likelihood-of-confusion factors — du Pont /
    Polaroid / Sleekcraft / other. Flag each; never conclude.
@@ -85,7 +84,7 @@ Before running clearance, read `~/.claude/plugins/config/claude-for-legal/ip-leg
 
 - **Role** from `## Who's using this` (lawyer vs. non-lawyer changes the work-product header and the non-lawyer gate below).
 - **Registered in** and **enforce where** from `## IP practice profile` and `## Enforcement posture` (default jurisdictions if the user doesn't specify).
-- **Integrations** from `## Available integrations` (CourtListener / Lexis+ / Solve Intelligence / Descrybe — each determines what searches are available to run, what the fallback is, and what gets attributed in the output).
+- **Integrations** from `## Available integrations` (CourtListener / Solve Intelligence / Descrybe — each determines what searches are available to run, what the fallback is, and what gets attributed in the output).
 - **Decision posture** from `## Decision posture on subjective legal calls` — this skill never concludes "not confusingly similar."
 
 If `~/.claude/plugins/config/claude-for-legal/ip-legal/CLAUDE.md` contains `[PLACEHOLDER]` or `[Your Company Name]`, surface this bounce:
@@ -158,13 +157,12 @@ to decide whether confusion is likely. That is the attorney's call.
 
 Read `## Available integrations` from `~/.claude/plugins/config/claude-for-legal/ip-legal/CLAUDE.md`:
 
-- **If a trademark search connector is available** (Lexis+, Solve Intelligence,
+- **If a trademark search connector is available** (Solve Intelligence,
   Descrybe — or any MCP exposing TM-registry search): run a preliminary search
   across the relevant classes and jurisdictions. Attribute every result to its
   source. Note the date of the search and the scope (which registries, which
   classes, exact-match vs. fuzzy, design search or not).
-- **If a legal research connector is available** (CourtListener for litigation,
-  Lexis+ for case law and TTAB decisions): sweep for reported disputes involving
+- **If a legal research connector is available** (CourtListener for litigation for case law and TTAB decisions): sweep for reported disputes involving
   the mark or a close variant. Same attribution rule.
 - **If no search connector is available:** say so, explicitly, in the output.
   Do not infer results from model knowledge and present them as search findings.
@@ -173,7 +171,7 @@ Read `## Available integrations` from `~/.claude/plugins/config/claude-for-legal
 
 Write out, in the output, this exact statement:
 
-> **No database search was run.** This triage did not hit TESS, Lexis+, Solve
+> **No database search was run.** This triage did not hit TESS, Solve
 > Intelligence, Descrybe, CourtListener, state registries, Madrid/WIPO, or any
 > common law / unregistered-mark sources. A knockout or full search across those
 > databases is required before any conclusion about availability. The triage
@@ -387,7 +385,7 @@ to the full professional search — not silently skipped.*
 | [exact] | [registration no. / citation / URL] | [class list] | [owner from record] | [reg/pending/abandoned/cancelled] | [date or "not available"] | [why it matters — exact match / adjacent family] |
 
 *If no search was run:* **No database search was run.** This triage did not hit
-TESS, Lexis+, Solve Intelligence, Descrybe, CourtListener, state registries,
+TESS, Solve Intelligence, Descrybe, CourtListener, state registries,
 Madrid/WIPO, or any common law / unregistered-mark sources. A knockout or full
 search across those databases is required before any conclusion about availability.
 

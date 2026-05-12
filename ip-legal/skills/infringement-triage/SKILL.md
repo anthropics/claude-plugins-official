@@ -110,7 +110,7 @@ Read `~/.claude/plugins/config/claude-for-legal/ip-legal/CLAUDE.md`. Pull:
   relevant letter type.
 - **Registered in / enforce where** from `## IP practice profile` — determines
   which circuit / jurisdiction test to apply by default.
-- **Integrations** from `## Available integrations` — Lexis+, CourtListener,
+- **Integrations** from `## Available integrations` — CourtListener,
   Solve Intelligence each affects whether the triage can cite to case law,
   prior rulings, or prior art.
 - **Decision posture** from `## Decision posture on subjective legal calls` —

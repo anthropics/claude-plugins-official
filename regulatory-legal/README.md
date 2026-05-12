@@ -1,6 +1,6 @@
 # Regulatory Counsel Plugin
 
-Watches regulatory feeds, diffs new regulations against your policy library, surfaces gaps. Learns your materiality threshold so it doesn't alert on every commissioner's speech. Wired for Thomson Reuters Regulatory Intelligence and LexisNexis.
+Watches regulatory feeds, diffs new regulations against your policy library, surfaces gaps. Learns your materiality threshold so it doesn't alert on every commissioner's speech. Wired for Thomson Reuters Regulatory Intelligence and CourtListener.
 
 **Every output is a draft for attorney review — cited, flagged, and gated — not a legal conclusion.** The plugin does the work: reads the documents, applies your playbook, finds the issues, drafts the memo. A lawyer reviews, verifies, and decides. Citations are tagged by source so you know which ones came from a research tool and which ones need checking. Privilege markers are applied conservatively so nothing waives by accident. Consequential actions — filing, sending, executing — are gated behind explicit confirmation.
 
@@ -45,7 +45,7 @@ The skills above run when you invoke them — for when you're working a matter. 
 
 **Connect a research tool first — the citation guardrails depend on it.** Without one, every cite is tagged `[verify]` and the reviewer note above each deliverable records that sources weren't verified. The plugin works either way; it just does more of the verification for you when a research tool is connected.
 
-The legal research connectors in this plugin aren't just data sources — they're the difference between a verified citation and a citation you have to check. A citation retrieved through **Lexis+** (case law, statutes, Shepard's with Protegé) is tagged with its source and can be traced back. A citation from the model's knowledge or from web search is tagged `[verify]` or `[verify-pinpoint]` and should be checked against a primary source before anyone relies on it. The plugin tiers its citations so your verification time goes where it matters.
+The legal research connectors in this plugin aren't just data sources — they're the difference between a verified citation and a citation you have to check. A citation retrieved through a connected research tool is tagged with its source and can be traced back. A citation from the model's knowledge or from web search is tagged `[verify]` or `[verify-pinpoint]` and should be checked against a primary source before anyone relies on it. The plugin tiers its citations so your verification time goes where it matters.
 
 ## Integrations
 
@@ -53,7 +53,6 @@ Ships with the general bucket of connectors in `.mcp.json`:
 
 - **Slack** — search messages, read channels, find discussions
 - **Google Drive** — search, read, and fetch documents
-- **Lexis+** — case law, statutes, Shepard's with Protegé
 
 Thomson Reuters Regulatory Intelligence connector can be added when partner URLs are available. Direct regulator RSS/email as fallback.
 

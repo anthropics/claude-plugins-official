@@ -75,7 +75,7 @@ The commands above run when you invoke them — for when you're working a matter
 
 **Connect a research tool first — the citation guardrails depend on it.** Without one, every cite is tagged `[verify]` and the reviewer note above each deliverable records that sources weren't verified. The plugin works either way; it just does more of the verification for you when a research tool is connected.
 
-The legal research connectors in this plugin aren't just data sources — they're the difference between a verified citation and a citation you have to check. A citation retrieved through **CourtListener** (U.S. court opinions, PACER dockets, citation verification), **Descrybe** (primary-law search, citation treatment, quoted-language verification), or **Lexis+** (case law, statutes, Shepard's with Protegé) is tagged with its source and can be traced back. A citation from the model's knowledge or from web search is tagged `[verify]` or `[verify-pinpoint]` and should be checked against a primary source before anyone relies on it. The plugin tiers its citations so your verification time goes where it matters.
+The legal research connectors in this plugin aren't just data sources — they're the difference between a verified citation and a citation you have to check. A citation retrieved through **CourtListener** (U.S. court opinions, PACER dockets, citation verification) or **Descrybe** (primary-law search, citation treatment, quoted-language verification) is tagged with its source and can be traced back. A citation from the model's knowledge or from web search is tagged `[verify]` or `[verify-pinpoint]` and should be checked against a primary source before anyone relies on it. The plugin tiers its citations so your verification time goes where it matters.
 
 ## Integrations
 
@@ -84,7 +84,6 @@ Ships with connectors configured in `.mcp.json`:
 - **Solve Intelligence** — patent and non-patent literature search, SEP technical standards, prior art, claim analysis
 - **CourtListener** — U.S. court opinions, PACER dockets, citation verification
 - **Descrybe** — primary law research by concept or wording, citation treatment, quoted-language verification
-- **Lexis+** — case law, statutes, Shepard's with Protegé
 - **Slack** — search messages, read channels, find discussions
 - **Google Drive** — search, read, and fetch documents
 

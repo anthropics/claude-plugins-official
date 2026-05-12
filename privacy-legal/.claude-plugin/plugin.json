@@ -1,6 +1,6 @@
 {
   "name": "privacy-legal",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Triages processing activities, generates PIAs, reviews DPAs as controller or processor, drafts DSAR responses within statutory timelines, and monitors policy drift against practice.",
   "author": {
     "name": "Anthropic"

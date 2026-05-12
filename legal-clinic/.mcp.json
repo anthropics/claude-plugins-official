@@ -28,12 +28,6 @@
       "url": "https://mcp.descrybe.com/mcp",
       "title": "Descrybe",
       "description": "Primary law research — search cases by concept or wording, find cases from citations, extract authorities, check treatment, verify quoted language."
-    },
-    "Lexis+ Protégé": {
-      "type": "http",
-      "url": "https://pdc1c-protegemcpapp.route53.lexis.com/mcp",
-      "title": "Lexis+",
-      "description": "Lexis+ legal research — case law, statutes, and Shepard's — with Protegé."
     }
   },
   "recommendedCategories": [

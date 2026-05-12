@@ -27,7 +27,7 @@ not mean the product is clear.
 3. Run intake (product/process, technical detail, jurisdictions, known patents,
    timing).
 4. Run a preliminary patent search if a connector is available (Solve
-   Intelligence, Lexis+ Patents, or other patent-research MCP). Otherwise say
+   Intelligence Patents, or other patent-research MCP). Otherwise say
    so in the output and proceed with the patents the user has supplied.
 5. For the 2–5 most plausible patents, build a claim-chart first pass against
    each independent claim — element by element. Literal read first; flag
@@ -112,7 +112,7 @@ Before running triage, read `~/.claude/plugins/config/claude-for-legal/ip-legal/
 - **Patent OC** from `## IP practice profile` → `Outside counsel roster` for
   the routing step.
 - **Integrations** from `## Available integrations` — specifically Solve
-  Intelligence, Lexis+, or any patent-research MCP. Determines what searches
+  Intelligence, or any patent-research MCP. Determines what searches
   are available.
 - **Decision posture** from `## Decision posture on subjective legal calls` —
   this skill never concludes "does not infringe."
@@ -197,7 +197,7 @@ Read `## Available integrations`:
   technical description. Note the date of the search, the query used, the
   jurisdictions covered, and any date window (current in-force patents; recent
   published applications).
-- **Patent-research MCP (Lexis+ Patents, Google Patents Public Datasets, PatSnap
+- **Patent-research MCP (Google Patents Public Datasets, PatSnap
   export): available:** use it.
 - **None of the above:** explicitly say so. Do not infer patents from model
   knowledge and present them as search results.
@@ -207,7 +207,7 @@ Read `## Available integrations`:
 Write this exact statement in the output:
 
 > **No patent database search was run.** This triage did not hit Solve
-> Intelligence, Lexis+ Patents, USPTO Patents Full-Text, EPO Espacenet,
+> Intelligence Patents, USPTO Patents Full-Text, EPO Espacenet,
 > Google Patents, PatSnap, or any other patent corpus. A structured search
 > across the jurisdictions in scope is required before relying on this triage
 > for any launch decision. The analysis below is limited to patents and
@@ -384,7 +384,7 @@ on this for a product decision.
 
 ## Search scope
 
-- **Databases searched:** [Solve Intelligence / Lexis+ / Google Patents /
+- **Databases searched:** [Solve Intelligence / Google Patents /
   Espacenet / PatSnap — or "no database search run"]
 - **Query / approach:** [query text, technology classes, keywords, classifications]
 - **Date / date window:** [search date; in-force patents + applications
@@ -394,7 +394,7 @@ on this for a product decision.
   portfolios, design patents, foreign equivalents — as applicable]
 
 *If no database search was run:* **No patent database search was run.** This
-triage did not hit Solve Intelligence, Lexis+ Patents, USPTO Patents Full-Text,
+triage did not hit Solve Intelligence Patents, USPTO Patents Full-Text,
 EPO Espacenet, Google Patents, PatSnap, or any other patent corpus. A
 structured search across the jurisdictions in scope is required before
 relying on this triage for any launch decision.

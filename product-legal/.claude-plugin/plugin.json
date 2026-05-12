@@ -1,6 +1,6 @@
 {
   "name": "product-legal",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Reviews product launches against your risk calibration, answers 'is this a problem?' questions in minutes, checks marketing copy for claims that need substantiation, and flags upcoming launches that need legal eyes before anyone asks.",
   "author": {
     "name": "Anthropic"

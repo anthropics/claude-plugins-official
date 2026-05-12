@@ -22,7 +22,7 @@ What's in the repo:
 
 - **Practice-area plugins** covering in-house, firm, and academic legal work — each one built around a cold-start interview that learns your playbook and a `CLAUDE.md` practice profile that every skill reads from.
 - **Managed-agent cookbooks** for the scheduled, eyes-on-the-feed workflows (renewal watcher, docket watcher, regulatory feed monitor, diligence grid, launch radar).
-- **MCP connectors** across general productivity (Slack, Google Drive, Box) and legal-specific systems (Ironclad, DocuSign, iManage, Lexis+, Everlaw, CourtListener, and more).
+- **MCP connectors** across general productivity (Slack, Google Drive, Box) and legal-specific systems (Ironclad, DocuSign, iManage, Everlaw, CourtListener, and more).
 - **[Named agents](#agents)** — end-to-end workflow agents (Vendor Agreement Reviewer, DSAR Responder, Termination Reviewer, Claim Chart Builder, …) with job-style names and a single command to run each one.
 
 ## Agents
@@ -101,7 +101,7 @@ Each agent is named for the workflow it runs. They're the most common surface �
 | **Outside Counsel Status** | Generates weekly status-request drafts across the active portfolio | `litigation-legal` | `/litigation-legal:oc-status` |
 | **Clinic Intake** | Structured client intake with cross-area issue spotting and conflict flags | `legal-clinic` | `/legal-clinic:client-intake` |
 | **Case Memo Scaffold** | IRAC-scaffolded case analysis memo with research gaps flagged | `legal-clinic` | `/legal-clinic:memo` |
-| **Research Roadmap** | Statutes to check, case law areas, Westlaw/Lexis search terms — leads, not cites | `legal-clinic` | `/legal-clinic:research-start` |
+| **Research Roadmap** | Statutes to check, case law areas, Westlaw search terms — leads, not cites | `legal-clinic` | `/legal-clinic:research-start` |
 | **Clinic Deadline Tracker** | Add, report, update, and close case deadlines with malpractice-aware warnings | `legal-clinic` | `/legal-clinic:deadlines` |
 | **Case Status Summarizer** | Case status by audience — client, professor, or court-ready | `legal-clinic` | `/legal-clinic:status` |
 | **Client Letter Drafter** | Routine client correspondence — appointment confirms, doc requests, updates | `legal-clinic` | `/legal-clinic:client-letter` |
@@ -199,7 +199,7 @@ After install, skills fire automatically when relevant, slash commands are avail
 
 **Run the cold-start interview first.** Every other skill in a plugin reads from the practice profile it writes. Skipping setup is the single most common reason a skill produces generic output. The interview takes 10–20 minutes per plugin and will ask you to point at seed documents (a signed MSA, a playbook, a prior review memo — whatever fits the plugin). More seed material is better; a **quick start** option is available if you want to be productive in 2 minutes and refine later.
 
-**Start by connecting a research tool.** Everything else is better with one, and citations are unverified without one. See [MCP Connectors](#mcp-connectors) below for the full list — Lexis+, CourtListener, Trellis, Descrybe, and Solve Intelligence are the research tools the citation guardrails look for.
+**Start by connecting a research tool.** Everything else is better with one, and citations are unverified without one. See [MCP Connectors](#mcp-connectors) below for the full list — CourtListener, Trellis, Descrybe, and Solve Intelligence are the research tools the citation guardrails look for.
 
 Updates: `/plugin update`.
 
@@ -297,7 +297,7 @@ Community skills go through the same design review (`/legal-builder-hub:skills-q
 ## MCP Connectors
 
 > [!IMPORTANT]
-> **Connect a research tool first.** Every plugin ships with legal research connectors already configured — Lexis+, CourtListener, Trellis, Descrybe, Solve Intelligence, and others depending on practice area. You authorize them once, and from then on Claude pulls from authoritative sources and verifies its citations against current databases instead of relying on training knowledge. Citations that come through a research connector are tagged with the source. Citations from model knowledge alone are flagged `[verify]` and, if no research tool is connected at all, the reviewer note above the deliverable records that sources weren't verified so you know to check. The connectors are what make the cites trustworthy — set them up before you set up anything else.
+> **Connect a research tool first.** Every plugin ships with legal research connectors already configured — CourtListener, Trellis, Descrybe, Solve Intelligence, and others depending on practice area. You authorize them once, and from then on Claude pulls from authoritative sources and verifies its citations against current databases instead of relying on training knowledge. Citations that come through a research connector are tagged with the source. Citations from model knowledge alone are flagged `[verify]` and, if no research tool is connected at all, the reviewer note above the deliverable records that sources weren't verified so you know to check. The connectors are what make the cites trustworthy — set them up before you set up anything else.
 
 These plugins ship connectors for the systems legal teams live in. A connector gives Claude the ability to read from and (where scoped) write to your data; the skills and commands use them.
 
@@ -305,7 +305,6 @@ These plugins ship connectors for the systems legal teams live in. A connector g
 |---|---|---|---|
 | **Slack** | Read channels, search, send messages and canvases | all plugins | Your workspace |
 | **Google Drive** | Read docs, sheets, slides; fetch by link | all plugins | Your account |
-| **Lexis+ Protégé** | Research, citations, shepardizing | `ai-governance-legal`, `legal-clinic`, `commercial-legal`, `employment-legal`, `ip-legal`, `litigation-legal`, `privacy-legal`, `product-legal`, `regulatory-legal`, `law-student` | Customer subscription |
 | **CoCounsel Legal (Thomson Reuters)** | Westlaw Deep Research — cited reports across caselaw, statutes, regulations, Practical Law | `cocounsel-legal` | Customer subscription; OAuth |
 | **Box** | Read files and folders in VDRs and matter rooms | `corporate-legal` | Your tenant |
 | **Ironclad** | Read the contract register, renewal dates, clauses | `commercial-legal` | Customer subscription |

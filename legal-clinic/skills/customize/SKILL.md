@@ -65,7 +65,7 @@ re-running the whole cold-start interview and without hand-editing YAML.
    - *Adding a new practice area:* "`/intake` will route matters of this
      type through the new template. `/draft`, `/memo`, and `/client-letter`
      will use the practice-area prompts. `/research-start` will add the
-     corresponding Westlaw/Lexis search terms."
+     corresponding Westlaw search terms."
    - *Supervision style informal → formal review queue:* "`/queue` becomes
      active — student output will land there for supervisor sign-off before
      it goes to the client."

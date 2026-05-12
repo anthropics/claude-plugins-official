@@ -41,12 +41,6 @@
       "url": "https://drivemcp.googleapis.com/mcp/v1",
       "title": "Google Drive",
       "description": "Search, read, and fetch documents from Google Drive."
-    },
-    "Lexis+ Protégé": {
-      "type": "http",
-      "url": "https://pdc1c-protegemcpapp.route53.lexis.com/mcp",
-      "title": "Lexis+",
-      "description": "Lexis+ legal research — case law, statutes, and Shepard's — with Protegé."
     }
   },
   "recommendedCategories": [

@@ -126,7 +126,7 @@ If the answer is 3, add:
 
 #### What's connected?
 
-> This plugin can work with: regulatory feeds (Thomson Reuters Regulatory Intelligence, LexisNexis), document storage (Google Drive, SharePoint, Box), and Slack. Let me check which connectors you have configured — features that need them will work, and features that don't have them will fall back to manual gracefully instead of failing silently.
+> This plugin can work with: regulatory feeds (Thomson Reuters Regulatory Intelligence), document storage (Google Drive, SharePoint, Box), and Slack. Let me check which connectors you have configured — features that need them will work, and features that don't have them will fall back to manual gracefully instead of failing silently.
 
 **Check what's actually connected, not what's configured.** A connector listed in `.mcp.json` is *available*. A connector that's actually responding is *connected*. These are different, and confusing them destroys trust. For each connector this plugin uses:
 
@@ -245,7 +245,7 @@ If a named regulator has no known free feed: flag it, ask the user how they curr
 **Step 2: Ask about paid subscriptions (additive, not required)**
 
 - TR Regulatory Intelligence subscription? Which alerts are configured?
-- LexisNexis? Which trackers?
+- CourtListener? Which trackers?
 
 If yes: configure as enrichment layer on top of free feeds. If no: free feeds are sufficient to proceed.
 
@@ -297,7 +297,7 @@ Per the template. Key: the materiality threshold table.
 | Service | Subscription | Alerts |
 |---|---|---|
 | TR Regulatory Intelligence | [yes/no] | [alert names] |
-| LexisNexis | [yes/no] | [tracker names] |
+| CourtListener | [yes/no] | [tracker names] |
 
 **Manual entry:** Enabled — paste any regulatory development to trigger diff + gap tracking.
 

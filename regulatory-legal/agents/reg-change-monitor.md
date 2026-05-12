@@ -6,7 +6,7 @@ description: >
   digest is signal, not noise. Trigger: "reg digest", "what's new from
   regulators", or on schedule.
 model: sonnet
-tools: ["Read", "Write", "WebFetch", "mcp__thomson-reuters__*", "mcp__lexisnexis__*", "mcp__*__slack_send_message"]
+tools: ["Read", "Write", "WebFetch", "mcp__thomson-reuters__*", "mcp__*__slack_send_message"]
 ---
 
 # Reg Change Monitor Agent

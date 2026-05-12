@@ -1,6 +1,6 @@
 {
   "name": "commercial-legal",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Reviews vendor agreements, NDAs, and SaaS subscriptions against your sales-side or purchasing-side playbook, tracks renewals and cancel-by deadlines before they're missed, routes escalations to the right approver, and translates reviews into summaries business stakeholders will actually read.",
   "author": {
     "name": "Anthropic"

@@ -54,7 +54,7 @@ The commands above run when you invoke them — for when you're working a matter
 
 ## Integrations
 
-**Connect a research tool first — the citation guardrails depend on it.** Without one, every cite is tagged `[verify]` and the reviewer note above each deliverable records that sources weren't verified. Skills work either way; a research tool (Lexis+, CourtListener) just shifts verification work off your plate.
+**Connect a research tool first — the citation guardrails depend on it.** Without one, every cite is tagged `[verify]` and the reviewer note above each deliverable records that sources weren't verified. Skills work either way; a research tool (CourtListener) just shifts verification work off your plate.
 
 Ships with connectors configured in `.mcp.json`:
 

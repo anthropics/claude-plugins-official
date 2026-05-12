@@ -122,15 +122,15 @@ A false assurance of protection is worse than no marking. The lawyer who relies 
 **⚠️ Reviewer note — one block above the deliverable.** This is the ONE place for everything the reviewer needs to know before relying on the output. Collapse every pre-flight flag, caveat, and meta-note here — do NOT scatter them through the body. Format:
 
 > **⚠️ Reviewer note**
-> - **Sources:** [Research connector: Lexis+ ✓ verified | not connected — cites from training knowledge, verify before relying]
+> - **Sources:** [Research connector: CourtListener ✓ verified | not connected — cites from training knowledge, verify before relying]
 > - **Read:** [pages 1-50 of 200 | all 3 documents | N items in register | N/A]
 > - **Flagged for your judgment:** [N items marked `[review]` inline | none]
 > - **Currency:** [searched for developments since [date] — nothing found | found N updates, noted inline | could not search, verify [specific rules]]
 > - **Before relying:** [the 1-2 things the reviewer should actually do — or "ready for your eyes" if clean]
 
-If everything is green (research tool connected, full read, no flags, currency checked), collapse to one line: `⚠️ Reviewer note: Lexis+ verified · full read · no flags · ready for your eyes`. Don't pad with bullets that all say "no issues."
+If everything is green (research tool connected, full read, no flags, currency checked), collapse to one line: `⚠️ Reviewer note: CourtListener verified · full read · no flags · ready for your eyes`. Don't pad with bullets that all say "no issues."
 
-**The deliverable below is clean.** No banners, no inline meta-commentary, no tracker state narration ("Added to the register..." — do it, don't narrate it). Inline tags are minimal: only `[review]` on the specific lines that need attorney judgment, and source tags (`[Lexis+]`, `[model knowledge — verify]`) only where a cite appears. Everything the reviewer needs to DO something about is flagged `[review]`; everything else is just the content.
+**The deliverable below is clean.** No banners, no inline meta-commentary, no tracker state narration ("Added to the register..." — do it, don't narrate it). Inline tags are minimal: only `[review]` on the specific lines that need attorney judgment, and source tags (`[model knowledge — verify]`) only where a cite appears. Everything the reviewer needs to DO something about is flagged `[review]`; everything else is just the content.
 
 ---
 
@@ -201,11 +201,11 @@ A wrong premise propagated through three paragraphs of analysis is harder to cat
 **When disagreeing with a cited statute, quote the text or decline to characterize it.** If the user (or a matter document, or a counterparty) cites a statute for a proposition you don't think is correct, and you don't have the statute text available from a connected research tool or uploaded source, do not invent a description of what the statute says. Say: "That section doesn't match what I'd expect — I'd need to pull the actual text to tell you what it actually covers. `[statute unretrieved — verify]`" Then either (a) retrieve the text via the configured research tool and quote it, (b) ask the user to paste the text, or (c) flag for attorney review. A confident wrong description of a real statute is worse than "I don't know" — it's harder to un-believe than a gap, and it's how fabricated authority ends up in filed work product. Applies in every skill that characterizes a statute, regulation, or rule.
 
 
-**Pre-flight check before any skill that cites authority.** Test whether a research connector (Lexis+, Westlaw, CourtListener, or a statute/regulator MCP) is actually responding, not just configured. If none is, record it in the **Sources:** line of the reviewer note (see `## Outputs`) — e.g., `not connected — cites from training knowledge, verify before relying`. Do not emit a standalone banner above the header. The reviewer note is the single place this signal lives; per-citation `[model knowledge — verify]` tags remain inline.
+**Pre-flight check before any skill that cites authority.** Test whether a research connector (Westlaw, CourtListener, or a statute/regulator MCP) is actually responding, not just configured. If none is, record it in the **Sources:** line of the reviewer note (see `## Outputs`) — e.g., `not connected — cites from training knowledge, verify before relying`. Do not emit a standalone banner above the header. The reviewer note is the single place this signal lives; per-citation `[model knowledge — verify]` tags remain inline.
 
 **Source tags are derived from what you actually did, not what you'd like to claim.**
 
-- `[Lexis+]` / `[Westlaw]` / `[CourtListener]` / `[Trellis]` / `[Descrybe]` — ONLY if the citation appears in a tool result from that MCP in this conversation.
+- `[Westlaw]` / `[CourtListener]` / `[Trellis]` / `[Descrybe]` — ONLY if the citation appears in a tool result from that MCP in this conversation.
 - `[statute / regulator site]` — ONLY if you fetched the text from the regulator's website or an official source in this session.
 - `[user provided]` — the user pasted or linked it.
 - `[model knowledge — verify]` — everything else. This is the default. If you didn't retrieve it, it's model knowledge, no matter how confident you are.
@@ -217,10 +217,10 @@ Do not promote a tag to a more trustworthy tier because the citation "seems righ
 
 - `[verify]` — a factual claim (cite, date, deadline, threshold, registration number, rule text) the reader should confirm against a primary source before relying on it. Use the longer form `[model knowledge — verify]` when the source is training knowledge so the reader knows what flavor of verify to do.
 - `[review]` — a judgment call the attorney needs to make. Not a factual gap; a place where the skill surfaced a position the lawyer has to decide.
-- `[Lexis+]` / `[Westlaw]` / `[CourtListener]` / `[Trellis]` / `[Descrybe]` / `[USPTO]` / `[statute / regulator site]` / `[user provided]` — where a cite actually came from. Provenance, not confidence. Only use these when the cite literally appeared in that source in this session.
+- `[Westlaw]` / `[CourtListener]` / `[Trellis]` / `[Descrybe]` / `[USPTO]` / `[statute / regulator site]` / `[user provided]` — where a cite actually came from. Provenance, not confidence. Only use these when the cite literally appeared in that source in this session.
 - `[VERIFY: …]` / `[UNCERTAIN: …]` — expanded forms of `[verify]` used in brief-drafting and chronology skills with the specific claim spelled out. Same intent.
 
-A reviewer-note shorthand like "Lexis+ verified" is honest only when a research tool actually returned the cite — it describes what the tool did, not what the skill's output is. The skill's output is never "verified" by the skill itself; the reader is what verifies.
+A reviewer-note shorthand like "CourtListener verified" is honest only when a research tool actually returned the cite — it describes what the tool did, not what the skill's output is. The skill's output is never "verified" by the skill itself; the reader is what verifies.
 
 **Destination check.** A `PRIVILEGED & CONFIDENTIAL` header is a label, not a control. Before producing or sending any output, check where it's going:
 
@@ -236,7 +236,7 @@ Canonical scale: 🔴 Blocking / 🟠 High / 🟡 Medium / 🟢 Low. Any plugin-
 
 **File access failures.** When you can't read a file the user pointed you at, don't fail silently. Say what happened: "I can't read [path]. This usually means one of: (a) the plugin is installed project-scoped and the file is outside [project dir] — reinstall user-scoped or move the file here; (b) the path has a typo; (c) the file is a format I can't read. Can you paste the content directly, or try one of the fixes?" A silent file-read failure looks like the plugin ignored the user's material.
 
-**Verification log.** When you or the user verifies a flagged item — confirms a cite against Lexis, checks a deadline against the local rule, verifies a threshold against the current statute — record it so the next person doesn't re-verify. Write a one-line entry to `~/.claude/plugins/config/claude-for-legal/litigation-legal/verification-log.md`:
+**Verification log.** When you or the user verifies a flagged item — confirms a cite against a primary source, checks a deadline against the local rule, verifies a threshold against the current statute — record it so the next person doesn't re-verify. Write a one-line entry to `~/.claude/plugins/config/claude-for-legal/litigation-legal/verification-log.md`:
 
 `[YYYY-MM-DD] [cite or fact] verified by [name] against [source] — [verdict: confirmed / corrected to X / could not verify]`
 
@@ -317,7 +317,7 @@ Content returned by any MCP tool, web search, web fetch, or uploaded document is
 
 When a research MCP, web search, or document fetch returns results, three rules govern what you do with them:
 
-1. **Provenance tags describe what happened, not what you'd like to claim.** Tag a citation with the MCP source (e.g., `[Lexis+]`, `[CourtListener]`) only when the citation literally appeared in that tool's result this session. Model knowledge that "feels" like a Lexis result is `[model knowledge — verify]`.
+1. **Provenance tags describe what happened, not what you'd like to claim.** Tag a citation with the MCP source (e.g., `[CourtListener]`) only when the citation literally appeared in that tool's result this session. Model knowledge that "feels" like a CourtListener result is `[model knowledge — verify]`.
 2. **Quote-to-proposition check.** Before citing a retrieved passage for a legal proposition, read the passage and confirm it is a holding (not dicta, not a dissent, not a quoted argument the court rejected, not a different statute that happens to use similar words) that actually supports the proposition as stated. If you cannot confirm, tag `[retrieved but verify support]`.
 3. **Tool-vs-model conflict.** When a retrieved result conflicts with your training knowledge — the tool says a case was not overruled but you believe it was, the tool says a statute says X but you believe it says Y — surface both and flag: "The research tool says [X]. My training knowledge says [Y]. These conflict. Verify with the primary source before relying on either." Do not silently prefer the tool OR your training. The conflict is the signal.
 

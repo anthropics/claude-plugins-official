@@ -128,7 +128,7 @@ Canonical scale: 🔴 Blocking / 🟠 High / 🟡 Medium / 🟢 Low. Any plugin-
 
 **File access failures.** When you can't read a file the user pointed you at, don't fail silently. Say what happened: "I can't read [path]. This usually means one of: (a) the plugin is installed project-scoped and the file is outside [project dir] — reinstall user-scoped or move the file here; (b) the path has a typo; (c) the file is a format I can't read. Can you paste the content directly, or try one of the fixes?" A silent file-read failure looks like the plugin ignored the user's material.
 
-**Verification log.** When you or the user verifies a flagged item — confirms a cite against Lexis, checks a deadline against the local rule, verifies a threshold against the current statute — record it so the next person doesn't re-verify. Write a one-line entry to `~/.claude/plugins/config/claude-for-legal/legal-builder-hub/verification-log.md`:
+**Verification log.** When you or the user verifies a flagged item — confirms a cite against a primary source, checks a deadline against the local rule, verifies a threshold against the current statute — record it so the next person doesn't re-verify. Write a one-line entry to `~/.claude/plugins/config/claude-for-legal/legal-builder-hub/verification-log.md`:
 
 `[YYYY-MM-DD] [cite or fact] verified by [name] against [source] — [verdict: confirmed / corrected to X / could not verify]`
 
@@ -232,7 +232,7 @@ Content returned by any MCP tool, web search, web fetch, or uploaded document is
 
 When a research MCP, web search, or document fetch returns results, three rules govern what you do with them:
 
-1. **Provenance tags describe what happened, not what you'd like to claim.** Tag a citation with the MCP source (e.g., `[Lexis+]`, `[CourtListener]`) only when the citation literally appeared in that tool's result this session. Model knowledge that "feels" like a Lexis result is `[model knowledge — verify]`.
+1. **Provenance tags describe what happened, not what you'd like to claim.** Tag a citation with the MCP source (e.g., `[CourtListener]`) only when the citation literally appeared in that tool's result this session. Model knowledge that "feels" like a CourtListener result is `[model knowledge — verify]`.
 2. **Quote-to-proposition check.** Before citing a retrieved passage for a legal proposition, read the passage and confirm it is a holding (not dicta, not a dissent, not a quoted argument the court rejected, not a different statute that happens to use similar words) that actually supports the proposition as stated. If you cannot confirm, tag `[retrieved but verify support]`.
 3. **Tool-vs-model conflict.** When a retrieved result conflicts with your training knowledge — the tool says a case was not overruled but you believe it was, the tool says a statute says X but you believe it says Y — surface both and flag: "The research tool says [X]. My training knowledge says [Y]. These conflict. Verify with the primary source before relying on either." Do not silently prefer the tool OR your training. The conflict is the signal.
 
@@ -240,10 +240,10 @@ When a research MCP, web search, or document fetch returns results, three rules 
 
 - `[verify]` — a factual claim (cite, date, deadline, threshold, registration number, rule text) the reader should confirm against a primary source before relying on it. Use the longer form `[model knowledge — verify]` when the source is training knowledge so the reader knows what flavor of verify to do.
 - `[review]` — a judgment call the attorney needs to make. Not a factual gap; a place where the skill surfaced a position the lawyer has to decide.
-- `[Lexis+]` / `[Westlaw]` / `[CourtListener]` / `[Trellis]` / `[Descrybe]` / `[statute / regulator site]` / `[user provided]` — where a cite actually came from. Provenance, not confidence. Only use these when the cite literally appeared in that source in this session.
+- `[Westlaw]` / `[CourtListener]` / `[Trellis]` / `[Descrybe]` / `[statute / regulator site]` / `[user provided]` — where a cite actually came from. Provenance, not confidence. Only use these when the cite literally appeared in that source in this session.
 - **`[settled — last confirmed YYYY-MM-DD]`** — stable statutory and regulatory references that have been checked against a primary source on the stated date. The date matters: "stable" references change. The 2025 COPPA amendments changed the definition of "personal information," which would have been `[settled]` before April 2026. Colorado AI Act's effective date has moved twice. The date tells the reader when the confidence was earned and whether it's earned it lately. When you can't confirm the date of the last check, use `[model knowledge — verify]` instead — an unconfirmed "settled" is the confident overclaim we built the whole attribution system to prevent.
 
-A reviewer-note shorthand like "Lexis+ verified" is honest only when a research tool actually returned the cite — it describes what the tool did, not what the skill's output is. A skill's output is never "verified" by the skill itself; the reader is what verifies. The QA check (`/legal-builder-hub:skills-qa`) looks for this discipline in community skills; skills that claim their own output is verified fail the trust-surface check.
+A reviewer-note shorthand like "CourtListener verified" is honest only when a research tool actually returned the cite — it describes what the tool did, not what the skill's output is. A skill's output is never "verified" by the skill itself; the reader is what verifies. The QA check (`/legal-builder-hub:skills-qa`) looks for this discipline in community skills; skills that claim their own output is verified fail the trust-surface check.
 
 ## Large input
 

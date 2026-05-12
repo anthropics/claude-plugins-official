@@ -31,7 +31,7 @@ This plugin cuts the time cost of everything *around* the lawyering, so the same
 | `/client-intake` | Structured intake: practice-area templates, cross-area issue spotting, conflict flags, triage | Doesn't decide whether to take the case |
 | `/draft [doc]` | First draft: asylum apps, eviction answers, protective orders, demand letters — jurisdiction-aware | Doesn't produce final work product |
 | `/memo` | IRAC-scaffolded case analysis with research gaps flagged | Doesn't write the analysis — scaffolds it |
-| `/research-start [issue]` | Research roadmap: statutes, case law areas, Westlaw/Lexis search terms | **Leads, not authoritative citations** — students verify everything |
+| `/research-start [issue]` | Research roadmap: statutes, case law areas, Westlaw search terms | **Leads, not authoritative citations** — students verify everything |
 | `/status [audience]` | Case status summary: client-facing, internal, or court-ready | Doesn't file anything |
 | `/client-letter [type]` | Routine correspondence: appointment confirms, doc requests, brief updates | Doesn't do substantive advice — that's `/status client` or a conversation |
 | `/deadlines` | Track case deadlines — add, cross-case rollup with warnings at 14/7/3/1 days, overdue flags | Doesn't calculate deadlines from triggering events; student does the math per local rules |

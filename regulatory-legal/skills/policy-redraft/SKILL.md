@@ -100,7 +100,7 @@ A marked-up version of the affected policy section.
   > `[Change: added biometric identifiers to the PII definition per COPPA 2025 amendments, 16 CFR 312.2 (effective Apr 22 2026) [verify]]`
 
 - Any effective date, threshold, citation, or requirement that came from model knowledge or an unverified source gets a `[verify]` tag inline — not just in the change summary.
-- Carry source tags through from the diff: `[Lexis+]`, `[Federal Register]`, `[web search — verify]`, `[model knowledge — verify]`, `[user provided]`. Don't strip them when moving from the diff to the redraft.
+- Carry source tags through from the diff: `[Federal Register]`, `[web search — verify]`, `[model knowledge — verify]`, `[user provided]`. Don't strip them when moving from the diff to the redraft.
 
 ### Scope discipline
 
@@ -114,7 +114,7 @@ If you see a second gap while redrafting — a provision that's clearly out of s
 [WORK-PRODUCT HEADER — per plugin config ## Outputs — differs by role; see `## Who's using this`]
 
 > **⚠️ Reviewer note**
-> - **Sources:** [Research connector: Lexis+ ✓ verified | not connected — cites from training knowledge, verify before relying]
+> - **Sources:** [Research connector: CourtListener ✓ verified | not connected — cites from training knowledge, verify before relying]
 > - **Read:** [sections of the policy reviewed; what wasn't read]
 > - **Flagged for your judgment:** [N items marked `[review]` inline | none]
 > - **Currency:** [rule status verified against [source], [date] | unverified — see banner above]
@@ -145,7 +145,7 @@ If you see a second gap while redrafting — a provision that's clearly out of s
 ### Before applying — checklist
 
 - [ ] Confirm this is the current approved version of the policy being redrafted.
-- [ ] Verify the rule status and effective date (Federal Register docket, Lexis+, or outside counsel).
+- [ ] Verify the rule status and effective date (Federal Register docket, or outside counsel).
 - [ ] Get the policy owner's review.
 - [ ] Follow your policy-change approval process.
 - [ ] Update the gap tracker when applied and approved — not before.

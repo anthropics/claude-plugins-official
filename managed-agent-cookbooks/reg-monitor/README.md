@@ -15,7 +15,6 @@ Checks regulatory feeds on a schedule, filters by the deploying team's materiali
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
-export LEXIS_PROTEGE_MCP_URL=...
 export GDRIVE_MCP_URL=...
 ../../scripts/deploy-managed-agent.sh reg-monitor
 ```
@@ -26,12 +25,12 @@ See [`steering-examples.json`](./steering-examples.json). The default weekly swe
 
 ## Security & handoffs
 
-Regulatory feed content (Federal Register entries, agency RSS posts, TR alerts, Lexis notifications) is **untrusted input.** Three-tier isolation:
+Regulatory feed content (Federal Register entries, agency RSS posts, TR alerts notifications) is **untrusted input.** Three-tier isolation:
 
 | Tier | Touches untrusted docs? | Tools | Connectors |
 |---|---|---|---|
 | **`feed-reader`** | **Yes** | `Read`, `Grep`, `WebFetch` only | None |
-| `materiality-filter` / Orchestrator | No | `Read`, `Grep`, `Glob`, `Agent` | lexis-protege, gdrive (orchestrator only) |
+| `materiality-filter` / Orchestrator | No | `Read`, `Grep`, `Glob`, `Agent` | gdrive (orchestrator only) |
 | **`digest-writer`** (Write-holder) | No | `Read`, `Write`, `Edit` | None |
 
 `feed-reader` returns length-capped, schema-validated JSON. `materiality-filter` is pure computation over that JSON plus the regulatory-legal configuration on disk — no MCP, no web. `digest-writer` produces `./out/reg-digest-<YYYY-MM-DD>.md` and emits a `handoff_request` for Slack delivery.
@@ -44,8 +43,8 @@ Regulatory feed content (Federal Register entries, agency RSS posts, TR alerts, 
 
 Before you trust the output on your workflow:
 
-- **Point `feed-reader` at your sources.** The default targets are Federal Register (free public API, no MCP needed) and the `lexis-protege` MCP. If your firm subscribes to Thomson Reuters Regulatory Intelligence, Bloomberg Law, or direct agency RSS, add the endpoints to the feed-reader's web_fetch allowlist and adjust the orchestrator's scan plan. If you only have free sources, the Federal Register API alone is workable.
-- **Set the Lexis and (optionally) Thomson Reuters MCP URLs.** `LEXIS_PROTEGE_MCP_URL` is the default enrichment connector. TR is commented out in the manifest; wire it and flip `enabled: true` if your team pays for it.
+- **Point `feed-reader` at your sources.** The default target is the Federal Register (free public API, no MCP needed). If your firm subscribes to Thomson Reuters Regulatory Intelligence, Bloomberg Law, or direct agency RSS, add the endpoints to the feed-reader's web_fetch allowlist and adjust the orchestrator's scan plan. If you only have free sources, the Federal Register API alone is workable.
+- **Set the (optionally) Thomson Reuters MCP URLs.** TR is commented out in the manifest; wire it and flip `enabled: true` if your team pays for it.
 - **Configure the digest delivery channel.** The digest-writer emits a `handoff_request` that names a Slack channel. The orchestrator reads that channel from your regulatory-legal configuration's **House style → Reg digest** field. Set it before the first scheduled run or the handoff will dead-letter. Teams that want the digest by email or in a Confluence page instead should swap the handoff target in the orchestrator allowlist.
 - **Tune the materiality threshold.** The materiality-filter reads your configuration's `## Materiality threshold` section — always material / review-worthy / FYI. Confirm the tiers reflect your current risk posture before enabling scheduled runs; a threshold set too low floods the digest, too high and you miss obligations with deadlines.
 - **Update the watchlist.** The materiality-filter also reads the `## Regulators we watch` table. Add or remove regulators as your footprint changes.

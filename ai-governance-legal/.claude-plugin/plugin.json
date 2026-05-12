@@ -1,6 +1,6 @@
 {
   "name": "ai-governance-legal",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Triages proposed AI use cases against your registry, runs impact assessments across the regimes in scope, reviews vendor AI terms for training-on-data and liability gaps, and keeps your AI policy current with practice.",
   "author": {
     "name": "Anthropic"
