@@ -6,7 +6,13 @@ from pathlib import Path
 
 def parse_skill_md(skill_path: Path) -> tuple[str, str, str]:
     """Parse a SKILL.md file, returning (name, description, full_content)."""
-    content = (skill_path / "SKILL.md").read_text()
+    # `encoding="utf-8-sig"` opens UTF-8 and transparently strips a leading
+    # BOM if present. Required because (a) Python's default codec on Windows
+    # is cp1252 which chokes on common Unicode like em-dashes in skill
+    # bodies, and (b) some editors / sync tools (OneDrive, certain Windows
+    # text editors) prepend a UTF-8 BOM that breaks the `lines[0] == "---"`
+    # frontmatter check below.
+    content = (skill_path / "SKILL.md").read_text(encoding="utf-8-sig")
     lines = content.split("\n")
 
     if lines[0].strip() != "---":

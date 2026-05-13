@@ -10,6 +10,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -23,7 +24,17 @@ def _call_claude(prompt: str, model: str | None, timeout: int = 300) -> str:
     Prompt goes over stdin (not argv) because it embeds the full SKILL.md
     body and can easily exceed comfortable argv length.
     """
-    cmd = ["claude", "-p", "--output-format", "text"]
+    # shutil.which resolves to claude.CMD on Windows (npm shim); without
+    # this, shell-less subprocess raises FileNotFoundError because it
+    # doesn't consult PATHEXT.
+    cmd = [
+        shutil.which("claude") or "claude",
+        "-p",
+        "--output-format", "text",
+        # Spawned non-interactive eval subprocess; permission prompts
+        # would stall silently. Same logic as the CLAUDECODE strip below.
+        "--dangerously-skip-permissions",
+    ]
     if model:
         cmd.extend(["--model", model])
 

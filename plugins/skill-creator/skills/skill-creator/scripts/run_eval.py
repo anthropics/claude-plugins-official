@@ -9,6 +9,7 @@ import argparse
 import json
 import os
 import select
+import shutil
 import subprocess
 import sys
 import time
@@ -67,12 +68,20 @@ def run_single_query(
         )
         command_file.write_text(command_content)
 
+        # shutil.which resolves `claude` to its full path including the
+        # `.CMD` extension on Windows (npm shim is `claude.CMD`). Without
+        # this, shell-less subprocess on Windows raises FileNotFoundError
+        # because it doesn't consult PATHEXT.
         cmd = [
-            "claude",
+            shutil.which("claude") or "claude",
             "-p", query,
             "--output-format", "stream-json",
             "--verbose",
             "--include-partial-messages",
+            # Spawned eval subprocesses are non-interactive; permission
+            # prompts would stall the loop silently (stderr is DEVNULL'd
+            # below). Same logic as the existing CLAUDECODE env stripping.
+            "--dangerously-skip-permissions",
         ]
         if model:
             cmd.extend(["--model", model])
@@ -98,6 +107,13 @@ def run_single_query(
         accumulated_json = ""
 
         try:
+            # Cross-platform pipe reading: `select.select` on Windows is
+            # socket-only and raises when given pipe handles, which would
+            # silently bubble up through the outer ThreadPoolExecutor
+            # error handling and report every query as triggered=False.
+            # `readline()` blocks until newline or EOF; the surrounding
+            # `time.time() - start_time < timeout` check still bounds
+            # total wall time.
             while time.time() - start_time < timeout:
                 if process.poll() is not None:
                     remaining = process.stdout.read()
@@ -105,14 +121,11 @@ def run_single_query(
                         buffer += remaining.decode("utf-8", errors="replace")
                     break
 
-                ready, _, _ = select.select([process.stdout], [], [], 1.0)
-                if not ready:
-                    continue
-
-                chunk = os.read(process.stdout.fileno(), 8192)
-                if not chunk:
+                raw_line = process.stdout.readline()
+                if not raw_line:
+                    # EOF
                     break
-                buffer += chunk.decode("utf-8", errors="replace")
+                buffer += raw_line.decode("utf-8", errors="replace")
 
                 while "\n" in buffer:
                     line, buffer = buffer.split("\n", 1)
