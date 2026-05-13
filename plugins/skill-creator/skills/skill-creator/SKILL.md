@@ -202,6 +202,24 @@ Don't just wait for the runs to finish — you can use this time productively. D
 
 Good assertions are objectively verifiable and have descriptive names — they should read clearly in the benchmark viewer so someone glancing at the results immediately understands what each one checks. Subjective skills (writing style, design quality) are better evaluated qualitatively — don't force assertions onto things that need human judgment.
 
+**The discrimination test.** Before you ship an assertion, ask: *could a clearly-wrong output also pass this?* If yes, the assertion is too weak — it measures surface compliance, not the skill's actual value. Regex keyword checks fail this test routinely: the model can sprinkle the right words into a shallow output. When the skill's value is in structure, enumeration depth, or reasoning quality (not in producing a specific token), prefer an LLM-graded rubric assertion read by the grader subagent over a regex. Mix both kinds:
+
+- **Programmatic assertions** (regex, file existence, schema validation) — fast, deterministic, cheap to rerun. Right for: file shape, presence of required fields, size/format constraints, banned phrases. Wrong for: depth, structure, completeness of reasoning.
+- **Rubric assertions** (graded by the grader subagent reading transcript + outputs) — slower, but capture what the regex can't. Write them as specific qualitative claims the grader can verify with cited evidence. Example: *"Diagnosis enumerates at least three forensic evidence sources (e.g., session transcript, memory chain, git log) and ties each to a failure mode"* — passes only when the structure is genuinely present, not when the words happen to appear.
+
+A common failure mode: writing only regex assertions, watching both variants hit 100%, and concluding the skill is at parity when actually the regex bar was too low to discriminate. If pass rates are flat across iterations, the assertions are probably the bug, not the skill — rewrite at least one assertion as a rubric claim that names the structural property you actually care about.
+
+**Weak → strong rewrites.** Each pair below shows a keyword-style assertion that a shallow output can satisfy, alongside the rubric rewrite that forces the property the skill actually delivers.
+
+| Weak (regex-shaped) | Strong (rubric-shaped) |
+|---|---|
+| Output contains the word "forensics". | Diagnosis enumerates ≥3 distinct evidence sources (e.g., session transcript, memory chain, git log) and ties each to a specific failure mode named in the prompt. |
+| Output contains "test" or "testing". | The plan specifies which test (file path, function name, or behavioural description) covers each acceptance criterion from the prompt; ∄ unaddressed criterion. |
+| Output contains "TODO". | The TODO list breaks the work into ≥3 steps, each with a verifiable completion check and an explicit owner (file/function or "manual user step"). |
+| Output is ≤500 chars. | The output omits all background context the user already supplied (project name, library version) and leads with the action; a reader could skip to step 1 without prerequisite reading. |
+
+**Aim for a mix.** A solid eval has 60-80% programmatic assertions (cheap, deterministic, catch regressions) and 20-40% rubric assertions (catch the structural / depth properties regex can't see). Set `kind` on each assertion so the grader knows which lens to use — see `references/schemas.md`.
+
 Update the `eval_metadata.json` files and `evals/evals.json` with the assertions once drafted. Also explain to the user what they'll see in the viewer — both the qualitative outputs and the quantitative benchmark.
 
 ### Step 3: As runs complete, capture timing data

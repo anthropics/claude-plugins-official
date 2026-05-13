@@ -18,13 +18,17 @@ Defines the evals for a skill. Located at `evals/evals.json` within the skill di
       "expected_output": "Description of expected result",
       "files": ["evals/files/sample1.pdf"],
       "expectations": [
-        "The output includes X",
-        "The skill used script Y"
+        {"kind": "programmatic", "text": "Output file `report.md` exists and is non-empty"},
+        {"kind": "programmatic", "text": "Output contains a YAML frontmatter block delimited by ---"},
+        {"kind": "rubric", "text": "Diagnosis enumerates ≥3 distinct evidence sources (e.g., session transcript, memory chain, git log) and ties each to a specific failure mode from the prompt"},
+        {"kind": "rubric", "text": "Plan covers every acceptance criterion in the prompt; ∄ criterion left unaddressed"}
       ]
     }
   ]
 }
 ```
+
+Expectations may also be plain strings — older eval files that pre-date the `kind` field are still supported and treated as rubric by default. Prefer the object form for new evals.
 
 **Fields:**
 - `skill_name`: Name matching the skill's frontmatter
@@ -32,7 +36,10 @@ Defines the evals for a skill. Located at `evals/evals.json` within the skill di
 - `evals[].prompt`: The task to execute
 - `evals[].expected_output`: Human-readable description of success
 - `evals[].files`: Optional list of input file paths (relative to skill root)
-- `evals[].expectations`: List of verifiable statements
+- `evals[].expectations`: List of verifiable statements, each `{kind, text}` (or a bare string, treated as `kind: rubric`)
+  - `kind: "programmatic"` — checkable by regex / file existence / schema / size. Fast, deterministic, cheap. Use for shape, presence, banned phrases.
+  - `kind: "rubric"` — judged by the grader subagent reading transcript + outputs. Captures depth, structure, completeness, enumeration. Use for what regex can't see.
+  - **Aim for a mix**: 60-80% programmatic + 20-40% rubric. Pure-regex eval sets routinely show 100% parity between skill versions because keywords are easy to sprinkle in shallow outputs. See SKILL.md "discrimination test" for the failure mode.
 
 ---
 

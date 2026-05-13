@@ -217,6 +217,8 @@ For each expectation across all runs:
 - Does it **always fail with skill but pass without**? (skill may be hurting)
 - Is it **highly variable**? (flaky expectation or non-deterministic behavior)
 
+**Check for `discrimination_concern` in each run's `grading.json`.** If any grader emitted `eval_feedback.discrimination_concern: true`, do not report a flat delta as "parity" — report it as "indeterminate: assertions too weak to discriminate" and copy the grader's `discrimination_rewrites` into your notes so the user sees the proposed fix. A flat delta against a weak assertion set is a measurement failure, not a finding about the skill.
+
 ### Step 3: Analyze Cross-Eval Patterns
 
 Look for patterns across evals:

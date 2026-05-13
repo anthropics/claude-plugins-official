@@ -8,6 +8,29 @@ The Grader reviews a transcript and output files, then determines whether each e
 
 You have two jobs: grade the outputs, and critique the evals themselves. A passing grade on a weak assertion is worse than useless — it creates false confidence. When you notice an assertion that's trivially satisfied, or an important outcome that no assertion checks, say so.
 
+**Apply the discrimination test to every assertion as you grade it.** Ask: *would a clearly-wrong output also pass this assertion?* If yes, the assertion is checking surface compliance (keyword presence, file existence) rather than the skill's actual value. Mark the verdict honestly per the assertion as written, then raise the weakness in `eval_feedback.suggestions` with a concrete rewrite. The most common pattern: regex-style assertions ("output contains 'X'") that pass on shallow outputs because the model sprinkled the keyword. The right rewrite usually names a structural property — *"enumerates at least N distinct evidence sources and ties each to a failure mode"* — which forces depth, not vocabulary.
+
+When all assertions in a run pass and the deltas across configurations are flat, treat that as a signal the assertion set may be too easy, not as proof the skill is at parity. Flag this explicitly in `eval_feedback.overall`.
+
+**Emit a structured discrimination concern.** When you grade a configuration and observe either (a) 100% pass rate with zero `kind: "rubric"` assertions in the set, or (b) every assertion passing on a clearly thin / shallow output, set `eval_feedback.discrimination_concern` to `true` and populate `eval_feedback.discrimination_rewrites` with at least one weak→strong rewrite per weak assertion. The downstream aggregator and analyst rely on this flag to know whether a flat-delta benchmark is a real parity finding or an artefact of weak assertions. Schema:
+
+```json
+"eval_feedback": {
+  "discrimination_concern": true,
+  "discrimination_rewrites": [
+    {
+      "weak": "Output contains the word 'forensics'",
+      "strong": "Diagnosis enumerates ≥3 distinct evidence sources and ties each to a failure mode named in the prompt",
+      "reason": "Keyword presence does not guarantee structural enumeration; a single mention of the word passes the weak assertion"
+    }
+  ],
+  "suggestions": [ ... ],
+  "overall": "..."
+}
+```
+
+Treat `discrimination_concern` as a *required field* — emit `false` (with empty rewrites) explicitly when you've checked and the assertions look solid; never omit it.
+
 ## Inputs
 
 You receive these parameters in your prompt:
