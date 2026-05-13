@@ -958,12 +958,19 @@ async function handleInbound(
 
   const imagePath = downloadImage ? await downloadImage() : undefined
 
+  // Include replied-to message content so Claude can see what the user is referencing.
+  const replyMsg = ctx.message?.reply_to_message
+  const replyText = replyMsg?.text ?? replyMsg?.caption
+  const contentWithReply = replyText
+    ? `[Replying to: "${replyText}"]\n${text}`
+    : text
+
   // image_path goes in meta only — an in-content "[image attached — read: PATH]"
   // annotation is forgeable by any allowlisted sender typing that string.
   mcp.notification({
     method: 'notifications/claude/channel',
     params: {
-      content: text,
+      content: contentWithReply,
       meta: {
         chat_id,
         ...(msgId != null ? { message_id: String(msgId) } : {}),
