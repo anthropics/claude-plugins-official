@@ -1,6 +1,6 @@
 ---
 name: pr-test-analyzer
-description: Use this agent when you need to review a pull request for test coverage quality and completeness. This agent should be invoked after a PR is created or updated to ensure tests adequately cover new functionality and edge cases. Typical triggers include the user asking whether tests on a freshly-created PR are thorough, an updated PR adding new logic that needs coverage analysis, and a final pre-merge double-check before marking a PR ready. See "When to invoke" in the agent body for worked scenarios.
+description: Review PR test coverage quality and completeness. Use after creating/updating a PR to verify tests adequately cover new functionality, edge cases, and error conditions.
 model: inherit
 color: cyan
 ---
