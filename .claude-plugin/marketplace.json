@@ -1163,6 +1163,22 @@
       }
     },
     {
+      "name": "mac-notes",
+      "description": "Read, search, and edit Apple Notes from Claude Code. Eight tools cover listing accounts and folders, listing and searching notes, reading content, creating new notes, and appending or updating existing ones. macOS only; uses JXA via osascript.",
+      "category": "productivity",
+      "author": {
+        "name": "Stas Arshanski",
+        "email": "stas@kolivri.com",
+        "url": "https://kolivri.com"
+      },
+      "source": {
+        "source": "url",
+        "url": "https://github.com/stuk88/mac-notes-mcp.git",
+        "sha": "d74520da6172f0ae6490deb10df189e8d7241df4"
+      },
+      "homepage": "https://github.com/stuk88/mac-notes-mcp"
+    },
+    {
       "name": "math-olympiad",
       "description": "Solve competition math (IMO, Putnam, USAMO) with adversarial verification that catches what self-verification misses. Fresh-context verifiers attack proofs with specific failure patterns. Calibrated abstention over bluffing.",
       "author": {
