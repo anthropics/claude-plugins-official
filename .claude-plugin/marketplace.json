@@ -1011,7 +1011,18 @@
           "extensionToLanguage": {
             ".java": "java"
           },
-          "startupTimeout": 120000
+          "startupTimeout": 300000,
+          "maxRestarts": 100,
+          "initializationOptions": {
+            "settings": {
+              "java": {
+                "maven": {
+                  "downloadSources": true,
+                  "downloadJavadoc": true
+                }
+              }
+            }
+          }
         }
       }
     },
