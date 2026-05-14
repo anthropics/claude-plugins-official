@@ -126,15 +126,25 @@ Only use exec() if you absolutely need shell features and the input is guarantee
 ]
 
 
+def get_claude_config_dir():
+    """Return the Claude config directory, honouring CLAUDE_CONFIG_DIR if set."""
+    config_dir = os.environ.get("CLAUDE_CONFIG_DIR")
+    if config_dir:
+        return os.path.expanduser(config_dir)
+    return os.path.expanduser("~/.claude")
+
+
 def get_state_file(session_id):
     """Get session-specific state file path."""
-    return os.path.expanduser(f"~/.claude/security_warnings_state_{session_id}.json")
+    return os.path.join(
+        get_claude_config_dir(), f"security_warnings_state_{session_id}.json"
+    )
 
 
 def cleanup_old_state_files():
     """Remove state files older than 30 days."""
     try:
-        state_dir = os.path.expanduser("~/.claude")
+        state_dir = get_claude_config_dir()
         if not os.path.exists(state_dir):
             return
 
