@@ -722,8 +722,21 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
 
 await mcp.connect(new StdioServerTransport())
 
-// When Claude Code closes the MCP connection, stdin gets EOF. Without this
-// the gateway stays connected as a zombie holding resources.
+// Stdin EOF/close is not a reliable shutdown signal for this channel plugin.
+// Claude Code's MCP stdio bridge may close its write side of stdin shortly
+// after the MCP initialize handshake completes — before client.login() has
+// finished the Discord gateway handshake. The plugin then exits via the EOF
+// shutdown path before "ready" can fire, leaving the bot offline and the
+// channel non-functional. The original intent of EOF-shutdown was to avoid
+// leaving a zombie Discord gateway when Claude Code exits cleanly; that is a
+// real but recoverable concern (kill `bun server.ts` manually), whereas the
+// race described above breaks the channel for every spawn.
+//
+// Default to "ignore stdin close and rely on signals (SIGTERM/SIGINT) for
+// real shutdown." Set DISCORD_SHUTDOWN_ON_STDIN_EOF=1 to opt into the old
+// behavior (useful if you want the gateway to auto-cleanup on EOF and accept
+// the trade-off of occasional missed channel spawns).
+const SHUTDOWN_ON_STDIN_EOF = process.env.DISCORD_SHUTDOWN_ON_STDIN_EOF === '1'
 let shuttingDown = false
 function shutdown(): void {
   if (shuttingDown) return
@@ -732,8 +745,15 @@ function shutdown(): void {
   setTimeout(() => process.exit(0), 2000)
   void Promise.resolve(client.destroy()).finally(() => process.exit(0))
 }
-process.stdin.on('end', shutdown)
-process.stdin.on('close', shutdown)
+function onStdinClosed(): void {
+  if (SHUTDOWN_ON_STDIN_EOF) {
+    shutdown()
+  } else {
+    process.stderr.write('discord channel: stdin closed; keeping gateway alive\n')
+  }
+}
+process.stdin.on('end', onStdinClosed)
+process.stdin.on('close', onStdinClosed)
 process.on('SIGTERM', shutdown)
 process.on('SIGINT', shutdown)
 
