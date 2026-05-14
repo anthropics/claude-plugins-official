@@ -73,7 +73,8 @@ class RuleEngine:
                 return {
                     "hookSpecificOutput": {
                         "hookEventName": hook_event,
-                        "permissionDecision": "deny"
+                        "permissionDecision": "deny",
+                        "permissionDecisionReason": combined_message
                     },
                     "systemMessage": combined_message
                 }
