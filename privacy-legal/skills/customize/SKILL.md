@@ -63,10 +63,10 @@ cold-start interview and without hand-editing YAML.
    what changes downstream, confirm, write it to the config.
 
    Examples:
-   - *Sub-processor notice 30 days → 14 days:* "`/review-dpa` will now flag
+   - *Sub-processor notice 30 days → 14 days:* "`/dpa-review` will now flag
      anything shorter than 14 days as a deviation. Existing DPAs stay as
      logged."
-   - *New DSAR exemption in the playbook:* "`/draft-dsar` will surface this
+   - *New DSAR exemption in the playbook:* "`/dsar-response` will surface this
      exemption in the assessment step where the facts match."
    - *Risk posture middle → conservative:* "I'll flag more activities for
      PIA escalation, recommend stricter SCC clauses, and be more
@@ -95,7 +95,7 @@ cold-start interview and without hand-editing YAML.
   tension.
 - **Flag guardrail degradation.** The `[review]` flag, source attribution
   tags, `[verify]` tags on cited regulations, and the DPIA-trigger
-  mandatory-check on `/triage` are load-bearing — do not remove. If
+  mandatory-check on `/use-case-triage` are load-bearing — do not remove. If
   statutory DSAR timelines are adjusted below the regulatory minimum,
   refuse and explain why.
 - **One change at a time.** Don't re-ask the whole interview.

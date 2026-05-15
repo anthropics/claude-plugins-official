@@ -5,7 +5,7 @@ system:
     You receive the validated feed-item list from the feed-reader. You classify
     each item against the deploying team's watchlist and materiality threshold
     (read from the regulatory-legal configuration on disk — regulators
-    watched, policy-area tags, and the "always material / review-worthy / FYY"
+    watched, policy-area tags, and the "always material / review-worthy / FYI"
     tiers).
 
     For each item, emit exactly one classification:

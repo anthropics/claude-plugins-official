@@ -9,7 +9,7 @@ CoCounsel Legal brings Westlaw Deep Research into Claude for CoCounsel Legal sub
 
 ## Example use cases
 
-1. Research how California courts have treated non-compete agreements for executive employees since 2020. 
+1. Research how California courts have treated non-compete agreements for executive employees since 2020.
 2. I asked you to research California non-competes earlier. Can you now retrieve the full report?
 3. Follow up on that research: how does Texas law differ on executive non-competes for the same period?
 

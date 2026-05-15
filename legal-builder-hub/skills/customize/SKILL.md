@@ -43,11 +43,11 @@ whole cold-start interview and without hand-editing YAML.
      community skills from
    - **Update preferences** — check cadence (daily / weekly / on demand),
      notification channel (Slack / in-session), auto-update vs. prompt
-   - **QA strictness** — how aggressively `/qa` flags issues on a candidate
+   - **QA strictness** — how aggressively `/skills-qa` flags issues on a candidate
      skill before install (lenient / middle / strict), and which
      failure-mode checks are on
    - **Skill install defaults** — install scope (user / project), whether
-     to run `/qa` automatically before install
+     to run `/skills-qa` automatically before install
    - **Integrations** — Slack / document storage status, fallbacks
 
 3. **Ask what they want to change.**
@@ -59,9 +59,9 @@ whole cold-start interview and without hand-editing YAML.
    what changes downstream, confirm, write it to the config.
 
    Examples:
-   - *Adding a new watched registry:* "`/browse` will search this registry
-     alongside the existing ones. `/update` will check it on its next run."
-   - *QA strictness strict → middle:* "`/qa` will report the same findings
+   - *Adding a new watched registry:* "`/registry-browser` will search this registry
+     alongside the existing ones. `/auto-updater` will check it on its next run."
+   - *QA strictness strict → middle:* "`/skills-qa` will report the same findings
      but not block install on the medium band unless you confirm."
    - *Auto-update on → off:* "The hub will prompt you before applying
      updates instead of applying them automatically."
@@ -88,7 +88,7 @@ whole cold-start interview and without hand-editing YAML.
   profile that doesn't match any installed plugin), flag the tension.
 - **Flag guardrail degradation.** The Legal Skill Design Framework checks
   (nine design parameters, three legal failure modes, trust-surface check)
-  are what `/qa` exists to run — turning them off defeats the point. If the
+  are what `/skills-qa` exists to run — turning them off defeats the point. If the
   user wants to lower strictness, recommend the middle band rather than
   disabling the check.
 - **One change at a time.** Don't re-ask the whole interview.

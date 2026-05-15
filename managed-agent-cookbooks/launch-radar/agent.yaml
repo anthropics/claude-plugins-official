@@ -24,8 +24,8 @@ system:
     informed by this memo. Do not soften that framing in the memo.
 
 tools:
-  # Orchestrator is scoped to local-only tools; MCP and web_fetch are held by
-  # the subagent leaves (see callable_agents).
+  # Orchestrator is scoped to local-only tools; MCP is held by the
+  # subagent leaves (see callable_agents).
   - type: agent_toolset_20260401
     default_config: { enabled: false }
     configs:

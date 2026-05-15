@@ -1,5 +1,7 @@
 {
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "claude-for-legal",
+  "description": "Reference agents, skills, and data connectors for the legal workflows we see most — in-house commercial, privacy, product, corporate, employment, litigation, regulatory, AI governance, IP, and the learning side of the practice (law school clinics and students).",
   "owner": {
     "name": "Anthropic"
   },
@@ -95,7 +97,7 @@
     {
       "name": "ip-legal",
       "source": "./ip-legal",
-      "description": "Runs first-pass trademark clearance and freedom-to-operate triage, drafts and triages cease-and-desist letters and DMCA takedowns (send and respond), checks open source compliance, reviews IP clauses, and tracks registrations and renewal deadlines.",
+      "description": "Runs first-pass trademark clearance and freedom-to-operate triage, screens invention disclosures for initial patentability, drafts and triages cease-and-desist letters and DMCA takedowns (send and respond), checks open source compliance, reviews IP clauses, and tracks registrations and renewal deadlines.",
       "author": {
         "name": "Anthropic"
       }

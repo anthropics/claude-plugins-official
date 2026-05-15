@@ -150,7 +150,7 @@ managed-agent-cookbooks/  # Claude Managed Agent cookbooks — one dir per sched
   launch-radar/
   reg-monitor/
   renewal-watcher/
-scripts/                  # deploy-managed-agent.sh · validate.py · orchestrate.py · lint-tool-scope.py
+scripts/                  # deploy-managed-agent.sh · validate.py · orchestrate.py · lint-tool-scope.py · test-cookbooks.sh
 .claude-plugin/
   marketplace.json        # plugin registry
 ```
@@ -361,6 +361,7 @@ The full map across all plugins. The cold-start interview is the first thing to 
 | Command | Skill | What it does |
 |---|---|---|
 | `/ai-governance-legal:cold-start-interview` | cold-start-interview | Cold-start — learns your AI governance practice |
+| `/ai-governance-legal:ai-inventory` | ai-inventory | EU AI Act per-system inventory — track each system's role and risk tier |
 | `/ai-governance-legal:use-case-triage` | use-case-triage | Classify AI use case — approved, conditional, or no |
 | `/ai-governance-legal:aia-generation` | aia-generation | Run an AI impact assessment in house format |
 | `/ai-governance-legal:vendor-ai-review` | vendor-ai-review | Review vendor AI terms against governance positions |
@@ -465,6 +466,7 @@ The full map across all plugins. The cold-start interview is the first thing to 
 | `/ip-legal:cold-start-interview` | cold-start-interview | Cold-start — learn your IP practice and posture |
 | `/ip-legal:clearance` | clearance | Trademark clearance first pass — knockout + similar marks |
 | `/ip-legal:fto-triage` | fto-triage | Freedom-to-operate triage, not an FTO opinion |
+| `/ip-legal:invention-intake` | invention-intake | Invention disclosure first-pass screen — novelty, obviousness, §101, bar dates |
 | `/ip-legal:cease-desist` | cease-desist | Draft a C&D or triage one you received |
 | `/ip-legal:takedown` | takedown | DMCA notice, response triage, or §512(g) counter-notice |
 | `/ip-legal:infringement-triage` | infringement-triage | Infringement triage across all four IP rights |

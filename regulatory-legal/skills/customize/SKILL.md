@@ -43,11 +43,11 @@ without hand-editing YAML.
      to each, owner per policy
    - **Materiality threshold** — when a regulatory change rises to
      "notable" vs. "report" vs. "digest only"; how this threshold filters
-     `/watch` output
+     `/reg-feed-watcher` output
    - **Gap response process** — who triages, SLA per severity, downstream
      owners (policy, product, training)
    - **Feed configuration** — regulator feeds, Thomson Reuters
-     connectors, cadence of the `/watch` sweep, digest channel
+     connectors, cadence of the `/reg-feed-watcher` sweep, digest channel
    - **People** — regulatory counsel, policy owners, comment drafter,
      escalation chain
    - **Workflow** — matter workspaces, open gaps tracker, comment deadline
@@ -64,13 +64,13 @@ without hand-editing YAML.
    what changes downstream, confirm, write it to the config.
 
    Examples:
-   - *Adding a regulator to the watchlist:* "`/watch` will sweep this
-     regulator on its next run. `/diff` will accept inputs from this
+   - *Adding a regulator to the watchlist:* "`/reg-feed-watcher` will sweep this
+     regulator on its next run. `/policy-diff` will accept inputs from this
      regulator's rulemaking feed."
-   - *Tightening materiality threshold:* "`/watch` digest will be
+   - *Tightening materiality threshold:* "`/reg-feed-watcher` digest will be
      shorter — items below the new threshold will drop from the weekly
      digest but stay searchable."
-   - *New policy added to the library:* "`/diff` will include this policy
+   - *New policy added to the library:* "`/policy-diff` will include this policy
      when matching new rules against the library. The comment tracker
      will tag comments affecting this policy."
 

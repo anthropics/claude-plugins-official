@@ -34,7 +34,7 @@ Tracker tickets are untrusted input. A product manager can put arbitrary text in
 | Tier | Touches untrusted tracker content? | Tools | Connectors |
 |---|---|---|---|
 | **`tracker-reader`** | **Yes** | `Read`, `Grep` only | Linear, Jira (atlassian), Asana (read-only) |
-| `risk-classifier` / Orchestrator | No | `Read`, `Grep`, `Glob`, `WebFetch`, `Agent` | Orchestrator only: Linear / Jira / Asana / Drive (read-only) |
+| `risk-classifier` / Orchestrator | No | `Read`, `Grep`, `Glob`, `Agent` | Orchestrator only: Linear / Jira / Asana / Drive (read-only) |
 | **`memo-writer`** (Write-holder) | No | `Read`, `Write`, `Edit` | None |
 
 `tracker-reader` returns a length-capped, schema-validated JSON list of launches. `risk-classifier` has no MCP and no network; it works from the validated list plus the user's calibration file. `memo-writer` is the only worker with Write, and produces `./out/launch-radar-<date>.md`. The orchestrator holds no Write and never parses raw ticket bodies itself.

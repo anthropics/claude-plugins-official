@@ -1,11 +1,11 @@
 {
-    "mcpServers": {
-        "cocounsel-legal": {
-            "type": "http",
-            "url": "https://legal-mcp.thomsonreuters.com/mcp",
-            "oauth": {
-                "clientId": "QCgP4IGN5JiLqXRHxiAVr3wu1ySo2nQx"
-            }
-        }
+  "mcpServers": {
+    "cocounsel-legal": {
+      "type": "http",
+      "url": "https://legal-mcp.thomsonreuters.com/mcp",
+      "oauth": {
+        "clientId": "QCgP4IGN5JiLqXRHxiAVr3wu1ySo2nQx"
+      }
     }
+  }
 }

@@ -62,11 +62,11 @@ re-running the whole cold-start interview and without hand-editing YAML.
    what changes downstream, confirm, write it to the config.
 
    Examples:
-   - *Adding a new practice area:* "`/intake` will route matters of this
+   - *Adding a new practice area:* "`/client-intake` will route matters of this
      type through the new template. `/draft`, `/memo`, and `/client-letter`
      will use the practice-area prompts. `/research-start` will add the
      corresponding Westlaw search terms."
-   - *Supervision style informal → formal review queue:* "`/queue` becomes
+   - *Supervision style informal → formal review queue:* "`/supervisor-review-queue` becomes
      active — student output will land there for supervisor sign-off before
      it goes to the client."
    - *New semester rollover:* "I'll archive the prior semester's active
@@ -82,7 +82,7 @@ re-running the whole cold-start interview and without hand-editing YAML.
 
 - **Never delete a section.** If the user wants to "drop" a practice area,
   offer to mark it `[Archived]` and explain that archiving keeps case
-  history accessible but hides the template from `/intake` routing.
+  history accessible but hides the template from `/client-intake` routing.
 - **Flag internal inconsistency.** If the change would make the profile
   inconsistent (e.g., formal review queue on + informal supervision note;
   or practice area on + no jurisdiction rules configured), flag the
@@ -90,7 +90,7 @@ re-running the whole cold-start interview and without hand-editing YAML.
 - **Flag guardrail degradation.** These are load-bearing and should not be
   removed: the "NOT final work product" framing on `/draft`, plain-language
   standards on client-facing outputs, "does NOT decide case acceptance" on
-  `/intake`, "NOT substantive advice" on `/client-letter`, and the
+  `/client-intake`, "NOT substantive advice" on `/client-letter`, and the
   scaffold-not-analysis framing on `/memo`. These exist because students
   ship work product — if the safeguards go, the risk of student work
   reaching a client without supervisor review goes up. Confirm the

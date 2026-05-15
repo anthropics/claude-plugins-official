@@ -67,7 +67,7 @@ cold-start interview and without hand-editing YAML.
      anything above 6 months as a deviation; existing deal-debrief entries
      stay as logged."
    - *New escalation approver:* "Any redline exceeding your own authority
-     will now route to this approver — `/escalate` will include them by
+     will now route to this approver — `/escalation-flagger` will include them by
      default for the matching risk band."
    - *Risk posture middle → aggressive:* "I'll accept more vendor-friendly
      positions without flagging them and shift the `[review]` bar higher."

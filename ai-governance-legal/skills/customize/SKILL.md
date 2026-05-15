@@ -70,9 +70,9 @@ cold-start interview and without hand-editing YAML.
      conditional rather than approved, surface more AIA follow-ups, and
      recommend more conservative vendor AI redlines."
    - *Adding an escalation contact:* "Every skill that routes escalations
-     (`/triage`, `/review-vendor-ai`, `/gap-check`) will now include this
+     (`/use-case-triage`, `/vendor-ai-review`, `/reg-gap-analysis`) will now include this
      contact on the relevant risk bands."
-   - *New use case registry entry:* "`/triage` will match against this entry
+   - *New use case registry entry:* "`/use-case-triage` will match against this entry
      on its next run. Existing AIAs aren't rewritten — re-run them if you want
      the new posture reflected."
 
@@ -92,7 +92,7 @@ cold-start interview and without hand-editing YAML.
 
 - **Never delete a section.** If the user wants to "remove" something, set it
   to `[Not configured]` and explain what that means for the plugin's behavior.
-  ("Removing your escalation chain means `/triage` will flag escalation-worthy
+  ("Removing your escalation chain means `/use-case-triage` will flag escalation-worthy
   items but won't route them to a specific person.")
 - **Flag internal inconsistency.** If the change would make the profile
   inconsistent (e.g., risk posture aggressive + escalation "everything goes to

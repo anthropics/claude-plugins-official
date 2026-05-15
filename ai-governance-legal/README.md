@@ -32,6 +32,7 @@ positions and house style.
 | Command | Does |
 |---|---|
 | `/ai-governance-legal:cold-start-interview` | Cold-start interview — writes your practice profile |
+| `/ai-governance-legal:ai-inventory [list \| add \| edit \| classify \| show]` | Manage the EU AI Act per-system inventory — track each system's role and risk tier |
 | `/ai-governance-legal:use-case-triage [use case]` | Classify a use case against your registry (approved / conditional / never) |
 | `/ai-governance-legal:aia-generation [use case]` | Run an AI impact assessment (AIA) in your house style |
 | `/ai-governance-legal:vendor-ai-review [vendor/file]` | Review a vendor AI agreement against your positions |
@@ -45,6 +46,7 @@ positions and house style.
 | Skill | Purpose |
 |---|---|
 | **cold-start-interview** | Writes `~/.claude/plugins/config/claude-for-legal/ai-governance-legal/CLAUDE.md` from interview + seed docs |
+| **ai-inventory** | EU AI Act per-system inventory — role (provider, deployer, importer, distributor, authorized rep, product manufacturer) and risk tier per system |
 | **use-case-triage** | Classifies use cases against the registry; flags missing assessments |
 | **aia-generation** | AI impact assessment (AIA) in house format |
 | **vendor-ai-review** | AI-specific vendor contract review against governance positions |

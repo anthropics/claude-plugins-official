@@ -269,7 +269,7 @@ that's where to go deep first.
 ### Part 2: Regulatory footprint (2-3 min)
 
 > Which regulations are actually on your radar? I don't want to assume — tell me
-> what's real for you. (This feeds /gap-check and /policy-monitor — the gap analysis diffs new regulations against your stated scope, and policy-monitor only watches regimes you've marked in scope.)
+> what's real for you. (This feeds /reg-gap-analysis and /policy-monitor — the gap analysis diffs new regulations against your stated scope, and policy-monitor only watches regimes you've marked in scope.)
 
 **Do not assume any regulation applies. Ask the user which regimes they think apply, then research the AI-specific regulations currently in effect or pending in the jurisdictions where the company operates, deploys AI, or has affected parties. This landscape changes quickly — verify currency.**
 
@@ -336,7 +336,7 @@ walk through each one.
 
 **The red lines question:**
 > "What's the use case that's an automatic no — the thing someone could propose
-> and you'd stop them immediately without needing to think about it?" (This feeds /triage — the skill checks proposed AI use cases against these red lines before doing anything else, and flags anything on the list as automatic stop.)
+> and you'd stop them immediately without needing to think about it?" (This feeds /use-case-triage — the skill checks proposed AI use cases against these red lines before doing anything else, and flags anything on the list as automatic stop.)
 
 Common categories to probe if they're slow: biometric data, emotion detection,
 political/religious inference, fully automated adverse decisions affecting employment
@@ -360,7 +360,7 @@ or credit, uses involving children.
 
 **Escalation:**
 
-> "When a review finds something that needs someone more senior to sign off — a vendor AI agreement with training-on-data or liability issues, an AI use case that doesn't fit your registry, a regulatory gap that needs a decision, or a call above your authority — who does that go to? Give me a name or a role (the GC, the Chief Privacy Officer, your boss), or say 'I decide myself.' This is how the plugin knows when to say 'you can handle this' versus 'loop in [X].' (This feeds every skill's routing logic — /triage, /review-vendor-ai, and /gap-check all check the escalation matrix before telling you to hand something up.)"
+> "When a review finds something that needs someone more senior to sign off — a vendor AI agreement with training-on-data or liability issues, an AI use case that doesn't fit your registry, a regulatory gap that needs a decision, or a call above your authority — who does that go to? Give me a name or a role (the GC, the Chief Privacy Officer, your boss), or say 'I decide myself.' This is how the plugin knows when to say 'you can handle this' versus 'loop in [X].' (This feeds every skill's routing logic — /use-case-triage, /vendor-ai-review, and /reg-gap-analysis all check the escalation matrix before telling you to hand something up.)"
 
 Also ask:
 - Has anything been escalated to the board or C-suite over AI in the last year?
@@ -374,7 +374,7 @@ Also ask:
 ### Part 5: Seed documents (3-4 min)
 
 > "I want to see what you actually have. Tell me which of these exist, and share
-> what you can. (The AI policy feeds /policy-monitor drift detection; the prior impact assessment becomes the /aia-generation template; the vendor agreements become the starting playbook for /review-vendor-ai.)"
+> what you can. (The AI policy feeds /policy-monitor drift detection; the prior impact assessment becomes the /aia-generation template; the vendor agreements become the starting playbook for /vendor-ai-review.)"
 >
 > 1. **AI or acceptable use policy.** Your internal or public-facing policy on how
 >    AI can and can't be used. This tells me your committed positions.

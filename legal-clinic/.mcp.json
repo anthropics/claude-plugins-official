@@ -21,7 +21,8 @@
     "Courtroom5": {
       "type": "http",
       "url": "https://mcp.courtroom5.com",
-      "description": "Courtroom5 — jurisdiction-aware guidance for self-represented litigants: case intake, deadline calculations, procedural next steps"
+      "title": "Courtroom5",
+      "description": "Courtroom5 — jurisdiction-aware guidance for self-represented litigants: case intake, deadline calculations, procedural next steps."
     },
     "Descrybe": {
       "type": "http",

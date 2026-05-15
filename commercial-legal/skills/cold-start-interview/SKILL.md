@@ -173,7 +173,7 @@ Two quick questions before we get into commercial-contracts specifics. These sha
 
 #### Who's using this?
 
-> Who'll be using this plugin day to day? (This feeds the work-product header on every /review, /amendment-history, and /renewals-due output — lawyer gets "PRIVILEGED & CONFIDENTIAL — ATTORNEY WORK PRODUCT"; non-lawyer gets "RESEARCH NOTES — NOT LEGAL ADVICE" plus research-framed outputs.)
+> Who'll be using this plugin day to day? (This feeds the work-product header on every /review, /amendment-history, and /renewal-tracker output — lawyer gets "PRIVILEGED & CONFIDENTIAL — ATTORNEY WORK PRODUCT"; non-lawyer gets "RESEARCH NOTES — NOT LEGAL ADVICE" plus research-framed outputs.)
 >
 > 1. **Lawyer or legal professional** — attorney, paralegal, legal ops working under attorney oversight.
 > 2. **Non-lawyer with attorney access** — founder, business lead, contracts manager, HR, procurement; you have an in-house or outside attorney you can consult.
@@ -347,7 +347,7 @@ If they don't have one: proceed with the questions below.
 
 **Approval levels**
 
-> When a review finds something that needs someone more senior to sign off — a term that's above playbook (a higher LoL cap, an indemnity structure outside your fallbacks), a risk that needs a second opinion, or a decision that's above your authority — who does that go to? Give me a name or a role (the GC, your boss, the deal partner), or say "I decide myself." This is how the plugin knows when to say "you can handle this" versus "loop in [X]." (This feeds /escalate — the skill drafts the escalation ask using this matrix, and /review uses it to decide whether a flagged term lands in your lane or somebody else's.)
+> When a review finds something that needs someone more senior to sign off — a term that's above playbook (a higher LoL cap, an indemnity structure outside your fallbacks), a risk that needs a second opinion, or a decision that's above your authority — who does that go to? Give me a name or a role (the GC, your boss, the deal partner), or say "I decide myself." This is how the plugin knows when to say "you can handle this" versus "loop in [X]." (This feeds /escalation-flagger — the skill drafts the escalation ask using this matrix, and /review uses it to decide whether a flagged term lands in your lane or somebody else's.)
 
 **Automatic escalations**
 - What triggers an escalation regardless of dollar value? (Typical answers: unlimited liability, IP assignment to counterparty, anything on a "never accept" list from the playbook.)

@@ -58,13 +58,13 @@ hand-editing YAML.
    what changes downstream, confirm, write it to the config.
 
    Examples:
-   - *Adding a new class:* "`/outline` will scaffold a new outline for this
+   - *Adding a new class:* "`/outline-builder` will scaffold a new outline for this
      class. `/flashcards` will add a new subject bucket. `/cold-call-prep`
      will ask for a seat and a topic when you invoke it for this class."
-   - *Learning style Socratic → summary-first:* "`/drill` won't ask you to
+   - *Learning style Socratic → summary-first:* "`/socratic-drill` won't ask you to
      answer first — it'll present the rule and example, then quiz you on
      application."
-   - *Adding a bar subject:* "`/bar-prep` will include this subject in
+   - *Adding a bar subject:* "`/bar-prep-questions` will include this subject in
      rotation and weight it higher if you mark it weak."
 
 5. **Close.**
@@ -81,7 +81,7 @@ hand-editing YAML.
   inconsistent (e.g., "summary-first" learning style + "maximum pushback"
   Socratic setting), flag the tension.
 - **Flag guardrail degradation.** The "no rewriting your writing" rule on
-  `/write` and `/irac` is load-bearing — the value of the skill is
+  `/legal-writing` and `/irac-practice` is load-bearing — the value of the skill is
   structural feedback, not ghost-writing. If the user asks to turn that off,
   confirm they understand that the plugin will not write their work for
   them.

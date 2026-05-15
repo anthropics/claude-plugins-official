@@ -1,7 +1,7 @@
 # Company Profile
 
 *Shared by all Claude for Legal plugins. The first plugin you set up writes this; the rest read it.
-Edit directly or re-run any plugin's `/setup` to update.*
+Edit directly or re-run any plugin's `/cold-start-interview` to update.*
 
 **Practice setting:** [Solo/small firm | Midsize/large firm | In-house | Government/legal aid/clinic]
 **Name:** [Company or firm name]

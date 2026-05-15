@@ -64,7 +64,7 @@ cold-start interview and without hand-editing YAML.
    what changes downstream, confirm, write it to the config.
 
    Examples:
-   - *Side mixed → defense-only:* "`/new-matter` intake will stop asking the
+   - *Side mixed → defense-only:* "`/matter-intake` will stop asking the
      plaintiff-side questions. `/demand-draft` will still work for
      defense-side pre-suit demands but the starting frame will be different."
    - *Risk calibration tightening high-risk threshold:* "More inbound
