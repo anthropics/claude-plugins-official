@@ -70,7 +70,7 @@ json.dump(yaml.safe_load(t), sys.stdout)
 ' "$1"
 }
 
-SKILL_CACHE_FILE="$(mktemp -t skillcache)"
+SKILL_CACHE_FILE="$(mktemp -t skillcache.XXXXXX)"
 trap 'rm -f "$SKILL_CACHE_FILE"' EXIT
 upload_skill() {
   local path="$1" key cached
@@ -83,7 +83,7 @@ upload_skill() {
     printf '%s' "$cached"; return
   fi
   local resp id zip
-  zip="$(mktemp -t skill).zip"
+  zip="$(mktemp -t skill.XXXXXX).zip"
   (cd "$(dirname "$path")" && zip -qr "$zip" "$(basename "$path")")
   # /v1/skills uses its own beta header and multipart, not the managed-agents JSON path
   resp=$(curl -sS "$API/v1/skills" \
