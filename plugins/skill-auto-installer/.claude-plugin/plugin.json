@@ -1,0 +1,9 @@
+{
+  "name": "skill-auto-installer",
+  "description": "自然语言意图分析 → 技能推荐 → 自动安装。A meta-skill that enables Claude Code to automatically analyze user intent, discover matching skills from marketplaces, and install them on-demand. No manual /plugin install needed.",
+  "author": {
+    "name": "maimai-dot",
+    "email": "maimai-dot@users.noreply.github.com"
+  },
+  "homepage": "https://github.com/maimai-dot/skill-auto-installer"
+}
