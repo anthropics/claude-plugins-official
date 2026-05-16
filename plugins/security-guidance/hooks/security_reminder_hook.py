@@ -182,6 +182,11 @@ def save_state(session_id, shown_warnings):
 
 def check_patterns(file_path, content):
     """Check if file path or content matches any security patterns."""
+    # Skip .md files — security patterns (e.g. exec(), subprocess calls) are legitimately
+    # documented in markdown guides and should not trigger false-positive blocks.
+    if file_path.endswith(".md"):
+        return None, None
+
     # Normalize path by removing leading slashes
     normalized_path = file_path.lstrip("/")
 
