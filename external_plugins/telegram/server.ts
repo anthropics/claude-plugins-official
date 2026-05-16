@@ -666,14 +666,19 @@ process.on('SIGHUP', shutdown)
 
 // Orphan watchdog: stdin events above don't reliably fire when the parent
 // chain (`bun run` wrapper → shell → us) is severed by a crash. Poll for
-// reparenting (POSIX) or a dead stdin pipe and self-terminate.
-const bootPpid = process.ppid
+// a dead stdin pipe and self-terminate.
+//
+// The previous `process.ppid !== bootPpid` check has been removed: the bun
+// wrapper / shell that launched us often exits or execs during normal
+// startup, which reparents this process to init (PID 1). That reparenting
+// is not the parent-Claude-died signal we want — it caused the plugin to
+// self-terminate roughly 5s after every launch in real-world process trees
+// (`claude → bash (npm wrapper) → bun (parent) → bun (child, this server)`).
+// stdin EOF is the reliable signal: the kernel closes our MCP pipe when
+// Claude Code dies (clean exit, SIGKILL, OOM), regardless of any
+// intermediate wrappers.
 setInterval(() => {
-  const orphaned =
-    (process.platform !== 'win32' && process.ppid !== bootPpid) ||
-    process.stdin.destroyed ||
-    process.stdin.readableEnded
-  if (orphaned) shutdown()
+  if (process.stdin.destroyed || process.stdin.readableEnded) shutdown()
 }, 5000).unref()
 
 // Commands are DM-only. Responding in groups would: (1) leak pairing codes via
