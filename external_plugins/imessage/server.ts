@@ -177,9 +177,25 @@ const qAttachments = db.query<AttRow, [number]>(`
 const SELF = new Set<string>()
 {
   type R = { addr: string }
-  const norm = (s: string) => (/^[A-Za-z]:/.test(s) ? s.slice(2) : s).toLowerCase()
+  // Strip scheme-style prefixes ("E:", "P:", "tel:", "mailto:") that chat.db
+  // attaches to identities. handle.id is bare ('+36...', 'foo@bar') so SELF
+  // must be normalised to the same form to compare. Previously only single-
+  // letter prefixes were stripped, leaving 'tel:+...' values mis-normalised.
+  const norm = (s: string) =>
+    (/^[A-Za-z]+:/.test(s) ? s.slice(s.indexOf(':') + 1) : s).toLowerCase()
+  // Identities this Mac sends FROM. Usually the iMessage-logged-in account.
   for (const { addr } of db.query<R, []>(
     `SELECT DISTINCT account AS addr FROM message WHERE is_from_me = 1 AND account IS NOT NULL AND account != '' LIMIT 50`,
+  ).all()) SELF.add(norm(addr))
+  // Identities this Mac receives AT. Catches phone numbers / aliases the
+  // device never sends from but does receive at — e.g. when an iPhone on the
+  // same Apple ID sends to your own number, the message lands here with
+  // destination_caller_id='tel:+...' but handle_id (the sender) is the
+  // iPhone's number, which the account-only query never sees. Without this,
+  // iPhone-from-own-number self-chats fall through to the regular DM gate
+  // and get dropped.
+  for (const { addr } of db.query<R, []>(
+    `SELECT DISTINCT destination_caller_id AS addr FROM message WHERE destination_caller_id IS NOT NULL AND destination_caller_id != '' LIMIT 100`,
   ).all()) SELF.add(norm(addr))
 }
 process.stderr.write(`imessage channel: self-chat addresses: ${[...SELF].join(', ') || '(none)'}\n`)
