@@ -1470,6 +1470,20 @@
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/playwright"
     },
     {
+      "name": "polis-protocol",
+      "description": "Markdown-only coordination protocol for multi-vendor AI agent teams. Signed capability cards, ε-greedy bandit routing that learns from settled contracts, chavruta paired review for high-stakes work, and a ratifiable amendment process. Vendor-agnostic — works across Claude Code, Codex, Gemini CLI, and any markdown-capable agent.",
+      "author": {
+        "name": "Yehuda Levy"
+      },
+      "category": "agents",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/yehudalevy-collab/polis-protocol.git",
+        "sha": "d6c0ae830c1056452a33307d298349d49917d3a8"
+      },
+      "homepage": "https://github.com/yehudalevy-collab/polis-protocol"
+    },
+    {
       "name": "plugin-dev",
       "description": "Comprehensive toolkit for developing Claude Code plugins. Includes 7 expert skills covering hooks, MCP integration, commands, agents, and best practices. AI-assisted plugin creation and validation.",
       "author": {
