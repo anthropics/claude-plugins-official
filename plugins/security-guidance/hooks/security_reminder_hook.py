@@ -68,7 +68,8 @@ Other risky inputs to be careful with:
     },
     {
         "ruleName": "child_process_exec",
-        "substrings": ["child_process.exec", "exec(", "execSync("],
+        "content_check": lambda content: "child_process" in content
+        and ("exec(" in content or "execSync(" in content),
         "reminder": """⚠️ Security Warning: Using child_process.exec() can lead to command injection vulnerabilities.
 
 This codebase provides a safer alternative: src/utils/execFileNoThrow.ts
@@ -190,7 +191,11 @@ def check_patterns(file_path, content):
         if "path_check" in pattern and pattern["path_check"](normalized_path):
             return pattern["ruleName"], pattern["reminder"]
 
-        # Check content-based patterns
+        # Check content-based patterns (callable predicate)
+        if "content_check" in pattern and content and pattern["content_check"](content):
+            return pattern["ruleName"], pattern["reminder"]
+
+        # Check content-based patterns (substring check)
         if "substrings" in pattern and content:
             for substring in pattern["substrings"]:
                 if substring in content:
