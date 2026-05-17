@@ -545,17 +545,41 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         const chunks = chunk(text, limit, mode)
         const sentIds: number[] = []
 
+        // Forum-supergroup correctness: in a forum, every message needs a
+        // thread context, either via `reply_parameters.message_id` (Telegram
+        // infers the thread from the replied-to msg) or `message_thread_id`.
+        // Without EITHER, the message lands in General (which is closed in
+        // our setup → TOPIC_CLOSED, or simply wrong topic in general).
+        //
+        // Old logic: only chunk 0 carried reply_parameters; chunks 1+ went
+        // naked → second half of a split reply silently landed in General.
+        //
+        // New logic: capture `message_thread_id` from the first sendMessage's
+        // response (Telegram populates it on forum-topic messages) and pass
+        // it explicitly on all subsequent chunks. This keeps the visual
+        // quote on chunk 0 only (replyMode='first' UX) while routing every
+        // chunk into the correct topic. replyMode='all' still quotes every
+        // chunk; 'off' suppresses the quote entirely but chunks 1+ still
+        // get message_thread_id so they don't escape the topic.
+        let threadId: number | undefined
         try {
           for (let i = 0; i < chunks.length; i++) {
-            const shouldReplyTo =
+            const shouldQuote =
               reply_to != null &&
               replyMode !== 'off' &&
               (replyMode === 'all' || i === 0)
-            const sent = await bot.api.sendMessage(chat_id, chunks[i], {
-              ...(shouldReplyTo ? { reply_parameters: { message_id: reply_to } } : {}),
-              ...(parseMode ? { parse_mode: parseMode } : {}),
-            })
+            const opts: Record<string, unknown> = {}
+            if (shouldQuote) {
+              opts.reply_parameters = { message_id: reply_to }
+            } else if (i > 0 && threadId !== undefined) {
+              opts.message_thread_id = threadId
+            }
+            if (parseMode) opts.parse_mode = parseMode
+            const sent = await bot.api.sendMessage(chat_id, chunks[i], opts)
             sentIds.push(sent.message_id)
+            if (i === 0 && sent.message_thread_id !== undefined) {
+              threadId = sent.message_thread_id
+            }
           }
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err)
@@ -565,19 +589,36 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         }
 
         // Files go as separate messages (Telegram doesn't mix text+file in one
-        // sendMessage call). Thread under reply_to if present.
-        for (const f of files) {
+        // sendMessage call). Same threading rule: quote reply_to on first
+        // file ONLY (or all of them when replyMode='all'), otherwise route
+        // via message_thread_id so we don't fall into General.
+        for (let fi = 0; fi < files.length; fi++) {
+          const f = files[fi]
           const ext = extname(f).toLowerCase()
           const input = new InputFile(f)
-          const opts = reply_to != null && replyMode !== 'off'
-            ? { reply_parameters: { message_id: reply_to } }
-            : undefined
+          const isFirstFile = fi === 0 && sentIds.length === 0
+          const shouldQuote =
+            reply_to != null &&
+            replyMode !== 'off' &&
+            (replyMode === 'all' || isFirstFile)
+          const opts: Record<string, unknown> = {}
+          if (shouldQuote) {
+            opts.reply_parameters = { message_id: reply_to }
+          } else if (threadId !== undefined) {
+            opts.message_thread_id = threadId
+          }
           if (PHOTO_EXTS.has(ext)) {
             const sent = await bot.api.sendPhoto(chat_id, input, opts)
             sentIds.push(sent.message_id)
+            if (threadId === undefined && sent.message_thread_id !== undefined) {
+              threadId = sent.message_thread_id
+            }
           } else {
             const sent = await bot.api.sendDocument(chat_id, input, opts)
             sentIds.push(sent.message_id)
+            if (threadId === undefined && sent.message_thread_id !== undefined) {
+              threadId = sent.message_thread_id
+            }
           }
         }
 
