@@ -2293,6 +2293,22 @@
         "sha": "246430c8d2d99726ad6cdcb00d1adc4e316cb966"
       },
       "homepage": "https://github.com/zscaler/zscaler-mcp-server"
+    },
+    {
+      "name": "keepr-etsy-ops",
+      "description": "The only open-source Etsy operations skill pack for Claude Code. Listing publisher with mandatory compliance gates (required fields, AI Disclosure, production partner), Etsy 2026 SEO optimizer, AI Disclosure auditor for the 2025 Etsy policy, daily Etsy Ads budget pacer with operator approval gates, review-to-UGC harvester (Pinterest/IG/Reddit/email/Schema.org), and end-to-end shop health doctor. Companion to keepr-dnd-skills. Battle-tested by an active indie Etsy seller. MIT licensed.",
+      "author": {
+        "name": "Keepr / NoteKeepr",
+        "url": "https://github.com/PCSAdmin081"
+      },
+      "category": "marketing",
+      "source": {
+        "source": "github",
+        "repo": "PCSAdmin081/keepr-etsy-ops",
+        "commit": "8a0c572378b4c0580d9cdae0fc75e40b56829a4d",
+        "sha": "8a0c572378b4c0580d9cdae0fc75e40b56829a4d"
+      },
+      "homepage": "https://github.com/PCSAdmin081/keepr-etsy-ops"
     }
   ]
 }
