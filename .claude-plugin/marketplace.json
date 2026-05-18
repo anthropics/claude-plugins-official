@@ -19,7 +19,7 @@
         "url": "https://github.com/42Crunch-AI/claude-plugins.git",
         "path": "plugins/api-security-testing",
         "ref": "v1.0.1",
-        "sha": "56273e0e20762d76640838300a7431c4260cad32"
+        "sha": "faf5305385de8afed9468904e8639be737aff39e"
       },
       "homepage": "https://42crunch.com"
     },
@@ -35,7 +35,7 @@
         "url": "https://github.com/adobe/skills.git",
         "path": "plugins/creative-cloud/adobe-for-creativity",
         "ref": "main",
-        "sha": "0f1ad97af8b4de2107c2417184fc4c3114bda9d3"
+        "sha": "9ca1da262869ca2fb5f6c3daae2f7eeb648c937d"
       },
       "homepage": "https://github.com/adobe/skills/tree/main/plugins/creative-cloud/adobe-for-creativity"
     },
@@ -57,7 +57,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/SalesforceAIResearch/agentforce-adlc.git",
-        "sha": "9ef4d9b1958d4ed21179017d0452a81ec13c1de2"
+        "sha": "d645d2c8ce0689a568224436061872ab9f0ab179"
       },
       "homepage": "https://github.com/SalesforceAIResearch/agentforce-adlc"
     },
@@ -77,7 +77,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/AikidoSec/aikido-claude-plugin.git",
-        "sha": "5d9c13d367218e9b43a11d4502f623ab98859225"
+        "sha": "79ac524f87c9faa9a356ff3d495b8a5b77e01bbd"
       },
       "homepage": "https://github.com/AikidoSec/aikido-claude-plugin"
     },
@@ -107,7 +107,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/gemini-cli-extensions/alloydb.git",
-        "sha": "0723d3ada808fe8f33e1b2808fd7a843c3d63ad2"
+        "sha": "4a75653275b095fcacf1508796b0fee8cc758c07"
       },
       "homepage": "https://cloud.google.com/alloydb"
     },
@@ -120,7 +120,7 @@
         "url": "https://github.com/awslabs/agent-plugins.git",
         "path": "plugins/amazon-location-service",
         "ref": "main",
-        "sha": "6cfb70e55aa142a8eda66e6ef7966d5921bdf9a2"
+        "sha": "95381e8bcb92f58a28edb4f83eb7e163c7461a0a"
       },
       "homepage": "https://github.com/awslabs/agent-plugins"
     },
@@ -165,7 +165,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/astronomer/agents.git",
-        "sha": "5935c4330dea4dfb8e93568956b10a543ecdb3d1"
+        "sha": "535a040ca9e27aaed6da13f0f959625fb3294820"
       },
       "homepage": "https://github.com/astronomer/agents"
     },
@@ -175,7 +175,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/atlanhq/agent-toolkit.git",
-        "sha": "acdf284da6aa98b14f8dad90a9827006d8df425c"
+        "sha": "790398c87378f128bdc74c31bb7ecfb8e4695f29"
       },
       "homepage": "https://docs.atlan.com/"
     },
@@ -217,7 +217,7 @@
         "url": "https://github.com/auth0/agent-skills.git",
         "path": "plugins/auth0",
         "ref": "main",
-        "sha": "f7724bf7984c5b00496cac0f54526bb1cf505dcb"
+        "sha": "1c32754fcb934109451435ecd4a6ea9b068f0937"
       },
       "homepage": "https://auth0.com/docs/quickstart/agent-skills"
     },
@@ -233,7 +233,7 @@
         "url": "https://github.com/aws/agent-toolkit-for-aws.git",
         "path": "plugins/aws-agents",
         "ref": "main",
-        "sha": "750230758fbf23acd60d075dedd7ead4092127ce"
+        "sha": "14780bf3440aa1532eadfbb2ff547f58969fcfb2"
       },
       "homepage": "https://github.com/aws/agent-toolkit-for-aws"
     },
@@ -246,7 +246,7 @@
         "url": "https://github.com/awslabs/agent-plugins.git",
         "path": "plugins/aws-amplify",
         "ref": "main",
-        "sha": "6cfb70e55aa142a8eda66e6ef7966d5921bdf9a2"
+        "sha": "95381e8bcb92f58a28edb4f83eb7e163c7461a0a"
       },
       "homepage": "https://github.com/awslabs/agent-plugins"
     },
@@ -262,7 +262,7 @@
         "url": "https://github.com/aws/agent-toolkit-for-aws.git",
         "path": "plugins/aws-core",
         "ref": "main",
-        "sha": "750230758fbf23acd60d075dedd7ead4092127ce"
+        "sha": "14780bf3440aa1532eadfbb2ff547f58969fcfb2"
       },
       "homepage": "https://github.com/aws/agent-toolkit-for-aws"
     },
@@ -278,7 +278,7 @@
         "url": "https://github.com/aws/agent-toolkit-for-aws.git",
         "path": "plugins/aws-data-analytics",
         "ref": "main",
-        "sha": "750230758fbf23acd60d075dedd7ead4092127ce"
+        "sha": "14780bf3440aa1532eadfbb2ff547f58969fcfb2"
       },
       "homepage": "https://github.com/aws/agent-toolkit-for-aws"
     },
@@ -307,7 +307,7 @@
         "url": "https://github.com/awslabs/agent-plugins.git",
         "path": "plugins/aws-serverless",
         "ref": "main",
-        "sha": "6cfb70e55aa142a8eda66e6ef7966d5921bdf9a2"
+        "sha": "95381e8bcb92f58a28edb4f83eb7e163c7461a0a"
       },
       "homepage": "https://github.com/awslabs/agent-plugins"
     },
@@ -318,7 +318,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/microsoft/azure-skills.git",
-        "sha": "ed25b85a13ec001c53f538b07e0bfbe732673885"
+        "sha": "2a5c5080b8c501d00408eb00f7ee4ed8effa7b2c"
       },
       "homepage": "https://github.com/microsoft/azure-skills"
     },
@@ -327,7 +327,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/AzureCosmosDB/cosmosdb-claude-code-plugin.git",
-        "sha": "23c168856e4435793bd27a72d4714f022a3a1e90"
+        "sha": "f1e0498579a9251e5f3179b92d25d6ce3409bae5"
       },
       "description": "Expert assistant for Azure Cosmos DB — data modeling, query optimization, performance tuning, and best practices.",
       "category": "database",
@@ -340,7 +340,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/base44/skills.git",
-        "sha": "c7039b37eca0e2916a565a7395040c00055bcf8b"
+        "sha": "ec420cf2edd2c7e9a523d5afe2e71498a6357fa4"
       },
       "homepage": "https://docs.base44.com"
     },
@@ -356,7 +356,7 @@
         "url": "https://github.com/Bigdata-com/bigdata-plugins-marketplace.git",
         "path": "plugins/bigdata-com",
         "ref": "main",
-        "sha": "274b5365bdc61130225de736d3f3ca5210c0e37d"
+        "sha": "c77a09caabdc8783adbcbf8bbe05a0f57da12b19"
       },
       "homepage": "https://docs.bigdata.com"
     },
@@ -384,7 +384,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/brightdata/skills.git",
-        "sha": "44b24797d82cfd535c5b97831d5c6ba86c9d60df"
+        "sha": "37145178dfc9b52e28dd224afeccc7184f7711fc"
       },
       "homepage": "https://docs.brightdata.com"
     },
@@ -400,7 +400,7 @@
         "url": "https://github.com/carta/plugins.git",
         "path": "plugins/carta-cap-table",
         "ref": "main",
-        "sha": "def2911b5e8379af0bb17aacd0855348e299e0a3"
+        "sha": "980fd3966ec79b61ff94f39db4592f7df9d6ed80"
       },
       "homepage": "https://carta.com"
     },
