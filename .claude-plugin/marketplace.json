@@ -405,6 +405,38 @@
       "homepage": "https://carta.com"
     },
     {
+      "name": "carta-crm",
+      "description": "Manage the Carta CRM conversationally — search, add, update, and enrich investors, companies, contacts, deals, notes, and fundraisings via the Carta CRM MCP Server.",
+      "author": {
+        "name": "Carta Engineering"
+      },
+      "category": "productivity",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/carta/plugins.git",
+        "path": "plugins/carta-crm",
+        "ref": "main",
+        "sha": "e72e8d59a3c49c1983f63f20a02e440de4e30a2f"
+      },
+      "homepage": "https://carta.com"
+    },
+    {
+      "name": "carta-investors",
+      "description": "Carta Investors plugin — skills for querying investor data, performance benchmarks, regulatory reporting, AGM deck generation, brand extraction, and more via the Carta MCP Server.",
+      "author": {
+        "name": "Carta Engineering"
+      },
+      "category": "productivity",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/carta/plugins.git",
+        "path": "plugins/carta-investors",
+        "ref": "main",
+        "sha": "e72e8d59a3c49c1983f63f20a02e440de4e30a2f"
+      },
+      "homepage": "https://carta.com"
+    },
+    {
       "name": "cds-mcp",
       "description": "AI-assisted development of SAP Cloud Application Programming Model (CAP) projects. Search CDS models and CAP documentation.",
       "author": {
