@@ -624,6 +624,20 @@
       ]
     },
     {
+      "name": "convex-backend",
+      "description": "Convex backend skill for building reactive, type-safe, production-grade backends. Helps Claude design schemas, server functions, auth, file storage, scheduled jobs, and real-time multiplayer features on Convex.",
+      "author": {
+        "name": "Convex"
+      },
+      "category": "development",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/get-convex/convex-backend-skill.git",
+        "sha": "9acbc5495dd26749a5e6341dc2438146c4caa03b"
+      },
+      "homepage": "https://convex.dev"
+    },
+    {
       "name": "crowdstrike-falcon-foundry",
       "description": "CrowdStrike Falcon Foundry development skills for building cybersecurity applications on the Falcon platform. Includes UI development, collections, functions, workflows, API integration, security patterns, and debugging workflows.",
       "author": {
