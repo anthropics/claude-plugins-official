@@ -17,6 +17,17 @@ if [[ ! -f "$RALPH_STATE_FILE" ]]; then
   exit 0
 fi
 
+# Other skills may write to .claude/ralph-loop.local.md with a different
+# format (no YAML frontmatter, no `iteration:` key). Without this guard,
+# the no-match grep below exits 1 under `set -e` BEFORE any echo to stderr,
+# surfacing as "Stop hook error: Failed with non-blocking status code: No
+# stderr output" with no diagnostic for the operator. Treat the absence
+# of an `iteration:` key as "not a ralph-loop state file" and exit
+# cleanly.
+if ! grep -q '^iteration:' "$RALPH_STATE_FILE"; then
+  exit 0
+fi
+
 # Parse markdown frontmatter (YAML between ---) and extract values
 FRONTMATTER=$(sed -n '/^---$/,/^---$/{ /^---$/d; p; }' "$RALPH_STATE_FILE")
 ITERATION=$(echo "$FRONTMATTER" | grep '^iteration:' | sed 's/iteration: *//')
