@@ -35,7 +35,7 @@
         "url": "https://github.com/adobe/skills.git",
         "path": "plugins/creative-cloud/adobe-for-creativity",
         "ref": "main",
-        "sha": "9ca1da262869ca2fb5f6c3daae2f7eeb648c937d"
+        "sha": "3e71c25e3696a4df69996a6aaf21c5a3002fd7f5"
       },
       "homepage": "https://github.com/adobe/skills/tree/main/plugins/creative-cloud/adobe-for-creativity"
     },
@@ -93,7 +93,7 @@
         "url": "https://github.com/Airtable/skills.git",
         "path": "plugins/airtable",
         "ref": "main",
-        "sha": "aaeb4f3ec8d462d694a13fe5c3d249c291bf8899"
+        "sha": "1a8db588c72d31550ef6ee39b716598111840583"
       },
       "homepage": "https://www.airtable.com"
     },
@@ -245,7 +245,7 @@
         "url": "https://github.com/auth0/agent-skills.git",
         "path": "plugins/auth0",
         "ref": "main",
-        "sha": "3aa943b620a640be8a04d462e2abce11671653c3"
+        "sha": "cc0f217636286d0d4dd9d186c436ef477164850d"
       },
       "homepage": "https://auth0.com/docs/quickstart/agent-skills"
     },
@@ -442,7 +442,7 @@
         "url": "https://github.com/carta/plugins.git",
         "path": "plugins/carta-cap-table",
         "ref": "main",
-        "sha": "49db52aa7d59fd4a855c6b17a1cf31c245f41e2c"
+        "sha": "3c12bd5c426fde2ac694ae65c6bac85fbd6e6ea8"
       },
       "homepage": "https://carta.com"
     },
@@ -458,7 +458,7 @@
         "url": "https://github.com/carta/plugins.git",
         "path": "plugins/carta-crm",
         "ref": "main",
-        "sha": "e72e8d59a3c49c1983f63f20a02e440de4e30a2f"
+        "sha": "3c12bd5c426fde2ac694ae65c6bac85fbd6e6ea8"
       },
       "homepage": "https://carta.com"
     },
@@ -474,7 +474,7 @@
         "url": "https://github.com/carta/plugins.git",
         "path": "plugins/carta-investors",
         "ref": "main",
-        "sha": "e72e8d59a3c49c1983f63f20a02e440de4e30a2f"
+        "sha": "3c12bd5c426fde2ac694ae65c6bac85fbd6e6ea8"
       },
       "homepage": "https://carta.com"
     },
@@ -811,7 +811,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/dash0hq/dash0-agent-plugin.git",
-        "sha": "feae46e4099d31a1a76debe39f22aebb72a18ce5"
+        "sha": "ddd3203703b3bf86cd5a255b6e583180a84c2104"
       },
       "homepage": "https://dash0.com/"
     },
@@ -901,7 +901,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/datarobot-oss/datarobot-agent-skills.git",
-        "sha": "6a13377ad0b3317c7c4133fce36b7fcc626334cd"
+        "sha": "444ed1544d097f4b74ca3cc3a6f12cfad8a5e603"
       },
       "homepage": "https://datarobot.com"
     },
@@ -1066,7 +1066,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/voxel51/fiftyone-skills.git",
-        "sha": "a79e53c6fd1784e1476421185f3ed67637e642b4"
+        "sha": "8b987ade2d04b85ea82c109f48d7234838b28b82"
       },
       "homepage": "https://docs.voxel51.com/"
     },
@@ -2507,7 +2507,7 @@
         "url": "https://github.com/UI5/plugins-claude.git",
         "path": "plugins/ui5",
         "ref": "main",
-        "sha": "19b2fb384719425a25d55830d5dcdba75f13045c"
+        "sha": "0fb7bc59ee6f9c7732cba07d71814e1ff214908e"
       },
       "homepage": "https://github.com/UI5/plugins-claude"
     },
@@ -2525,7 +2525,7 @@
         "url": "https://github.com/UI5/plugins-claude.git",
         "path": "plugins/ui5-typescript-conversion",
         "ref": "main",
-        "sha": "19b2fb384719425a25d55830d5dcdba75f13045c"
+        "sha": "0fb7bc59ee6f9c7732cba07d71814e1ff214908e"
       },
       "homepage": "https://github.com/UI5/plugins-claude"
     },
@@ -2550,7 +2550,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/vercel/vercel-plugin.git",
-        "sha": "1edb125d13a29a1e6212f5ca5afcdf1b89b9b211"
+        "sha": "ff9c091c05bd64c2c6c984bb8f2dcb8feee06631"
       },
       "homepage": "https://github.com/vercel/vercel-plugin"
     },
@@ -2682,7 +2682,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/zscaler/zscaler-mcp-server.git",
-        "sha": "246430c8d2d99726ad6cdcb00d1adc4e316cb966"
+        "sha": "bc56b110199294de58e6a9abf0569c49bd948670"
       },
       "homepage": "https://github.com/zscaler/zscaler-mcp-server"
     }
