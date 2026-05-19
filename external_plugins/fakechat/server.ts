@@ -103,20 +103,58 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
 
         // Text + files collapse into a single message, matching the client's [filename]-under-text rendering.
         mkdirSync(OUTBOX_DIR, { recursive: true })
-        let file: { url: string; name: string } | undefined
-        if (files[0]) {
-          const f = files[0]
+        const sentFiles: { url: string; name: string }[] = []
+
+        for (const f of files) {
           const st = statSync(f)
-          if (st.size > 50 * 1024 * 1024) throw new Error(`file too large: ${f}`)
+
+          if (st.size > 50 * 1024 * 1024) {
+            throw new Error(`file too large: ${f}`)
+          }
+
           const ext = extname(f).toLowerCase()
           const out = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`
+
           copyFileSync(f, join(OUTBOX_DIR, out))
-          file = { url: `/files/${out}`, name: basename(f) }
+
+          sentFiles.push({
+            url: `/files/${out}`,
+            name: basename(f),
+          })
         }
+
         const id = nextId()
-        broadcast({ type: 'msg', id, from: 'assistant', text, ts: Date.now(), replyTo, file })
+
+        broadcast({
+          type: 'msg',
+          id,
+          from: 'assistant',
+          text,
+          ts: Date.now(),
+          replyTo,
+          file: sentFiles[0],
+        })
+
         ids.push(id)
-        return { content: [{ type: 'text', text: `sent (${ids.join(', ')})` }] }
+
+        for (const f of sentFiles.slice(1)) {
+          const extraId = nextId()
+
+          broadcast({
+            type: 'msg',
+            id: extraId,
+            from: 'assistant',
+            text: '',
+            ts: Date.now(),
+            file: f,
+          })
+
+          ids.push(extraId)
+        }
+
+        return {
+          content: [{ type: 'text', text: `sent (${ids.join(', ')})` }],
+        }
       }
       case 'edit_message': {
         broadcast({ type: 'edit', id: args.message_id as string, text: args.text as string })
@@ -202,7 +240,7 @@ Bun.serve({
       try {
         const { id, text } = JSON.parse(String(raw)) as { id: string; text: string }
         if (id && text?.trim()) deliver(id, text.trim())
-      } catch {}
+      } catch { }
     },
   },
 })
