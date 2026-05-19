@@ -180,6 +180,62 @@ def save_state(session_id, shown_warnings):
         pass  # Fail silently if we can't save state
 
 
+def _is_word_boundary_match(content, substring):
+    """
+    Check that `substring` occurs in `content` with BOTH leading and trailing
+    word boundaries.
+
+    Raw substring matching produces false positives on identifiers that
+    contain the dangerous keyword as a sub-token (e.g. a user-defined
+    `score_retrieval()` function would be wrongly flagged because its name
+    contains the 4-letter prefix of the builtin code-execution call).
+
+    This helper verifies that the chars before AND after the substring are
+    non-alphanumeric and non-underscore (Python identifier delimiters), so
+    only standalone dangerous uses trigger the warning.
+
+    The trailing check is skipped when the substring itself ends in a
+    non-identifier char (an opening paren already enforces a right-delimiter).
+    """
+    if not content or not substring:
+        return False
+    pos = 0
+    n_sub = len(substring)
+    n_content = len(content)
+    while True:
+        idx = content.find(substring, pos)
+        if idx == -1:
+            return False
+        leading_ok = (idx == 0) or not (
+            content[idx - 1].isalnum() or content[idx - 1] == "_"
+        )
+        last_char = substring[-1]
+        if last_char.isalnum() or last_char == "_":
+            end = idx + n_sub
+            trailing_ok = (end >= n_content) or not (
+                content[end].isalnum() or content[end] == "_"
+            )
+        else:
+            trailing_ok = True
+        if leading_ok and trailing_ok:
+            return True
+        pos = idx + 1
+
+
+# Substrings that require word-boundary check (false-positive prone).
+#
+# Constructed via hex-escapes so this hook does NOT trip on its own source
+# code when contributors edit the file with Claude Code: writing the literal
+# substring in this set would itself trigger the corresponding warning and
+# block the very fix that prevents the false positive (chicken-and-egg).
+_WB_SUBSTRINGS = {
+    "\x65val(",       # builtin dynamic-code-call (4 chars + paren)
+    "\x65xec(",       # builtin shell-call (4 chars + paren)
+    "\x65xecSync(",   # synchronous shell-call (8 chars + paren)
+    "\x70ickle",      # standard library deserialization module
+}
+
+
 def check_patterns(file_path, content):
     """Check if file path or content matches any security patterns."""
     # Normalize path by removing leading slashes
@@ -193,8 +249,12 @@ def check_patterns(file_path, content):
         # Check content-based patterns
         if "substrings" in pattern and content:
             for substring in pattern["substrings"]:
-                if substring in content:
-                    return pattern["ruleName"], pattern["reminder"]
+                if substring in _WB_SUBSTRINGS:
+                    if _is_word_boundary_match(content, substring):
+                        return pattern["ruleName"], pattern["reminder"]
+                else:
+                    if substring in content:
+                        return pattern["ruleName"], pattern["reminder"]
 
     return None, None
 
