@@ -1,0 +1,20 @@
+Notion Bridge — license pointer
+================================
+
+This plugin entry is licensed under the Apache License, Version 2.0
+(http://www.apache.org/licenses/LICENSE-2.0), matching the
+anthropics/claude-plugins-official repository's contribution norms for
+plugin manifests and READMEs.
+
+The Notion Bridge .app itself is distributed under a source-available
+license owned by KUP Solutions LLC. See:
+
+  https://github.com/KUP-IP/Notion-bridge/blob/main/LICENSE
+
+for the full terms governing the binary the plugin's MCP server
+registration points at.
+
+Bundled SKILL.md skills inside the Notion Bridge .app are Apache-2.0
+(verbatim from anthropics/skills); see Contents/Resources/
+NotionBridge_NotionBridgeLib.bundle/skills/LICENSE-APACHE-2.0.txt + NOTICE
+inside the installed app.

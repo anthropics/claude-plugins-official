@@ -1,0 +1,24 @@
+{
+  "name": "notion-bridge",
+  "description": "Bridge MCP — a native macOS app exposing ~160 MCP tools for Mac control (files, AppleScript, Accessibility, Screen, Messages, Contacts, Spotlight, Chrome, credentials), Notion workspace operations (~24 tools incl. pages, blocks, comments, queries, data-sources, file uploads), and developer workflow (LSP, git, gh, code search, file str-replace/apply-patch). Streamable-HTTP transport with OAuth 2.1 + RFC 9728 Protected Resource Metadata for remote use.",
+  "version": "3.3.1",
+  "keywords": [
+    "macos",
+    "mac",
+    "notion",
+    "accessibility",
+    "applescript",
+    "screen",
+    "messages",
+    "contacts",
+    "spotlight",
+    "credentials",
+    "files",
+    "lsp",
+    "git",
+    "chrome",
+    "remote-mcp",
+    "oauth",
+    "streamable-http"
+  ]
+}
