@@ -138,9 +138,15 @@ HANDOFF_PAYLOAD_SCHEMA = {
     },
 }
 
-HANDOFF_RE = re.compile(
-    r'\{"type":\s*"handoff_request".*?\}', re.DOTALL
-)
+# Matches the START of a handoff_request object only. The full object —
+# which always contains nested objects (`payload`, and `payload.params`) —
+# is then extracted with json.JSONDecoder().raw_decode in extract_handoff.
+# A plain regex cannot do this safely: a non-greedy `.*?\}` stops at the
+# first `}` and truncates every real payload, while a greedy `.*\}`
+# over-captures across any later `}` in the stream. raw_decode is string-
+# and nesting-aware, so it returns exactly one complete JSON value.
+HANDOFF_START_RE = re.compile(r'\{\s*"type"\s*:\s*"handoff_request"')
+_JSON_DECODER = json.JSONDecoder()
 
 # Denylist for instruction-like phrasing. Low-assurance; see docstring.
 _DENY_PREFIX = ("#", ">", "---", "System:", "Assistant:", "Human:",
@@ -242,30 +248,34 @@ def extract_handoff(text: str, source_agent: str = "unknown") -> dict | None:
     Returns a dict with target_agent, intent, params, and pre-rendered
     steering_input, or None if any gate fails. Every attempt is logged.
     """
-    m = HANDOFF_RE.search(text)
+    m = HANDOFF_START_RE.search(text)
     if not m:
         return None
-    raw = m.group(0)
     try:
-        obj = json.loads(raw)
+        obj, end = _JSON_DECODER.raw_decode(text, m.start())
     except json.JSONDecodeError:
         audit_log({"source": source_agent, "result": "reject",
-                   "reason": "invalid_json", "raw_len": len(raw)})
+                   "reason": "invalid_json",
+                   "raw_len": len(text) - m.start()})
         return None
+    # Length of the decoded handoff object, for the audit log on any
+    # later rejection. raw_decode returns the end offset of the parsed
+    # value; the old m.group(0) string no longer exists.
+    raw_len = end - m.start()
 
     target = obj.get("target_agent")
     payload = obj.get("payload")
     if target not in ALLOWED_TARGETS:
         audit_log({"source": source_agent, "target": target,
                    "result": "reject", "reason": "target_not_allowlisted",
-                   "raw_len": len(raw)})
+                   "raw_len": raw_len})
         return None
     try:
         jsonschema.validate(instance=payload, schema=HANDOFF_PAYLOAD_SCHEMA)
     except jsonschema.ValidationError as e:
         audit_log({"source": source_agent, "target": target,
                    "result": "reject", "reason": f"schema: {e.message}",
-                   "raw_len": len(raw)})
+                   "raw_len": raw_len})
         return None
 
     intent = payload["intent"]
@@ -273,7 +283,7 @@ def extract_handoff(text: str, source_agent: str = "unknown") -> dict | None:
     if not _validate_params(intent, params):
         audit_log({"source": source_agent, "target": target, "intent": intent,
                    "result": "reject", "reason": "params_schema",
-                   "raw_len": len(raw)})
+                   "raw_len": raw_len})
         return None
 
     raw_event = payload.get("event", "") or ""
