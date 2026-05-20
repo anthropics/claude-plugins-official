@@ -1,0 +1,8 @@
+{
+  "name": "solid-modeling",
+  "version": "0.2.27",
+  "description": "Shared Solid/RDF modeling guidance for Pod-facing products. Reviews RDF links, base-relative ids, default id functions, drizzle-solid schemas, and shared @undefineds.co/models ownership.",
+  "author": {
+    "name": "Undefineds"
+  }
+}
