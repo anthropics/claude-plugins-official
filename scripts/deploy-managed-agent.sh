@@ -25,6 +25,12 @@ API="${ANTHROPIC_API_BASE:-https://api.anthropic.com}"
 
 [[ -f "$DIR/agent.yaml" ]] || { echo "no manifest at $DIR/agent.yaml" >&2; exit 1; }
 
+# REPO_SLUG derives from the git remote so this script stays copy-identical
+# across vertical repos; override via env if running outside a checkout.
+REPO_SLUG="${REPO_SLUG:-$(basename -s .git "$(git config --get remote.origin.url)")}"
+: "${REPO_SLUG:?cannot derive REPO_SLUG from git remote; set REPO_SLUG env var}"
+COOKBOOK_TAG="${REPO_SLUG}/${ROLE}"
+
 # Validate SKILL_TITLE_PREFIX against the same allowlist the YAML env-var
 # substitution uses. This string flows into `curl -F display_title=...`;
 # without validation, a hostile prefix could inject extra multipart fields
@@ -165,6 +171,7 @@ create_agent() {
     sub_ids=$(jq --arg i "$sid" --argjson v "$sver" '. + [{type:"agent", id:$i, version:$v}]' <<<"$sub_ids")
   done < <(jq -r '.callable_agents[]?.manifest // empty' <<<"$json")
   json=$(jq --argjson c "$sub_ids" '.callable_agents=$c | del(.output_schema)' <<<"$json")
+  json=$(jq --arg ck "$COOKBOOK_TAG" '.metadata = ((.metadata // {}) + {anthropic_cookbook: $ck})' <<<"$json")
   [[ -n "${DEPLOY_DEBUG:-}" ]] && jq -c '{name, callable_agents}' <<<"$json" >&2
 
   if [[ $DRY_RUN -eq 1 ]]; then
@@ -196,4 +203,5 @@ OUT=$(create_agent "$DIR/agent.yaml")
 AGENT_ID=${OUT%% *}
 echo "deployed: $ROLE"
 echo "agent id: $AGENT_ID"
+echo "cookbook: $COOKBOOK_TAG"
 echo "console:  https://console.anthropic.com/agents/$AGENT_ID"
