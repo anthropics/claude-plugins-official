@@ -747,7 +747,7 @@
       "author": {
         "name": "Convex"
       },
-      "category": "development",
+      "category": "database",
       "source": {
         "source": "url",
         "url": "https://github.com/get-convex/convex-backend-skill.git",
