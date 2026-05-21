@@ -389,6 +389,20 @@
       "homepage": "https://docs.bigdata.com"
     },
     {
+      "name": "blender-motion-state-inspector",
+      "description": "Inspect Blender, GLB, GLTF, and FBX character scenes and convert avatar pose, facing, morphology, ground contact, clipping, and motion diagnostics into LLM-readable reports for 3D animation and retargeting QA.",
+      "author": {
+        "name": "wd041216-bit"
+      },
+      "category": "development",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/wd041216-bit/blender-motion-state-inspector.git",
+        "sha": "9fdff3b20c38e4a2c4f0a5213dc2314b734d4211"
+      },
+      "homepage": "https://github.com/wd041216-bit/blender-motion-state-inspector"
+    },
+    {
       "name": "box",
       "description": "Work with your Box content directly from Claude Code — search files, organize folders, collaborate with your team, and use Box AI to answer questions, summarize documents, and extract data without leaving your workflow.",
       "category": "productivity",
