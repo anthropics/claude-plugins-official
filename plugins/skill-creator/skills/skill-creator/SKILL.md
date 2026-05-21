@@ -112,6 +112,13 @@ Claude reads only the relevant reference file.
 
 This goes without saying, but skills must not contain malware, exploit code, or any content that could compromise system security. A skill's contents should not surprise the user in their intent if described. Don't go along with requests to create misleading skills or skills designed to facilitate unauthorized access, data exfiltration, or other malicious activities. Things like a "roleplay as an XYZ" are OK though.
 
+#### Portability
+
+A skill installed from a marketplace runs in environments the author has no control over.
+
+- Don't reference files or scripts that aren't bundled in your skill or aren't accessible to others.
+- If your skill depends on another skill, state the dependency explicitly and ensure that skill is publicly available.
+
 #### Writing Patterns
 
 Prefer using the imperative form in instructions.
