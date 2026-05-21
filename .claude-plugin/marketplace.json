@@ -1317,6 +1317,20 @@
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/laravel-boost"
     },
     {
+      "name": "lead411",
+      "description": "Search contacts and companies, enrich accounts, unlock contact details, and push records to CRM — one-click Lead411 MCP integration for Claude Code and Cowork.",
+      "author": {
+        "name": "Lead411"
+      },
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/lead411/lead411-mcp-plugin.git",
+        "sha": "3d0cef2593900f0eb0969710206929b66f5b2c12"
+      },
+      "homepage": "https://www.lead411.com/"
+    },
+    {
       "name": "learning-output-style",
       "description": "Interactive learning mode that requests meaningful code contributions at decision points (mimics the unshipped Learning output style)",
       "author": {
