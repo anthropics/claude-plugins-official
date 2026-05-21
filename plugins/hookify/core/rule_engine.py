@@ -70,11 +70,19 @@ class RuleEngine:
                     "systemMessage": combined_message
                 }
             elif hook_event in ['PreToolUse', 'PostToolUse']:
+                hook_specific = {
+                    "hookEventName": hook_event,
+                    "permissionDecision": "deny"
+                }
+                # For PreToolUse, permissionDecisionReason is the field
+                # Claude Code surfaces to the model as the tool-result body.
+                # Without it, the model sees a bare "Hook ... denied this tool"
+                # with no rationale and no remediation guidance.
+                # See: https://docs.claude.com/en/docs/claude-code/hooks
+                if hook_event == 'PreToolUse':
+                    hook_specific["permissionDecisionReason"] = combined_message
                 return {
-                    "hookSpecificOutput": {
-                        "hookEventName": hook_event,
-                        "permissionDecision": "deny"
-                    },
+                    "hookSpecificOutput": hook_specific,
                     "systemMessage": combined_message
                 }
             else:
