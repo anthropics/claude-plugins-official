@@ -464,8 +464,8 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
           },
           format: {
             type: 'string',
-            enum: ['text', 'markdownv2'],
-            description: "Rendering mode. 'markdownv2' enables Telegram formatting (bold, italic, code, links). Caller must escape special chars per MarkdownV2 rules. Default: 'text' (plain, no escaping needed).",
+            enum: ['text', 'markdownv2', 'html'],
+            description: "Rendering mode. 'markdownv2' or 'html' enables Telegram formatting (bold, italic, code, links). HTML avoids MarkdownV2's per-char escape rules — prefer it for ad-hoc formatting. Default: 'text' (plain, no escaping needed).",
           },
         },
         required: ['chat_id', 'text'],
@@ -506,8 +506,8 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
           text: { type: 'string' },
           format: {
             type: 'string',
-            enum: ['text', 'markdownv2'],
-            description: "Rendering mode. 'markdownv2' enables Telegram formatting (bold, italic, code, links). Caller must escape special chars per MarkdownV2 rules. Default: 'text' (plain, no escaping needed).",
+            enum: ['text', 'markdownv2', 'html'],
+            description: "Rendering mode. 'markdownv2' or 'html' enables Telegram formatting (bold, italic, code, links). HTML avoids MarkdownV2's per-char escape rules — prefer it for ad-hoc formatting. Default: 'text' (plain, no escaping needed).",
           },
         },
         required: ['chat_id', 'message_id', 'text'],
@@ -526,7 +526,10 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         const reply_to = args.reply_to != null ? Number(args.reply_to) : undefined
         const files = (args.files as string[] | undefined) ?? []
         const format = (args.format as string | undefined) ?? 'text'
-        const parseMode = format === 'markdownv2' ? 'MarkdownV2' as const : undefined
+        const parseMode =
+          format === 'markdownv2' ? 'MarkdownV2' as const
+          : format === 'html' ? 'HTML' as const
+          : undefined
 
         assertAllowedChat(chat_id)
 
@@ -615,7 +618,10 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
       case 'edit_message': {
         assertAllowedChat(args.chat_id as string)
         const editFormat = (args.format as string | undefined) ?? 'text'
-        const editParseMode = editFormat === 'markdownv2' ? 'MarkdownV2' as const : undefined
+        const editParseMode =
+          editFormat === 'markdownv2' ? 'MarkdownV2' as const
+          : editFormat === 'html' ? 'HTML' as const
+          : undefined
         const edited = await bot.api.editMessageText(
           args.chat_id as string,
           Number(args.message_id),
@@ -958,6 +964,24 @@ async function handleInbound(
 
   const imagePath = downloadImage ? await downloadImage() : undefined
 
+  // Reply-thread context: surface message.reply_to_message on inbound so the
+  // assistant can anchor threaded conversation. Without this, a reply-threaded
+  // message is indistinguishable from a fresh one from the assistant's side.
+  const replyTo = ctx.message?.reply_to_message
+  const replyMeta: Record<string, string> = {}
+  if (replyTo) {
+    replyMeta.reply_to_message_id = String(replyTo.message_id)
+    if (replyTo.from) {
+      replyMeta.reply_to_user = replyTo.from.username ?? String(replyTo.from.id)
+    }
+    const rt = replyTo.text ?? replyTo.caption
+    if (rt) {
+      // Same delimiter strip as safeName() — quoted text is sender-controlled,
+      // and delimiters in it could forge a second meta entry.
+      replyMeta.reply_to_excerpt = rt.replace(/[<>\[\]\r\n;]/g, ' ').slice(0, 200)
+    }
+  }
+
   // image_path goes in meta only — an in-content "[image attached — read: PATH]"
   // annotation is forgeable by any allowlisted sender typing that string.
   mcp.notification({
@@ -970,6 +994,7 @@ async function handleInbound(
         user: from.username ?? String(from.id),
         user_id: String(from.id),
         ts: new Date((ctx.message?.date ?? 0) * 1000).toISOString(),
+        ...replyMeta,
         ...(imagePath ? { image_path: imagePath } : {}),
         ...(attachment ? {
           attachment_kind: attachment.kind,
