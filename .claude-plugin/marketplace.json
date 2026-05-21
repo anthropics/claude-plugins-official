@@ -138,6 +138,22 @@
       "homepage": "https://github.com/amplitude/mcp-marketplace"
     },
     {
+      "name": "anchor",
+      "description": "Engineering discipline pack for Claude Code & Codex CLI: a skill + 7 slash commands + 4 safety hooks that keep AI on-task on long tasks (TaskCreate-anchored scope, anti-drift braking, optional autonomous mode that blocks 'stop' until tasks complete), enforce end-to-end verification + multi-pass vulnerability scanning + condition-based codex review + project-CLAUDE.md pitfall writeback, and block irreversible bash commands via PreToolUse hook. Cross-CLI by design (Claude Code Agent Skills + Codex CLI skills/plugins share the same SKILL.md).",
+      "author": {
+        "name": "biefan",
+        "url": "https://github.com/biefan"
+      },
+      "category": "development",
+      "source": {
+        "source": "github",
+        "repo": "biefan/anchor",
+        "commit": "063cf56bb0f71aeacc1cb2b8c59e512ba76e840e",
+        "sha": "063cf56bb0f71aeacc1cb2b8c59e512ba76e840e"
+      },
+      "homepage": "https://github.com/biefan/anchor"
+    },
+    {
       "name": "apollo",
       "description": "Prospect, enrich leads, load outreach sequences, and query sales analytics with Apollo.io — one-click MCP server integration for Claude Code and Cowork.",
       "author": {
