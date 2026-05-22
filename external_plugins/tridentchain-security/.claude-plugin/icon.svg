@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="TridentChain Security">
+  <rect width="128" height="128" rx="24" fill="#0f172a"/>
+  <path d="M64 24 L64 88 M44 44 L84 44 M52 56 L76 56 M56 68 L72 68" stroke="#38bdf8" stroke-width="8" stroke-linecap="round"/>
+  <path d="M64 88 L48 104 M64 88 L80 104" stroke="#22d3ee" stroke-width="6" stroke-linecap="round"/>
+  <circle cx="64" cy="24" r="6" fill="#f8fafc"/>
+</svg>

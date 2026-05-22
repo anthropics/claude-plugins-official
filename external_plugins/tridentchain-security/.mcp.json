@@ -1,0 +1,6 @@
+{
+  "tridentchain": {
+    "command": "python3",
+    "args": ["-m", "tridentchain_mcp"]
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "name": "tridentchain-security",
+  "description": "Local supply-chain vulnerability scanner. Scans project dependencies (npm, pip, cargo, etc.) and IDE extensions for known CVEs using OSV and NVD. Runs entirely on your machine — no source code leaves your device. Includes a validate-after-patch workflow to confirm fixes after upgrading dependencies.",
+  "author": {
+    "name": "TridentChain Security Contributors",
+    "url": "https://github.com/DevInder1/supply-chain-scanner-public"
+  }
+}
