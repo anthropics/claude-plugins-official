@@ -1,0 +1,6 @@
+{
+  "lightup": {
+    "command": "bash",
+    "args": ["${CLAUDE_PLUGIN_ROOT}/bin/connect.sh"]
+  }
+}

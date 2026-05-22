@@ -1,0 +1,7 @@
+{
+  "name": "lightup-ai",
+  "description": "Lightup data quality platform. Create and query metrics, set up monitors, investigate incidents, manage datasources, and run root-cause analysis on data anomalies — all from Claude Code. Reads lightup-api-credential.json from ~/Downloads, ~/Desktop, or ~ to authenticate. Connects to your Lightup instance at mcp.<your-tenant>.lightup.ai via SSE. Uses npx to download mcp-remote on first run (requires Node.js).",
+  "author": {
+    "name": "Lightup"
+  }
+}
