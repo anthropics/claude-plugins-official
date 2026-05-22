@@ -37,9 +37,9 @@ import {
   type ColorResolvable,
 } from 'discord.js'
 import { randomBytes } from 'crypto'
-import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, statSync, renameSync, realpathSync, chmodSync, copyFileSync, unlinkSync } from 'fs'
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, statSync, renameSync, realpathSync, chmodSync, copyFileSync, unlinkSync, appendFileSync } from 'fs'
 import { homedir } from 'os'
-import { join, sep } from 'path'
+import { join, sep, dirname } from 'path'
 import sharp from 'sharp'
 import { safeSlice, formatSendResult, assertEmbedUrl, chunk, buildEmbedFromArgs, EMBED_SCHEMA_PROPS } from './lib'
 
@@ -88,6 +88,40 @@ if (!TOKEN) {
 }
 const INBOX_DIR = join(STATE_DIR, 'inbox')
 mkdirSync(INBOX_DIR, { recursive: true })
+
+// --- Direct message log (opt-in via DISCORD_MESSAGE_LOG) ---
+// Append every authorized inbound message (incl. while dunked) and the bot's own
+// replies to a JSONL file, one record per line. Unset/invalid env ⇒ no-op. Best-
+// effort: logMessage never throws, so logging can't break message delivery.
+type LogRecord = {
+  chat_id: string; message_id: string; user: string; user_id: string
+  ts: string; body: string; out?: true
+}
+let MESSAGE_LOG = process.env.DISCORD_MESSAGE_LOG  // unset below if unusable
+if (MESSAGE_LOG && !MESSAGE_LOG.startsWith('/')) {
+  process.stderr.write(`discord channel: DISCORD_MESSAGE_LOG must be absolute, got "${MESSAGE_LOG}" — logging disabled\n`)
+  MESSAGE_LOG = undefined
+} else if (MESSAGE_LOG) {
+  try {
+    mkdirSync(dirname(MESSAGE_LOG), { recursive: true, mode: 0o700 })
+    chmodSync(dirname(MESSAGE_LOG), 0o700)
+  } catch (e) {
+    process.stderr.write(`discord channel: cannot init message log dir: ${e} — logging disabled\n`)
+    MESSAGE_LOG = undefined
+  }
+}
+function logMessage(rec: LogRecord): void {
+  if (!MESSAGE_LOG) return
+  try {
+    appendFileSync(MESSAGE_LOG, JSON.stringify(rec) + '\n', { mode: 0o600 })
+  } catch (e) {
+    process.stderr.write(`discord channel: logMessage failed: ${e}\n`)
+  }
+}
+// Bot's own sent messages, tagged out:true.
+function logOutbound(chat_id: string, message_id: string, ts: string, body: string): void {
+  logMessage({ chat_id, message_id, user: client.user?.username ?? 'bot', user_id: client.user?.id ?? '', ts, body, out: true })
+}
 
 // --- Username cache for mention resolution ---
 // Maps Discord user/role IDs to display names so <@ID> mentions in message
@@ -1148,6 +1182,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
             })
             noteSent(sent.id)
             sentIds.push(sent.id)
+            logOutbound(chat_id, sent.id, sent.createdAt.toISOString(), chunks[i])
           }
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err)
@@ -1170,6 +1205,8 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
             : {}),
         })
         noteSent(sent.id)
+        const embedLabel = `(embed: ${(args.title as string) || (args.description as string) || 'untitled'})`
+        logOutbound(chat_id, sent.id, sent.createdAt.toISOString(), text ? `${text} ${embedLabel}` : embedLabel)
         return { content: [{ type: 'text', text: `sent embed (id: ${sent.id})` }] }
       }
       case 'edit_embed': {
@@ -1203,6 +1240,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
                 const sent = await ch.send({ content: c })
                 noteSent(sent.id)
                 sentIds.push(sent.id)
+                logOutbound(chat_id, sent.id, sent.createdAt.toISOString(), c)
               }
               return { chat_id, ok: true as const, ids: sentIds }
             } catch (err) {
@@ -1436,6 +1474,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         }
         const sentMsg = await res.json() as { id: string }
         noteSent(sentMsg.id)
+        logOutbound(chatId, sentMsg.id, new Date().toISOString(), '(voice message)')
         return { content: [{ type: 'text', text: `voice message sent (id: ${sentMsg.id})` }] }
       }
       case 'pin_message': {
@@ -1998,6 +2037,25 @@ client.on('messageCreate', msg => {
   handleInbound(msg).catch(e => process.stderr.write(`discord: handleInbound failed: ${e}\n`))
 })
 
+// Build the resolved body + attachment listing for an inbound message — used both
+// for the message-log record (which captures dunked messages too) and for delivery.
+async function buildInboundBody(msg: Message): Promise<{ content: string; atts: string[] }> {
+  const atts: string[] = []
+  for (const att of msg.attachments.values()) {
+    const kb = (att.size / 1024).toFixed(0)
+    atts.push(`${safeAttName(att)} (${att.contentType ?? 'unknown'}, ${kb}KB)`)
+  }
+  const stickerLabel = msg.stickers.size > 0
+    ? `(sticker: ${[...msg.stickers.values()].map(s => s.name).join(', ')})`
+    : ''
+  const embedLabel = msg.embeds.length > 0 ? '(embed)' : ''
+  const rawContent = msg.content
+    || stickerLabel
+    || (atts.length > 0 ? '(attachment)' : '')
+    || embedLabel
+  return { content: await resolveMentions(rawContent), atts }
+}
+
 async function handleInbound(msg: Message): Promise<void> {
   const result = await gate(msg)
 
@@ -2023,6 +2081,22 @@ async function handleInbound(msg: Message): Promise<void> {
       dmChannelUsers.set(chat_id, msg.author.id)
       saveDmChannelUsers()
     }
+  }
+
+  // Log authorized inbound (incl. while dunked) BEFORE the dunk gate, which governs
+  // delivery only; the body is built here only when logging, then reused for delivery
+  // below. Permission-reply tokens ("yes <code>") are control messages — skip them.
+  let body: { content: string; atts: string[] } | undefined
+  if (MESSAGE_LOG && !PERMISSION_REPLY_RE.test(msg.content)) {
+    body = await buildInboundBody(msg)
+    logMessage({
+      chat_id,
+      message_id: msg.id,
+      user: msg.author.username,
+      user_id: msg.author.id,
+      ts: msg.createdAt.toISOString(),
+      body: body.content,
+    })
   }
 
   // /dunk gate — silently drop messages from channels the user has
@@ -2063,26 +2137,8 @@ async function handleInbound(msg: Message): Promise<void> {
     void msg.react(result.access.ackReaction).catch(() => {})
   }
 
-  // Attachments are listed (name/type/size) but not downloaded — the model
-  // calls download_attachment when it wants them. Keeps the notification
-  // fast and avoids filling inbox/ with images nobody looked at.
-  const atts: string[] = []
-  for (const att of msg.attachments.values()) {
-    const kb = (att.size / 1024).toFixed(0)
-    atts.push(`${safeAttName(att)} (${att.contentType ?? 'unknown'}, ${kb}KB)`)
-  }
-
-  // Attachment listing goes in meta only — an in-content annotation is
-  // forgeable by any allowlisted sender typing that string.
-  const stickerLabel = msg.stickers.size > 0
-    ? `(sticker: ${[...msg.stickers.values()].map(s => s.name).join(', ')})`
-    : ''
-  const embedLabel = msg.embeds.length > 0 ? '(embed)' : ''
-  const rawContent = msg.content
-    || stickerLabel
-    || (atts.length > 0 ? '(attachment)' : '')
-    || embedLabel
-  const content = await resolveMentions(rawContent)
+  // Build the body for delivery (already built above when logging is enabled).
+  body ??= await buildInboundBody(msg)
 
   // Reply-to context: if this message is a reply, fetch the referenced message
   let replyMeta: Record<string, string> = {}
@@ -2102,14 +2158,14 @@ async function handleInbound(msg: Message): Promise<void> {
   mcp.notification({
     method: 'notifications/claude/channel',
     params: {
-      content,
+      content: body.content,
       meta: {
         chat_id,
         message_id: msg.id,
         user: msg.author.username,
         user_id: msg.author.id,
         ts: msg.createdAt.toISOString(),
-        ...(atts.length > 0 ? { attachment_count: String(atts.length), attachments: atts.join('; ') } : {}),
+        ...(body.atts.length > 0 ? { attachment_count: String(body.atts.length), attachments: body.atts.join('; ') } : {}),
         ...replyMeta,
       },
     },
