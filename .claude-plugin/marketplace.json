@@ -431,6 +431,22 @@
       "homepage": "https://buildkite.com"
     },
     {
+      "name": "cadence",
+      "description": "Stack-agnostic, self-improving AI development framework — four layers (patterns, process, automated gates, launch) plus a retrospective loop. Aligned with NIST SSDF v1.1, ISO/IEC 25010:2023, ADR (Nygard), Conventional Commits, and SemVer.",
+      "author": {
+        "name": "Nikhil Kadalge"
+      },
+      "category": "development",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/nik190799/cadence.git",
+        "path": "plugins/cadence",
+        "ref": "v0.2.0",
+        "sha": "4ff099073c960aee4573a9b18f926156d95640ef"
+      },
+      "homepage": "https://nik190799.github.io/cadence"
+    },
+    {
       "name": "carta-cap-table",
       "description": "Carta Cap Table plugin — skills and hooks for querying cap tables, grants, SAFEs, 409A valuations, waterfall scenarios, and more",
       "author": {
