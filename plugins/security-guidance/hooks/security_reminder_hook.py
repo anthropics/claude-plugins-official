@@ -4,10 +4,13 @@ Security Reminder Hook for Claude Code
 This hook checks for security patterns in file edits and warns about potential vulnerabilities.
 """
 
+import fcntl
 import json
 import os
 import random
 import sys
+import tempfile
+from contextlib import contextmanager
 from datetime import datetime
 
 # Debug log file
