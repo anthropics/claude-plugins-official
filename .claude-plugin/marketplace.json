@@ -732,6 +732,19 @@
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/plugins/commit-commands"
     },
     {
+      "name": "crabbox",
+      "description": "Remote validation skill for the Crabbox CLI. Guides Claude to sync the current checkout to leased or user-provided runners, run broad tests or proof commands remotely, inspect logs/results, and clean up leases.",
+      "author": {
+        "name": "OpenClaw"
+      },
+      "source": "./external_plugins/crabbox",
+      "category": "development",
+      "homepage": "https://crabbox.sh",
+      "tags": [
+        "community-managed"
+      ]
+    },
+    {
       "name": "context7",
       "description": "Upstash Context7 MCP server for up-to-date documentation lookup. Pull version-specific documentation and code examples directly from source repositories into your LLM context.",
       "category": "development",
