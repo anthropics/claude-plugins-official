@@ -1,7 +1,7 @@
 {
   "name": "slack",
   "description": "Slack channel for Claude Code — messaging bridge with built-in access control. Uses Socket Mode (no public URL needed). Manage pairing, allowlists, and policy via /slack:access.",
-  "version": "0.1.14",
+  "version": "0.1.15",
   "keywords": [
     "slack",
     "messaging",

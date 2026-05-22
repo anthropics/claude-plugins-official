@@ -115,7 +115,10 @@ function logMessage(rec: LogRecord): void {
   try {
     appendFileSync(MESSAGE_LOG, JSON.stringify(rec) + '\n', { mode: 0o600 })
   } catch (e) {
-    process.stderr.write(`discord channel: logMessage failed: ${e}\n`)
+    // Latch off on failure (disk full, dir gone, perms) so a persistent error doesn't
+    // retry a doomed syscall + spam stderr on every message. A restart re-enables it.
+    process.stderr.write(`discord channel: logMessage failed, disabling: ${e}\n`)
+    MESSAGE_LOG = undefined
   }
 }
 // Bot's own sent messages, tagged out:true.
