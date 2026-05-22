@@ -996,6 +996,19 @@ bot.catch(err => {
 // returned, and polling stopped permanently while the process stayed alive
 // (MCP stdin keeps it running). Outbound tools kept working but the bot was
 // deaf to inbound messages until a full restart.
+//
+// On unrecoverable conditions (persistent 409 Conflict or 401 Unauthorized),
+// exit the entire process rather than just returning from the polling task.
+// A bare `return` left the MCP server alive with no poller, and orphaned
+// `bun server.ts` siblings kept their getUpdates loop hot at ~100% CPU.
+function exitPollingFailure(message: string, code = 1): never {
+  process.stderr.write(message)
+  try {
+    if (parseInt(readFileSync(PID_FILE, 'utf8'), 10) === process.pid) rmSync(PID_FILE)
+  } catch {}
+  process.exit(code)
+}
+
 void (async () => {
   for (let attempt = 1; ; attempt++) {
     try {
@@ -1019,13 +1032,19 @@ void (async () => {
       if (shuttingDown) return
       // bot.stop() mid-setup rejects with grammy's "Aborted delay" — expected, not an error.
       if (err instanceof Error && err.message === 'Aborted delay') return
-      const is409 = err instanceof GrammyError && err.error_code === 409
+      const isTelegramError = err instanceof GrammyError
+      const is409 = isTelegramError && err.error_code === 409
+      const is401 = isTelegramError && err.error_code === 401
+      if (is401) {
+        exitPollingFailure(
+          `telegram channel: 401 Unauthorized — bot token rejected by Telegram. Exiting.\n`,
+        )
+      }
       if (is409 && attempt >= 8) {
-        process.stderr.write(
+        exitPollingFailure(
           `telegram channel: 409 Conflict persists after ${attempt} attempts — ` +
           `another poller is holding the bot token (stray 'bun server.ts' process or a second session). Exiting.\n`,
         )
-        return
       }
       const delay = Math.min(1000 * attempt, 15000)
       const detail = is409
