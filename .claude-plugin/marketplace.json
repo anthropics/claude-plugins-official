@@ -742,18 +742,37 @@
       ]
     },
     {
-      "name": "convex-backend",
-      "description": "Convex backend skill for building reactive, type-safe, production-grade backends. Helps Claude design schemas, server functions, auth, file storage, scheduled jobs, and real-time multiplayer features on Convex.",
+      "name": "convex",
+      "displayName": "Convex",
+      "description": "Official Convex plugin for Claude Code with bundled Convex skills, the convex-expert subagent for code-writing, a runtime-error monitor, and MCP access for backend development, schema design, real-time features, auth, file storage, scheduled jobs, and AI agents.",
       "author": {
-        "name": "Convex"
+        "name": "Convex",
+        "url": "https://convex.dev"
       },
-      "category": "development",
+      "category": "database",
       "source": {
         "source": "url",
         "url": "https://github.com/get-convex/convex-backend-skill.git",
-        "sha": "9acbc5495dd26749a5e6341dc2438146c4caa03b"
+        "sha": "59663a59be20c05911157116464f1be603ab70cc"
       },
-      "homepage": "https://convex.dev"
+      "homepage": "https://github.com/get-convex/convex-backend-skill",
+      "keywords": [
+        "convex",
+        "backend",
+        "database",
+        "realtime",
+        "reactive",
+        "websocket",
+        "auth",
+        "storage",
+        "scheduler",
+        "cron",
+        "agent",
+        "rag",
+        "mobile",
+        "typescript",
+        "mcp"
+      ]
     },
     {
       "name": "crowdstrike-falcon-foundry",
