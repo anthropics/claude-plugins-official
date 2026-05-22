@@ -8,13 +8,18 @@ You need to execute the following bash commands to clean up stale local branches
 
 ## Commands to Execute
 
-1. **First, list branches to identify any with [gone] status**
+1. **First, prune stale remote refs, then list branches to identify any with [gone] status**
    Execute this command:
    ```bash
-   git branch -v
+   git fetch --prune
+   git branch -vv
    ```
-   
-   Note: Branches with a '+' prefix have associated worktrees and must have their worktrees removed before deletion.
+
+   Note: `git fetch --prune` deletes remote-tracking refs whose upstream is
+   gone — without it, no branch is annotated `[gone]` yet. The `[gone]` marker
+   is part of the upstream-tracking info, so it only appears under `-vv` (two
+   v's), not `-v`. Branches with a `+` prefix have an associated worktree,
+   which must be removed before the branch can be deleted.
 
 2. **Next, identify worktrees that need to be removed for [gone] branches**
    Execute this command:
@@ -25,8 +30,11 @@ You need to execute the following bash commands to clean up stale local branches
 3. **Finally, remove worktrees and delete [gone] branches (handles both regular and worktree branches)**
    Execute this command:
    ```bash
-   # Process all [gone] branches, removing '+' prefix if present
-   git branch -v | grep '\[gone\]' | sed 's/^[+* ]//' | awk '{print $1}' | while read branch; do
+   # Process all [gone] branches, stripping any leading '+'/'*'/space markers.
+   # Git annotates a deleted upstream as "[<upstream-name>: gone]", so the
+   # branch name and the word "gone" are NOT adjacent — the pattern must match
+   # ": gone]", not "[gone]". The marker also only shows under "git branch -vv".
+   git branch -vv | grep ': gone\]' | sed 's/^[+* ]*//' | awk '{print $1}' | while read branch; do
      echo "Processing branch: $branch"
      # Find and remove worktree if it exists
      worktree=$(git worktree list | grep "\\[$branch\\]" | awk '{print $1}')
