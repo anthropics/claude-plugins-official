@@ -28,6 +28,8 @@ import {
   type Message,
   type Attachment,
   type Interaction,
+  type MessageReaction,
+  type User,
 } from 'discord.js'
 import { randomBytes } from 'crypto'
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, statSync, renameSync, realpathSync, chmodSync } from 'fs'
@@ -83,10 +85,12 @@ const client = new Client({
     GatewayIntentBits.DirectMessages,
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.GuildMessageReactions,
+    GatewayIntentBits.DirectMessageReactions,
     GatewayIntentBits.MessageContent,
   ],
   // DMs arrive as partial channels — messageCreate never fires without this.
-  partials: [Partials.Channel],
+  partials: [Partials.Channel, Partials.Message, Partials.Reaction],
 })
 
 type PendingEntry = {
@@ -807,6 +811,20 @@ client.on('messageCreate', msg => {
   handleInbound(msg).catch(e => process.stderr.write(`discord: handleInbound failed: ${e}\n`))
 })
 
+client.on('messageReactionAdd', (reaction, user) => {
+  if (user.bot) return
+  handleReactionInbound('add', reaction, user).catch(e =>
+    process.stderr.write(`discord: handleReactionInbound(add) failed: ${e}\n`),
+  )
+})
+
+client.on('messageReactionRemove', (reaction, user) => {
+  if (user.bot) return
+  handleReactionInbound('remove', reaction, user).catch(e =>
+    process.stderr.write(`discord: handleReactionInbound(remove) failed: ${e}\n`),
+  )
+})
+
 async function handleInbound(msg: Message): Promise<void> {
   const result = await gate(msg)
 
@@ -887,6 +905,66 @@ async function handleInbound(msg: Message): Promise<void> {
     },
   }).catch(err => {
     process.stderr.write(`discord channel: failed to deliver inbound to Claude: ${err}\n`)
+  })
+}
+
+async function reactionAllowed(msg: Message, reactorId: string): Promise<boolean> {
+  const access = loadAccess()
+  if (access.dmPolicy === 'disabled') return false
+
+  if (msg.channel.type === ChannelType.DM) {
+    return access.allowFrom.includes(reactorId)
+  }
+
+  const channelId = msg.channel.isThread()
+    ? msg.channel.parentId ?? msg.channelId
+    : msg.channelId
+  const policy = access.groups[channelId]
+  if (!policy) return false
+  const groupAllowFrom = policy.allowFrom ?? []
+  return groupAllowFrom.length === 0 || groupAllowFrom.includes(reactorId)
+}
+
+async function handleReactionInbound(
+  action: 'add' | 'remove',
+  reaction: MessageReaction,
+  user: User,
+): Promise<void> {
+  if (reaction.partial) {
+    await reaction.fetch()
+  }
+  if (reaction.message.partial) {
+    await reaction.message.fetch()
+  }
+
+  const msg = reaction.message as Message
+  if (!msg.author || msg.author.id !== client.user?.id) return
+  if (!(await reactionAllowed(msg, user.id))) return
+
+  if (msg.channel.type === ChannelType.DM) {
+    dmChannelUsers.set(msg.channelId, user.id)
+  }
+
+  const emoji = reaction.emoji.name ?? reaction.emoji.id ?? 'unknown'
+  mcp.notification({
+    method: 'notifications/claude/channel',
+    params: {
+      content: `reaction:${action} ${emoji}`,
+      meta: {
+        kind: 'reaction',
+        action,
+        chat_id: msg.channelId,
+        message_id: msg.id,
+        message_author_id: msg.author.id,
+        user: user.username,
+        user_id: user.id,
+        emoji,
+        emoji_id: reaction.emoji.id ?? null,
+        ts: new Date().toISOString(),
+      },
+    },
+  }).catch(err => {
+    process.stderr.write(`discord channel: failed to deliver reaction inbound to Claude: ${err}\n`)
   })
 }
 
