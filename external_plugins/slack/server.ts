@@ -34,9 +34,9 @@ type SlackUserMessageEvent = {
   files?: Array<Record<string, unknown>>
 }
 import { randomBytes } from 'crypto'
-import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, statSync, renameSync, realpathSync, chmodSync, copyFileSync } from 'fs'
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, statSync, renameSync, realpathSync, chmodSync, copyFileSync, appendFileSync } from 'fs'
 import { homedir } from 'os'
-import { join, sep } from 'path'
+import { join, sep, dirname } from 'path'
 import sharp from 'sharp'
 import {
   safeSlice,
@@ -83,6 +83,40 @@ mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 })
 mkdirSync(INBOX_DIR, { recursive: true, mode: 0o700 })
 try { chmodSync(STATE_DIR, 0o700) } catch {}
 try { chmodSync(INBOX_DIR, 0o700) } catch {}
+
+// --- Direct message log (opt-in via SLACK_MESSAGE_LOG) ---
+// Append every authorized inbound message (incl. while dunked) and the bot's own
+// replies to a JSONL file, one record per line. Unset/invalid env ⇒ no-op. Best-
+// effort: logMessage never throws, so logging can't break message delivery.
+type LogRecord = {
+  chat_id: string; message_id: string; user: string; user_id: string
+  ts: string; body: string; out?: true
+}
+let MESSAGE_LOG = process.env.SLACK_MESSAGE_LOG  // unset below if unusable
+if (MESSAGE_LOG && !MESSAGE_LOG.startsWith('/')) {
+  process.stderr.write(`slack channel: SLACK_MESSAGE_LOG must be absolute, got "${MESSAGE_LOG}" — logging disabled\n`)
+  MESSAGE_LOG = undefined
+} else if (MESSAGE_LOG) {
+  try {
+    mkdirSync(dirname(MESSAGE_LOG), { recursive: true, mode: 0o700 })
+    chmodSync(dirname(MESSAGE_LOG), 0o700)
+  } catch (e) {
+    process.stderr.write(`slack channel: cannot init message log dir: ${e} — logging disabled\n`)
+    MESSAGE_LOG = undefined
+  }
+}
+function logMessage(rec: LogRecord): void {
+  if (!MESSAGE_LOG) return
+  try {
+    appendFileSync(MESSAGE_LOG, JSON.stringify(rec) + '\n', { mode: 0o600 })
+  } catch (e) {
+    process.stderr.write(`slack channel: logMessage failed: ${e}\n`)
+  }
+}
+// Bot's own sent messages, tagged out:true.
+function logOutbound(chat_id: string, message_id: string, ts: string, body: string): void {
+  logMessage({ chat_id, message_id, user: BOT_HANDLE || 'bot', user_id: BOT_USER_ID, ts, body, out: true })
+}
 
 // Load state-dir .env into process.env. Real env wins so a systemd-unit
 // EnvironmentFile (e.g. `.bot.env`) supersedes the per-state file.
@@ -830,6 +864,21 @@ const DELIVERABLE_SUBTYPES = new Set<string>(['file_share', 'me_message', 'threa
 // to either allowlist it (real-user content) or document the drop.
 const seenUnknownSubtypes = new Set<string>()
 
+// Build the resolved body + sender display name + attachment listing for an inbound
+// slack message — used both for the message-log record (incl. dunked) and delivery.
+async function buildSlackInboundBody(msg: SlackUserMessageEvent): Promise<{ content: string; user: string; atts: string[] }> {
+  const atts: string[] = []
+  if (Array.isArray(msg.files)) {
+    for (const f of msg.files) atts.push(formatSlackFileMeta(f))
+  }
+  const rawText = msg.text ?? (atts.length > 0 ? '(attachment)' : '')
+  const [content, user] = await Promise.all([
+    annotateMentions(rawText),
+    resolveDisplayName(msg.user!),
+  ])
+  return { content, user, atts }
+}
+
 app.event('message', async ({ event }) => {
   // Bolt fires 'message' for every subtype (~20 of them: bot_message,
   // channel_join, message_changed, message_deleted, file_share, …). We
@@ -870,6 +919,21 @@ app.event('message', async ({ event }) => {
     return
   }
 
+  // Log authorized inbound (incl. while dunked) BEFORE the dunk gate, which governs
+  // delivery only; built here only when logging, then reused for delivery below.
+  let ib: { content: string; user: string; atts: string[] } | undefined
+  if (MESSAGE_LOG) {
+    ib = await buildSlackInboundBody(msg)
+    logMessage({
+      chat_id: msg.channel,
+      message_id: msg.ts,
+      user: ib.user,
+      user_id: msg.user,
+      ts: slackTsToIso(msg.ts),
+      body: ib.content,
+    })
+  }
+
   // Dunk gate. allow_mentions reuses the gate's mention semantics —
   // including "thread reply to one of our recent messages" — so a user
   // replying to the bot inside a dunked-with-allow-mentions channel
@@ -898,27 +962,14 @@ app.event('message', async ({ event }) => {
     }
   }
 
-  // File attachment listing (slack delivers files inline on the event
-  // when the bot has files:read scope). We don't pre-download — model
-  // calls download_attachment when it wants the bytes.
-  const files = msg.files
-  const atts: string[] = []
-  if (Array.isArray(files)) {
-    for (const f of files) atts.push(formatSlackFileMeta(f))
-  }
-
-  // Body annotation, sender display-name lookup, and thread-root fetch
-  // are all independent — fan them out together so the inbound→Claude
-  // latency is one RTT instead of two-or-three.
-  const rawText = msg.text ?? (atts.length > 0 ? '(attachment)' : '')
+  // Build the body/user/attachments for delivery (already built above when logging),
+  // overlapping the thread-root fetch so latency stays ~one RTT.
   const fetchThreadRoot = msg.thread_ts && msg.thread_ts !== msg.ts
     ? app.client.conversations.replies({ channel: msg.channel, ts: msg.thread_ts, limit: 1 }).catch(() => null)
     : Promise.resolve(null)
-  const [content, user, root] = await Promise.all([
-    annotateMentions(rawText),
-    resolveDisplayName(msg.user),
-    fetchThreadRoot,
-  ])
+  ib ??= await buildSlackInboundBody(msg)
+  const root = await fetchThreadRoot
+  const { content, user, atts } = ib
   const tsIso = slackTsToIso(msg.ts)
 
   let replyMeta: Record<string, string> = {}
@@ -1159,6 +1210,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
               const uploaded = (result as { files?: Array<{ id?: string }> }).files
               const fileIds = uploaded?.map(f => f.id ?? '?').join(',') ?? ''
               sentTs.push(`file:${fileIds}`)
+              logOutbound(chat_id, `file:${fileIds}`, new Date().toISOString(), chunks[i] || '(file upload)')
             } else {
               const r = await app.client.chat.postMessage({
                 ...POST_MESSAGE_DEFAULTS,
@@ -1167,7 +1219,10 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
                 ...(thread_ts ? { thread_ts } : {}),
               })
               const ts = String(r.ts ?? '')
-              if (ts) noteSent(ts)
+              if (ts) {
+                noteSent(ts)
+                logOutbound(chat_id, ts, slackTsToIso(ts), chunks[i])
+              }
               sentTs.push(ts)
             }
           }
@@ -1190,7 +1245,10 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
             for (const c of chunks) {
               const r = await app.client.chat.postMessage({ ...POST_MESSAGE_DEFAULTS, channel: chat_id, text: c })
               const ts = String(r.ts ?? '')
-              if (ts) noteSent(ts)
+              if (ts) {
+                noteSent(ts)
+                logOutbound(chat_id, ts, slackTsToIso(ts), c)
+              }
               sentTs.push(ts)
             }
             return { chat_id, ok: true as const, ids: sentTs }
@@ -1383,6 +1441,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         const result = await app.client.files.uploadV2(uploadArgs as unknown as Parameters<typeof app.client.files.uploadV2>[0])
         const uploaded = (result as { files?: Array<{ id?: string }> }).files
         const fileIds = uploaded?.map(f => f.id ?? '?').join(',') ?? ''
+        logOutbound(chat_id, `file:${fileIds}`, new Date().toISOString(), '(voice message)')
         return { content: [{ type: 'text', text: `voice file uploaded (file ids: ${fileIds})` }] }
       }
       case 'dunk': {
