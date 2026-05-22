@@ -302,6 +302,11 @@ const client = new Client({
   ],
   // DMs arrive as partial channels — messageCreate never fires without this.
   partials: [Partials.Channel],
+  // Block @everyone/@here/role mass-pings on every outbound message by default — a bot must
+  // not be able to ping a whole server (incl. when it echoes untrusted content it was sent).
+  // Individual user mentions and the reply ping still go through; pass a per-call
+  // allowedMentions to opt back into a deliberate role/everyone ping if ever needed.
+  allowedMentions: { parse: ["users"], repliedUser: true },
 })
 
 type PendingEntry = {
