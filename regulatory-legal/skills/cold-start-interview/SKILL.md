@@ -126,7 +126,7 @@ If the answer is 3, add:
 
 #### What's connected?
 
-> This plugin can work with: regulatory feeds (Thomson Reuters Regulatory Intelligence), document storage (Google Drive, SharePoint, Box), and Slack. Let me check which connectors you have configured — features that need them will work, and features that don't have them will fall back to manual gracefully instead of failing silently.
+> This plugin can work with: regulatory feed subscriptions, document storage (Google Drive, SharePoint, Box), and Slack. Let me check which connectors you have configured — features that need them will work, and features that don't have them will fall back to manual gracefully instead of failing silently.
 
 **Check what's actually connected, not what's configured.** A connector listed in `.mcp.json` is *available*. A connector that's actually responding is *connected*. These are different, and confusing them destroys trust. For each connector this plugin uses:
 
@@ -136,7 +136,7 @@ If the answer is 3, add:
 
 The Federal Register API is a free public endpoint and is always available — it does not require an MCP connector.
 
-For connectors that show as not connected, tell the user how to connect. Example phrasing: "TR Regulatory Intelligence isn't connected. In Claude Cowork: Settings → Connectors → Add → Thomson Reuters → sign in. In Claude Code: add the TR MCP to your config or via `/mcp`. This plugin works without it — Federal Register + manual paste covers US federal coverage — but connecting it adds enrichment and alert import."
+For connectors that show as not connected, tell the user how to connect. Example phrasing: "[Feed provider] isn't connected. In Claude Cowork: Settings → Connectors → Add → [provider] → sign in. In Claude Code: add the provider's MCP to your config or via `/mcp`. This plugin works without it — Federal Register + manual paste covers US federal coverage — but connecting it adds enrichment and alert import."
 
 Then report findings in this form:
 
@@ -244,7 +244,7 @@ If a named regulator has no known free feed: flag it, ask the user how they curr
 
 **Step 2: Ask about paid subscriptions (additive, not required)**
 
-- TR Regulatory Intelligence subscription? Which alerts are configured?
+- Paid regulatory feed subscription? Which provider, and which alerts are configured?
 - CourtListener? Which trackers?
 
 If yes: configure as enrichment layer on top of free feeds. If no: free feeds are sufficient to proceed.
@@ -296,7 +296,7 @@ Per the template. Key: the materiality threshold table.
 **Paid feeds (if configured):**
 | Service | Subscription | Alerts |
 |---|---|---|
-| TR Regulatory Intelligence | [yes/no] | [alert names] |
+| [Paid feed provider] | [yes/no] | [alert names] |
 | CourtListener | [yes/no] | [tracker names] |
 
 **Manual entry:** Enabled — paste any regulatory development to trigger diff + gap tracking.

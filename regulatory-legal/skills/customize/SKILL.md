@@ -46,13 +46,13 @@ without hand-editing YAML.
      `/reg-feed-watcher` output
    - **Gap response process** — who triages, SLA per severity, downstream
      owners (policy, product, training)
-   - **Feed configuration** — regulator feeds, Thomson Reuters
+   - **Feed configuration** — regulator feeds, paid feed
      connectors, cadence of the `/reg-feed-watcher` sweep, digest channel
    - **People** — regulatory counsel, policy owners, comment drafter,
      escalation chain
    - **Workflow** — matter workspaces, open gaps tracker, comment deadline
      tracker, digest publication cadence
-   - **Integrations** — Thomson Reuters / Slack / document
+   - **Integrations** — regulatory feeds / Slack / document
      storage status, fallbacks
 
 3. **Ask what they want to change.**

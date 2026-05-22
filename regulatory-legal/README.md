@@ -1,6 +1,6 @@
 # Regulatory Counsel Plugin
 
-Watches regulatory feeds, diffs new regulations against your policy library, surfaces gaps. Learns your materiality threshold so it doesn't alert on every commissioner's speech. Wired for Thomson Reuters Regulatory Intelligence and CourtListener.
+Watches regulatory feeds, diffs new regulations against your policy library, surfaces gaps. Learns your materiality threshold so it doesn't alert on every commissioner's speech. Wired for the Federal Register API, direct regulator feeds, and CourtListener.
 
 **Every output is a draft for attorney review — cited, flagged, and gated — not a legal conclusion.** The plugin does the work: reads the documents, applies your playbook, finds the issues, drafts the memo. A lawyer reviews, verifies, and decides. Citations are tagged by source so you know which ones came from a research tool and which ones need checking. Privilege markers are applied conservatively so nothing waives by accident. Consequential actions — filing, sending, executing — are gated behind explicit confirmation.
 
@@ -54,7 +54,7 @@ Ships with the general bucket of connectors in `.mcp.json`:
 - **Slack** — search messages, read channels, find discussions
 - **Google Drive** — search, read, and fetch documents
 
-Thomson Reuters Regulatory Intelligence connector can be added when partner URLs are available. Direct regulator RSS/email as fallback.
+Additional regulatory feed connectors can be added when partner URLs are available. Direct regulator RSS/email as fallback.
 
 ## Prerequisites
 

@@ -25,7 +25,7 @@ See [`steering-examples.json`](./steering-examples.json). The default weekly swe
 
 ## Security & handoffs
 
-Regulatory feed content (Federal Register entries, agency RSS posts, TR alerts notifications) is **untrusted input.** Three-tier isolation:
+Regulatory feed content (Federal Register entries, agency RSS posts, paid feed alerts) is **untrusted input.** Three-tier isolation:
 
 | Tier | Touches untrusted docs? | Tools | Connectors |
 |---|---|---|---|
@@ -43,8 +43,7 @@ Regulatory feed content (Federal Register entries, agency RSS posts, TR alerts n
 
 Before you trust the output on your workflow:
 
-- **Point `feed-reader` at your sources.** The default target is the Federal Register (free public API, no MCP needed). If your firm subscribes to Thomson Reuters Regulatory Intelligence, Bloomberg Law, or direct agency RSS, add the endpoints to the feed-reader's web_fetch allowlist and adjust the orchestrator's scan plan. If you only have free sources, the Federal Register API alone is workable.
-- **Set the (optionally) Thomson Reuters MCP URLs.** TR is commented out in the manifest; wire it and flip `enabled: true` if your team pays for it.
+- **Point `feed-reader` at your sources.** The default target is the Federal Register (free public API, no MCP needed). If your firm subscribes to a paid regulatory feed (e.g., Bloomberg Law) or uses direct agency RSS, add the endpoints to the feed-reader's web_fetch allowlist and adjust the orchestrator's scan plan. If you only have free sources, the Federal Register API alone is workable.
 - **Configure the digest delivery channel.** The digest-writer emits a `handoff_request` that names a Slack channel. The orchestrator reads that channel from your regulatory-legal configuration's **House style → Reg digest** field. Set it before the first scheduled run or the handoff will dead-letter. Teams that want the digest by email or in a Confluence page instead should swap the handoff target in the orchestrator allowlist.
 - **Tune the materiality threshold.** The materiality-filter reads your configuration's `## Materiality threshold` section — always material / review-worthy / FYI. Confirm the tiers reflect your current risk posture before enabling scheduled runs; a threshold set too low floods the digest, too high and you miss obligations with deadlines.
 - **Update the watchlist.** The materiality-filter also reads the `## Regulators we watch` table. Add or remove regulators as your footprint changes.
