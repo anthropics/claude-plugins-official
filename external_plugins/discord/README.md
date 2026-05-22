@@ -143,24 +143,6 @@ than the OS prompt layer. Default off. Every auto-allow writes
 `permission_request <id> auto-allowed (DISCORD_AUTO_ALLOW_PERMISSIONS=1)
 tool=<name>` to stderr for audit.
 
-## PreCompact notification
-
-The plugin ships a `PreCompact` hook that posts a one-line "compacting
-context…" notice to the last-active Discord channel before Claude Code
-auto-compacts the conversation. It's best-effort — missing state, a
-network blip, or a rate-limit never blocks the compaction. Set
-`COMPACT_NOTIFY_DISABLED=1` in the environment to mute it, or disable
-the plugin if you don't want it at all.
-
-**Single-session caveat.** Claude Code does not currently expose
-`session_id` to MCP servers or plugin hooks through env vars or the MCP
-protocol, so the plugin can't partition state per session. Two
-concurrent `claude` processes for the same user will both write to the
-same `sessions/default/last_chat_id.txt`, and the compaction ping will
-land wherever the most-recent Discord message happened to arrive —
-which may not be the session that actually compacted. Safe for the
-usual one-session-per-user setup; broken for multi-session-on-one-user.
-
 ## Changelog
 
 ### 0.2.18

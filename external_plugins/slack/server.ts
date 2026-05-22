@@ -93,8 +93,7 @@ try {
     if (!m || process.env[m[1]!] !== undefined) continue
     // Strip optional surrounding single/double quotes so a line like
     // `SLACK_BOT_TOKEN="xoxb-..."` doesn't leak quote chars into the
-    // Bearer header. The PreCompact hook applies the same strip, this
-    // keeps the two parsers in lockstep.
+    // Bearer header.
     const value = m[2]!.replace(/^"(.*)"$/, '$1').replace(/^'(.*)'$/, '$1')
     process.env[m[1]!] = value
   }

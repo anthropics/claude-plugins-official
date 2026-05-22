@@ -10,7 +10,7 @@ Judgement calls made while VoX is away. Review and override at will.
 
 ## Token storage
 
-- `server.ts` reads `SLACK_BOT_TOKEN` and `SLACK_APP_TOKEN` from process env first (so a systemd `EnvironmentFile=…/.bot.env` works), falling back to `$STATE_DIR/.env` (where `/slack:configure` writes them). State-dir `.env` is chmod 0600 + parsed with quote-stripping so `KEY="value"` lines work the same as in the PreCompact hook.
+- `server.ts` reads `SLACK_BOT_TOKEN` and `SLACK_APP_TOKEN` from process env first (so a systemd `EnvironmentFile=…/.bot.env` works), falling back to `$STATE_DIR/.env` (where `/slack:configure` writes them). State-dir `.env` is chmod 0600 + parsed with quote-stripping so `KEY="value"` lines work correctly.
 
 ## API/SDK choices
 
