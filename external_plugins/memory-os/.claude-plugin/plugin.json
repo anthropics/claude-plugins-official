@@ -1,0 +1,7 @@
+{
+  "name": "memory-os",
+  "description": "Kernel-grade persistent memory for Claude Code. Remembers decisions, constraints, and context across sessions — designed like an OS memory subsystem, not a database.",
+  "author": {
+    "name": "soolaugust"
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "memory-os": {
+    "command": "uvx",
+    "args": ["--from", "git+https://github.com/soolaugust/0CompactMem", "memory-os"]
+  }
+}
