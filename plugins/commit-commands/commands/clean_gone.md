@@ -8,21 +8,29 @@ You need to execute the following bash commands to clean up stale local branches
 
 ## Commands to Execute
 
-1. **First, list branches to identify any with [gone] status**
+1. **First, prune stale remote-tracking refs**
+   Execute this command:
+   ```bash
+   git fetch --prune
+   ```
+
+   This refreshes the upstream view so that any branch whose remote was deleted server-side (e.g. by GitHub's auto-delete on merge) is correctly marked `[gone]` in step 2. Without this, locally-stale `origin/*` refs hide the actual state and step 3 finds nothing to clean up.
+
+2. **Next, list branches to identify any with [gone] status**
    Execute this command:
    ```bash
    git branch -v
    ```
-   
+
    Note: Branches with a '+' prefix have associated worktrees and must have their worktrees removed before deletion.
 
-2. **Next, identify worktrees that need to be removed for [gone] branches**
+3. **Next, identify worktrees that need to be removed for [gone] branches**
    Execute this command:
    ```bash
    git worktree list
    ```
 
-3. **Finally, remove worktrees and delete [gone] branches (handles both regular and worktree branches)**
+4. **Finally, remove worktrees and delete [gone] branches (handles both regular and worktree branches)**
    Execute this command:
    ```bash
    # Process all [gone] branches, removing '+' prefix if present
