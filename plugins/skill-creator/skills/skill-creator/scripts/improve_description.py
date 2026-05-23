@@ -40,7 +40,18 @@ def _call_claude(prompt: str, model: str | None, timeout: int = 300) -> str:
         env=env,
         timeout=timeout,
     )
+    # Tolerate non-zero exit if stdout has a valid <new_description> block.
+    # Bun on Windows sometimes segfaults during process shutdown AFTER the
+    # response has already been streamed to stdout — the logical result is
+    # complete even though the exit code reports failure.
     if result.returncode != 0:
+        if result.stdout and "<new_description>" in result.stdout:
+            sys.stderr.write(
+                f"claude -p exited {result.returncode} but stdout has a valid "
+                f"<new_description> block — accepting output anyway "
+                f"(likely Bun shutdown crash).\n"
+            )
+            return result.stdout
         raise RuntimeError(
             f"claude -p exited {result.returncode}\nstderr: {result.stderr}"
         )
