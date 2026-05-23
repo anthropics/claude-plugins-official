@@ -1,0 +1,10 @@
+[plugin]
+name = "arkhe-cybersec"
+version = "1.0.0"
+description = "ARKHE Cybersecurity Foundations — 12 pillars, 48 topics, integrated lab, quiz, and audit"
+author = "ORCID 0009-0005-2697-4668"
+license = "MIT"
+entry_point = "cybersec_cli"
+dependencies = ["click", "rich", "nmap", "python-nmap", "scapy", "requests", "aiohttp"]
+arkhe_version = "∞.Ω.∇+++"
+substrate_id = "613-CYBERSEC-FUNDAMENTALS"
