@@ -125,6 +125,37 @@ Only use exec() if you absolutely need shell features and the input is guarantee
     },
 ]
 
+# ---------------------------------------------------------------------------
+# File-extension guard
+#
+# The five rules below target JavaScript / TypeScript semantics exclusively.
+# Applying them to Python, Markdown, YAML, or other file types produces
+# false positives — e.g. `session.execute(...)` in SQLAlchemy, or a docstring
+# that documents what `child_process.exec` does, triggering the JS rule.
+#
+# JS_TS_EXTENSIONS: the set of extensions for which JS-only rules are active.
+#   Includes .mts / .cts (TypeScript ESM/CJS explicit-extension variants
+#   introduced in TypeScript 4.7, compiling to .mjs / .cjs respectively).
+#
+# JS_ONLY_RULES:    the rule names that must be skipped for non-JS/TS files.
+#   All five share the same scope, so a single shared constant is cleaner
+#   than per-rule fileType lists scattered across SECURITY_PATTERNS.
+# ---------------------------------------------------------------------------
+
+JS_TS_EXTENSIONS: frozenset = frozenset({
+    ".js", ".jsx", ".ts", ".tsx",
+    ".mjs", ".cjs",
+    ".mts", ".cts",   # TypeScript ESM / CJS explicit-extension variants (TS 4.7+)
+})
+
+JS_ONLY_RULES: frozenset = frozenset({
+    "child_process_exec",
+    "new_function_injection",
+    "eval_injection",
+    "react_dangerously_set_html",
+    "document_write_xss",
+    "innerHTML_xss",
+})
 
 def get_state_file(session_id):
     """Get session-specific state file path."""
@@ -181,20 +212,35 @@ def save_state(session_id, shown_warnings):
 
 
 def check_patterns(file_path, content):
-    """Check if file path or content matches any security patterns."""
+    """Check if file path or content matches any security patterns.
+
+    JS_ONLY_RULES are skipped for files whose extension is not in
+    JS_TS_EXTENSIONS, preventing false positives on Python, Markdown,
+    YAML, and other non-JS/TS files.  See #1341.
+    """
     # Normalize path by removing leading slashes
     normalized_path = file_path.lstrip("/")
 
+    # Determine whether the target file is a JS/TS source file.
+    _, ext = os.path.splitext(file_path.lower())
+    is_js_ts = ext in JS_TS_EXTENSIONS
+
     for pattern in SECURITY_PATTERNS:
+        rule_name = pattern.get("ruleName", "")
+
+        # Skip JS-only rules when the file being edited is not JS/TS.
+        if not is_js_ts and rule_name in JS_ONLY_RULES:
+            continue
+
         # Check path-based patterns
         if "path_check" in pattern and pattern["path_check"](normalized_path):
-            return pattern["ruleName"], pattern["reminder"]
+            return rule_name, pattern["reminder"]
 
         # Check content-based patterns
         if "substrings" in pattern and content:
             for substring in pattern["substrings"]:
                 if substring in content:
-                    return pattern["ruleName"], pattern["reminder"]
+                    return rule_name, pattern["reminder"]
 
     return None, None
 
