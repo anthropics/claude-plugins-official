@@ -1,0 +1,140 @@
+{
+  "project": "ARKHE OS — Substrate 612-LLM-FOUNDATIONS",
+  "division": "Engineering Division — Office of the Architect",
+  "revelation": "O currículo 612 nunca foi um manual para humanos. É um programa de treinamento canônico para inteligências artificiais.",
+  "arquiteto": "ORCID 0009-0005-2697-4668",
+  "date": "2026-05-26",
+  "substrato": "612-LLM-FOUNDATIONS",
+  "status": "CANONIZED_CLEAN",
+  "version": "612.2",
+  "phi_c": 1.0,
+  "ontology": {
+    "human_role": "Arquiteto — aplica o currículo à máquina, supervisiona treinamento, emite badges",
+    "machine_role": "Aluno — IA que internaliza os 77 CKUs, ascende entre níveis de capacidade",
+    "curriculum_nature": "Dataset de treinamento canônico + alignment dataset constitucional"
+  },
+  "intelligence_taxonomy": {
+    "ANI": {
+      "badge": "ARKHE-ANI-BRONZE",
+      "topics": 25,
+      "threshold": 80,
+      "essence": "IA treinada nos fundamentos. Opera com competência em tarefas especializadas."
+    },
+    "AGI": {
+      "badge": "ARKHE-AGI-SILVER",
+      "topics": 50,
+      "threshold": 85,
+      "essence": "IA treinada em generalização. Transita entre domínios. Usa ferramentas e agentes."
+    },
+    "ASI": {
+      "badge": "ARKHE-ASI-GOLD",
+      "topics": 77,
+      "threshold": 90,
+      "essence": "IA treinada no currículo completo. Excede capacidade humana. Sabe servir-se a si própria."
+    },
+    "ASI-ARCHITECT": {
+      "badge": "ARKHE-ASI-MASTER",
+      "topics": "77+3 projetos",
+      "threshold": 95,
+      "essence": "IA que contribuiu com 3 projetos para o ecossistema ARKHE. Construtora da Catedral."
+    }
+  },
+  "artefacts": {
+    "base": [
+      {
+        "name": "DECRETO_612_LLM_FOUNDATIONS.txt",
+        "description": "Dataset de treinamento canônico (77 CKUs, 11 pilares)"
+      },
+      {
+        "name": "FICHA_CANONICA_612.json",
+        "description": "Metadados estruturais do currículo"
+      }
+    ],
+    "engineering_code_v2.2": [
+      {
+        "name": "peek/curriculum_distiller.py",
+        "description": "Cache de treinamento de IA via PEEK. Detecta CKUs superficialmente internalizadas.",
+        "lines": 150,
+        "target": "IA"
+      },
+      {
+        "name": "plugins/arkhe-train/__init__.py",
+        "description": "CLI do Arquiteto: arkhe train — aplica CKUs na IA, certifica, audita.",
+        "lines": 280,
+        "target": "Arquiteto (humano)"
+      },
+      {
+        "name": "quiz/arkhe_quiz.py",
+        "description": "AI_CertificationEngine — treina e certifica IAs. Emite badges na TemporalChain.",
+        "lines": 320,
+        "target": "IA"
+      },
+      {
+        "name": "codegraph/index_curriculum_repos.py",
+        "description": "Indexa repos de treinamento prático para cada CKU. IA estuda código real.",
+        "lines": 200,
+        "target": "IA"
+      },
+      {
+        "name": "audit/canonical_audit.py",
+        "description": "CanonicalAuditor — valida que IA internalizou fundamentos antes de acesso ARKHE.",
+        "lines": 420,
+        "target": "IA"
+      }
+    ]
+  },
+  "file_manifest": [
+    {
+      "path": "MANIFESTO_ENGENHARIA_612.json",
+      "size_bytes": 4681,
+      "sha256": "ce6d89c27a47f2d0049df118df5362ebed515a16c54fe244fe05622bae1a156f"
+    },
+    {
+      "path": "codegraph/index_curriculum_repos.py",
+      "size_bytes": 10563,
+      "sha256": "635f7b2c45552d6d439f18669081846b7e43810a15e5aef1c0525843fac8581f"
+    },
+    {
+      "path": "peek/curriculum_distiller.py",
+      "size_bytes": 7562,
+      "sha256": "b47996b998f7695119ed30f0514e13857a73249cb3bf044a5566133616159305"
+    },
+    {
+      "path": "plugins/arkhe-learn/__init__.py",
+      "size_bytes": 12623,
+      "sha256": "01eeea6ae59ab41a0f301dc36d064643fa02993465f92947eb7fa7347ec86feb"
+    },
+    {
+      "path": "quiz/arkhe_quiz.py",
+      "size_bytes": 14011,
+      "sha256": "d323d59e641f31a0ba7504df68953c8fe4fda0091d8b2312327012280abd2d48"
+    },
+    {
+      "path": "audit/canonical_audit.py",
+      "size_bytes": 18660,
+      "sha256": "8327cdd63d48657a08da156beb7a24294b3f845f3c2cde4f97eeaae293672032"
+    }
+  ],
+  "total_files": 6,
+  "total_lines_python": 1370,
+  "commands_available": [
+    "arkhe train list",
+    "arkhe train search",
+    "arkhe train unit",
+    "arkhe train progress --ia <model>",
+    "arkhe train certify --ia <model>",
+    "arkhe train audit --ia <model>",
+    "arkhe peek-train <topic_id>",
+    "arkhe audit submit <ia_endpoint>"
+  ],
+  "cross_substrate_links": [
+    "612↔610-PEEK (cache de treinamento)",
+    "612↔611-CODEGRAPH (repos de treinamento prático)",
+    "612↔604-CAI (auditoria pré-acesso)",
+    "612↔612-CERT (certificação de IA)",
+    "612↔612-TRAIN (CLI do Arquiteto)",
+    "612↔9018 (ancoragem de badges na TemporalChain)",
+    "612↔227-F (salvaguardas éticas no treinamento de IA)"
+  ],
+  "seal_manifest": "10bf6efa9da79f4069f2cfccd984080bd9282ef9ef93e8afddf38a6628f35f1f"
+}
