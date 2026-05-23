@@ -71,20 +71,25 @@ Other risky inputs to be careful with:
         "substrings": ["child_process.exec", "exec(", "execSync("],
         "reminder": """⚠️ Security Warning: Using child_process.exec() can lead to command injection vulnerabilities.
 
-This codebase provides a safer alternative: src/utils/execFileNoThrow.ts
+Prefer execFile() or spawn() over exec() to avoid shell injection:
 
 Instead of:
   exec(`command ${userInput}`)
 
 Use:
-  import { execFileNoThrow } from '../utils/execFileNoThrow.js'
-  await execFileNoThrow('command', [userInput])
+  import { execFile } from 'child_process'
+  execFile('command', [userInput], callback)
 
-The execFileNoThrow utility:
-- Uses execFile instead of exec (prevents shell injection)
-- Handles Windows compatibility automatically
-- Provides proper error handling
-- Returns structured output with stdout, stderr, and status
+Or with util.promisify:
+  import { execFile } from 'child_process'
+  import { promisify } from 'util'
+  const execFileAsync = promisify(execFile)
+  await execFileAsync('command', [userInput])
+
+Why execFile() is safer:
+- Spawns the process directly without a shell (prevents shell injection)
+- Arguments are passed as an array, never interpolated into a shell command
+- Returns structured output with stdout, stderr
 
 Only use exec() if you absolutely need shell features and the input is guaranteed to be safe.""",
     },
