@@ -1100,6 +1100,19 @@
       "homepage": "https://github.com/firecrawl/firecrawl-claude-plugin.git"
     },
     {
+      "name": "flowhunt-skill",
+      "description": "Automation discovery audit. Walks through a 5-question workflow intake and audits Gmail/Calendar/Slack/task trackers to surface concrete automation opportunities with estimated time savings.",
+      "author": {
+        "name": "HeyNeuron"
+      },
+      "category": "productivity",
+      "source": "./external_plugins/flowhunt-skill",
+      "homepage": "https://github.com/heyneuron/flowhunt-skill",
+      "tags": [
+        "community-managed"
+      ]
+    },
+    {
       "name": "forge-skills",
       "description": "Forge-focused skills and MCP configuration for Atlassian Forge: scaffold and deploy apps (forge create, templates, dev spaces), build Teamwork Graph connectors for Rovo Search/Rovo Chat, pre-deploy review, systematic debugging, plus Forge docs and Atlassian Design System lookups via MCP.",
       "author": {

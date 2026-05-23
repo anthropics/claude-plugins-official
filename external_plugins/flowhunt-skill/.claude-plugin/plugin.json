@@ -1,0 +1,7 @@
+{
+  "name": "flowhunt-skill",
+  "description": "Automation discovery audit. Walks through a 5-question workflow intake and audits Gmail/Calendar/Slack/task trackers to surface concrete automation opportunities with estimated time savings.",
+  "author": {
+    "name": "HeyNeuron"
+  }
+}
