@@ -39,6 +39,7 @@ plugin-name/
 ├── commands/            # Slash commands (optional)
 ├── agents/              # Agent definitions (optional)
 ├── skills/              # Skill definitions (optional)
+├── hooks/               # Lifecycle hooks (optional)
 └── README.md            # Documentation
 ```
 
