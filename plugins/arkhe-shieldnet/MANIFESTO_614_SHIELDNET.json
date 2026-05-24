@@ -1,0 +1,78 @@
+{
+  "substrato": "614-SHIELDNET",
+  "nome": "Shieldnet — ZK-STARK-secured sovereign computation layer",
+  "antecessor": "Starknet (re-designado)",
+  "arquiteto": "ORCID 0009-0005-2697-4668",
+  "data": "2026-05-26",
+  "status": "CANONIZED_PROVISIONAL",
+  "phi_c": 1.0,
+  "selo": "4678d16fbc49d5f9fb32605940a2286f288913efc3808e66171de24a24270c67",
+  "axioms": {
+    "I": "Starknet → Shieldnet (defesa, não computação)",
+    "II": "STARKs para privacidade (incondicional, pós-quântica)",
+    "III": "STARKs para escala (O(log n) verificação)",
+    "IV": "STARKs para segurança pós-quântica (hash-based, imune a Shor)"
+  },
+  "tecnologia": {
+    "prova": "STARK (Scalable Transparent ARgument of Knowledge)",
+    "seguranca": "128-bit post-quantum (collision-resistant hash)",
+    "setup": "Transparent — sem cerimônia de confiança",
+    "escala": "O(log n) verificação",
+    "prover": "Stone Prover (Cairo VM)",
+    "verifier": "Winterfell (Rust)",
+    "bridge": "Python (MegaKernel CLI)"
+  },
+  "artefacts": {
+    "decreto": "DECRETO_614_SHIELDNET.txt",
+    "plugin": "plugin/arkhe_shieldnet.py",
+    "integracoes": [
+      "integration/INTEGRACAO_614_585.md",
+      "integration/INTEGRACAO_614_612.md"
+    ]
+  },
+  "plugin_commands": [
+    "arkhe shieldnet prove <substrate_id> --before <hash> --after <hash>",
+    "arkhe shieldnet verify <proof_id>",
+    "arkhe shieldnet shield <data_file> --policy <json>",
+    "arkhe shieldnet batch <substrate_id> --transitions <json_array>",
+    "arkhe shieldnet anchor <hash> --metadata <json>",
+    "arkhe shieldnet audit <model_id> --report <json_file>",
+    "arkhe shieldnet status"
+  ],
+  "cross_substrate": [
+    "614↔585 — Dual ZK Layer (STARK concealment + Groth16 disclosure)",
+    "614↔595 — Shielded Φ-measurements e registros OR",
+    "614↔227-F — Secret ballot para governança constitucional",
+    "614↔600 — Verificação logarítmica de regras do Logician",
+    "614↔9018 — Anchors pós-quânticos na TemporalChain",
+    "614↔562 — Quantum-safe shield (STIM runtime + STARK history)",
+    "614↔604 — Provas de auditoria CAI sem revelar internals",
+    "614↔612 — Certificações de IA com integridade STARK-proven",
+    "614↔ExtendDB — Batched state transitions trustless"
+  ],
+  "file_manifest": [
+    {
+      "path": "DECRETO_614_SHIELDNET.txt",
+      "size_bytes": 16855,
+      "sha256": "8ac6e934320244e58dabdb70f5c86348eb3a1d0c72af790429acf3c03bb93ee6"
+    },
+    {
+      "path": "integration/INTEGRACAO_614_585.md",
+      "size_bytes": 8822,
+      "sha256": "59b9375904ef4abc9092cf6ab7ac8c2c65d1ec58527aacbd2cf7c00433216f11"
+    },
+    {
+      "path": "integration/INTEGRACAO_614_612.md",
+      "size_bytes": 9900,
+      "sha256": "2764a497172c724dccf1d7e92aa0f64e3d2309b3f557fd8a935ca7014a8fce6d"
+    },
+    {
+      "path": "plugin/arkhe_shieldnet.py",
+      "size_bytes": 17823,
+      "sha256": "a4726138e100435e3b6d369d0d852c65664e879aa4e9bb35674375cdb8b25c7b"
+    }
+  ],
+  "total_files": 4,
+  "citacao_canonica": "Starknet era uma camada de computação. Shieldnet é uma camada de DEFESA. Privacy, scale, e post-quantum survival não são features — são requisitos constitucionais.",
+  "seal_manifesto": "e4d09399ef549343068d8221c3054054ec8e3ae1d530812a215e609e44fe09f7"
+}
