@@ -248,7 +248,11 @@ def load_rule_file(file_path: str) -> Optional[Rule]:
         Rule object or None if file is invalid.
     """
     try:
-        with open(file_path, 'r') as f:
+        # Force UTF-8: Python's default open() uses the platform's preferred encoding,
+        # which on Windows is cp1252. Rule files commonly contain em-dashes, arrows,
+        # emoji, and other multi-byte characters - all of which break cp1252 decoding
+        # silently and drop the rule from the active set.
+        with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
 
         frontmatter, message = extract_frontmatter(content)
