@@ -378,3 +378,166 @@ jobs:
             echo "::error::Scan step failed without a parseable policy verdict (likely an infra error)."
             exit 1
           fi
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # emit-verdict: post a sticky comment per entry to the bump PR with the
+  # structured verdict, so downstream tooling (label automation, delist
+  # authoring) can read verdicts directly instead of scraping job logs.
+  # Sticky comment marker: `<!-- bump-pr-verdict:<name> -->`.
+  #
+  # Mirrors the schema_v1 contract from
+  # anthropics/claude-plugins-community-internal#3908 so the triage scripts
+  # in mcp-local-directory/scripts/triage/ work uniformly across both repos.
+  # -official doesn't run per-entry static checks (zombie, schema, binaries,
+  # etc.) so the `scan.*` axes are emitted as "skipped". The granular policy
+  # booleans (`has_broad_scope_hooks`, `has_undisclosed_telemetry`,
+  # `description_matches_behavior`) aren't surfaced by this workflow's
+  # per-entry artifact yet, so they're emitted as null; the triage
+  # `triage_bool_to_str` helper maps null → "?" so display is graceful.
+  # Status describes the execution state, not the outcome — `ran` when the
+  # scan action evaluated this SHA fresh, `cached` when a prior verdict was
+  # reused (cf. run-verdicts.json's `source` field). Outcome lives in
+  # `policy.passes`. policy-sweep.sh dispatches on this exact vocabulary.
+  #
+  # PR resolution: pull_request events carry the PR number directly. The
+  # bump workflow creates bump PRs via GITHUB_TOKEN (which doesn't fire
+  # pull_request triggers — recursion guard) and dispatches this scan via
+  # workflow_dispatch on the bump branch. In that case we look up the
+  # open PR by head ref. No PR (scan_all dispatch on main, etc.) → no-op.
+  #
+  # continue-on-error at the job level: emit failure must NOT block the
+  # `scan` required check. Consumers fall back to log-scraping if the
+  # comment is absent (gradual migration; no flag day).
+  # ─────────────────────────────────────────────────────────────────────────────
+  emit-verdict:
+    needs: [scan]
+    if: always() && needs.scan.result != 'skipped' && needs.scan.result != 'cancelled'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Download scan verdicts
+        uses: actions/download-artifact@v4
+        with:
+          name: scan-verdicts
+          path: /tmp/scan-verdicts
+        continue-on-error: true
+
+      - name: Resolve PR number for this ref
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_FROM_EVENT: ${{ github.event.pull_request.number }}
+          REF: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "pull_request" && -n "$PR_FROM_EVENT" ]]; then
+            echo "number=$PR_FROM_EVENT" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # workflow_dispatch on the bump branch: find the open PR for it.
+          # head filter takes the form owner:branch.
+          owner="${REPO%%/*}"
+          pr=$(gh api "/repos/${REPO}/pulls?state=open&head=${owner}:${REF}&per_page=1" \
+            --jq '.[0].number // ""')
+          if [[ -z "$pr" ]]; then
+            echo "::notice::No open PR for ref ${REF} — sticky comments skipped (verdicts still in scan-verdicts artifact)"
+          fi
+          echo "number=$pr" >> "$GITHUB_OUTPUT"
+
+      - name: Build and post sticky comments
+        if: steps.pr.outputs.number != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ steps.pr.outputs.number }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+
+          verdicts_path=/tmp/scan-verdicts/run-verdicts.json
+          # Missing/empty artifact: scan job ran but didn't produce verdicts
+          # (e.g. the relevance gate said "no changes"). Nothing to comment;
+          # exit clean.
+          if [[ ! -s "$verdicts_path" ]]; then
+            echo "::notice::No run-verdicts.json artifact — nothing to emit"
+            exit 0
+          fi
+          count=$(jq 'length' "$verdicts_path")
+          if [[ "$count" == "0" ]]; then
+            echo "::notice::run-verdicts.json is empty — nothing to emit"
+            exit 0
+          fi
+
+          ran_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+          # scan.* axes: -official doesn't run per-entry static checks; emit
+          # "skipped" for each so the schema is shape-compatible with -internal.
+          scan_stub='{"clone":"skipped","subpath_missing":"skipped","schema":"skipped","zombie":"skipped","tool_allowlist":"skipped","binaries":"skipped","unique":"skipped","mcp":"skipped"}'
+
+          # Pre-fetch all PR comments once (paginated) for the marker lookup.
+          gh api --paginate "/repos/$REPO/issues/$PR/comments" \
+            --jq '.[] | {id, body}' > /tmp/comments.ndjson
+
+          jq -c '.[]' "$verdicts_path" | while read -r entry; do
+            name=$(jq -r '.name' <<< "$entry")
+            passes=$(jq -r '.passes' <<< "$entry")
+            summary=$(jq -r '.summary // ""' <<< "$entry")
+            violations=$(jq -r '.violations // ""' <<< "$entry")
+            source=$(jq -r '.source // "scan"' <<< "$entry")
+
+            # status = execution state (cf. -internal#3908 vocabulary).
+            # Outcome is in `passes`. Map source → status: scan-action-run
+            # → "ran"; cache-served → "cached". Anything else falls through
+            # as "ran" (only those two values appear in run-verdicts.json).
+            case "$source" in
+              cache) status="cached" ;;
+              scan)  status="ran" ;;
+              *)     status="ran" ;;
+            esac
+
+            policy=$(jq -n \
+              --argjson passes "$passes" \
+              --arg summary "$summary" \
+              --arg violations "$violations" \
+              --arg source "$source" \
+              --arg status "$status" \
+              '{passes: $passes,
+                has_broad_scope_hooks: null,
+                has_undisclosed_telemetry: null,
+                description_matches_behavior: null,
+                summary: $summary,
+                violations: $violations,
+                source: $source,
+                status: $status}')
+
+            verdict=$(jq -n \
+              --argjson scan "$scan_stub" \
+              --argjson policy "$policy" \
+              --arg ran_at "$ran_at" \
+              --arg run_id "$RUN_ID" \
+              '{schema_version: 1, ran_at: $ran_at, run_id: $run_id, scan: $scan, policy: $policy}')
+
+            marker="<!-- bump-pr-verdict:$name -->"
+            body=$(printf '%s\n```json\n%s\n```' "$marker" "$verdict")
+
+            # jq's first() short-circuits and avoids SIGPIPE under pipefail if
+            # duplicate markers exist (shouldn't, but a prior buggy run could
+            # double-post). -s slurps NDJSON; `// empty` yields no output when
+            # no match.
+            existing=$(jq -rs --arg m "$marker" \
+              'first(.[] | select(.body | startswith($m)) | .id) // empty' \
+              /tmp/comments.ndjson)
+
+            if [[ -n "$existing" ]]; then
+              gh api -X PATCH "/repos/$REPO/issues/comments/$existing" -f body="$body" >/dev/null
+              echo "Updated comment $existing for $name"
+            else
+              gh api -X POST "/repos/$REPO/issues/$PR/comments" -f body="$body" >/dev/null
+              echo "Created comment for $name"
+            fi
+          done
