@@ -2506,7 +2506,7 @@
     },
     {
       "name": "ui5",
-      "description": "SAPUI5 / OpenUI5 plugin for Claude. Create and validate UI5 projects, access API documentation, run UI5 linter, get development guidelines and best practices for UI5 development.",
+      "description": "SAPUI5 / OpenUI5 plugin for coding agents. Create and validate UI5 projects, access API documentation, run UI5 linter, get development guidelines and best practices for UI5 development.",
       "author": {
         "name": "SAP SE",
         "email": "openui5@sap.com",
@@ -2515,16 +2515,16 @@
       "category": "development",
       "source": {
         "source": "git-subdir",
-        "url": "https://github.com/UI5/plugins-claude.git",
+        "url": "https://github.com/UI5/plugins-coding-agents.git",
         "path": "plugins/ui5",
         "ref": "main",
-        "sha": "0fb7bc59ee6f9c7732cba07d71814e1ff214908e"
+        "sha": "5eca5d066dc7d936e1bc978cc43438dca18b3013"
       },
-      "homepage": "https://github.com/UI5/plugins-claude"
+      "homepage": "https://github.com/UI5/plugins-coding-agents"
     },
     {
       "name": "ui5-typescript-conversion",
-      "description": "SAPUI5 / OpenUI5 plugin for Claude. Convert JavaScript based UI5 projects to TypeScript.",
+      "description": "SAPUI5 / OpenUI5 plugin for coding agents. Convert JavaScript based UI5 projects to TypeScript.",
       "author": {
         "name": "SAP SE",
         "email": "openui5@sap.com",
@@ -2533,12 +2533,27 @@
       "category": "development",
       "source": {
         "source": "git-subdir",
-        "url": "https://github.com/UI5/plugins-claude.git",
+        "url": "https://github.com/UI5/plugins-coding-agents.git",
         "path": "plugins/ui5-typescript-conversion",
         "ref": "main",
-        "sha": "0fb7bc59ee6f9c7732cba07d71814e1ff214908e"
+        "sha": "5eca5d066dc7d936e1bc978cc43438dca18b3013"
       },
-      "homepage": "https://github.com/UI5/plugins-claude"
+      "homepage": "https://github.com/UI5/plugins-coding-agents"
+    },
+    {
+      "name": "ux",
+      "description": "Design intelligence for Claude Code. 18 commands across Frame/Audit/Generate/Apply, 5 sub-agents, 30+ Polaris-style references, deterministic regex linter (no LLM, CI-friendly), 72 brand DESIGN.md specs (Apple, Stripe, Linear, Figma, Tesla, BMW). Mandatory discovery protocol + SEO baked in. Anti-AI-slop by default.",
+      "author": {
+        "name": "Laith Aljunaidy",
+        "email": "laith.aljunaidy.laith@gmail.com"
+      },
+      "category": "design",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/Laith0003/ux-skill.git",
+        "sha": "0bfc75c23a29dfe0767cd32ea779ab10719fae5b"
+      },
+      "homepage": "https://uxskill.laithjunaidy.com"
     },
     {
       "name": "vanta-mcp-plugin",
