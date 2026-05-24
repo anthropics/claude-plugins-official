@@ -1,0 +1,333 @@
+name: 'Claude Code Security Reviewer'
+description: 'AI-powered security review GitHub Action using Claude to analyze code changes for security vulnerabilities'
+author: 'Anthropic'
+
+inputs:
+  comment-pr:
+    description: 'Whether to comment on PRs with findings'
+    required: false
+    default: 'true'
+  
+  upload-results:
+    description: 'Whether to upload results as artifacts'
+    required: false
+    default: 'true'
+  
+  exclude-directories:
+    description: 'Comma-separated list of directories to exclude from scanning'
+    required: false
+    default: ''
+
+  claudecode-timeout:
+    description: 'Timeout for ClaudeCode analysis in minutes'
+    required: false
+    default: '20'
+  
+  claude-api-key:
+    description: 'Anthropic Claude API key for security analysis'
+    required: true
+    default: ''
+
+  claude-model:
+    description: 'Claude model to use for security analysis (e.g., claude-sonnet-4-20250514)'
+    required: false
+    default: ''
+
+  run-every-commit:
+    description: 'Run ClaudeCode on every commit (skips cache check). Warning: This may lead to more false positives on PRs with many commits as the AI analyzes the same code multiple times.'
+    required: false
+    default: 'false'
+
+  false-positive-filtering-instructions:
+    description: 'Path to custom false positive filtering instructions text file'
+    required: false
+    default: ''
+
+  custom-security-scan-instructions:
+    description: 'Path to custom security scan instructions text file to append to audit prompt'
+    required: false
+    default: ''
+
+outputs:
+  findings-count:
+    description: 'Number of security findings'
+    value: ${{ steps.claudecode-scan.outputs.findings_count }}
+  
+  results-file:
+    description: 'Path to the results JSON file'
+    value: ${{ steps.claudecode-scan.outputs.results_file }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install GitHub CLI
+      shell: bash
+      run: |
+        echo "::group::Install gh CLI"
+        # Install GitHub CLI for PR operations
+        sudo apt-get update && sudo apt-get install -y gh
+        echo "::endgroup::"
+    
+    - name: Set up Python
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0 pinned to commit hash
+      with:
+        python-version: '3.x'
+    
+    - name: Check ClaudeCode run history
+      id: claudecode-history
+      if: github.event_name == 'pull_request'
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0 pinned to commit hash
+      with:
+        path: .claudecode-marker
+        key: claudecode-${{ github.repository_id }}-pr-${{ github.event.pull_request.number }}-${{ github.sha }}
+        restore-keys: |
+          claudecode-${{ github.repository_id }}-pr-${{ github.event.pull_request.number }}-
+    
+    - name: Determine ClaudeCode enablement
+      id: claudecode-check
+      shell: bash
+      env:
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        RUN_EVERY_COMMIT: ${{ inputs.run-every-commit }}
+      run: |
+        # Check if ClaudeCode should be enabled
+        ENABLE_CLAUDECODE="true"
+        SILENCE_CLAUDECODE_COMMENTS="false"
+        
+        # For PRs, check sampling and cache
+        if [ "${{ github.event_name }}" == "pull_request" ]; then
+          PR_NUMBER="$PR_NUMBER"
+          CACHE_HIT="${{ steps.claudecode-history.outputs.cache-hit }}"
+
+          # Now check cache - if ClaudeCode has already run, disable unless run-every-commit is true
+          # Check if marker file exists (cache may have been restored from a different SHA)
+          if [ "$RUN_EVERY_COMMIT" != "true" ] && [ -f ".claudecode-marker/marker.json" ]; then
+            echo "ClaudeCode has already run on PR #$PR_NUMBER (found marker file), forcing disable to avoid false positives"
+            ENABLE_CLAUDECODE="false"
+          elif [ "$RUN_EVERY_COMMIT" == "true" ] && [ -f ".claudecode-marker/marker.json" ]; then
+            echo "ClaudeCode has already run on PR #$PR_NUMBER but run-every-commit is enabled, running again"
+          elif [ "$ENABLE_CLAUDECODE" == "true" ]; then
+            echo "ClaudeCode will run for PR #$PR_NUMBER (first run)"
+          fi
+        fi
+        
+        echo "enable_claudecode=$ENABLE_CLAUDECODE" >> $GITHUB_OUTPUT
+        echo "silence_claudecode_comments=$SILENCE_CLAUDECODE_COMMENTS" >> $GITHUB_OUTPUT
+        
+        if [ "$ENABLE_CLAUDECODE" == "true" ]; then
+          echo "ClaudeCode is enabled for this run"
+        else
+          echo "ClaudeCode is disabled for this run"
+        fi
+    
+    - name: Reserve ClaudeCode slot to prevent race conditions
+      if: steps.claudecode-check.outputs.enable_claudecode == 'true' && github.event_name == 'pull_request'
+      shell: bash
+      env:
+        REPOSITORY_ID: ${{ github.repository_id }}
+        REPOSITORY: ${{ github.repository }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        SHA: ${{ github.sha }}
+        RUN_ID: ${{ github.run_id }}
+        RUN_NUMBER: ${{ github.run_number }}
+      run: |
+        # Create a reservation marker immediately to prevent other concurrent runs
+        mkdir -p .claudecode-marker
+        cat > .claudecode-marker/marker.json << EOF
+        {
+          "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+          "repository_id": "$REPOSITORY_ID",
+          "repository": "$REPOSITORY",
+          "pr_number": $PR_NUMBER,
+          "sha": "$SHA",
+          "status": "reserved",
+          "run_id": "$RUN_ID",
+          "run_number": "$RUN_NUMBER"
+        }
+        EOF
+        echo "Created ClaudeCode reservation marker for PR #$PR_NUMBER"
+    
+    - name: Save ClaudeCode reservation to cache
+      if: steps.claudecode-check.outputs.enable_claudecode == 'true' && github.event_name == 'pull_request'
+      uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0 pinned to commit hash
+      with:
+        path: .claudecode-marker
+        key: claudecode-${{ github.repository_id }}-pr-${{ github.event.pull_request.number }}-${{ github.sha }}
+    
+    - name: Set up Node.js
+      if: steps.claudecode-check.outputs.enable_claudecode == 'true'
+      uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0 pinned to commit hash
+      with:
+        node-version: '18'
+    
+    - name: Install dependencies
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+      run: |
+        echo "::group::Install Deps"
+        if [ "${{ steps.claudecode-check.outputs.enable_claudecode }}" == "true" ]; then
+          pip install -r "$ACTION_PATH/claudecode/requirements.txt"
+          npm install -g @anthropic-ai/claude-code
+        fi
+        sudo apt-get update && sudo apt-get install -y jq
+        echo "::endgroup::"
+    
+    - name: Run ClaudeCode scan
+      id: claudecode-scan
+      if: steps.claudecode-check.outputs.enable_claudecode == 'true'
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        ANTHROPIC_API_KEY: ${{ inputs.claude-api-key }}
+        ENABLE_CLAUDE_FILTERING: 'true' 
+        EXCLUDE_DIRECTORIES: ${{ inputs.exclude-directories }}
+        FALSE_POSITIVE_FILTERING_INSTRUCTIONS: ${{ inputs.false-positive-filtering-instructions }}
+        CUSTOM_SECURITY_SCAN_INSTRUCTIONS: ${{ inputs.custom-security-scan-instructions }}
+        CLAUDE_MODEL: ${{ inputs.claude-model }}
+        CLAUDECODE_TIMEOUT: ${{ inputs.claudecode-timeout }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: |
+        echo "Running ClaudeCode AI security analysis..."
+        echo "----------------------------------------"
+        
+        # Initialize outputs
+        echo "findings_count=0" >> $GITHUB_OUTPUT
+        echo "results_file=claudecode/claudecode-results.json" >> $GITHUB_OUTPUT
+        
+        # Skip ClaudeCode if not a PR
+        if [ "${{ github.event_name }}" != "pull_request" ]; then
+          echo "ClaudeCode only runs on pull requests, skipping"
+          exit 0
+        fi
+        
+        # Validate API key is provided
+        if [ -z "$ANTHROPIC_API_KEY" ]; then
+          echo "::error::ANTHROPIC_API_KEY is not set. Please provide the claude-api-key input to the action."
+          echo "Example usage:"
+          echo "  - uses: anthropics/claude-code-security-reviewer@main"
+          echo "    with:"
+          echo "      claude-api-key: \$\{{ secrets.ANTHROPIC_API_KEY }}"
+          exit 1
+        fi
+                
+        # Set timeout
+        export CLAUDE_TIMEOUT="$CLAUDECODE_TIMEOUT"
+        
+        # Run ClaudeCode audit with verbose debugging
+        export REPO_PATH=$(pwd)
+        cd "$ACTION_PATH"
+        
+        # Enable verbose debugging
+        echo "::group::ClaudeCode Environment"
+        echo "Current directory: $(pwd)"
+        echo "Python version: $(python --version)"
+        echo "Claude CLI version: $(claude --version 2>&1 || echo 'Claude CLI not found')"
+        echo "ANTHROPIC_API_KEY set: $(if [ -n "$ANTHROPIC_API_KEY" ]; then echo 'Yes'; else echo 'No'; fi)"
+        echo "GITHUB_REPOSITORY: $GITHUB_REPOSITORY"
+        echo "PR_NUMBER: $PR_NUMBER"
+        echo "Python path: $PYTHONPATH"
+        echo "Files in claudecode directory:"
+        ls -la claudecode/
+        echo "::endgroup::"
+        
+        echo "::group::ClaudeCode Execution"
+        # Add current directory to Python path so it can find the claudecode module
+        export PYTHONPATH="${PYTHONPATH:+$PYTHONPATH:}$(pwd)"
+        echo "Updated PYTHONPATH: $PYTHONPATH"
+        
+        # Run from the action root directory so Python can find the claudecode module
+        python -u claudecode/github_action_audit.py > claudecode/claudecode-results.json 2>claudecode/claudecode-error.log || CLAUDECODE_EXIT_CODE=$?
+        
+        if [ -n "$CLAUDECODE_EXIT_CODE" ]; then
+          echo "::warning::ClaudeCode exited with code $CLAUDECODE_EXIT_CODE"
+        else
+          echo "ClaudeCode scan completed successfully"
+        fi
+        
+        # Parse ClaudeCode results and count findings regardless of exit code
+        if [ -f claudecode/claudecode-results.json ]; then
+          FILE_SIZE=$(wc -c < claudecode/claudecode-results.json)
+          echo "ClaudeCode results file size: $FILE_SIZE bytes"
+          
+          # Check if file is empty or too small
+          if [ "$FILE_SIZE" -lt 2 ]; then
+            echo "::warning::ClaudeCode results file is empty or invalid (size: $FILE_SIZE bytes)"
+            echo "::warning::ClaudeCode may have failed silently. Check claudecode-error.log"
+            if [ -f claudecode/claudecode-error.log ]; then
+              echo "Error log contents:"
+              cat claudecode/claudecode-error.log
+            fi
+            echo "findings_count=0" >> $GITHUB_OUTPUT
+          else
+            echo "ClaudeCode results preview:"
+            head -n 300 claudecode/claudecode-results.json || echo "Unable to preview results"
+                        
+            # Check if the result is an error
+            if jq -e '.error' claudecode/claudecode-results.json > /dev/null 2>&1; then
+              ERROR_MSG=$(jq -r '.error' claudecode/claudecode-results.json)
+              echo "::warning::ClaudeCode error: $ERROR_MSG"
+              echo "findings_count=0" >> $GITHUB_OUTPUT
+            else
+              # Use -r to get raw output and handle potential null/missing findings array
+              CLAUDECODE_FINDINGS_COUNT=$(jq -r '.findings | if . == null then 0 else length end' claudecode/claudecode-results.json 2>/dev/null || echo "0")
+              echo "::debug::Extracted ClaudeCode findings count: $CLAUDECODE_FINDINGS_COUNT"
+              echo "findings_count=$CLAUDECODE_FINDINGS_COUNT" >> $GITHUB_OUTPUT
+              echo "ClaudeCode found $CLAUDECODE_FINDINGS_COUNT security issues"
+              
+              # Also create findings.json for PR comment script
+              jq '.findings // []' claudecode/claudecode-results.json > findings.json || echo '[]' > findings.json
+            fi
+          fi
+        else
+          echo "::warning::ClaudeCode results file not found"
+          if [ -f claudecode/claudecode-error.log ]; then
+            echo "Error log contents:"
+            cat claudecode/claudecode-error.log
+          fi
+          echo "findings_count=0" >> $GITHUB_OUTPUT
+        fi
+        
+        # Always copy files to workspace root regardless of the outcome
+        # This ensures artifact upload and PR commenting can find them
+        if [ -f findings.json ]; then
+          cp findings.json ${{ github.workspace }}/findings.json || true
+        fi
+        if [ -f claudecode/claudecode-results.json ]; then
+          cp claudecode/claudecode-results.json ${{ github.workspace }}/claudecode-results.json || true
+        fi
+        if [ -f claudecode/claudecode-error.log ]; then
+          cp claudecode/claudecode-error.log ${{ github.workspace }}/claudecode-error.log || true
+        fi
+        
+        echo "::endgroup::"
+    
+    
+    - name: Upload scan results
+      if: always() && inputs.upload-results == 'true'
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2 pinned to commit hash
+      with:
+        name: security-review-results
+        path: |
+          findings.json
+          claudecode-results.json
+          claudecode-error.log
+        retention-days: 7
+        if-no-files-found: ignore
+    
+    - name: Comment PR with findings
+      if: github.event_name == 'pull_request' && inputs.comment-pr == 'true' && steps.claudecode-check.outputs.enable_claudecode == 'true'
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        CLAUDECODE_FINDINGS: ${{ steps.claudecode-scan.outputs.findings_count }}
+        SILENCE_CLAUDECODE_COMMENTS: ${{ steps.claudecode-check.outputs.silence_claudecode_comments }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: |
+        node "$ACTION_PATH/scripts/comment-pr-findings.js"
+
+branding:
+  icon: 'shield'
+  color: 'red'

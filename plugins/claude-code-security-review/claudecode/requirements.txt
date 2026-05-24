@@ -1,0 +1,18 @@
+# Requirements for claudecode - Claude Code PR Security Audit Tool
+# Core dependencies for the GitHub Action version
+
+# GitHub API client
+PyGithub>=1.59.0
+
+# HTTP requests for GitHub API
+requests>=2.28.0
+
+# JSON parsing utilities (no additional deps - uses stdlib)
+# prompts.py (no additional deps - uses stdlib)
+# findings_filter.py (uses re, built-in)
+
+# Anthropic SDK for Claude API-based false positive filtering
+anthropic>=0.39.0
+
+# Note: Claude CLI tool must be installed separately
+# The claude command-line tool is required for security analysis

@@ -1,0 +1,60 @@
+name: Test ClaudeCode Integration
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+  actions: read
+  checks: read
+
+jobs:
+  test-claudecode:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1 pinned to commit hash
+
+      - name: Set up Python
+        uses: actions/setup-python@7f4fc3e22c37d6ff65e88745f38bd3157c663f7c # v4.9.1 pinned to commit hash
+        with:
+          python-version: "3.10"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0 pinned to commit hash
+        with:
+          node-version: "20"
+
+      - name: Install Claude CLI
+        run: |
+          npm install -g @anthropic-ai/claude-code
+
+      - name: Install dependencies
+        run: |
+          pip install pytest pytest-cov
+          pip install -r claudecode/requirements.txt
+
+      - name: Run ClaudeCode unit tests
+        run: |
+          export PYTHONPATH="${PYTHONPATH}:${PWD}"
+          pytest claudecode -v --cov=claudecode --cov-report=term-missing
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@b7a1c7ccf290d58743029c4f6903da283811b979 # v2.1.0 pinned to commit hash
+        with:
+          bun-version: latest
+
+      - name: Install script dependencies
+        run: |
+          cd scripts
+          bun install
+
+      - name: Run comment script tests
+        run: |
+          cd scripts
+          bun test

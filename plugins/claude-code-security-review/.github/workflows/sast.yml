@@ -1,0 +1,25 @@
+name: SAST
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  security-review:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1 pinned to commit hash
+
+      - uses: ./ # Points directly to action.yml
+        with:
+          comment-pr: true
+          upload-results: true
+          exclude-directories: "tests/vulnerable"
+          claude-api-key: ${{ secrets.CLAUDE_API_KEY }}
+          run-every-commit: true

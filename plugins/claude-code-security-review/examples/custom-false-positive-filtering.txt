@@ -1,0 +1,33 @@
+HARD EXCLUSIONS - Automatically exclude findings matching these patterns:
+1. All DOS/resource exhaustion - we have k8s resource limits and autoscaling
+2. Missing rate limiting - handled by our API gateway
+3. Tabnabbing vulnerabilities - acceptable risk per our threat model
+4. Test files (ending in _test.go, _test.js, or in __tests__ directories)
+5. Documentation files (*.md, *.rst)
+6. Configuration files that are not exposed to users (internal configs)
+7. Memory safety in Rust, Go, or managed languages
+8. GraphQL introspection queries - we intentionally expose schema in dev
+9. Missing CSRF protection - we use stateless JWT auth exclusively
+10. Timing attacks on non-cryptographic operations
+11. Regex DoS in input validation (we have request timeouts)
+12. Missing security headers in internal services (only public-facing services need them)
+
+SIGNAL QUALITY CRITERIA - For remaining findings, assess:
+1. Can an unauthenticated external attacker exploit this?
+2. Is there actual data exfiltration or system compromise potential?
+3. Is this exploitable in our production Kubernetes environment?
+4. Does this bypass our API gateway security controls?
+
+PRECEDENTS - 
+1. We use AWS Cognito for all authentication - auth bypass must defeat Cognito
+2. All APIs require valid JWT tokens validated at the gateway level
+3. SQL injection is only valid if using raw queries (we use Prisma ORM everywhere)
+4. All internal services communicate over mTLS within the k8s cluster
+5. Secrets are in AWS Secrets Manager or k8s secrets, never in code
+6. We allow verbose error messages in dev/staging (not production)
+7. File uploads go directly to S3 with presigned URLs (no local file handling)
+8. All user input is considered untrusted and validated on the backend
+9. Frontend validation is only for UX, not security
+10. We use CSP headers and strict Content-Type validation
+11. CORS is configured per-service based on actual needs
+12. All webhooks use HMAC signature verification

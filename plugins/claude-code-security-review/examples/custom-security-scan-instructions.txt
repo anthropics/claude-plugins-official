@@ -1,0 +1,20 @@
+**Compliance-Specific Checks:**
+- GDPR Article 17 "Right to Erasure" implementation gaps
+- HIPAA PHI encryption at rest violations
+- PCI DSS credit card data retention beyond allowed periods
+- SOC2 audit trail tampering or deletion capabilities
+- CCPA data portability API vulnerabilities
+
+**Financial Services Security:**
+- Transaction replay attacks in payment processing
+- Double-spending vulnerabilities in ledger systems
+- Interest calculation manipulation through timing attacks
+- Regulatory reporting data tampering
+- Know Your Customer (KYC) bypass mechanisms
+
+**E-commerce Specific:**
+- Shopping cart manipulation for price changes
+- Inventory race conditions allowing overselling
+- Coupon/discount stacking exploits
+- Affiliate tracking manipulation
+- Review system authentication bypass

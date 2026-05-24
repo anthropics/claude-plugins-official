@@ -1,0 +1,22 @@
+# Cache directories
+.cache/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+
+# Output files
+*.csv
+*.json
+security_report.*
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# Debug files
+claudecode/claudecode-prompt.txt
+eval_results/
