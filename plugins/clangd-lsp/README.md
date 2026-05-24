@@ -3,7 +3,7 @@
 C/C++ language server (clangd) for Claude Code, providing code intelligence, diagnostics, and formatting.
 
 ## Supported Extensions
-`.c`, `.h`, `.cpp`, `.cc`, `.cxx`, `.hpp`, `.hxx`, `.C`, `.H`
+`.c`, `.h`, `.cpp`, `.cc`, `.cxx`, `.hpp`, `.hxx`, `.C`, `.H`, `.cu`, `.cuh`
 
 ## Installation
 
