@@ -32,7 +32,40 @@ Run a comprehensive pull request review using multiple specialized agents, each 
    - Check if PR already exists: `gh pr view`
    - Identify file types and what reviews apply
 
-4. **Determine Applicable Reviews**
+4. **Migration Timestamp Preflight (deterministic check, always run)**
+
+   If the PR adds any timestamped migration files, verify their timestamps land **after** the latest migration on `origin/main`. Out-of-order timestamps are a common merge hazard: the new migration's prefix is older than a migration already on main, so it can be skipped, applied out of order, or rejected depending on the tool (Supabase, Rails, Knex, Prisma, Flyway, golang-migrate, sqlx, Liquibase, etc).
+
+   Steps:
+
+   1. Refresh main: `git fetch origin main`
+   2. Find migrations added in the PR. Common patterns:
+      - `supabase/migrations/YYYYMMDDHHMMSS_*.sql`
+      - `db/migrate/YYYYMMDDHHMMSS_*.rb` (Rails)
+      - `migrations/YYYYMMDDHHMMSS_*.{sql,js,ts}` (Knex, golang-migrate, sqlx)
+      - `prisma/migrations/YYYYMMDDHHMMSS_*/migration.sql`
+      - `db/migrations/V<version>__*.sql` (Flyway)
+      - `liquibase/changelog/*` with date-based identifiers
+
+      ```bash
+      git diff --name-only --diff-filter=A origin/main...HEAD | \
+        grep -E '(supabase/migrations|db/migrate|prisma/migrations|^migrations/)'
+      ```
+   3. For each migration directory that has additions, find the highest existing timestamp on `origin/main`:
+      ```bash
+      git ls-tree -r --name-only origin/main -- <migration-dir>/ | \
+        grep -oE '[0-9]{14}' | sort | tail -1
+      ```
+   4. Extract the timestamp prefix from each newly added migration and compare. **Fail the preflight** if any added migration's timestamp is `<=` the latest timestamp on `origin/main` for the same directory.
+   5. Report findings as a **Critical Issue** in the final summary. Suggested remediation: rename the migration file (and any internal references, e.g. Prisma's directory name) to a fresh timestamp `> max(origin/main)`. For Rails, `bin/rails db:migrate:status` reveals out-of-order migrations; renaming and re-staging is the canonical fix.
+
+   Examples of what to flag:
+   - Added `supabase/migrations/20260101120000_add_x.sql` while `origin/main` already has `20260315090000_*.sql` → out of order.
+   - Two added migrations on the branch share a prefix or sit between existing main timestamps.
+
+   This is a **blocking** finding: surface it before agent-based reviews so the author can fix the rename in the same pass.
+
+5. **Determine Applicable Reviews**
 
    Based on changes:
    - **Always applicable**: code-reviewer (general quality)
@@ -42,7 +75,7 @@ Run a comprehensive pull request review using multiple specialized agents, each 
    - **If types added/modified**: type-design-analyzer
    - **After passing review**: code-simplifier (polish and refine)
 
-5. **Launch Review Agents**
+6. **Launch Review Agents**
 
    **Sequential approach** (one at a time):
    - Easier to understand and act on
@@ -54,7 +87,7 @@ Run a comprehensive pull request review using multiple specialized agents, each 
    - Faster for comprehensive review
    - Results come back together
 
-6. **Aggregate Results**
+7. **Aggregate Results**
 
    After agents complete, summarize:
    - **Critical Issues** (must fix before merge)
@@ -62,7 +95,7 @@ Run a comprehensive pull request review using multiple specialized agents, each 
    - **Suggestions** (nice to have)
    - **Positive Observations** (what's good)
 
-7. **Provide Action Plan**
+8. **Provide Action Plan**
 
    Organize findings:
    ```markdown
