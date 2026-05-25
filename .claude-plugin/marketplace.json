@@ -1,10 +1,10 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
-  "name": "claude-plugins-official",
-  "description": "Directory of popular Claude Code extensions including development tools, productivity plugins, and MCP integrations",
+  "name": "ukon-approved",
+  "description": "Curated Claude Code plugins for UKON. Anthropic-authored and vetted third-party plugins only.",
   "owner": {
-    "name": "Anthropic",
-    "email": "support@anthropic.com"
+    "name": "UKON",
+    "email": "engineering@ukon.com"
   },
   "plugins": [
     {
