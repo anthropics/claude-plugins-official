@@ -1,0 +1,137 @@
+name: Check MCP URLs
+
+# Liveness check for http/sse MCP server URLs declared by plugins vendored
+# in this repo. Catches typos in new submissions and upstream endpoints that
+# disappear after merge.
+#
+# Scope: only plugins whose files live in this working tree (marketplace
+# entries with a string `source`, e.g. "./plugins/foo"). External entries
+# are pinned to an upstream repo at a SHA — reading their .mcp.json would
+# mean cloning every upstream on each run, which is slow and flaky. Those
+# are out of scope for now.
+#
+# What counts as "alive": anything that proves the hostname/path resolves to
+# a server. 401/403/405/5xx all pass — auth and method errors are expected
+# without credentials. Only 404/410 and connection/DNS/TLS failures fail.
+
+on:
+  pull_request:
+    paths:
+      - '.claude-plugin/marketplace.json'
+      - 'plugins/**'
+      - 'external_plugins/**'
+      - '.github/workflows/check-mcp-urls.yml'
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Discover and probe MCP server URLs
+        run: |
+          set -euo pipefail
+
+          MARKETPLACE=".claude-plugin/marketplace.json"
+
+          # Each line: "<plugin>\t<server>\t<url>". Marketplace entries with a
+          # string `source` are local paths; objects describe an external repo
+          # pinned at a SHA, which we don't have checked out — skip those.
+          discover() {
+            jq -r '.plugins[] | select(.source | type == "string") | "\(.name)\t\(.source)"' "$MARKETPLACE" |
+            while IFS=$'\t' read -r plugin src; do
+              dir="${src#./}"
+              [[ -d "$dir" ]] || continue
+              for cfg in "$dir/.mcp.json" "$dir/mcp.json" "$dir/.claude-plugin/plugin.json"; do
+                [[ -f "$cfg" ]] || continue
+                # MCP config comes in two shapes: a bare map of server name ->
+                # config, or wrapped under a top-level "mcpServers" key (also
+                # the shape inside plugin.json). Normalize, then keep entries
+                # with an http/sse type and a string url.
+                # Skip entries with empty url — those are placeholders awaiting
+                # user config, not dead endpoints, and would false-fail.
+                jq -r --arg plugin "$plugin" '
+                  (if (type == "object" and has("mcpServers")) then .mcpServers else . end)
+                  | to_entries[]
+                  | select((.value | type) == "object")
+                  | select(.value.type == "http" or .value.type == "sse")
+                  | select(.value.url | type == "string" and . != "")
+                  | "\($plugin)\t\(.key)\t\(.value.url)"
+                ' "$cfg" 2>/dev/null || true
+              done
+            done | sort -u
+          }
+
+          # Returns 0 on pass, 1 on fail; prints "PASS|FAIL  <code>  <note>".
+          probe() {
+            local url="$1"
+            local code
+            # HEAD first — cheap and covers plain web endpoints. -L follows
+            # redirects so a permanent redirect to a live page still passes.
+            #
+            # On a connection-level failure curl writes "000" to -w AND exits
+            # nonzero. The fallback assignment must happen OUTSIDE the command
+            # substitution — `... || echo "000"` inside $() would *append* a
+            # second "000", producing "000000" which falls through the case
+            # statement and silently passes a dead host.
+            code="$(curl -sS -o /dev/null -w '%{http_code}' \
+                      --connect-timeout 10 --max-time 10 \
+                      --retry 2 --retry-delay 2 \
+                      -L -I "$url" 2>/dev/null)" || code="000"
+
+            # MCP endpoints typically reject HEAD (404/405) but answer POST
+            # with a JSON-RPC body. Retry as a real MCP client would.
+            if [[ "$code" == "000" || "$code" == "404" || "$code" == "405" ]]; then
+              code="$(curl -sS -o /dev/null -w '%{http_code}' \
+                        --connect-timeout 10 --max-time 10 \
+                        --retry 2 --retry-delay 2 \
+                        -L -X POST \
+                        -H 'Content-Type: application/json' \
+                        -H 'Accept: application/json, text/event-stream' \
+                        --data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"ci","version":"0"}}}' \
+                        "$url" 2>/dev/null)" || code="000"
+            fi
+
+            case "$code" in
+              000)      echo "FAIL  $code  unreachable"; return 1 ;;
+              404|410)  echo "FAIL  $code  gone"; return 1 ;;
+              *)        echo "PASS  $code"; return 0 ;;
+            esac
+          }
+
+          entries="$(discover)"
+          if [[ -z "$entries" ]]; then
+            echo "::notice::No http/sse MCP server URLs found in vendored plugins."
+            exit 0
+          fi
+
+          failures=0
+          printf '%-24s %-18s %-52s %s\n' "PLUGIN" "SERVER" "URL" "RESULT"
+          while IFS=$'\t' read -r plugin server url; do
+            # Skip URLs with template placeholders — they need user config
+            # and can't be probed as-is.
+            if [[ "$url" == *'${'* || "$url" == *'{{'* ]]; then
+              printf '%-24s %-18s %-52s %s\n' "$plugin" "$server" "$url" "SKIP  templated"
+              continue
+            fi
+            result="$(probe "$url")" || true
+            printf '%-24s %-18s %-52s %s\n' "$plugin" "$server" "$url" "$result"
+            if [[ "$result" == FAIL* ]]; then
+              failures=$((failures + 1))
+              echo "::error::MCP server URL for plugin '$plugin' (server '$server') is unreachable: $url ($result)"
+            fi
+          done <<< "$entries"
+
+          echo
+          if (( failures > 0 )); then
+            echo "::error::$failures MCP server URL(s) failed liveness check."
+            exit 1
+          fi
+          echo "All MCP server URLs reachable."

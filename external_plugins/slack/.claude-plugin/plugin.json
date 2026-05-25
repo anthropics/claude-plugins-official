@@ -1,7 +1,0 @@
-{
-  "name": "slack",
-  "description": "Slack workspace integration. Search messages, access channels, read threads, and stay connected with your team's communications while coding. Find relevant discussions and context quickly.",
-  "author": {
-    "name": "Slack"
-  }
-}

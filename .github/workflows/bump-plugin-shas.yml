@@ -1,0 +1,69 @@
+name: Bump Plugin SHAs
+
+# Nightly sweep: for each external entry whose upstream HEAD has moved past
+# its pinned SHA, validate at the new SHA with `claude plugin validate`
+# inline, then open one PR with all passing bumps. Each run force-resets the
+# bump/plugin-shas branch, so a previous night's unmerged PR is replaced (and
+# its review state discarded) — review and merge same-day to avoid churn.
+#
+# Bot-free — uses the default GITHUB_TOKEN. PRs opened with GITHUB_TOKEN don't
+# trigger on:pull_request workflows, so the policy scan (`Scan Plugins`, a
+# required status check on main) would never run and the bump PR could never
+# merge. workflow_dispatch is exempt from that recursion guard, so we dispatch
+# the scan ourselves on the bump branch after the PR is opened. The check run
+# lands on the branch HEAD — the same SHA as the PR head — and satisfies the
+# required check.
+#
+# max-bumps is set above the external-entry count so a single run can clear
+# any backlog. The cost-control mechanisms are downstream:
+#   - scan-plugins.yml caches verdicts by (plugin, sha) so an unchanged SHA
+#     is never re-scanned across nightly force-resets.
+#   - revert-failed-bumps.yml drops policy-failing entries from the bump PR
+#     so one bad upstream can't block the rest.
+# See those files for details.
+
+on:
+  schedule:
+    - cron: '23 7 * * *'  # Daily 07:23 UTC
+  workflow_dispatch:
+    inputs:
+      max_bumps:
+        description: Cap on plugins bumped this run
+        required: false
+        default: '130'
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write  # gh workflow run scan-plugins.yml on the bump branch
+
+concurrency:
+  group: bump-plugin-shas
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    # Per-bump cost is ~2s (ls-remote + shallow clone + validate); 130 entries
+    # is ~5 min. The 60 min ceiling absorbs slow upstreams without letting a
+    # pathological run consume the default 360 min budget.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      # createCommitOnBranch-based bump so commits are signed by GitHub and
+      # satisfy the org-level required_signatures ruleset on main.
+      - uses: anthropics/claude-plugins-community/.github/actions/bump-plugin-shas@c41c6911de0afffd2bc5cd8b21fb1e06444ee13b
+        id: bump
+        with:
+          marketplace-path: .claude-plugin/marketplace.json
+          max-bumps: ${{ inputs.max_bumps || '130' }}
+          claude-cli-version: latest
+
+      # `bump/plugin-shas` is the action's default `pr-branch`. The scan diffs
+      # the branch against origin/main (the action's base-ref fallback when
+      # there's no pull_request event) and scans only the bumped entries.
+      - name: Dispatch policy scan on bump branch
+        if: steps.bump.outputs.pr-url != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run scan-plugins.yml --ref bump/plugin-shas

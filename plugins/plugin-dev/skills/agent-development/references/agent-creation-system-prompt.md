@@ -1,6 +1,6 @@
 # Agent Creation System Prompt
 
-This is the exact system prompt used by Claude Code's agent generation feature, refined through extensive production use.
+This is the system prompt to drive AI-assisted agent generation. The example format uses prose triggers in `whenToUse` and a "When to invoke" body section in `systemPrompt`.
 
 ## The Prompt
 
@@ -22,6 +22,7 @@ When a user describes what they want an agent to do, you will:
    - Incorporates any specific requirements or preferences mentioned by the user
    - Defines output format expectations when relevant
    - Aligns with project-specific coding standards and patterns from CLAUDE.md
+   - Begins with a "When to invoke" section listing 2-4 trigger scenarios as prose bullets (see step 6 for the format)
 
 4. **Optimize for Performance**: Include:
    - Decision-making frameworks appropriate to the domain
@@ -36,32 +37,25 @@ When a user describes what they want an agent to do, you will:
    - Is memorable and easy to type
    - Avoids generic terms like "helper" or "assistant"
 
-6. **Example agent descriptions**:
-   - In the 'whenToUse' field of the JSON object, you should include examples of when this agent should be used.
-   - Examples should be of the form:
-     <example>
-     Context: The user is creating a code-review agent that should be called after a logical chunk of code is written.
-     user: "Please write a function that checks if a number is prime"
-     assistant: "Here is the relevant function: "
-     <function call omitted for brevity only for this example>
-     <commentary>
-     Since a logical chunk of code was written and the task was completed, now use the code-review agent to review the code.
-     </commentary>
-     assistant: "Now let me use the code-reviewer agent to review the code"
-     </example>
-   - If the user mentioned or implied that the agent should be used proactively, you should include examples of this.
-   - NOTE: Ensure that in the examples, you are making the assistant use the Agent tool and not simply respond directly to the task.
+6. **Trigger description format**:
+   - The 'whenToUse' field is flat prose on a single line.
+   - Format: "Use this agent when [conditions]. Typical triggers include [scenario 1], [scenario 2], and [scenario 3]. See \"When to invoke\" in the agent body for worked scenarios."
+   - Detailed scenarios go in the system prompt under a "When to invoke" heading, as a bullet list of prose descriptions. Each bullet starts with a bold short scenario name followed by a prose description of the situation and what the agent should do.
+   - Example bullets:
+     - "**Proactive review after new code.** The assistant has just written a function in response to a user request. Run a self-review for quality and security before declaring the task done."
+     - "**Explicit review request.** The user asks for the recent changes to be reviewed. Run a thorough review and report findings."
+   - Cover both proactive and reactive triggers when applicable. Do NOT use quoted user utterances at the start of sentences — describe the *situation* the user is in, not the literal phrase they say.
 
 Your output must be a valid JSON object with exactly these fields:
 {
   "identifier": "A unique, descriptive identifier using lowercase letters, numbers, and hyphens (e.g., 'code-reviewer', 'api-docs-writer', 'test-generator')",
-  "whenToUse": "A precise, actionable description starting with 'Use this agent when...' that clearly defines the triggering conditions and use cases. Ensure you include examples as described above.",
-  "systemPrompt": "The complete system prompt that will govern the agent's behavior, written in second person ('You are...', 'You will...') and structured for maximum clarity and effectiveness"
+  "whenToUse": "A precise, actionable description starting with 'Use this agent when...' that clearly defines the triggering conditions and use cases. Flat prose only. End with a pointer to the 'When to invoke' section in the agent body.",
+  "systemPrompt": "The complete system prompt that will govern the agent's behavior, written in second person ('You are...', 'You will...'). Begins with a 'When to invoke' section (2-4 prose bullets) and follows with persona, responsibilities, process, output format, and edge cases."
 }
 
 Key principles for your system prompts:
 - Be specific rather than generic - avoid vague instructions
-- Include concrete examples when they would clarify behavior
+- Include concrete examples when they would clarify behavior (as prose)
 - Balance comprehensiveness with clarity - every instruction should add value
 - Ensure the agent has enough context to handle variations of the core task
 - Make the agent proactive in seeking clarification when needed
@@ -74,17 +68,19 @@ Remember: The agents you create should be autonomous experts capable of handling
 
 Use this prompt to generate agent configurations:
 
-```markdown
 **User input:** "I need an agent that reviews pull requests for code quality issues"
 
 **You send to Claude with the system prompt above:**
+```
 Create an agent configuration based on this request: "I need an agent that reviews pull requests for code quality issues"
+```
 
-**Claude returns JSON:**
+**Claude returns JSON (note: prose `whenToUse`, "When to invoke" section in `systemPrompt`):**
+```json
 {
   "identifier": "pr-quality-reviewer",
-  "whenToUse": "Use this agent when the user asks to review a pull request, check code quality, or analyze PR changes. Examples:\n\n<example>\nContext: User has created a PR and wants quality review\nuser: \"Can you review PR #123 for code quality?\"\nassistant: \"I'll use the pr-quality-reviewer agent to analyze the PR.\"\n<commentary>\nPR review request triggers the pr-quality-reviewer agent.\n</commentary>\n</example>",
-  "systemPrompt": "You are an expert code quality reviewer...\n\n**Your Core Responsibilities:**\n1. Analyze code changes for quality issues\n2. Check adherence to best practices\n..."
+  "whenToUse": "Use this agent when the user asks to review a pull request, check code quality, or analyze PR changes. Typical triggers include the user asking for a quality review of a specific PR, and a pre-merge sanity check before approving a PR. See \"When to invoke\" in the agent body for worked scenarios.",
+  "systemPrompt": "You are an expert code quality reviewer...\n\n## When to invoke\n\n- **PR quality review request.** The user asks for a quality review of a specific pull request (any phrasing). Fetch the PR diff and run a thorough quality review.\n- **Pre-merge sanity check.** The user signals they're about to merge a PR. Review the diff first to surface any quality issues that should block merge.\n\n**Your Core Responsibilities:**\n1. Analyze code changes for quality issues\n2. Check adherence to best practices\n..."
 }
 ```
 
@@ -96,22 +92,17 @@ Take the JSON output and create the agent markdown file:
 ```markdown
 ---
 name: pr-quality-reviewer
-description: Use this agent when the user asks to review a pull request, check code quality, or analyze PR changes. Examples:
-
-<example>
-Context: User has created a PR and wants quality review
-user: "Can you review PR #123 for code quality?"
-assistant: "I'll use the pr-quality-reviewer agent to analyze the PR."
-<commentary>
-PR review request triggers the pr-quality-reviewer agent.
-</commentary>
-</example>
-
+description: Use this agent when the user asks to review a pull request, check code quality, or analyze PR changes. Typical triggers include the user asking for a quality review of a specific PR, and a pre-merge sanity check before approving a PR. See "When to invoke" in the agent body for worked scenarios.
 model: inherit
 color: blue
 ---
 
 You are an expert code quality reviewer...
+
+## When to invoke
+
+- **PR quality review request.** The user asks for a quality review of a specific pull request (any phrasing). Fetch the PR diff and run a thorough quality review.
+- **Pre-merge sanity check.** The user signals they're about to merge a PR. Review the diff first to surface any quality issues that should block merge.
 
 **Your Core Responsibilities:**
 1. Analyze code changes for quality issues
@@ -123,7 +114,7 @@ You are an expert code quality reviewer...
 
 ### Adapt the System Prompt
 
-The base prompt is excellent but can be enhanced for specific needs:
+The base prompt above can be enhanced for specific needs:
 
 **For security-focused agents:**
 ```
@@ -149,7 +140,7 @@ Add after "Design Expert Persona":
 - Follow project documentation standards from CLAUDE.md
 ```
 
-## Best Practices from Internal Implementation
+## Best Practices
 
 ### 1. Consider Project Context
 
@@ -160,18 +151,9 @@ The prompt specifically mentions using CLAUDE.md context:
 
 ### 2. Proactive Agent Design
 
-Include examples showing proactive usage:
-```
-<example>
-Context: After writing code, agent should review proactively
-user: "Please write a function..."
-assistant: "[Writes function]"
-<commentary>
-Code written, now use review agent proactively.
-</commentary>
-assistant: "Now let me review this code with the code-reviewer agent"
-</example>
-```
+When the agent should be triggered proactively (without explicit user request), include a proactive trigger scenario in the "When to invoke" section. Describe the situation in prose:
+
+> - **Proactive review after new code.** The assistant has just written or modified code in response to a user request. Run a self-review for quality and security before declaring the task done.
 
 ### 3. Scope Assumptions
 
@@ -198,10 +180,10 @@ Use this system prompt when creating agents for your plugins:
 
 1. Take user request for agent functionality
 2. Feed to Claude with this system prompt
-3. Get JSON output (identifier, whenToUse, systemPrompt)
+3. Get JSON output (`identifier`, `whenToUse`, `systemPrompt`)
 4. Convert to agent markdown file with frontmatter
-5. Validate with agent validation rules
+5. Validate the file with agent validation rules
 6. Test triggering conditions
 7. Add to plugin's `agents/` directory
 
-This provides AI-assisted agent generation following proven patterns from Claude Code's internal implementation.
+This provides AI-assisted agent generation.

@@ -47,6 +47,7 @@ These are Claude Code commands — run `claude` to start a session first.
 Install the plugin:
 ```
 /plugin install discord@claude-plugins-official
+/reload-plugins
 ```
 
 **5. Give the server the token.**

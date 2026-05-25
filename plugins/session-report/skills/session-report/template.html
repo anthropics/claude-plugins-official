@@ -1,0 +1,569 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>claude usage</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    /* anthropic / claude-code palette */
+    --ivory: #FAF9F5;
+    --term-bg: #1a1918;
+    --term-fg: #d1cfc5;
+    --titlebar: #252321;
+    --outline: rgba(255,255,255,0.08);
+    --hover: rgba(255,255,255,0.035);
+    --clay: #D97757;
+    --dim: rgb(136,136,136);
+    --subtle: rgb(80,80,80);
+    --green: rgb(78,186,101);
+    --red: rgb(255,107,128);
+    --blue: rgb(177,185,249);
+    --yellow: rgb(255,193,7);
+    --mono: 'JetBrains Mono', 'SF Mono', ui-monospace, Menlo, Monaco, monospace;
+  }
+
+  * { box-sizing: border-box; }
+  html { background: var(--ivory); }
+  body {
+    margin: 0; padding: 48px 24px 80px;
+    font: 13px/1.55 var(--mono);
+    font-variant-numeric: tabular-nums;
+    color: var(--term-fg);
+  }
+
+  /* ——— terminal window chrome ——— */
+  .term {
+    max-width: 1180px; margin: 0 auto;
+    background: var(--term-bg);
+    border-radius: 8px;
+    outline: 1px solid var(--outline);
+    box-shadow: 0 20px 60px rgba(20,20,19,0.22);
+  }
+  .titlebar {
+    background: var(--titlebar);
+    border-radius: 8px 8px 0 0;
+    border-bottom: 1px solid var(--outline);
+    padding: 11px 14px;
+    display: flex; align-items: center; gap: 7px;
+  }
+  .titlebar .dot { width: 11px; height: 11px; border-radius: 50%; background: #3a3836; }
+  .titlebar .path { margin-left: 14px; color: var(--dim); font-size: 11px; }
+  .term-body { padding: 22px 30px 30px; }
+
+  /* ——— command + hero ——— */
+  .cmd { color: var(--dim); margin-bottom: 6px; }
+  .cmd .prompt { color: var(--clay); }
+  .cmd .flag { color: var(--blue); }
+  #meta-line { color: var(--subtle); font-size: 11px; }
+
+  #hero { margin: 14px 0 6px; }
+  #hero-total { font-size: 56px; font-weight: 700; line-height: 1; }
+  #hero-total .unit { color: var(--clay); }
+  #hero-total .label { font-size: 18px; font-weight: 400; color: var(--dim); margin-left: 8px; }
+  #hero-split { color: var(--dim); margin-top: 8px; }
+  #hero-split b { color: var(--term-fg); font-weight: 500; }
+  #hero-split .ok { color: var(--green); }
+  #hero-split .warn { color: var(--yellow); }
+
+  /* ——— sections ——— */
+  section { margin-top: 26px; }
+  .hr { color: var(--subtle); overflow: hidden; white-space: nowrap;
+        user-select: none; margin-bottom: 8px; }
+  .hr::after { content: '────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────'; }
+  h2 { all: unset; display: block; color: var(--clay); font-weight: 500; }
+  h2::before { content: '▸ '; }
+  h2 .hint { color: var(--subtle); font-size: 11px; font-weight: 400; margin-left: 10px; }
+  .section-body { margin-top: 10px; }
+
+  /* ——— overall stat grid ——— */
+  #overall-grid { display: grid; gap: 4px 28px;
+                  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+  .stat { padding: 4px 0; }
+  .stat .label { font-size: 11px; color: var(--dim); }
+  .stat .val { font-size: 20px; font-weight: 500; }
+  .stat .detail { font-size: 11px; color: var(--subtle); }
+
+  /* ——— takeaways ——— */
+  .take { display: grid; grid-template-columns: 9ch 1fr; gap: 18px;
+          padding: 6px 0; align-items: baseline; }
+  .take .fig { text-align: right; font-weight: 700; font-size: 15px; }
+  .take .txt { color: var(--dim); }
+  .take .txt b { color: var(--term-fg); font-weight: 500; }
+  .take.bad  .fig { color: var(--red); }
+  .take.good .fig { color: var(--green); }
+  .take.info .fig { color: var(--blue); }
+
+  /* ——— callouts (recommendations) ——— */
+  .callout { padding: 6px 0 6px 14px; border-left: 2px solid var(--subtle);
+             color: var(--dim); margin: 6px 0; }
+  .callout b, .callout code { color: var(--term-fg); }
+
+  /* ——— day pills + session gantt ——— */
+  .days { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+  .dpill { flex: 1; min-width: 84px; max-width: 140px; background: none;
+           border: 1px solid var(--subtle); border-radius: 4px;
+           padding: 9px 6px; font: inherit; color: var(--dim);
+           cursor: pointer; text-align: center; }
+  .dpill:hover { border-color: var(--dim); background: var(--hover); }
+  .dpill .dow { font-size: 10px; color: var(--subtle); display: block; }
+  .dpill .date { font-size: 11px; color: var(--term-fg); font-weight: 500;
+                 display: block; margin: 2px 0 4px; }
+  .dpill .pct { font-size: 16px; font-weight: 700; color: var(--term-fg); display: block; }
+  .dpill .ns { font-size: 10px; color: var(--subtle); display: block; margin-top: 2px; }
+  .dpill.heaviest .pct { color: var(--clay); }
+  .dpill.sel { border-color: var(--clay); background: rgba(217,119,87,0.10); }
+  .gantt-hd { display: flex; justify-content: space-between; align-items: baseline;
+              margin-bottom: 6px; }
+  .gantt-hd .day { color: var(--term-fg); font-weight: 500; }
+  .gantt-hd .stats { font-size: 11px; color: var(--dim); }
+  .gantt-hd .stats b { color: var(--clay); }
+  .gantt { position: relative; border-top: 1px solid var(--outline);
+           border-bottom: 1px solid var(--outline); min-height: 32px; }
+  .lane { position: relative; height: 16px;
+          border-bottom: 1px dashed rgba(255,255,255,0.04); }
+  .seg { position: absolute; top: 2px; height: 12px; border-radius: 2px;
+         opacity: .85; cursor: crosshair; }
+  .seg:hover { opacity: 1; outline: 1px solid var(--term-fg); z-index: 2; }
+  .gantt-rule { position: absolute; top: 0; bottom: 0; width: 0;
+                border-left: 1px dashed var(--subtle); opacity: .4;
+                pointer-events: none; }
+  .gantt-axis { display: flex; justify-content: space-between;
+                font-size: 10px; color: var(--subtle); padding: 4px 0; }
+  .gantt-leg { font-size: 10px; color: var(--subtle); margin-top: 8px;
+               display: flex; gap: 14px; flex-wrap: wrap; }
+  .gantt-leg .sw { display: inline-block; width: 14px; height: 10px;
+                   border-radius: 2px; vertical-align: middle; margin-right: 4px; }
+
+  /* ——— block-char bars ——— */
+  .bar { display: grid; grid-template-columns: 26ch 1fr 8ch; gap: 14px;
+         padding: 2px 0; align-items: center; }
+  .bar .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bar .blocks { color: var(--clay); white-space: pre; overflow: hidden; }
+  .bar .blocks .empty { color: var(--subtle); }
+  .bar .pct { text-align: right; color: var(--dim); }
+  .bar:hover .name { color: var(--clay); }
+
+  /* ——— drill-down lists (top prompts, cache breaks) ——— */
+  .drill details { border-top: 1px solid var(--outline); }
+  .drill details:last-of-type { border-bottom: 1px solid var(--outline); }
+  .drill summary { list-style: none; cursor: pointer;
+    display: grid; grid-template-columns: 8ch 1fr; gap: 16px;
+    padding: 9px 4px; align-items: baseline; }
+  .drill summary::-webkit-details-marker { display: none; }
+  .drill summary:hover { background: var(--hover); }
+  .drill .amt { font-weight: 700; text-align: right; color: var(--clay); }
+  .drill .desc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .drill .meta { grid-column: 2; font-size: 11px; color: var(--subtle); }
+  .drill details[open] summary .desc { white-space: normal; }
+  .drill .body { padding: 4px 4px 14px calc(8ch + 20px); font-size: 12px; color: var(--dim); }
+
+  /* ——— transcript context (±2 user msgs) — light inset for legibility ——— */
+  .ctx { margin: 8px 0 12px; padding: 10px 14px;
+         background: #F0EEE6; color: #1a1918;
+         border-radius: 6px; font-size: 12px; }
+  .ctx-msg { padding: 4px 0; white-space: pre-wrap; }
+  .ctx-msg .who { color: #87867F; font-size: 11px; }
+  .ctx-msg .ts { color: #87867F; font-size: 10px; margin-left: 8px; }
+  .ctx-msg.here { margin: 2px -14px; padding: 6px 11px 6px 14px;
+                  border-left: 3px solid var(--clay);
+                  background: rgba(217,119,87,0.10); }
+  .ctx-msg.here .who { color: var(--clay); font-weight: 500; }
+  .ctx-gap { color: #87867F; font-size: 11px; padding: 3px 0 3px 7ch; }
+  .ctx-gap::before { content: '⟨ '; }
+  .ctx-gap::after  { content: ' ⟩'; }
+  .ctx-break { margin: 2px -14px; padding: 8px 11px 8px 14px;
+               border-left: 3px solid #BD5E6D;
+               background: rgba(189,94,109,0.12); color: #A63244; }
+  .ctx-break b { color: #1a1918; margin-right: 6px; }
+
+  .more-btn { display: block; width: 100%; margin-top: 10px; padding: 9px;
+              background: none; border: 1px dashed var(--subtle); cursor: pointer;
+              font: 500 11px/1 var(--mono); letter-spacing: 0.06em;
+              color: var(--dim); }
+  .more-btn:hover { border-color: var(--dim); color: var(--term-fg); }
+
+  /* ——— tables ——— */
+  .scroll { max-height: 440px; overflow: auto;
+            border-top: 1px solid var(--outline); border-bottom: 1px solid var(--outline); }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { text-align: left; padding: 6px 10px; }
+  td { border-top: 1px solid rgba(255,255,255,0.04); }
+  th { position: sticky; top: 0; background: var(--term-bg); z-index: 1;
+       font-weight: 500; font-size: 11px; color: var(--subtle);
+       cursor: pointer; user-select: none;
+       border-bottom: 1px solid var(--outline); }
+  th:hover { color: var(--dim); }
+  th.sorted { color: var(--clay); }
+  th.sorted::after { content: ' ↓'; }
+  th.sorted.asc::after { content: ' ↑'; }
+  td.num, th.num { text-align: right; }
+  tbody tr:hover td { background: var(--hover); }
+
+  footer { margin-top: 28px; color: var(--subtle); font-size: 11px;
+           display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+
+  code { color: var(--blue); }
+  a { color: var(--clay); }
+  ::selection { background: var(--clay); color: var(--term-bg); }
+
+  @media (max-width: 760px) {
+    body { padding: 20px 12px 48px; }
+    .term-body { padding: 16px 16px 24px; }
+    #hero-total { font-size: 40px; }
+    .bar { grid-template-columns: 14ch 1fr 7ch; gap: 8px; }
+    .drill summary { grid-template-columns: 6ch 1fr; }
+    .drill .body { padding-left: 12px; }
+    .take { grid-template-columns: 7ch 1fr; gap: 12px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="term">
+  <div class="titlebar">
+    <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+    <span class="path" id="title-path">~/.claude — session-report</span>
+  </div>
+  <div class="term-body">
+
+    <div class="cmd"><span class="prompt">&gt;</span> claude usage <span id="cmd-flags"></span></div>
+    <div id="meta-line">loading…</div>
+
+    <div id="hero">
+      <div id="hero-total">—</div>
+      <div id="hero-split"></div>
+    </div>
+
+    <!-- ====================================================================
+         FINDINGS — agent fills this. 3–5 one-line takeaways. Use .bad for
+         waste/anomalies, .good for healthy signals, .info for neutral.
+         ==================================================================== -->
+    <section>
+      <div class="hr"></div>
+      <h2>findings</h2>
+      <div class="section-body" id="takeaways">
+        <!-- AGENT: anomalies -->
+        <div class="take"><div class="fig">—</div><div class="txt">No findings generated yet.</div></div>
+        <!-- /AGENT -->
+      </div>
+    </section>
+
+    <!-- ====================================================================
+         Everything below renders automatically from #report-data.
+         ==================================================================== -->
+    <section>
+      <div class="hr"></div>
+      <h2>summary</h2>
+      <div class="section-body" id="overall-grid"></div>
+    </section>
+
+    <section>
+      <div class="hr"></div>
+      <h2>tokens by project<span class="hint">share of total</span></h2>
+      <div class="section-body" id="project-bars"></div>
+    </section>
+
+    <section id="timeline-section">
+      <div class="hr"></div>
+      <h2>session timeline by day<span class="hint">click a day · ←/→ to navigate</span></h2>
+      <div class="section-body">
+        <div class="days" id="day-pills"></div>
+        <div class="gantt-hd">
+          <span class="day" id="g-day">—</span>
+          <span class="stats" id="g-stats"></span>
+        </div>
+        <div class="gantt-axis"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div>
+        <div class="gantt" id="gantt"></div>
+        <div class="gantt-leg" id="gantt-leg"></div>
+      </div>
+    </section>
+
+    <section>
+      <div class="hr"></div>
+      <h2>most expensive prompts<span class="hint">click to expand context</span></h2>
+      <div class="section-body drill" id="top-prompts"></div>
+    </section>
+
+    <section>
+      <div class="hr"></div>
+      <h2>cache breaks<span class="hint">&gt;100k uncached · click for context</span></h2>
+      <div class="section-body drill" id="cache-breaks"></div>
+    </section>
+
+    <section>
+      <div class="hr"></div>
+      <h2>projects</h2>
+      <div class="section-body scroll"><table id="tbl-projects"></table></div>
+    </section>
+
+    <section>
+      <div class="hr"></div>
+      <h2>subagent types</h2>
+      <div class="section-body scroll"><table id="tbl-subagents"></table></div>
+    </section>
+
+    <section>
+      <div class="hr"></div>
+      <h2>skills &amp; slash commands</h2>
+      <div class="section-body scroll"><table id="tbl-skills"></table></div>
+    </section>
+
+    <section>
+      <div class="hr"></div>
+      <h2>recommendations</h2>
+      <div class="section-body">
+        <!-- AGENT: optimizations -->
+        <div class="callout">No suggestions generated yet.</div>
+        <!-- /AGENT -->
+      </div>
+    </section>
+
+    <footer>
+      <span id="foot-gen"></span>
+      <span id="foot-stats"></span>
+    </footer>
+
+  </div>
+</div>
+
+<!-- ========================================================================
+     DATA — agent replaces the {} below with the full --json output.
+     ======================================================================== -->
+<script id="report-data" type="application/json">{}</script>
+
+<script>
+(function() {
+  const DATA = JSON.parse(document.getElementById('report-data').textContent || '{}');
+  const $ = id => document.getElementById(id);
+  const fmt = n => n>=1e9 ? (n/1e9).toFixed(2)+'B' : n>=1e6 ? (n/1e6).toFixed(2)+'M'
+              : n>=1e3 ? (n/1e3).toFixed(1)+'k' : String(n);
+  const pct = (a,b) => b>0 ? ((100*a/b).toFixed(1)+'%') : '—';
+  const esc = s => String(s).replace(/[&<>"]/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const short = p => String(p||'').replace(/^-Users-[^-]+-/,'').replace(/^code-/,'');
+  const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const niceDate = iso => { const d = new Date(iso); return isNaN(d) ? '' :
+    `${MON[d.getMonth()]} ${d.getDate()} · ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; };
+
+  if (!DATA.overall) { $('meta-line').textContent = 'no data — embed JSON in #report-data.'; return; }
+
+  // header + hero
+  const o = DATA.overall, it = o.input_tokens;
+  const GRAND = it.total + o.output_tokens;
+  const share = n => GRAND>0 ? (100*n/GRAND).toFixed(1)+'%' : '—';
+  const span = o.span;
+  $('cmd-flags').innerHTML = DATA.since
+    ? `<span class="flag">--since</span> ${esc(DATA.since)}` : '';
+  $('meta-line').textContent =
+    (span ? `${span.from.slice(0,10)} → ${span.to.slice(0,10)}` : '') +
+    ` · ${DATA.root || ''}`;
+  $('foot-gen').textContent = `generated ${DATA.generated_at?.slice(0,16).replace('T',' ') || ''}`;
+  $('foot-stats').textContent =
+    `${o.sessions} sessions · ${o.api_calls} api calls · ${o.human_messages} prompts`;
+
+  const num = fmt(GRAND), m = num.match(/^([\d.]+)([A-Za-z]*)$/);
+  $('hero-total').innerHTML =
+    `${m?m[1]:num}<span class="unit">${m?m[2]:''}</span><span class="label">tokens</span>`;
+  const cacheCls = it.pct_cached>=85 ? 'ok' : 'warn';
+  $('hero-split').innerHTML =
+    `<b>${fmt(it.total)}</b> input <span class="${cacheCls}">(${it.pct_cached}% cache-read)</span> · `+
+    `<b>${fmt(o.output_tokens)}</b> output · all figures below are % of this total`;
+
+  // overall stat grid
+  $('overall-grid').innerHTML = [
+    ['sessions', o.sessions],
+    ['api calls', o.api_calls],
+    ['human msgs', o.human_messages],
+    ['active hours', o.hours.active, `${o.hours.wall_clock} wall-clock`],
+    ['cache breaks', o.cache_breaks_over_100k, '>100k uncached'],
+    ['subagent calls', o.subagent.calls, `avg ${fmt(o.subagent.avg_tokens_per_call)}`],
+  ].map(([l,v,d]) =>
+    `<div class="stat"><div class="label">${l}</div>`+
+    `<div class="val">${typeof v==='number'&&v>=1e4?fmt(v):v}</div>`+
+    (d?`<div class="detail">${d}</div>`:'')+`</div>`).join('');
+
+  // session timeline by day
+  (function() {
+    const days = (DATA.by_day||[]).slice(-14);
+    if (!days.length) { $('timeline-section').style.display='none'; return; }
+    const PCOL = ['rgb(177,185,249)','rgb(78,186,101)','#D97757','rgb(255,193,7)',
+                  'rgb(255,107,128)','#9b8cff','#6ec1d6','#c792ea'];
+    const dayTotal = days.reduce((a,d)=>a+d.tokens,0) || 1;
+    const tokMax = Math.max(...days.map(d=>d.tokens));
+    const projects = [...new Set(days.flatMap(d=>d.sessions.map(s=>s.project)))];
+    const colorOf = p => PCOL[projects.indexOf(p)%PCOL.length];
+    const hhmm = m => (m>=1440?`+${Math.floor(m/1440)}d `:'') +
+      `${String(Math.floor(m/60)%24).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`;
+    const md = iso => { const [,mo,da]=iso.split('-'); return `${MON[+mo-1]} ${+da}`; };
+    let sel = days.findIndex(d=>d.tokens===tokMax);
+
+    function pills() {
+      $('day-pills').innerHTML = days.map((d,i)=>
+        `<button class="dpill${d.tokens===tokMax?' heaviest':''}${i===sel?' sel':''}" data-i="${i}">`+
+        `<span class="dow">${esc(d.dow)}</span>`+
+        `<span class="date">${esc(md(d.date))}</span>`+
+        `<span class="pct">${(100*d.tokens/dayTotal).toFixed(1)}%</span>`+
+        `<span class="ns">${d.sessions.length} sess</span></button>`
+      ).join('');
+      $('day-pills').querySelectorAll('.dpill').forEach(el=>
+        el.onclick=()=>{sel=+el.dataset.i;pills();gantt();});
+    }
+    function gantt() {
+      const d = days[sel], DAY = 1440;
+      $('g-day').textContent = `${d.dow} ${md(d.date)}`;
+      $('g-stats').innerHTML = `${d.sessions.length} sessions · ${fmt(d.tokens)} tokens`+
+        ` · peak <b>${d.peak}</b> concurrent at <b>${hhmm(d.peak_at_min)}</b>`;
+      const lanes = [];
+      for (const s of d.sessions) {
+        let placed = false;
+        for (const L of lanes) if (L[L.length-1].end_min <= s.start_min) { L.push(s); placed=true; break; }
+        if (!placed) lanes.push([s]);
+      }
+      let h = '';
+      for (let t=0;t<=24;t+=6) h += `<div class="gantt-rule" style="left:${100*t/24}%"></div>`;
+      h += lanes.map(L=>`<div class="lane">${L.map(s=>{
+        const end = Math.min(s.end_min, DAY);
+        const w = Math.max(0.15, 100*(end-s.start_min)/DAY);
+        const tip = `folder: ${short(s.project)}\n`+
+          `${hhmm(s.start_min)}–${hhmm(s.end_min)} · ${fmt(s.tokens)} tokens\n`+
+          `session ${s.id}`;
+        return `<span class="seg" style="left:${100*s.start_min/DAY}%;width:${w}%;`+
+          `background:${colorOf(s.project)}" title="${esc(tip)}"></span>`;
+      }).join('')}</div>`).join('');
+      $('gantt').innerHTML = h || '<div class="callout">no sessions</div>';
+    }
+    document.addEventListener('keydown',e=>{
+      if (e.key==='ArrowRight'&&sel<days.length-1){sel++;pills();gantt();e.preventDefault();}
+      if (e.key==='ArrowLeft'&&sel>0){sel--;pills();gantt();e.preventDefault();}
+    });
+    $('gantt-leg').innerHTML = projects.slice(0,12).map(p=>
+      `<span><span class="sw" style="background:${colorOf(p)}"></span>${esc(short(p))}</span>`).join('');
+    pills(); gantt();
+  })();
+
+  // block-char project bars
+  (function() {
+    const W = 48;
+    const rows = Object.entries(DATA.by_project||{})
+      .map(([k,v]) => [k, v.input_tokens.total + v.output_tokens])
+      .sort((a,b)=>b[1]-a[1]).slice(0,15);
+    const max = rows[0]?.[1] || 1;
+    $('project-bars').innerHTML = rows.map(([k,v]) => {
+      const n = Math.max(1, Math.round(W*v/max));
+      return `<div class="bar"><span class="name" title="${esc(k)} — ${fmt(v)}">${esc(short(k))}</span>`+
+        `<span class="blocks">${'█'.repeat(n)}<span class="empty">${'░'.repeat(W-n)}</span></span>`+
+        `<span class="pct">${share(v)}</span></div>`;
+    }).join('');
+  })();
+
+  // ±2 user-message transcript context
+  function renderContext(ctx, mark) {
+    if (!ctx || !ctx.length) return '<div class="ctx-gap">no transcript context available</div>';
+    let h = '<div class="ctx">';
+    ctx.forEach((m, i) => {
+      const who = m.here ? '&gt; user' : '  user';
+      h += `<div class="ctx-msg${m.here?' here':''}">`+
+           `<span class="who">${who}</span>  ${esc(m.text||'(non-text)')}`+
+           `<span class="ts">${niceDate(m.ts)}</span></div>`;
+      if (m.here && mark) h += mark;
+      if (i < ctx.length-1 || m.here)
+        h += `<div class="ctx-gap">${m.calls} api call${m.calls===1?'':'s'}</div>`;
+    });
+    return h + '</div>';
+  }
+
+  // expandable drill-down list with "show N more" toggle
+  function drillList(hostId, items, rowFn, empty) {
+    const SHOW = 5;
+    const host = $(hostId);
+    if (!items.length) { host.innerHTML = `<div class="callout">${empty}</div>`; return; }
+    const head = items.slice(0,SHOW).map(rowFn).join('');
+    const rest = items.slice(SHOW).map(rowFn).join('');
+    host.innerHTML = head + (rest
+      ? `<div hidden>${rest}</div><button class="more-btn">show ${items.length-SHOW} more</button>`
+      : '');
+    const btn = host.querySelector('.more-btn');
+    if (btn) btn.onclick = () => {
+      const r = btn.previousElementSibling; r.hidden = !r.hidden;
+      btn.textContent = r.hidden ? `show ${items.length-SHOW} more` : 'show less';
+    };
+  }
+
+  drillList('top-prompts', (DATA.top_prompts||[]).slice(0,100), p => {
+    const inTot = p.input.uncached+p.input.cache_create+p.input.cache_read;
+    return `<details><summary>`+
+      `<span class="amt">${share(p.total_tokens)}</span>`+
+      `<span class="desc">${esc(p.text)}</span>`+
+      `<span class="meta">${niceDate(p.ts)} · ${esc(short(p.project))} · ${p.api_calls} calls`+
+        (p.subagent_calls?` · ${p.subagent_calls} subagents`:'')+
+        ` · ${pct(p.input.cache_read,inTot)} cached</span>`+
+      `</summary><div class="body">`+
+      renderContext(p.context)+
+      `<div>session <code>${esc(p.session)}</code></div>`+
+      `<div>in: uncached ${fmt(p.input.uncached)} · cache-create ${fmt(p.input.cache_create)} · `+
+      `cache-read ${fmt(p.input.cache_read)} · out ${fmt(p.output)}</div>`+
+      `</div></details>`;
+  }, 'No prompts in range.');
+
+  drillList('cache-breaks', (DATA.cache_breaks||[]).slice(0,100), b =>
+    `<details><summary>`+
+    `<span class="amt">${fmt(b.uncached)}</span>`+
+    `<span class="desc">${esc(short(b.project))} · `+
+      `${b.kind==='subagent'?esc(b.agentType||'subagent'):'main'}</span>`+
+    `<span class="meta">${niceDate(b.ts)} · ${pct(b.uncached,b.total)} of ${fmt(b.total)} uncached</span>`+
+    `</summary><div class="body">`+
+    renderContext(b.context,
+      `<div class="ctx-break"><b>${fmt(b.uncached)}</b> uncached `+
+      `(${pct(b.uncached,b.total)} of ${fmt(b.total)}) — cache break here</div>`)+
+    `<div>session <code>${esc(b.session)}</code></div>`+
+    `</div></details>`,
+  'No cache breaks over threshold.');
+
+  // sortable table
+  function table(el, cols, rows) {
+    let sortIdx = cols.findIndex(c=>c.sort), asc = false;
+    function render() {
+      const sorted = rows.slice().sort((a,b)=>{
+        const va=a[sortIdx], vb=b[sortIdx];
+        return (asc?1:-1)*(typeof va==='number' ? va-vb : String(va).localeCompare(String(vb)));
+      });
+      el.innerHTML = `<thead><tr>${cols.map((c,i)=>
+        `<th class="${c.num?'num':''} ${i===sortIdx?'sorted'+(asc?' asc':''):''}" data-i="${i}">${c.h}</th>`
+      ).join('')}</tr></thead><tbody>${sorted.map(r=>
+        `<tr>${r.map((v,i)=>`<td class="${cols[i].num?'num':''}">${
+          cols[i].fmt?cols[i].fmt(v):esc(v)}</td>`).join('')}</tr>`
+      ).join('')}</tbody>`;
+      el.querySelectorAll('th').forEach(th=>th.onclick=()=>{
+        const i=+th.dataset.i; if(i===sortIdx)asc=!asc; else{sortIdx=i;asc=false;} render();
+      });
+    }
+    render();
+  }
+
+  function statRows(obj) {
+    return Object.entries(obj||{}).map(([k,v])=>[
+      short(k), GRAND>0 ? 100*(v.input_tokens.total+v.output_tokens)/GRAND : 0,
+      v.sessions, v.api_calls, v.human_messages,
+      v.input_tokens.total, v.input_tokens.pct_cached, v.output_tokens,
+      v.hours.active, v.cache_breaks_over_100k,
+      v.subagent.calls, v.subagent.avg_tokens_per_call,
+    ]);
+  }
+  const statCols = [
+    {h:'name'},{h:'% total',num:1,sort:1,fmt:v=>v.toFixed(1)+'%'},
+    {h:'sess',num:1},{h:'calls',num:1},{h:'msgs',num:1},
+    {h:'input',num:1,fmt:fmt},{h:'%cached',num:1,fmt:v=>v+'%'},
+    {h:'output',num:1,fmt:fmt},{h:'active h',num:1},{h:'breaks',num:1},
+    {h:'subagents',num:1},{h:'avg sub tok',num:1,fmt:fmt},
+  ];
+  table($('tbl-projects'), statCols, statRows(DATA.by_project));
+  table($('tbl-subagents'), statCols, statRows(DATA.by_subagent_type));
+  table($('tbl-skills'), statCols, statRows(DATA.by_skill));
+})();
+</script>
+</body>
+</html>
