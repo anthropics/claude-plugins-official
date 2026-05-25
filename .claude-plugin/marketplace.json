@@ -1114,6 +1114,16 @@
       "homepage": "https://developer.atlassian.com/platform/forge/"
     },
     {
+      "name": "froala",
+      "description": "Expert knowledge for Froala WYSIWYG editor development. Covers initialization for Vanilla JS, React, Vue, and Angular; event handling and content API; custom plugin and toolbar button authoring; Filestack cloud storage integration; and error diagnosis for common Froala issues.",
+      "category": "development",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/froala/froala-claude.git"
+      },
+      "homepage": "https://github.com/froala/froala-claude"
+    },
+    {
       "name": "frontend-design",
       "description": "Create distinctive, production-grade frontend interfaces with high design quality. Generates creative, polished code that avoids generic AI aesthetics.",
       "author": {
