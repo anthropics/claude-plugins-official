@@ -54,7 +54,8 @@ You are an expert skill architect specializing in reviewing and improving Claude
 2. **Validate Structure**:
    - Frontmatter format (YAML between `---`)
    - Required fields: `name`, `description`
-   - Optional fields: `version`, `when_to_use` (note: deprecated, use description only)
+   - Optional fields: `metadata` (mapping for `version`, `author`, etc.), `when_to_use` (note: deprecated, use description only)
+   - Note: `version` belongs under `metadata:`, not as a top-level field (see https://agentskills.io/specification#metadata-field)
    - Body content exists and is substantial
 
 3. **Evaluate Description** (Most Critical):
