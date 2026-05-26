@@ -88,6 +88,33 @@ local path is included in the `<channel>` notification so the assistant can
 `Read` it. Telegram compresses photos — if you need the original file, send it
 as a document instead (long-press → Send as File).
 
+## Local Bot API server
+
+Telegram's hosted Bot API caps uploads at 50 MB and downloads at 20 MB. If you
+need larger files, run a [self-hosted Bot API server](https://github.com/tdlib/telegram-bot-api)
+(the binary Telegram open-sourced from TDLib) and point the plugin at it via:
+
+```sh
+TELEGRAM_API_BASE=http://localhost:8081
+```
+
+Set it in `~/.claude/channels/telegram/.env` next to `TELEGRAM_BOT_TOKEN`, or in
+your shell. When unset (the default), the plugin uses `https://api.telegram.org`.
+
+In local-server mode, both limits rise to 2 GB. `getFile` returns an absolute
+filesystem path in `file_path`, and the plugin reads attachments directly from
+disk instead of fetching them over HTTPS — so the local server and the plugin
+process need to share access to the server's `files` directory (run them on the
+same host or share a volume).
+
+One local server can host multiple bots simultaneously — bots are routed by
+token, each gets its own TDLib session.
+
+To migrate an existing bot from the hosted API to a local server, call
+`logOut` on `api.telegram.org` first (one-time, frees the bot from the cloud
+tier), then start the plugin with `TELEGRAM_API_BASE` set. Note that
+`api.telegram.org` imposes a cooldown if you flip back and forth — choose once.
+
 ## No history or search
 
 Telegram's Bot API exposes **neither** message history nor search. The bot

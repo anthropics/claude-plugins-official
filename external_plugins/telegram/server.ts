@@ -42,6 +42,15 @@ try {
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN
 const STATIC = process.env.TELEGRAM_ACCESS_MODE === 'static'
 
+// Local Bot API server support. When TELEGRAM_API_BASE is set (e.g.
+// http://localhost:8081 for a self-hosted tdlib/telegram-bot-api), API calls
+// route through it instead of api.telegram.org. Lifts the 50 MB upload /
+// 20 MB download limits to 2 GB. In local mode, getFile returns an absolute
+// filesystem path in file_path, so attachments are read from disk instead of
+// fetched over HTTP.
+const API_BASE = process.env.TELEGRAM_API_BASE ?? 'https://api.telegram.org'
+const LOCAL_API_MODE = process.env.TELEGRAM_API_BASE !== undefined
+
 if (!TOKEN) {
   process.stderr.write(
     `telegram channel: TELEGRAM_BOT_TOKEN required\n` +
@@ -83,7 +92,7 @@ process.on('uncaughtException', err => {
 // Strict: no bare yes/no (conversational), no prefix/suffix chatter.
 const PERMISSION_REPLY_RE = /^\s*(y|yes|n|no)\s+([a-km-z]{5})\s*$/i
 
-const bot = new Bot(TOKEN)
+const bot = new Bot(TOKEN, { client: { apiRoot: API_BASE } })
 let botUsername = ''
 
 type PendingEntry = {
@@ -598,10 +607,17 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         const file_id = args.file_id as string
         const file = await bot.api.getFile(file_id)
         if (!file.file_path) throw new Error('Telegram returned no file_path — file may have expired')
-        const url = `https://api.telegram.org/file/bot${TOKEN}/${file.file_path}`
-        const res = await fetch(url)
-        if (!res.ok) throw new Error(`download failed: HTTP ${res.status}`)
-        const buf = Buffer.from(await res.arrayBuffer())
+        // Local Bot API server returns absolute filesystem paths in file_path;
+        // cloud API returns relative paths fetched via HTTPS.
+        let buf: Buffer
+        if (LOCAL_API_MODE && file.file_path.startsWith('/')) {
+          buf = readFileSync(file.file_path)
+        } else {
+          const url = `${API_BASE}/file/bot${TOKEN}/${file.file_path}`
+          const res = await fetch(url)
+          if (!res.ok) throw new Error(`download failed: HTTP ${res.status}`)
+          buf = Buffer.from(await res.arrayBuffer())
+        }
         // file_path is from Telegram (trusted), but strip to safe chars anyway
         // so nothing downstream can be tricked by an unexpected extension.
         const rawExt = file.file_path.includes('.') ? file.file_path.split('.').pop()! : 'bin'
@@ -799,9 +815,14 @@ bot.on('message:photo', async ctx => {
     try {
       const file = await ctx.api.getFile(best.file_id)
       if (!file.file_path) return undefined
-      const url = `https://api.telegram.org/file/bot${TOKEN}/${file.file_path}`
-      const res = await fetch(url)
-      const buf = Buffer.from(await res.arrayBuffer())
+      let buf: Buffer
+      if (LOCAL_API_MODE && file.file_path.startsWith('/')) {
+        buf = readFileSync(file.file_path)
+      } else {
+        const url = `${API_BASE}/file/bot${TOKEN}/${file.file_path}`
+        const res = await fetch(url)
+        buf = Buffer.from(await res.arrayBuffer())
+      }
       const ext = file.file_path.split('.').pop() ?? 'jpg'
       const path = join(INBOX_DIR, `${Date.now()}-${best.file_unique_id}.${ext}`)
       mkdirSync(INBOX_DIR, { recursive: true })
