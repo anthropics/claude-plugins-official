@@ -181,6 +181,89 @@ def run_single_query(
             command_file.unlink()
 
 
+def _isolate_installed_skill(skill_name: str, project_root: Path) -> Path | None:
+    """Temporarily move the installed skill directory out of Claude's view.
+
+    Why isolation is necessary:
+        run_eval registers a UUID-named temporary command (e.g. "my-skill-skill-a1b2c3d4")
+        and detects triggering by checking whether that UUID appears in Claude's tool-call
+        stream.  If the real skill is already installed at .claude/skills/<skill_name>/,
+        Claude may invoke it by its canonical name instead of the UUID command — so the
+        UUID-based check always fails and recall is permanently 0%.
+
+    Why UUID-based detection alone is insufficient:
+        Claude chooses which skill to invoke based on the available skills list.  When both
+        the real skill and the UUID command are visible, Claude can pick either one.  The
+        evaluator has no way to distinguish "Claude chose the real skill" from "Claude
+        ignored the skill entirely", so detection becomes non-deterministic.
+
+    Solution:
+        Move the installed skill directory to a backup location before evaluation so only
+        the UUID command is visible.  The caller MUST call _restore_installed_skill()
+        unconditionally in a try/finally block.
+
+    Returns:
+        The backup Path if the skill was moved, or None if the skill was not installed
+        (no action taken, backward-compatible path).
+    """
+    installed_dir = project_root / ".claude" / "skills" / skill_name
+    if not installed_dir.exists():
+        # Skill is not installed — nothing to isolate, preserve existing behaviour.
+        return None
+
+    # Choose a backup name that is unlikely to collide with real directories.
+    backup_dir = installed_dir.with_name(f"{skill_name}.__eval_backup__")
+
+    if backup_dir.exists():
+        # A previous evaluation was interrupted before it could restore the skill.
+        # Refuse to silently overwrite the backup — raise so the caller can decide.
+        raise RuntimeError(
+            f"Skill isolation backup already exists at {backup_dir}. "
+            "A previous evaluation may have been interrupted. "
+            f"Manually verify and remove the backup before running again."
+        )
+
+    # os.rename is atomic on POSIX (same filesystem), so the directory is either
+    # fully moved or not moved at all — no partial state.
+    os.rename(installed_dir, backup_dir)
+    return backup_dir
+
+
+def _restore_installed_skill(skill_name: str, project_root: Path, backup_dir: Path | None) -> None:
+    """Restore the installed skill directory from its backup location.
+
+    Must be called unconditionally in a try/finally block after _isolate_installed_skill().
+    Safe to call even if backup_dir is None (no-op for uninstalled skills).
+    """
+    if backup_dir is None:
+        return
+
+    installed_dir = project_root / ".claude" / "skills" / skill_name
+
+    if not backup_dir.exists():
+        # Backup is already gone — nothing to restore.  This can happen if the
+        # process was killed between the rename and this call; log a warning but
+        # do not raise so the caller's finally block can complete cleanly.
+        print(
+            f"Warning: skill isolation backup {backup_dir} not found during restore. "
+            "The installed skill may need to be reinstalled manually.",
+            file=sys.stderr,
+        )
+        return
+
+    if installed_dir.exists():
+        # The installed directory reappeared (e.g. another process reinstalled the
+        # skill during evaluation).  Move it aside rather than silently overwriting.
+        collision_dir = installed_dir.with_name(f"{skill_name}.__eval_collision__")
+        print(
+            f"Warning: {installed_dir} exists during restore; moving it to {collision_dir}.",
+            file=sys.stderr,
+        )
+        os.rename(installed_dir, collision_dir)
+
+    os.rename(backup_dir, installed_dir)
+
+
 def run_eval(
     eval_set: list[dict],
     skill_name: str,
@@ -195,65 +278,73 @@ def run_eval(
     """Run the full eval set and return results."""
     results = []
 
-    with ProcessPoolExecutor(max_workers=num_workers) as executor:
-        future_to_info = {}
-        for item in eval_set:
-            for run_idx in range(runs_per_query):
-                future = executor.submit(
-                    run_single_query,
-                    item["query"],
-                    skill_name,
-                    description,
-                    timeout,
-                    str(project_root),
-                    model,
-                )
-                future_to_info[future] = (item, run_idx)
+    # Isolate the installed skill so Claude can only see the UUID-named temporary
+    # command during evaluation.  This ensures invocation detection is unambiguous.
+    # Restoration is guaranteed by the try/finally below, even on exceptions.
+    backup_dir = _isolate_installed_skill(skill_name, project_root)
+    try:
+        with ProcessPoolExecutor(max_workers=num_workers) as executor:
+            future_to_info = {}
+            for item in eval_set:
+                for run_idx in range(runs_per_query):
+                    future = executor.submit(
+                        run_single_query,
+                        item["query"],
+                        skill_name,
+                        description,
+                        timeout,
+                        str(project_root),
+                        model,
+                    )
+                    future_to_info[future] = (item, run_idx)
 
-        query_triggers: dict[str, list[bool]] = {}
-        query_items: dict[str, dict] = {}
-        for future in as_completed(future_to_info):
-            item, _ = future_to_info[future]
-            query = item["query"]
-            query_items[query] = item
-            if query not in query_triggers:
-                query_triggers[query] = []
-            try:
-                query_triggers[query].append(future.result())
-            except Exception as e:
-                print(f"Warning: query failed: {e}", file=sys.stderr)
-                query_triggers[query].append(False)
+            query_triggers: dict[str, list[bool]] = {}
+            query_items: dict[str, dict] = {}
+            for future in as_completed(future_to_info):
+                item, _ = future_to_info[future]
+                query = item["query"]
+                query_items[query] = item
+                if query not in query_triggers:
+                    query_triggers[query] = []
+                try:
+                    query_triggers[query].append(future.result())
+                except Exception as e:
+                    print(f"Warning: query failed: {e}", file=sys.stderr)
+                    query_triggers[query].append(False)
 
-    for query, triggers in query_triggers.items():
-        item = query_items[query]
-        trigger_rate = sum(triggers) / len(triggers)
-        should_trigger = item["should_trigger"]
-        if should_trigger:
-            did_pass = trigger_rate >= trigger_threshold
-        else:
-            did_pass = trigger_rate < trigger_threshold
-        results.append({
-            "query": query,
-            "should_trigger": should_trigger,
-            "trigger_rate": trigger_rate,
-            "triggers": sum(triggers),
-            "runs": len(triggers),
-            "pass": did_pass,
-        })
+        for query, triggers in query_triggers.items():
+            item = query_items[query]
+            trigger_rate = sum(triggers) / len(triggers)
+            should_trigger = item["should_trigger"]
+            if should_trigger:
+                did_pass = trigger_rate >= trigger_threshold
+            else:
+                did_pass = trigger_rate < trigger_threshold
+            results.append({
+                "query": query,
+                "should_trigger": should_trigger,
+                "trigger_rate": trigger_rate,
+                "triggers": sum(triggers),
+                "runs": len(triggers),
+                "pass": did_pass,
+            })
 
-    passed = sum(1 for r in results if r["pass"])
-    total = len(results)
+        passed = sum(1 for r in results if r["pass"])
+        total = len(results)
 
-    return {
-        "skill_name": skill_name,
-        "description": description,
-        "results": results,
-        "summary": {
-            "total": total,
-            "passed": passed,
-            "failed": total - passed,
-        },
-    }
+        return {
+            "skill_name": skill_name,
+            "description": description,
+            "results": results,
+            "summary": {
+                "total": total,
+                "passed": passed,
+                "failed": total - passed,
+            },
+        }
+    finally:
+        # Always restore the installed skill, even if evaluation raised an exception.
+        _restore_installed_skill(skill_name, project_root, backup_dir)
 
 
 def main():
