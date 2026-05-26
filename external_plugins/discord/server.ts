@@ -542,6 +542,24 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
       },
     },
     {
+      name: 'reply_to_user',
+      description:
+        "Open (or reuse) a DM channel with a Discord user by user ID and send a message. Use when you have a user ID but no inbound DM yet — e.g., proactive notifications. The user must already be in access.allowFrom; this tool will NOT add them. Returns the DM channel ID so callers can chain reply()/react()/edit_message() against it afterwards.",
+      inputSchema: {
+        type: 'object',
+        properties: {
+          user_id: { type: 'string' },
+          text: { type: 'string' },
+          files: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Absolute file paths to attach (images, logs, etc). Max 10 files, 25MB each.',
+          },
+        },
+        required: ['user_id', 'text'],
+      },
+    },
+    {
       name: 'react',
       description: 'Add an emoji reaction to a Discord message. Unicode emoji work directly; custom emoji need the <:name:id> form.',
       inputSchema: {
@@ -652,6 +670,68 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
           sentIds.length === 1
             ? `sent (id: ${sentIds[0]})`
             : `sent ${sentIds.length} parts (ids: ${sentIds.join(', ')})`
+        return { content: [{ type: 'text', text: result }] }
+      }
+      case 'reply_to_user': {
+        const user_id = args.user_id as string
+        const text = args.text as string
+        const files = (args.files as string[] | undefined) ?? []
+
+        // Mirror reply()'s outbound gate: the target must already be
+        // allowlisted. We deliberately do NOT auto-add to allowFrom --
+        // that mutation is reserved for /discord:access (per the SKILL
+        // instructions about prompt-injection safety).
+        const access = loadAccess()
+        if (!access.allowFrom.includes(user_id)) {
+          throw new Error(`user ${user_id} is not allowlisted — add via /discord:access`)
+        }
+
+        for (const f of files) {
+          assertSendable(f)
+          const st = statSync(f)
+          if (st.size > MAX_ATTACHMENT_BYTES) {
+            throw new Error(`file too large: ${f} (${(st.size / 1024 / 1024).toFixed(1)}MB, max 25MB)`)
+          }
+        }
+        if (files.length > 10) throw new Error('Discord allows max 10 attachments per message')
+
+        let dm
+        try {
+          const user = await client.users.fetch(user_id)
+          dm = await user.createDM()
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err)
+          throw new Error(`reply_to_user: cannot open DM with user ${user_id}: ${msg}`)
+        }
+        // Cache the DM channel ID -> user ID mapping so future inbound
+        // notifications on this DM channel can resolve back to the user
+        // even before the user has DM'd us (which would normally seed
+        // the map via handleInbound).
+        dmChannelUsers.set(dm.id, user_id)
+
+        const limit = Math.max(1, Math.min(access.textChunkLimit ?? MAX_CHUNK_LIMIT, MAX_CHUNK_LIMIT))
+        const mode = access.chunkMode ?? 'length'
+        const chunks = chunk(text, limit, mode)
+        const sentIds: string[] = []
+
+        try {
+          for (let i = 0; i < chunks.length; i++) {
+            const sent = await dm.send({
+              content: chunks[i],
+              ...(i === 0 && files.length > 0 ? { files } : {}),
+            })
+            noteSent(sent.id)
+            sentIds.push(sent.id)
+          }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err)
+          throw new Error(`reply_to_user failed after ${sentIds.length} of ${chunks.length} chunk(s) sent: ${msg}`)
+        }
+
+        const result =
+          sentIds.length === 1
+            ? `sent (dm channel: ${dm.id}, id: ${sentIds[0]})`
+            : `sent ${sentIds.length} parts (dm channel: ${dm.id}, ids: ${sentIds.join(', ')})`
         return { content: [{ type: 'text', text: result }] }
       }
       case 'fetch_messages': {
