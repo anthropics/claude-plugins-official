@@ -64,7 +64,7 @@ def kolmogorov_regularizer(
     Returns:
         R_K: tensor escalar — estimativa de complexidade de Kolmogorov
     """
-    w_norm_p = 0.0
+    w_norm_p = torch.tensor(0.0, device=next(model.parameters()).device)
     n_params = 0
 
     for name, param in model.named_parameters():
@@ -81,15 +81,13 @@ def kolmogorov_regularizer(
 
         # Acumular norma Lp
         if p == 2.0:
-            w_norm_p += param.pow(2).sum().item()
+            w_norm_p = w_norm_p + param.pow(2).sum()
         elif p == 1.0:
-            w_norm_p += param.abs().sum().item()
+            w_norm_p = w_norm_p + param.abs().sum()
         else:
-            w_norm_p += param.abs().pow(p).sum().item()
+            w_norm_p = w_norm_p + param.abs().pow(p).sum()
 
         n_params += param.numel()
-
-    w_norm_p = torch.tensor(w_norm_p, device=next(model.parameters()).device)
 
     # Complexidade de Kolmogorov estimada: ‖θ‖_p^p · log(‖θ‖_p^p + 1)
     # O +1 garante que log(0) não ocorra; o eps adiciona estabilidade
@@ -118,29 +116,34 @@ def kolmogorov_complexity_estimate(
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
 
     # Norma L2 dos pesos
-    w_norm_sq = sum(p.pow(2).sum().item() for p in model.parameters() if p.requires_grad)
+    w_norm_sq = torch.tensor(0.0, device=next(model.parameters()).device)
+    for p in model.parameters():
+        if p.requires_grad:
+            w_norm_sq = w_norm_sq + p.pow(2).sum()
 
     # Complexidade de Kolmogorov estimada (Musat 2026)
-    K_estimate = w_norm_sq * int(w_norm_sq + 1).bit_length()  # aproximação: ‖θ‖² · log₂(‖θ‖²)
+    K_estimate = w_norm_sq * torch.log2(w_norm_sq + 1.0)  # aproximação: ‖θ‖² · log₂(‖θ‖²)
 
     # Bits mínimos para descrever o modelo (limite inferior)
-    bits_lower_bound = trainable_params * precision_bits
+    bits_lower_bound = float(trainable_params * precision_bits)
 
     # Bits efetivos (comprimidos pela estrutura)
-    bits_effective = K_estimate
+    bits_effective = float(K_estimate.item())
+
+    w_norm_sq_val = float(w_norm_sq.item())
 
     # Taxa de compressão
-    compression_ratio = bits_lower_bound / max(bits_effective, 1)
+    compression_ratio = bits_lower_bound / max(bits_effective, 1.0)
 
     return {
-        "total_params": total_params,
-        "trainable_params": trainable_params,
-        "weight_norm_l2": w_norm_sq,
-        "K_estimate": K_estimate,
+        "total_params": float(total_params),
+        "trainable_params": float(trainable_params),
+        "weight_norm_l2": w_norm_sq_val,
+        "K_estimate": bits_effective,
         "bits_lower_bound": bits_lower_bound,
         "bits_effective": bits_effective,
         "compression_ratio": compression_ratio,
-        "precision_bits": precision_bits,
+        "precision_bits": float(precision_bits),
     }
 
 
@@ -189,18 +192,19 @@ class KolmogorovWeightDecay(torch.optim.Optimizer):
             eps = group["eps"]
 
             # Calcular norma total dos pesos para R_K
-            w_norm_sq = 0.0
+            device = group["params"][0].device if len(group["params"]) > 0 else torch.device("cpu")
+            w_norm_sq = torch.tensor(0.0, device=device)
             for p in group["params"]:
                 if p.grad is None:
                     continue
-                w_norm_sq += p.pow(2).sum().item()
-            w_norm_sq = max(w_norm_sq, eps)
+                w_norm_sq = w_norm_sq + p.pow(2).sum()
+            w_norm_sq = torch.clamp(w_norm_sq, min=eps)
 
             # Gradiente do regularizador de Kolmogorov
             # R_K = ‖θ‖² · log(‖θ‖² + 1)
             # ∇R_K = 2θ · log(‖θ‖² + 1) + 2θ · ‖θ‖² / (‖θ‖² + 1)
-            log_term = int(w_norm_sq + 1).bit_length()  # log₂ aproximado
-            grad_factor = log_term + w_norm_sq / (w_norm_sq + 1)
+            log_term = torch.log2(w_norm_sq + 1.0)
+            grad_factor = log_term + w_norm_sq / (w_norm_sq + 1.0)
 
             for p in group["params"]:
                 if p.grad is None:
