@@ -23,16 +23,19 @@
 set -e
 
 probe() {
-    # $1..N: the interpreter command (may be multi-word like `py -3`)
-    # Probe writes the major version to stdout and exits 0 iff it's >=3.
-    "$@" -c 'import sys; print(sys.version_info[0])' 2>/dev/null
+    # Probe writes "<major>.<minor>" and exits 0 iff resolvable.
+    "$@" -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null
 }
 
-for cmd in "python3" "python" "py -3"; do
-    # Word-split intentionally so `py -3` works
+# Sort version strings; returns 0 iff $1 >= $2.
+ver_ge() { [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -1)" = "$2" ]; }
+
+for cmd in "python3.13" "python3.12" "python3.11" "python3.10" "python3.9" "python3.8" "python3.7" "python3" "python" "py -3"; do
     # shellcheck disable=SC2086
     v=$(probe $cmd) || continue
-    if [ "$v" = "3" ]; then
+    # Need >=3.7 because review_api.py uses `from __future__ import annotations`
+    # (PEP 563, added in 3.7). Bare `python3` is 3.6 on Ubuntu 18.04 LTS.
+    if ver_ge "$v" "3.7"; then
         # shellcheck disable=SC2086
         exec $cmd "$@"
     fi
