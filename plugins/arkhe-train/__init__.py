@@ -109,8 +109,24 @@ def train():
       progress  → Mostra progresso de treinamento da IA
       certify   → Certifica IA após treinamento completo
       audit     → Executa CanonicalAuditor (612↔604-CAI) na IA
+      chat      → Interage localmente com o modelo ARKHE-OS
     """
     pass
+
+
+@train.command("chat")
+def chat():
+    """Interage localmente com o modelo ARKHE-OS via llama.cpp."""
+    try:
+        from arkhe.plugins.arkhe_train.arkhe_chat_cli import chat_local
+        chat_local()
+    except ImportError:
+        # Fallback if the package is not installed globally yet
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path(__file__).parent))
+        from arkhe_chat_cli import chat_local
+        chat_local()
 
 
 @train.command("list")

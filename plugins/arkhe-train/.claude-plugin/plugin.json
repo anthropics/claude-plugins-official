@@ -1,0 +1,7 @@
+{
+  "name": "arkhe-train",
+  "version": "612.2.0",
+  "description": "ARKHE TRAIN \u2014 CLI do Arquiteto para Treinamento de IAs.",
+  "author": "ORCID 0009-0005-2697-4668",
+  "entry": "__init__.py"
+}
