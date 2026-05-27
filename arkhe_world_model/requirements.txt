@@ -1,0 +1,23 @@
+# ARKHE World Model — Substrato 890
+# Requisitos básicos (todos os estágios)
+
+torch>=2.0.0
+numpy>=1.24.0
+scipy>=1.10.0
+
+# Opcional: LLM Engine (Stage 1)
+# llama-cpp-python>=0.2.0
+
+# Opcional: Simulação (Stage 4)
+# brax>=0.9.0
+# jax>=0.4.0
+# jaxlib>=0.4.0
+
+# Opcional: RL (Policy Training)
+# gymnasium>=0.28.0
+# stable-baselines3>=2.0.0
+
+# Desenvolvimento
+# pytest>=7.0
+# black>=23.0
+# mypy>=1.0
