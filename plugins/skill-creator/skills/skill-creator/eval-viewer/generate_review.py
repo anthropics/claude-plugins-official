@@ -87,8 +87,21 @@ def build_run(root: Path, run_dir: Path) -> dict | None:
     prompt = ""
     eval_id = None
 
-    # Try eval_metadata.json
-    for candidate in [run_dir / "eval_metadata.json", run_dir.parent / "eval_metadata.json"]:
+    # Walk up from run_dir toward the workspace root looking for eval_metadata.json.
+    # Handles arbitrary nesting (e.g. iteration-N/eval-N/<condition>/run-N/) instead of
+    # assuming a single-parent layout — the canonical location per SKILL.md is eval-N/,
+    # which sits above the condition directory so prompt/assertions are shared across
+    # with_skill/without_skill runs.
+    candidates: list[Path] = []
+    current = run_dir.resolve()
+    root_resolved = root.resolve()
+    while True:
+        candidates.append(current / "eval_metadata.json")
+        if current == root_resolved or current.parent == current:
+            break
+        current = current.parent
+
+    for candidate in candidates:
         if candidate.exists():
             try:
                 metadata = json.loads(candidate.read_text())
