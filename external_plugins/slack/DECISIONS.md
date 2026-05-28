@@ -6,7 +6,7 @@ Judgement calls made while VoX is away. Review and override at will.
 
 - Chose `chat:write.public` so the bot can post to channels it isn't a member of (matches discord's "any allowlisted channel" feel). Drop if you'd rather force `/invite` everywhere.
 - Included `users:read.email` for `get_user_info` parity. Sensitive — drop if you don't want claude to see workspace emails.
-- Skipped `commands` (slash command) scope — would require defining `/slack:status` etc as slash commands in the manifest, plus extra plumbing. Can add later.
+- `commands` scope added in 0.1.16 to ship `/status`. Other slash-command parity with discord (`/dunk`, `/dedunk`) still pending.
 
 ## Token storage
 
@@ -26,8 +26,7 @@ Judgement calls made while VoX is away. Review and override at will.
 - **No `send_embed`/`edit_embed`** — VoX directive: skip embed parity for now. Slack has no native color-bar; legacy `attachments` field still works but is "not actively developed".
 - **No `typing` tool** — VoX directive: omit. Slack bots can't send typing indicators (Slack-side limitation, not API design choice). Existing skills that rely on typing-then-reply will need a slack-aware fork or graceful fallback.
 - **No `claude/channel/permission` relay** — discord plugin sends button-driven permission prompts to allowlisted DMs. Skipped for v0.1; can port from discord if needed.
-- **No slash commands** (`/status`, `/dunk`, `/dedunk` Discord slash). Slack supports them but requires separate `commands` scope + manifest entries + URL endpoint. Skipped for v0.1.
-- **No `/status` command** — port the Haiku-summary `/status` later.
+- **Partial slash commands** — `/status` shipped in 0.1.16 (Haiku-summary equivalent of discord's). `/dunk`, `/dedunk` still pending.
 
 ## Channel notification format
 
@@ -89,5 +88,4 @@ required bigger refactors. Documented here so they're not lost:
 ## Open follow-ups (not blockers)
 
 - Port discord plugin's permission relay to slack (Block Kit actions buttons can drive the same flow).
-- Port `/status` slash command (would also need slash command scope + manifest entry).
 - Bolt's reconnect/watchdog story — Bolt handles reconnects internally but a watchdog timer matching the discord plugin's pattern (kill on prolonged disconnect, let systemd restart) might still be valuable. Not added in v0.1.

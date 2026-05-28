@@ -20,8 +20,9 @@ features:
     messages_tab_read_only_enabled: false
   slash_commands:
     # /status — Socket Mode delivers slash commands over the same WebSocket
-    # the message events ride; no request URL needed.
-    - command: /status
+    # the message events ride; no request URL needed. Quote the command
+    # name so YAML parsers don't choke on the leading slash.
+    - command: "/status"
       description: Show what the bot is currently working on
       should_escape: false
 oauth_config:

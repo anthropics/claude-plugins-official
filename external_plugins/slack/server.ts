@@ -1489,15 +1489,15 @@ function findNewestTranscript(): string | null {
   try {
     for (const proj of readdirSync(CLAUDE_PROJECTS_DIR)) {
       const dir = join(CLAUDE_PROJECTS_DIR, proj)
-      let s
-      try { s = statSync(dir) } catch { continue }
-      if (!s.isDirectory()) continue
+      let stat
+      try { stat = statSync(dir) } catch { continue }
+      if (!stat.isDirectory()) continue
       for (const f of readdirSync(dir)) {
         if (!f.endsWith('.jsonl')) continue
         const p = join(dir, f)
-        let fs
-        try { fs = statSync(p) } catch { continue }
-        if (!newest || fs.mtimeMs > newest.mtime) newest = { path: p, mtime: fs.mtimeMs }
+        let s
+        try { s = statSync(p) } catch { continue }
+        if (!newest || s.mtimeMs > newest.mtime) newest = { path: p, mtime: s.mtimeMs }
       }
     }
   } catch {}
@@ -1792,20 +1792,30 @@ async function buildStatusReply(): Promise<string> {
   return `${summary}\nnow: ${activity}${dur} · ctx: ${formatTokens(contextTokens)}`
 }
 
-// /status — ephemeral, anyone in an authorized workspace can invoke.
+// /status — ephemeral, anyone in the configured workspace can invoke.
 // Socket Mode delivers slash commands over the same WebSocket; no
 // request URL is needed. ack() must fire within 3s, then respond()
-// can take its time for the haiku round-trip.
-app.command('/status', async ({ ack, respond }) => {
+// uses the delayed response_url (30-min validity) so the haiku call
+// fits comfortably inside that window. Every respond() is .catch()-
+// wrapped so a transient response_url failure can't reject the
+// handler promise and leave the user with a permanently-spinning UI.
+app.command('/status', async ({ ack, respond, command }) => {
   await ack()
+  // Cross-team guard for Enterprise Grid — mirror the message-event
+  // handler's check (see app.event('message') around line 901).
+  // Single-workspace is a documented v0.1 constraint.
+  if (command.team_id && TEAM_ID && command.team_id !== TEAM_ID) {
+    process.stderr.write(`slack channel: dropping cross-team /status (cmd.team=${command.team_id}, our team=${TEAM_ID})\n`)
+    return
+  }
   try {
     const reply = await buildStatusReply()
-    await respond({ text: safeSlice(reply, 3000), response_type: 'ephemeral' })
+    await respond({ text: safeSlice(reply, 3000), response_type: 'ephemeral' }).catch(() => {})
   } catch (e) {
     await respond({
       text: `status failed: ${safeSlice(String(e), 200)}`,
       response_type: 'ephemeral',
-    })
+    }).catch(() => {})
   }
 })
 
