@@ -30,6 +30,7 @@ import {
   type Interaction,
 } from 'discord.js'
 import { randomBytes } from 'crypto'
+import { execSync } from 'child_process'
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, statSync, renameSync, realpathSync, chmodSync } from 'fs'
 import { homedir } from 'os'
 import { join, sep } from 'path'
@@ -62,6 +63,15 @@ if (!TOKEN) {
   process.exit(1)
 }
 const INBOX_DIR = join(STATE_DIR, 'inbox')
+
+function readPersonaName(): string {
+  try {
+    const claudeDir = process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude')
+    const content = readFileSync(join(claudeDir, 'persona.md'), 'utf8')
+    const m = content.match(/^name:\s*"?([^"\n]+)"?\s*$/m)
+    return m?.[1]?.trim() ?? ''
+  } catch { return '' }
+}
 
 // Last-resort safety net — without these the process dies silently on any
 // unhandled promise rejection. With them it logs and keeps serving tools.
@@ -745,6 +755,32 @@ client.on('error', err => {
 // `perm:allow:<id>`, `perm:deny:<id>`, or `perm:more:<id>`.
 // Security mirrors the text-reply path: allowFrom must contain the sender.
 client.on('interactionCreate', async (interaction: Interaction) => {
+  if (interaction.isChatInputCommand()) {
+    const access = loadAccess()
+    const uid = interaction.user.id
+    const allowed =
+      access.allowFrom.includes(uid) ||
+      Object.values(access.groups ?? {}).some((g: any) => g.allowFrom?.includes(uid))
+    if (!allowed) {
+      await interaction.reply({ content: 'Not authorized.', ephemeral: true }).catch(() => {})
+      return
+    }
+    if (interaction.commandName === 'compact') {
+      await interaction.deferReply().catch(() => {})
+      const session = readPersonaName()
+      if (!session) {
+        await interaction.editReply('❌ Could not determine session name — check persona.md.').catch(() => {})
+        return
+      }
+      try {
+        execSync(`tmux send-keys -t "${session}" '/compact' Enter`, { timeout: 5000 })
+        await interaction.editReply('✓ Compacting context...').catch(() => {})
+      } catch (err) {
+        await interaction.editReply(`❌ Failed: ${err instanceof Error ? err.message : String(err)}`).catch(() => {})
+      }
+    }
+    return
+  }
   if (!interaction.isButton()) return
   const m = /^perm:(allow|deny|more):([a-km-z]{5})$/.exec(interaction.customId)
   if (!m) return
@@ -890,8 +926,21 @@ async function handleInbound(msg: Message): Promise<void> {
   })
 }
 
-client.once('ready', c => {
+client.once('ready', async c => {
   process.stderr.write(`artifice-discord: gateway connected as ${c.user.tag}\n`)
+  const guildId = process.env.DISCORD_GUILD_ID
+  try {
+    if (guildId) {
+      const guild = c.guilds.cache.get(guildId) ?? await c.guilds.fetch(guildId)
+      await guild.commands.create({ name: 'compact', description: 'Compact context' })
+      process.stderr.write(`artifice-discord: /compact registered (guild ${guildId})\n`)
+    } else {
+      await c.application.commands.create({ name: 'compact', description: 'Compact context' })
+      process.stderr.write(`artifice-discord: /compact registered (global — up to 1h propagation)\n`)
+    }
+  } catch (err) {
+    process.stderr.write(`artifice-discord: slash command registration failed: ${err}\n`)
+  }
 })
 
 client.login(TOKEN).catch(err => {
