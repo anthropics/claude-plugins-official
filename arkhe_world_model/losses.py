@@ -99,26 +99,26 @@ class ArkheHybridLoss(nn.Module):
             tokens = targets["tokens"].reshape(-1)
             losses["ce"] = self.ce_loss(logits, tokens)
         else:
-            losses["ce"] = torch.tensor(0.0, device=predictions["logits"].device if "logits" in predictions else "cpu")
+            losses["ce"] = predictions["logits"].sum() * 0.0 if "logits" in predictions else torch.tensor(0.0, requires_grad=True)
 
         # 2. MSE — estado físico
         if "state_pred" in predictions and "state_true" in targets:
             losses["mse"] = self.mse_loss(predictions["state_pred"], targets["state_true"])
         else:
-            losses["mse"] = torch.tensor(0.0, device=predictions["state_pred"].device if "state_pred" in predictions else "cpu")
+            losses["mse"] = predictions["state_pred"].sum() * 0.0 if "state_pred" in predictions else torch.tensor(0.0, requires_grad=True)
 
         # 3. Causal loss — estrutura DAG + predição contrafactual
         if causal_model is not None and "causal_pred" in predictions and "causal_true" in targets:
             losses["causal"] = causal_model.causal_loss(targets["causal_true"], predictions["causal_pred"])
         else:
-            losses["causal"] = torch.tensor(0.0)
+            losses["causal"] = predictions["causal_pred"].sum() * 0.0 if "causal_pred" in predictions else torch.tensor(0.0, requires_grad=True)
 
         # 4. Kolmogorov regularizer — complexidade de descrição (Substrato 898)
         if self.use_kolmogorov and model is not None:
             from .kolmogorov_regularizer import kolmogorov_regularizer
             losses["kolmogorov"] = kolmogorov_regularizer(model)
         else:
-            losses["kolmogorov"] = torch.tensor(0.0)
+            losses["kolmogorov"] = torch.tensor(0.0, requires_grad=True)
 
         # Total ponderada
         losses["total"] = (

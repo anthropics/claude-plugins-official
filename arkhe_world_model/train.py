@@ -102,17 +102,17 @@ def train_epoch(model, dataloader, optimizer, criterion, device, epoch):
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
 
-        total_loss += losses["total"].item()
-        total_ce += losses["ce"].item()
-        total_mse += losses["mse"].item()
-        total_causal += losses["causal"].item()
-        total_kolmogorov += losses["kolmogorov"].item()
+        total_loss += float(losses["total"].detach())
+        total_ce += float(losses["ce"].detach())
+        total_mse += float(losses["mse"].detach())
+        total_causal += float(losses["causal"].detach())
+        total_kolmogorov += float(losses["kolmogorov"].detach())
         n_batches += 1
 
         if batch_idx % 10 == 0:
-            print(f"  Batch {batch_idx}/{len(dataloader)} | Loss: {losses['total'].item():.4f} | "
-                  f"CE: {losses['ce'].item():.4f} | MSE: {losses['mse'].item():.4f} | "
-                  f"Causal: {losses['causal'].item():.4f} | K: {losses['kolmogorov'].item():.4f}")
+            print(f"  Batch {batch_idx}/{len(dataloader)} | Loss: {float(losses['total'].detach()):.4f} | "
+                  f"CE: {float(losses['ce'].detach()):.4f} | MSE: {float(losses['mse'].detach()):.4f} | "
+                  f"Causal: {float(losses['causal'].detach()):.4f} | K: {float(losses['kolmogorov'].detach()):.4f}")
 
     return {
         "loss": total_loss / n_batches,
@@ -144,7 +144,7 @@ def validate(model, dataloader, criterion, device):
                 "causal_true": causal_true,
             }
             losses = criterion(predictions, targets, model=model)
-            total_loss += losses["total"].item()
+            total_loss += float(losses["total"].detach())
             n_batches += 1
     return {"loss": total_loss / n_batches}
 
@@ -214,7 +214,7 @@ def main():
 
     params = list(model.parameters())
     if not params:
-        model.dummy_param = nn.Parameter(torch.tensor([0.0], requires_grad=True))
+        model.dummy_param = nn.Parameter(torch.tensor([0.0]))
         params = [model.dummy_param]
 
     if args.optimizer == "kolmogorov":

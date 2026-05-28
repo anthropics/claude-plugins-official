@@ -64,7 +64,11 @@ def kolmogorov_regularizer(
     Returns:
         R_K: tensor escalar — estimativa de complexidade de Kolmogorov
     """
-    w_norm_p = torch.tensor(0.0, device=next(model.parameters()).device)
+    try:
+        dev = next(model.parameters()).device
+    except StopIteration:
+        dev = torch.device('cpu')
+    w_norm_p = torch.tensor(0.0, device=dev)
     n_params = 0
 
     for name, param in model.named_parameters():
@@ -116,7 +120,11 @@ def kolmogorov_complexity_estimate(
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
 
     # Norma L2 dos pesos
-    w_norm_sq = torch.tensor(0.0, device=next(model.parameters()).device)
+    try:
+        dev = next(model.parameters()).device
+    except StopIteration:
+        dev = torch.device('cpu')
+    w_norm_sq = torch.tensor(0.0, device=dev)
     for p in model.parameters():
         if p.requires_grad:
             w_norm_sq = w_norm_sq + p.pow(2).sum()
@@ -128,9 +136,9 @@ def kolmogorov_complexity_estimate(
     bits_lower_bound = float(trainable_params * precision_bits)
 
     # Bits efetivos (comprimidos pela estrutura)
-    bits_effective = float(K_estimate.item())
+    bits_effective = float(K_estimate.detach())
 
-    w_norm_sq_val = float(w_norm_sq.item())
+    w_norm_sq_val = float(w_norm_sq.detach())
 
     # Taxa de compressão
     compression_ratio = bits_lower_bound / max(bits_effective, 1.0)

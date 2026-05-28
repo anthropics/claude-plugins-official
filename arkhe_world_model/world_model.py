@@ -291,7 +291,7 @@ class WorldModelEmbryo(nn.Module):
         # In case there are no parameters, use a dummy parameter so optimizer doesn't crash in demo mode
         params = list(self.parameters())
         if not params:
-            self.dummy_param = nn.Parameter(torch.tensor([0.0], requires_grad=True))
+            self.dummy_param = nn.Parameter(torch.tensor([0.0]))
             params = [self.dummy_param]
 
         optimizer = torch.optim.Adam(params, lr=self.config.learning_rate)
@@ -325,10 +325,10 @@ class WorldModelEmbryo(nn.Module):
                 losses["total"].backward()
                 optimizer.step()
 
-                epoch_losses["total"] += losses["total"].item()
-                epoch_losses["ce"] += losses["ce"].item()
-                epoch_losses["mse"] += losses["mse"].item()
-                epoch_losses["causal"] += losses["causal"].item()
+                epoch_losses["total"] += float(losses["total"].detach())
+                epoch_losses["ce"] += float(losses["ce"].detach())
+                epoch_losses["mse"] += float(losses["mse"].detach())
+                epoch_losses["causal"] += float(losses["causal"].detach())
                 n_batches += 1
 
             # Médias
