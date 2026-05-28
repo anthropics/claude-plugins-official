@@ -1799,7 +1799,21 @@ async function buildStatusReply(): Promise<string> {
 // fits comfortably inside that window. Every respond() is .catch()-
 // wrapped so a transient response_url failure can't reject the
 // handler promise and leave the user with a permanently-spinning UI.
-app.command('/status', async ({ ack, respond, command }) => {
+//
+// Command name is configurable via SLACK_STATUS_COMMAND so multiple
+// bots in the same workspace can each register a unique slash command
+// without colliding (and so operators can sidestep slack's built-in
+// /status which sets a user-status message and shadows ours). Default
+// is /status to match the discord plugin and zero-config installs.
+// When overriding, you MUST also update the slash_commands block in
+// the slack app manifest to declare the same name + reinstall the app.
+const STATUS_COMMAND = process.env.SLACK_STATUS_COMMAND?.trim() || '/status'
+if (!STATUS_COMMAND.startsWith('/')) {
+  process.stderr.write(`slack channel: SLACK_STATUS_COMMAND must start with '/', got "${STATUS_COMMAND}" — falling back to /status\n`)
+}
+const STATUS_COMMAND_RESOLVED = STATUS_COMMAND.startsWith('/') ? STATUS_COMMAND : '/status'
+process.stderr.write(`slack channel: /status slash command bound to ${STATUS_COMMAND_RESOLVED}\n`)
+app.command(STATUS_COMMAND_RESOLVED, async ({ ack, respond, command }) => {
   await ack()
   // Cross-team guard for Enterprise Grid — mirror the message-event
   // handler's check (see app.event('message') around line 901).

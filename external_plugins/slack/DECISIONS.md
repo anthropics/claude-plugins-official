@@ -7,6 +7,7 @@ Judgement calls made while VoX is away. Review and override at will.
 - Chose `chat:write.public` so the bot can post to channels it isn't a member of (matches discord's "any allowlisted channel" feel). Drop if you'd rather force `/invite` everywhere.
 - Included `users:read.email` for `get_user_info` parity. Sensitive — drop if you don't want claude to see workspace emails.
 - `commands` scope added in 0.1.16 to ship `/status`. Other slash-command parity with discord (`/dunk`, `/dedunk`) still pending.
+- `/status` command name is configurable via `SLACK_STATUS_COMMAND` (0.1.17) so multiple bots can share a workspace without colliding and operators can sidestep slack's built-in `/status` (which sets a user-presence message and shadows ours). Default is `/status` for fresh installs. When overridden, the slack app manifest's `slash_commands` block must be updated to match + the app reinstalled.
 
 ## Token storage
 

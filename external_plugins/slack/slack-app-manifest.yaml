@@ -22,6 +22,13 @@ features:
     # /status — Socket Mode delivers slash commands over the same WebSocket
     # the message events ride; no request URL needed. Quote the command
     # name so YAML parsers don't choke on the leading slash.
+    #
+    # If multiple bots share a workspace (or slack's built-in /status
+    # shadows yours), rename to e.g. "/tinystatus" here AND set
+    # SLACK_STATUS_COMMAND=/tinystatus in the bot's .bot.env, then
+    # reinstall the slack app to re-register the new command. Both must
+    # match — the manifest tells slack where to route, the env var tells
+    # the bolt handler what to listen for.
     - command: "/status"
       description: Show what the bot is currently working on
       should_escape: false
