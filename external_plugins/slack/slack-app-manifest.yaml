@@ -18,6 +18,12 @@ features:
     home_tab_enabled: false
     messages_tab_enabled: true
     messages_tab_read_only_enabled: false
+  slash_commands:
+    # /status — Socket Mode delivers slash commands over the same WebSocket
+    # the message events ride; no request URL needed.
+    - command: /status
+      description: Show what the bot is currently working on
+      should_escape: false
 oauth_config:
   scopes:
     bot:
@@ -45,6 +51,8 @@ oauth_config:
       # opt-in-friendly: drop `users:read.email` if you'd rather not expose workspace emails.
       - users:read
       - users:read.email
+      # Required to register slash commands (see features.slash_commands above).
+      - commands
 settings:
   event_subscriptions:
     bot_events:

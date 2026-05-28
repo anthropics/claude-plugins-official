@@ -1465,6 +1465,350 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
 
 await mcp.connect(new StdioServerTransport())
 
+// --- /status slash command ---
+// Reads the most recently active claude session transcript, summarizes
+// the tail with Haiku via the local OAuth credentials, and replies
+// ephemerally with what the bot is currently doing. Falls back to a
+// raw "last action" extract when the API call fails or credentials
+// are missing. Mirrors the discord plugin's /status — same helpers,
+// slack-bolt slash command transport instead of discord interaction.
+
+const CLAUDE_PROJECTS_DIR = join(CLAUDE_HOME, 'projects')
+const CRED_FILE = join(CLAUDE_HOME, '.credentials.json')
+const STATUS_CACHE_TTL_MS = 10_000
+// Only the Haiku summary is cached (it's the only expensive field).
+// Activity, context tokens, and elapsed-since-started are recomputed
+// on every request so they stay live.
+let statusSummaryCache: { text: string; at: number } | null = null
+
+function findNewestTranscript(): string | null {
+  // Walk ~/.claude/projects/*/*.jsonl, return path of newest mtime.
+  // Multi-claude-session safety degrades to "most recently active" —
+  // good enough until CLAUDE_SESSION_ID is wired into MCP env.
+  let newest: { path: string; mtime: number } | null = null
+  try {
+    for (const proj of readdirSync(CLAUDE_PROJECTS_DIR)) {
+      const dir = join(CLAUDE_PROJECTS_DIR, proj)
+      let s
+      try { s = statSync(dir) } catch { continue }
+      if (!s.isDirectory()) continue
+      for (const f of readdirSync(dir)) {
+        if (!f.endsWith('.jsonl')) continue
+        const p = join(dir, f)
+        let fs
+        try { fs = statSync(p) } catch { continue }
+        if (!newest || fs.mtimeMs > newest.mtime) newest = { path: p, mtime: fs.mtimeMs }
+      }
+    }
+  } catch {}
+  return newest?.path ?? null
+}
+
+async function tailJsonlLines(path: string, n: number): Promise<string[]> {
+  // Stream-read the tail of a (potentially 100MB+) JSONL. Uses Bun's
+  // file API to seek-from-end so we don't load the whole transcript.
+  const f = Bun.file(path)
+  const chunkSize = Math.min(f.size, 256 * 1024)
+  const slice = f.slice(Math.max(0, f.size - chunkSize), f.size)
+  const text = await slice.text()
+  const lines = text.split('\n').filter(l => l.length > 0)
+  return lines.slice(-n)
+}
+
+function summarizeTailRaw(lines: string[]): { lastAction: string; lastTs: number | null } {
+  // Heuristic extract for the no-API fallback. Returns the last
+  // assistant text or tool call as a one-liner + the latest timestamp.
+  let lastAction = '(no recent activity)'
+  let lastTs: number | null = null
+  let foundAction = false
+  for (let i = lines.length - 1; i >= 0; i--) {
+    let entry
+    try { entry = JSON.parse(lines[i]) } catch { continue }
+    if (entry.timestamp) {
+      const t = Date.parse(entry.timestamp)
+      if (!Number.isNaN(t) && (lastTs === null || t > lastTs)) lastTs = t
+    }
+    if (foundAction) continue
+    const content = entry.message?.content
+    if (Array.isArray(content)) {
+      for (const c of content) {
+        if (c.type === 'text' && typeof c.text === 'string' && c.text.trim()) {
+          lastAction = safeSlice(c.text.replace(/\s+/g, ' '), 200)
+          foundAction = true
+          break
+        }
+        if (c.type === 'tool_use') {
+          lastAction = `tool: ${c.name} ${safeSlice(JSON.stringify(c.input ?? {}), 80)}`
+          foundAction = true
+          break
+        }
+      }
+    }
+  }
+  return { lastAction, lastTs }
+}
+
+function buildSummaryPrompt(lines: string[]): string {
+  // Extract just the relevant content from each entry to keep token
+  // count low. Skip system reminders + huge tool results.
+  const parts: string[] = []
+  let totalChars = 0
+  for (const raw of lines) {
+    let entry
+    try { entry = JSON.parse(raw) } catch { continue }
+    const content = entry.message?.content
+    if (!Array.isArray(content)) continue
+    for (const c of content) {
+      let snippet = ''
+      if (c.type === 'text' && typeof c.text === 'string') {
+        if (c.text.includes('<system-reminder>')) continue
+        snippet = `assistant: ${safeSlice(c.text.replace(/\s+/g, ' '), 400)}`
+      } else if (c.type === 'tool_use') {
+        snippet = `tool_use: ${c.name} ${safeSlice(JSON.stringify(c.input ?? {}), 200)}`
+      } else if (c.type === 'tool_result') {
+        const txt = typeof c.content === 'string' ? c.content
+          : Array.isArray(c.content) ? c.content.map((x: { text?: string }) => x.text ?? '').join(' ')
+          : ''
+        snippet = `tool_result: ${safeSlice(txt.replace(/\s+/g, ' '), 600)}`
+      }
+      if (snippet) {
+        if (totalChars + snippet.length > 3000) break
+        parts.push(snippet)
+        totalChars += snippet.length
+      }
+    }
+  }
+  return parts.join('\n')
+}
+
+async function summarizeViaHaiku(text: string): Promise<string | null> {
+  // OAuth credentials → Anthropic Messages API. Per Claude Code's
+  // documented OAuth flow: Bearer access_token + anthropic-beta header.
+  let cred
+  try { cred = JSON.parse(readFileSync(CRED_FILE, 'utf8'))?.claudeAiOauth } catch { return null }
+  const token = cred?.accessToken
+  if (!token) return null
+  if (cred.expiresAt && cred.expiresAt < Date.now()) {
+    process.stderr.write(`slack /status: oauth token expired\n`)
+    return null
+  }
+  const body = {
+    model: 'claude-haiku-4-5',
+    max_tokens: 200,
+    messages: [{
+      role: 'user',
+      content:
+        'Summarize what this assistant has been doing and is doing right now, ' +
+        'in 1-2 short sentences. Use PAST tense for completed actions (e.g. ' +
+        '"Edited", "Shipped", "Reinstalled"). Use "now <verb>-ing" for the ' +
+        'action currently in flight (the most recent tool call or decision).\n' +
+        'Example: "Reinstalled plugins across three users after updating the ' +
+        'marketplace, now restarting the Discord service to activate the changes."\n' +
+        'Start with a verb — NEVER with a subject noun like "The bot", ' +
+        '"The assistant", "Claude", or "It". No preamble, no quotes.' +
+        '\n\nTRANSCRIPT TAIL:\n' + text,
+    }],
+  }
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), 8000)
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'authorization': `Bearer ${token}`,
+        'content-type': 'application/json',
+        'anthropic-beta': 'oauth-2025-04-20',
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify(body),
+      signal: ctrl.signal,
+    })
+    if (!res.ok) {
+      process.stderr.write(`slack /status: haiku ${res.status} ${await res.text()}\n`)
+      return null
+    }
+    const j = await res.json() as { content?: Array<{ type: string; text?: string }> }
+    const out = j.content?.find(c => c.type === 'text')?.text
+    return out?.trim() ?? null
+  } catch (e) {
+    process.stderr.write(`slack /status: haiku call failed: ${e}\n`)
+    return null
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+function formatHumanAgo(ts: number | null): string {
+  if (ts === null) return 'never'
+  const ago = Date.now() - ts
+  if (ago < 0) return 'just now'
+  const s = Math.floor(ago / 1000)
+  if (s < 60) return `${s}s ago`
+  const m = Math.floor(s / 60)
+  if (m < 60) return `${m}m ago`
+  const h = Math.floor(m / 60)
+  return `${h}h ${m % 60}m ago`
+}
+
+function extractActivityAndContext(lines: string[]): {
+  activity: string
+  contextTokens: number | null
+  activityStartedAt: number | null
+} {
+  // Walk tail entries, pair tool_use ids with tool_result ids. State machine:
+  //   1. unmatched tool_use  → tool is still executing → activity = tool name
+  //   2. latest assistant ends with a thinking block → activity = "reasoning"
+  //   3. last user entry (prompt or tool_result) arrived AFTER the latest
+  //      assistant entry → we're mid-turn, generating the next response →
+  //      activity = "thinking"
+  //   4. otherwise → "idle" (assistant turn ended with a text block)
+  const toolUses: Array<{ name: string; id: string; ts: number }> = []
+  const toolResultIds = new Set<string>()
+  let latestAssistant: {
+    content: Array<{ type: string; name?: string; id?: string }>
+    usage?: {
+      input_tokens?: number
+      cache_creation_input_tokens?: number
+      cache_read_input_tokens?: number
+    }
+    ts: number
+  } | null = null
+  let latestUserTs = 0
+
+  for (const raw of lines) {
+    let entry
+    try { entry = JSON.parse(raw) } catch { continue }
+    const ts = entry.timestamp ? Date.parse(entry.timestamp) : 0
+    const role = entry.message?.role
+    const content = entry.message?.content
+    if (!Array.isArray(content)) continue
+    if (role === 'assistant') {
+      if (!latestAssistant || ts >= latestAssistant.ts) {
+        latestAssistant = { content, usage: entry.message?.usage, ts }
+      }
+      for (const c of content) {
+        if (c.type === 'tool_use' && c.name && c.id) {
+          toolUses.push({ name: c.name, id: c.id, ts })
+        }
+      }
+    } else if (role === 'user') {
+      if (ts > latestUserTs) latestUserTs = ts
+      for (const c of content) {
+        if (c.type === 'tool_result' && c.tool_use_id) {
+          toolResultIds.add(c.tool_use_id)
+        }
+      }
+    }
+  }
+
+  let activity = 'idle'
+  let activityStartedAt: number | null = null
+  const unresolved = toolUses.filter(u => !toolResultIds.has(u.id))
+  if (unresolved.length > 0) {
+    unresolved.sort((a, b) => b.ts - a.ts)
+    activity = unresolved[0].name.toLowerCase()
+    activityStartedAt = unresolved[0].ts || null
+  } else if (latestAssistant) {
+    const last = latestAssistant.content[latestAssistant.content.length - 1]
+    if (last?.type === 'thinking') {
+      activity = 'reasoning'
+      activityStartedAt = latestAssistant.ts || null
+    } else if (latestUserTs > latestAssistant.ts) {
+      activity = 'thinking'
+      activityStartedAt = latestUserTs
+    }
+  } else if (latestUserTs > 0) {
+    activity = 'thinking'
+    activityStartedAt = latestUserTs
+  }
+
+  let contextTokens: number | null = null
+  if (latestAssistant?.usage) {
+    const u = latestAssistant.usage
+    contextTokens =
+      (u.input_tokens ?? 0) +
+      (u.cache_creation_input_tokens ?? 0) +
+      (u.cache_read_input_tokens ?? 0)
+  }
+  return { activity, contextTokens, activityStartedAt }
+}
+
+function formatTokens(n: number | null): string {
+  if (n === null) return '?'
+  if (n < 1000) return `${n}`
+  if (n < 1_000_000) return `${(n / 1000).toFixed(1)}k`
+  return `${(n / 1_000_000).toFixed(2)}M`
+}
+
+function formatElapsed(ms: number): string {
+  if (ms < 0) ms = 0
+  const s = Math.floor(ms / 1000)
+  if (s < 60) return `${s}s`
+  const m = Math.floor(s / 60)
+  if (m < 60) return `${m}m`
+  const h = Math.floor(m / 60)
+  return `${h}h${m % 60}m`
+}
+
+async function buildStatusReply(): Promise<string> {
+  const path = findNewestTranscript()
+  if (!path) return 'not seeing an active claude session transcript anywhere'
+  const lines = await tailJsonlLines(path, 30).catch(() => [] as string[])
+  const { lastAction, lastTs } = summarizeTailRaw(lines)
+  let { activity, contextTokens, activityStartedAt } = extractActivityAndContext(lines)
+  // Liveness guard: "thinking" is inferred from the transcript state, not a
+  // direct signal. If the file hasn't been touched in 60s+, the session is
+  // probably actually idle (crashed/hung without flushing). Tool and reasoning
+  // states stay as-is — tools legitimately hold the transcript silent while
+  // they run, and stuck-tool elapsed time is useful to surface.
+  if (activity === 'thinking') {
+    try {
+      if (Date.now() - statSync(path).mtimeMs > 60_000) {
+        activity = 'idle'
+        activityStartedAt = null
+      }
+    } catch {}
+  }
+  // Idle gate — skip the LLM call entirely if the session hasn't
+  // moved in 5+ minutes; report idle state with the raw last action.
+  const idle = lastTs !== null && Date.now() - lastTs > 5 * 60 * 1000
+
+  let summary: string
+  if (statusSummaryCache && Date.now() - statusSummaryCache.at < STATUS_CACHE_TTL_MS) {
+    summary = statusSummaryCache.text
+  } else {
+    if (idle) {
+      summary = `idle — last action ${formatHumanAgo(lastTs)}: ${lastAction}`
+    } else {
+      const prompt = buildSummaryPrompt(lines)
+      const haiku = prompt ? await summarizeViaHaiku(prompt) : null
+      summary = haiku || lastAction
+    }
+    statusSummaryCache = { text: summary, at: Date.now() }
+  }
+
+  const startedAt = activityStartedAt ?? lastTs
+  const dur = startedAt !== null ? ` (${formatElapsed(Date.now() - startedAt)})` : ''
+  return `${summary}\nnow: ${activity}${dur} · ctx: ${formatTokens(contextTokens)}`
+}
+
+// /status — ephemeral, anyone in an authorized workspace can invoke.
+// Socket Mode delivers slash commands over the same WebSocket; no
+// request URL is needed. ack() must fire within 3s, then respond()
+// can take its time for the haiku round-trip.
+app.command('/status', async ({ ack, respond }) => {
+  await ack()
+  try {
+    const reply = await buildStatusReply()
+    await respond({ text: safeSlice(reply, 3000), response_type: 'ephemeral' })
+  } catch (e) {
+    await respond({
+      text: `status failed: ${safeSlice(String(e), 200)}`,
+      response_type: 'ephemeral',
+    })
+  }
+})
+
 // --- Boot Bolt + Socket Mode ---
 try {
   await loadSelf()
