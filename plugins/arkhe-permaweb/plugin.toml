@@ -1,0 +1,6 @@
+[plugin]
+name = "arkhe-permaweb"
+version = "2.0.0"
+description = "Arkhe Permaweb Bridge"
+
+substrate_id = "927"

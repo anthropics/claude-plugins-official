@@ -1,0 +1,6 @@
+{
+  "name": "arkhe-permaweb",
+  "version": "2.0.0",
+  "description": "Permaweb Bridge plugin (Substrate 927) for ARKHE-OS Omni-Agent",
+  "entrypoint": "permaweb_bridge.py"
+}
