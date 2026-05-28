@@ -1,0 +1,8 @@
+{
+  "name": "vision",
+  "description": "Recognize and describe images using an external vision-capable model (Claude, OpenAI, or compatible). Use when the model lacks native vision capability.",
+  "author": {
+    "name": "ReXeno56"
+  },
+  "homepage": "https://github.com/ReXeno56/claude-code-vision-skill"
+}

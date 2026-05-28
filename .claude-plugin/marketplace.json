@@ -2586,6 +2586,19 @@
       "homepage": "https://github.com/vercel/vercel-plugin"
     },
     {
+      "name": "vision",
+      "description": "Recognize and describe images using an external vision-capable LLM API (Claude, OpenAI, or compatible endpoints). Use when the primary model lacks native vision capability — delegates image recognition to a separate vision model and returns the description.",
+      "author": {
+        "name": "ReXeno56"
+      },
+      "source": "./external_plugins/vision",
+      "category": "productivity",
+      "homepage": "https://github.com/ReXeno56/claude-code-vision-skill",
+      "tags": [
+        "community-managed"
+      ]
+    },
+    {
       "name": "windsor-ai",
       "description": "Connect Claude Code to 325+ business data sources via Windsor.ai. Query marketing, sales, CRM, ecommerce, finance, and analytics data from Google Ads, Meta, HubSpot, Salesforce, Shopify, Stripe, and hundreds more — directly from your terminal.",
       "author": {
