@@ -2208,8 +2208,10 @@ async function handleInbound(msg: Message): Promise<void> {
   // When allow_mentions is set, messages that @mention the bot pass through.
   const dunkEntry = checkDunk(loadDunkedState(), chat_id)
   if (dunkEntry) {
-    const mentionTag = client.user?.id ? `<@${client.user.id}>` : null
-    if (!(dunkEntry.allow_mentions && mentionTag && msg.content.includes(mentionTag))) return
+    // allow_mentions reuses gate()'s mention semantics (isMentioned): a direct
+    // @mention OR a reply to one of the bot's own messages both count, not just
+    // literal mention text. Mirrors the slack plugin's dunk gate.
+    if (!(dunkEntry.allow_mentions && await isMentioned(msg, result.access.mentionPatterns))) return
   }
 
 
