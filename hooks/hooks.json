@@ -1,0 +1,33 @@
+{
+  "description": "Generic Discord channel hooks — typing indicator, live tool-usage streaming, and dot-command interception (.compact/.clear/.model). Apply to any bot using artifice-discord; identity comes from persona.md at runtime.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/discord-typing-indicator.js\"",
+            "timeout": 3
+          },
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/discord-tool-notify.js\"",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/discord-commands.js\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
