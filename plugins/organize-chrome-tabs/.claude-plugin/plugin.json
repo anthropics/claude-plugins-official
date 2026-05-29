@@ -1,0 +1,9 @@
+{
+  "name": "organize-chrome-tabs",
+  "description": "Tame Chrome tab chaos \u2014 closes duplicates, sorts into themed windows, clusters by domain, and creates native tab groups. Adds a /organize-tabs skill to Claude Code.",
+  "author": {
+    "name": "Tyler Thompson",
+    "email": "web.duder@gmail.com"
+  },
+  "version": "1.0.0"
+}
