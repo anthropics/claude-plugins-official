@@ -28,6 +28,23 @@ const ACCESS_FILE = join(STATE_DIR, 'access.json')
 const APPROVED_DIR = join(STATE_DIR, 'approved')
 const ENV_FILE = join(STATE_DIR, '.env')
 
+// Crash-safe stderr. When the Claude Code process that owns this server's stdio
+// exits, stderr becomes a broken pipe and every write throws EPIPE. A bare
+// process.stderr.write would let that EPIPE surface as an uncaughtException —
+// whose handler writes to stderr again, throws EPIPE again, and re-enters
+// forever: a tight synchronous loop that pegs a CPU core and is immune to both
+// SIGTERM and the orphan watchdog (the event loop never idles to run them).
+// A dead stderr means the parent is gone — swallow the error and exit.
+// Fixes #1049; root cause of #1794 / #1500 / #1713.
+function safeStderrWrite(msg: string): void {
+  try {
+    process.stderr.write(msg)
+  } catch (e) {
+    const code = (e as { code?: string })?.code
+    if (code === 'EPIPE' || code === 'EBADF' || code === 'ERR_STREAM_DESTROYED') process.exit(0)
+  }
+}
+
 // Load ~/.claude/channels/telegram/.env into process.env. Real env wins.
 // Plugin-spawned servers don't get an env block — this is where the token lives.
 try {
@@ -43,7 +60,7 @@ const TOKEN = process.env.TELEGRAM_BOT_TOKEN
 const STATIC = process.env.TELEGRAM_ACCESS_MODE === 'static'
 
 if (!TOKEN) {
-  process.stderr.write(
+  safeStderrWrite(
     `telegram channel: TELEGRAM_BOT_TOKEN required\n` +
     `  set in ${ENV_FILE}\n` +
     `  format: TELEGRAM_BOT_TOKEN=123456789:AAH...\n`,
@@ -62,7 +79,7 @@ try {
   const stale = parseInt(readFileSync(PID_FILE, 'utf8'), 10)
   if (stale > 1 && stale !== process.pid) {
     process.kill(stale, 0)
-    process.stderr.write(`telegram channel: replacing stale poller pid=${stale}\n`)
+    safeStderrWrite(`telegram channel: replacing stale poller pid=${stale}\n`)
     process.kill(stale, 'SIGTERM')
   }
 } catch {}
@@ -71,10 +88,14 @@ writeFileSync(PID_FILE, String(process.pid))
 // Last-resort safety net — without these the process dies silently on any
 // unhandled promise rejection. With them it logs and keeps serving tools.
 process.on('unhandledRejection', err => {
-  process.stderr.write(`telegram channel: unhandled rejection: ${err}\n`)
+  // A broken stdio pipe means the owning Claude Code process is gone; exit
+  // rather than try to log (the write would EPIPE and re-enter this handler).
+  if ((err as { code?: string })?.code === 'EPIPE') process.exit(0)
+  safeStderrWrite(`telegram channel: unhandled rejection: ${err}\n`)
 })
 process.on('uncaughtException', err => {
-  process.stderr.write(`telegram channel: uncaught exception: ${err}\n`)
+  if ((err as { code?: string })?.code === 'EPIPE') process.exit(0)
+  safeStderrWrite(`telegram channel: uncaught exception: ${err}\n`)
 })
 
 // Permission-reply spec from anthropics/claude-cli-internal
@@ -164,7 +185,7 @@ function readAccessFile(): Access {
     try {
       renameSync(ACCESS_FILE, `${ACCESS_FILE}.corrupt-${Date.now()}`)
     } catch {}
-    process.stderr.write(`telegram channel: access.json is corrupt, moved aside. Starting fresh.\n`)
+    safeStderrWrite(`telegram channel: access.json is corrupt, moved aside. Starting fresh.\n`)
     return defaultAccess()
   }
 }
@@ -176,7 +197,7 @@ const BOOT_ACCESS: Access | null = STATIC
   ? (() => {
       const a = readAccessFile()
       if (a.dmPolicy === 'pairing') {
-        process.stderr.write(
+        safeStderrWrite(
           'telegram channel: static mode — dmPolicy "pairing" downgraded to "allowlist"\n',
         )
         a.dmPolicy = 'allowlist'
@@ -341,7 +362,7 @@ function checkApprovals(): void {
     void bot.api.sendMessage(senderId, "Paired! Say hi to Claude.").then(
       () => rmSync(file, { force: true }),
       err => {
-        process.stderr.write(`telegram channel: failed to send approval confirm: ${err}\n`)
+        safeStderrWrite(`telegram channel: failed to send approval confirm: ${err}\n`)
         // Remove anyway — don't loop on a broken send.
         rmSync(file, { force: true })
       },
@@ -436,7 +457,7 @@ mcp.setNotificationHandler(
       .text('❌ Deny', `perm:deny:${request_id}`)
     for (const chat_id of access.allowFrom) {
       void bot.api.sendMessage(chat_id, text, { reply_markup: keyboard }).catch(e => {
-        process.stderr.write(`permission_request send to ${chat_id} failed: ${e}\n`)
+        safeStderrWrite(`permission_request send to ${chat_id} failed: ${e}\n`)
       })
     }
   },
@@ -649,7 +670,7 @@ let shuttingDown = false
 function shutdown(): void {
   if (shuttingDown) return
   shuttingDown = true
-  process.stderr.write('telegram channel: shutting down\n')
+  safeStderrWrite('telegram channel: shutting down\n')
   try {
     if (parseInt(readFileSync(PID_FILE, 'utf8'), 10) === process.pid) rmSync(PID_FILE)
   } catch {}
@@ -808,7 +829,7 @@ bot.on('message:photo', async ctx => {
       writeFileSync(path, buf)
       return path
     } catch (err) {
-      process.stderr.write(`telegram channel: photo download failed: ${err}\n`)
+      safeStderrWrite(`telegram channel: photo download failed: ${err}\n`)
       return undefined
     }
   })
@@ -981,14 +1002,14 @@ async function handleInbound(
       },
     },
   }).catch(err => {
-    process.stderr.write(`telegram channel: failed to deliver inbound to Claude: ${err}\n`)
+    safeStderrWrite(`telegram channel: failed to deliver inbound to Claude: ${err}\n`)
   })
 }
 
 // Without this, any throw in a message handler stops polling permanently
 // (grammy's default error handler calls bot.stop() and rethrows).
 bot.catch(err => {
-  process.stderr.write(`telegram channel: handler error (polling continues): ${err.error}\n`)
+  safeStderrWrite(`telegram channel: handler error (polling continues): ${err.error}\n`)
 })
 
 // Retry polling with backoff on any error. Previously only 409 was retried —
@@ -1003,7 +1024,7 @@ void (async () => {
         onStart: info => {
           attempt = 0
           botUsername = info.username
-          process.stderr.write(`telegram channel: polling as @${info.username}\n`)
+          safeStderrWrite(`telegram channel: polling as @${info.username}\n`)
           void bot.api.setMyCommands(
             [
               { command: 'start', description: 'Welcome and setup guide' },
@@ -1021,7 +1042,7 @@ void (async () => {
       if (err instanceof Error && err.message === 'Aborted delay') return
       const is409 = err instanceof GrammyError && err.error_code === 409
       if (is409 && attempt >= 8) {
-        process.stderr.write(
+        safeStderrWrite(
           `telegram channel: 409 Conflict persists after ${attempt} attempts — ` +
           `another poller is holding the bot token (stray 'bun server.ts' process or a second session). Exiting.\n`,
         )
@@ -1031,7 +1052,7 @@ void (async () => {
       const detail = is409
         ? `409 Conflict${attempt === 1 ? ' — another instance is polling (zombie session, or a second Claude Code running?)' : ''}`
         : `polling error: ${err}`
-      process.stderr.write(`telegram channel: ${detail}, retrying in ${delay / 1000}s\n`)
+      safeStderrWrite(`telegram channel: ${detail}, retrying in ${delay / 1000}s\n`)
       await new Promise(r => setTimeout(r, delay))
     }
   }
