@@ -15,7 +15,10 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: "CLA Assistant"
-        if: (github.event.comment.body == 'recheck' || github.event.comment.body == 'I have read the CLA Document and I hereby sign the CLA') || github.event_name == 'pull_request_target'
+        # contains() rather than == so a signing comment with trailing
+        # whitespace or a newline still triggers the run; exact-match silently
+        # dropped several contributors' signatures (see #9, #17).
+        if: github.event_name == 'pull_request_target' || contains(github.event.comment.body, 'recheck') || contains(github.event.comment.body, 'I have read the CLA Document and I hereby sign the CLA')
         # Upstream contributor-assistant/github-action was archived 2026-03-23
         # still on Node 20 (deprecated 2026-06-02). This fork bumps to Node 24
         # and adds: an impersonation guard (PR opener must be an author or
@@ -32,5 +35,9 @@ jobs:
           # noreply@anthropic.com is the email AI assistants use on
           # Co-authored-by trailers (e.g. Claude). Allowlisting it suppresses
           # the synthetic co-author from the CLA check; the PR opener still
-          # has to sign.
-          allowlist: "iainmcgin,dependabot[bot],github-actions[bot],renovate[bot],noreply@anthropic.com"
+          # has to sign. When the assistant is the git author of a commit
+          # (e.g. PRs built with the Claude GitHub app), the same identity
+          # resolves to the `claude` login rather than the email, so the
+          # login forms are allowlisted too — the human PR opener still has
+          # to sign either way.
+          allowlist: "iainmcgin,claude,claude[bot],dependabot[bot],github-actions[bot],renovate[bot],noreply@anthropic.com"
