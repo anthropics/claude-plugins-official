@@ -1504,6 +1504,105 @@ function findNewestTranscript(): string | null {
   return newest?.path ?? null
 }
 
+// --- session-bound transcript resolution -------------------------------
+// NOTE: this block is duplicated verbatim in external_plugins/discord/server.ts.
+// Keep the two copies in sync (the codebase has no shared module for these).
+// findNewestTranscript() above is the legacy fallback (most-recently-active
+// across all sessions). When BOT_SESSION_NAME is set (claude-discord-service
+// deployments), prefer the transcript whose Claude Code `custom-title` record
+// matches it — that's the bot's own `--resume <name>` session, regardless of
+// which session file was touched most recently.
+const BOT_SESSION_NAME = process.env.BOT_SESSION_NAME
+
+// Pull the session custom-title from a transcript's head without loading the
+// whole file (transcripts run to 100MB+). The {"type":"custom-title",...}
+// record Claude Code stamps for a `--resume <name>` session sits at the top.
+async function transcriptCustomTitle(path: string): Promise<string | null> {
+  try {
+    const f = Bun.file(path)
+    if (f.size === 0) return null
+    // Scan COMPLETE lines for the custom-title record. A fixed byte window can
+    // bisect a huge first record (queue-operation rows can run 100s of KB), so
+    // drop the trailing partial line; and if the first line alone exceeds the
+    // window (zero complete lines parsed) escalate the read once before giving
+    // up, rather than trying to JSON.parse a truncated fragment.
+    for (const cap of [64 * 1024, 1024 * 1024]) {
+      const end = Math.min(f.size, cap)
+      const text = await f.slice(0, end).text()
+      const truncated = end < f.size
+      const lines = text.split('\n')
+      if (truncated) lines.pop()
+      for (const line of lines) {
+        if (!line.includes('customTitle')) continue
+        try {
+          const row = JSON.parse(line)
+          if (row?.type === 'custom-title' && typeof row.customTitle === 'string') return row.customTitle
+        } catch {}
+      }
+      // Complete lines seen (the real top of the file), or whole file read →
+      // conclusive. Only escalate when line 1 outran the window.
+      if (lines.length > 0 || !truncated) return null
+    }
+  } catch {}
+  return null
+}
+
+// Newest .jsonl in `dir` whose custom-title === name, or null. Reads heads in
+// mtime-descending order and returns the first match, so the common case (the
+// live session is both newest and titled) costs a single head read.
+async function newestTitledIn(dir: string, name: string): Promise<string | null> {
+  let entries: string[]
+  try { entries = readdirSync(dir) } catch { return null }
+  const files: { path: string; mtime: number }[] = []
+  for (const f of entries) {
+    if (!f.endsWith('.jsonl')) continue
+    const p = join(dir, f)
+    try { files.push({ path: p, mtime: statSync(p).mtimeMs }) } catch {}
+  }
+  files.sort((a, b) => b.mtime - a.mtime)
+  for (const { path } of files) {
+    if (await transcriptCustomTitle(path) === name) return path
+  }
+  return null
+}
+
+// Resolve the transcript /status should summarize. With BOT_SESSION_NAME set:
+// (B) fast-path the conventionally-derived project dir
+// ($HOME/claude-discord/<name>, slash->dash encoded) — the MCP server's own
+// cwd is the plugin cache dir, so the workdir is derived from the convention,
+// not process.cwd(); then (A) fall back to scanning every project dir for the
+// title match. Either way the selector is the custom-title, not mtime. If no
+// titled session is found (or BOT_SESSION_NAME is unset) drop to the legacy
+// newest-mtime behavior so /status never regresses below today.
+async function resolveActiveTranscript(): Promise<string | null> {
+  if (BOT_SESSION_NAME) {
+    // (B) fast-path the convention dir. Mirror Claude Code's project-dir
+    // encoding — it maps every non-alphanumeric path char ('/', '.', '_', …)
+    // to '-' and preserves existing '-', so encode the same way, not just '/'.
+    const convWorkdir = join(homedir(), 'claude-discord', BOT_SESSION_NAME)
+    const convDir = join(CLAUDE_PROJECTS_DIR, convWorkdir.replace(/[^A-Za-z0-9-]/g, '-'))
+    const scoped = await newestTitledIn(convDir, BOT_SESSION_NAME)
+    if (scoped) return scoped
+    // (A) scan the remaining project dirs for the title match; convDir was
+    // already checked by (B), so skip it to avoid re-reading its heads.
+    let projs: string[]
+    try { projs = readdirSync(CLAUDE_PROJECTS_DIR) } catch { projs = [] }
+    let best: { path: string; mtime: number } | null = null
+    for (const proj of projs) {
+      const dir = join(CLAUDE_PROJECTS_DIR, proj)
+      if (dir === convDir) continue
+      try { if (!statSync(dir).isDirectory()) continue } catch { continue }
+      const hit = await newestTitledIn(dir, BOT_SESSION_NAME)
+      if (!hit) continue
+      let m: number
+      try { m = statSync(hit).mtimeMs } catch { continue }
+      if (!best || m > best.mtime) best = { path: hit, mtime: m }
+    }
+    if (best) return best.path
+  }
+  return findNewestTranscript()
+}
+
 async function tailJsonlLines(path: string, n: number): Promise<string[]> {
   // Stream-read the tail of a (potentially 100MB+) JSONL. Uses Bun's
   // file API to seek-from-end so we don't load the whole transcript.
@@ -1751,7 +1850,7 @@ function formatElapsed(ms: number): string {
 }
 
 async function buildStatusReply(): Promise<string> {
-  const path = findNewestTranscript()
+  const path = await resolveActiveTranscript()
   if (!path) return 'not seeing an active claude session transcript anywhere'
   const lines = await tailJsonlLines(path, 30).catch(() => [] as string[])
   const { lastAction, lastTs } = summarizeTailRaw(lines)
