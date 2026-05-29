@@ -19,7 +19,7 @@ import { z } from 'zod'
 import { Bot, GrammyError, InlineKeyboard, InputFile, type Context } from 'grammy'
 import type { ReactionTypeEmoji } from 'grammy/types'
 import { randomBytes } from 'crypto'
-import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, statSync, renameSync, realpathSync, chmodSync } from 'fs'
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, statSync, renameSync, realpathSync, chmodSync, appendFileSync } from 'fs'
 import { homedir } from 'os'
 import { join, extname, sep } from 'path'
 
@@ -725,6 +725,41 @@ bot.command('status', async ctx => {
   await ctx.reply(`Not paired. Send me a message to get a pairing code.`)
 })
 
+// Inbound message reactions — emoji taps the user adds/removes on a bot
+// message. Only delivered when the bot subscribes via `allowed_updates`
+// (see bot.start below). Same allowlist gate as message handlers; reactions
+// from non-allowlisted users are silently dropped.
+//
+// Appended to ~/Projects/.tony/telegram-reactions.jsonl (or
+// $TONY_REACTION_LOG if set) for downstream consumers. The plugin doesn't
+// own this file or its consumers — it's an opt-in side channel for tools
+// that want to mine reaction signal joined with the outbound reply log.
+bot.on('message_reaction', async ctx => {
+  try {
+    const reaction = ctx.messageReaction
+    if (!reaction) return
+    const senderId = String(reaction.user?.id ?? '')
+    if (!senderId) return
+    const access = loadAccess()
+    if (!access.allowFrom.includes(senderId)) return
+    const reactionLog = process.env.TONY_REACTION_LOG
+      || (process.env.HOME ? `${process.env.HOME}/Projects/.tony/telegram-reactions.jsonl` : '')
+    if (!reactionLog) return
+    try { mkdirSync(reactionLog.substring(0, reactionLog.lastIndexOf('/')), { recursive: true }) } catch {}
+    const row = {
+      ts: new Date().toISOString(),
+      chat_id: reaction.chat.id,
+      message_id: reaction.message_id,
+      user_id: reaction.user?.id,
+      old_reaction: (reaction.old_reaction ?? []).map(r => r.type === 'emoji' ? r.emoji : r.type),
+      new_reaction: (reaction.new_reaction ?? []).map(r => r.type === 'emoji' ? r.emoji : r.type),
+    }
+    appendFileSync(reactionLog, JSON.stringify(row) + '\n')
+  } catch (err) {
+    process.stderr.write(`reaction handler error: ${String(err)}\n`)
+  }
+})
+
 // Inline-button handler for permission requests. Callback data is
 // `perm:allow:<id>`, `perm:deny:<id>`, or `perm:more:<id>`.
 // Security mirrors the text-reply path: allowFrom must contain the sender.
@@ -1000,6 +1035,13 @@ void (async () => {
   for (let attempt = 1; ; attempt++) {
     try {
       await bot.start({
+        allowed_updates: [
+          'message',
+          'edited_message',
+          'callback_query',
+          'message_reaction',
+          'message_reaction_count',
+        ],
         onStart: info => {
           attempt = 0
           botUsername = info.username
