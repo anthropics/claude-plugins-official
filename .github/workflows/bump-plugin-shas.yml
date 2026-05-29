@@ -7,12 +7,14 @@ name: Bump Plugin SHAs
 # independently.
 #
 # Bot-free — uses the default GITHUB_TOKEN. PRs opened with GITHUB_TOKEN don't
-# trigger on:pull_request workflows, so the policy scan (`Scan Plugins`, a
-# required status check on main) would never run and the bump PR could never
-# merge. workflow_dispatch is exempt from that recursion guard, so we dispatch
-# the scan ourselves against each per-entry bump branch after its PR is
-# opened. The check run lands on the branch HEAD — the same SHA as the PR
-# head — and satisfies the required check.
+# trigger on:pull_request workflows, so the required status checks on main
+# (`scan` from Scan Plugins, `check` from Check MCP URLs, `validate` from
+# Validate Plugins) would never run and the bump PR could never merge.
+# workflow_dispatch is exempt from that recursion guard, so we dispatch all
+# three ourselves against each per-entry bump branch after its PR is opened.
+# Each check run lands on the branch HEAD — the same SHA as the PR head — and
+# satisfies the corresponding required check. (Each of those workflows runs
+# its job unconditionally on workflow_dispatch, so a dispatch always reports.)
 #
 # max-bumps caps the per-night work for cost control. Per-entry scans are
 # more expensive than a single batched scan, so the cap is conservative.
@@ -32,7 +34,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
-  actions: write  # gh workflow run scan-plugins.yml per per-entry bump branch
+  actions: write  # gh workflow run {scan-plugins,check-mcp-urls,validate-plugins}.yml per bump branch
 
 concurrency:
   group: bump-plugin-shas
@@ -57,10 +59,14 @@ jobs:
           pr-mode: per-entry
           claude-cli-version: latest
 
-      # Per-entry fan-out: dispatch the policy scan against each bump branch.
-      # `pr-urls` is a JSON array of {name, old_sha, new_sha, branch, pr_url}
-      # entries emitted by the composite action when pr-mode is per-entry.
-      - name: Dispatch policy scan per per-entry PR
+      # Per-entry fan-out: dispatch the three required checks against each bump
+      # branch. `pr-urls` is a JSON array of {name, old_sha, new_sha, branch,
+      # pr_url} entries emitted by the composite action when pr-mode is
+      # per-entry. All three (scan / check / validate) are required on main and
+      # none fire on the GITHUB_TOKEN-opened PR, so each must be dispatched.
+      # A single failed dispatch (transient API error) must not strand the
+      # remaining branches, so failures are logged as warnings, not fatal.
+      - name: Dispatch required checks per per-entry PR
         if: steps.bump.outputs.pr-urls != '' && steps.bump.outputs.pr-urls != '[]'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -70,6 +76,9 @@ jobs:
           jq -c '.[]' <<<"$PR_URLS" | while read -r entry; do
             branch=$(jq -r '.branch' <<<"$entry")
             name=$(jq -r '.name' <<<"$entry")
-            echo "Dispatching scan-plugins.yml against $branch ($name)"
-            gh workflow run scan-plugins.yml --ref "$branch"
+            for wf in scan-plugins check-mcp-urls validate-plugins; do
+              echo "Dispatching ${wf}.yml against $branch ($name)"
+              gh workflow run "${wf}.yml" --ref "$branch" \
+                || echo "::warning::Failed to dispatch ${wf}.yml against $branch ($name) — required check may be missing on its PR"
+            done
           done

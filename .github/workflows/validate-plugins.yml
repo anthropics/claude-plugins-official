@@ -12,6 +12,14 @@ on:
     branches: [main]
     paths:
       - '.claude-plugin/**'
+  # `validate` is a required status check on main. Bump PRs are opened with
+  # GITHUB_TOKEN, which doesn't fire on:pull_request (recursion guard), so the
+  # path-filtered trigger above never reports on them and the PR would be
+  # blocked forever. The bump workflow dispatches this against each per-entry
+  # bump branch instead; the check run lands on the branch HEAD (= PR head)
+  # and satisfies the required check. The validate job runs unconditionally,
+  # so a dispatch always reports.
+  workflow_dispatch:
 
 permissions:
   contents: read
