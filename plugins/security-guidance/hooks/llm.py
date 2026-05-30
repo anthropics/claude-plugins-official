@@ -479,10 +479,15 @@ def _call_claude(prompt, output_schema, thinking_budget=10000, max_tokens=16000,
         "max_tokens": max_tokens,
         "system": CLAUDE_CODE_SYSTEM_PROMPT,
         "messages": [{"role": "user", "content": prompt}],
-        "output_format": {
-            "type": "json_schema",
-            "schema": output_schema
-        }
+        # The Messages API deprecated top-level `output_format` in favor of
+        # `output_config.format` (sending the old field now 400s). The adaptive
+        # branch below merges `effort` into this same `output_config` dict.
+        "output_config": {
+            "format": {
+                "type": "json_schema",
+                "schema": output_schema,
+            }
+        },
     }
     if thinking_budget > 0:
         # Models trained on adaptive thinking (4.6+) reject the budget_tokens
@@ -490,7 +495,7 @@ def _call_claude(prompt, output_schema, thinking_budget=10000, max_tokens=16000,
         # models (4.5 and earlier, all 3.x) reject adaptive. Pick by model.
         if _model_supports_adaptive_thinking(payload["model"]):
             payload["thinking"] = {"type": "adaptive"}
-            payload["output_config"] = {"effort": "high"}
+            payload["output_config"]["effort"] = "high"
         else:
             payload["thinking"] = {
                 "type": "enabled",
