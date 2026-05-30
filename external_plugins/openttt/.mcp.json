@@ -1,0 +1,6 @@
+{
+  "ttt": {
+    "command": "npx",
+    "args": ["-y", "@helm-protocol/ttt-mcp"]
+  }
+}

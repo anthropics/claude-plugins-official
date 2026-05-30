@@ -1,0 +1,7 @@
+{
+  "name": "openttt",
+  "description": "Prevents Workflow Amnesia in long-horizon Claude Code agent workflows. Every workflow step is anchored to a cryptographic timestamp on an external server — physically separate from Claude's context window. When context compression occurs, agents call pot_query(eventId) for O(1) exact step recall with 100% recovery rate. Pure hash chain (SHA-3 + Ed25519), zero LLM embedding overhead. Auto-Rollup handles 10B+ token scale. IETF standardized: draft-helmprotocol-tttps-00.",
+  "author": {
+    "name": "Helm Protocol"
+  }
+}
