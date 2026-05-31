@@ -6,24 +6,45 @@ disable-model-invocation: false
 
 Provide a code review for the given pull request.
 
-To do this, follow these steps precisely:
+## Parameters
+
+Arguments are optional space-separated key=value or flags:
+
+- **PR number/URL**: The pull request to review (e.g., `#42` or full URL). If omitted, uses `gh pr view` to find the current branch's PR.
+- **`confidence=N`**: Minimum confidence score (0-100) for reporting issues. Default: 80. Lower to 60 for broader results; raise to 90 for stricter filtering.
+- **`focus=bugs`** | **`focus=compliance`** | **`focus=context`** | **`focus=all`**: Limit review dimensions. `bugs` runs agents #2-3 only; `compliance` runs agents #1, #4-5; `context` runs agent #3-4 (git history + prior PRs); `all` (default) runs all 5.
+- **`since=<commit-ish>`**: Only review changes since the given commit/base (e.g., `since=HEAD~3` or `since=main`). Uses `git diff <commit-ish>..HEAD` instead of the full PR diff. Useful for incremental re-review after addressing feedback.
+
+Examples:
+- `/code-review` — Full review of current branch's PR, default threshold 80
+- `/code-review #123 confidence=70 focus=bugs` — Bug-focused review of PR #123, lower threshold
+- `/code-review since=HEAD~2` — Only review the last 2 commits' changes
+
+## Steps
 
 1. Use a Haiku agent to check if the pull request (a) is closed, (b) is a draft, (c) does not need a code review (eg. because it is an automated pull request, or is very simple and obviously ok), or (d) already has a code review from you from earlier. If so, do not proceed.
 2. Use another Haiku agent to give you a list of file paths to (but not the contents of) any relevant CLAUDE.md files from the codebase: the root CLAUDE.md file (if one exists), as well as any CLAUDE.md files in the directories whose files the pull request modified
 3. Use a Haiku agent to view the pull request, and ask the agent to return a summary of the change
-4. Then, launch 5 parallel Sonnet agents to independently code review the change. The agents should do the following, then return a list of issues and the reason each issue was flagged (eg. CLAUDE.md adherence, bug, historical git context, etc.):
-   a. Agent #1: Audit the changes to make sure they compily with the CLAUDE.md. Note that CLAUDE.md is guidance for Claude as it writes code, so not all instructions will be applicable during code review.
+4. Then, launch parallel review agents based on the `focus` parameter:
+   - **`focus=bugs`**: Launch Agent #2 (shallow bug scan) and Agent #3 (git blame/history). Skip compliance agents.
+   - **`focus=compliance`**: Launch Agent #1 (CLAUDE.md audit) and Agent #4 (prior PR comments) and Agent #5 (inline comment compliance).
+   - **`focus=context`**: Launch Agent #3 (git blame/history) and Agent #4 (prior PR comments).
+   - **`focus=all`** (default): Launch all 5 agents below.
+   - If Agent #1 and Agent #5 overlap substantially (both check written guidance), Agent #5 may be skipped unless inline comments are abundant in the diff.
+
+   The agents should each return a list of issues and the reason each issue was flagged:
+   a. Agent #1: Audit the changes to make sure they comply with the CLAUDE.md. Note that CLAUDE.md is guidance for Claude as it writes code, so not all instructions will be applicable during code review.
    b. Agent #2: Read the file changes in the pull request, then do a shallow scan for obvious bugs. Avoid reading extra context beyond the changes, focusing just on the changes themselves. Focus on large bugs, and avoid small issues and nitpicks. Ignore likely false positives.
    c. Agent #3: Read the git blame and history of the code modified, to identify any bugs in light of that historical context
    d. Agent #4: Read previous pull requests that touched these files, and check for any comments on those pull requests that may also apply to the current pull request.
    e. Agent #5: Read code comments in the modified files, and make sure the changes in the pull request comply with any guidance in the comments.
-5. For each issue found in #4, launch a parallel Haiku agent that takes the PR, issue description, and list of CLAUDE.md files (from step 2), and returns a score to indicate the agent's level of confidence for whether the issue is real or false positive. To do that, the agent should score each issue on a scale from 0-100, indicating its level of confidence. For issues that were flagged due to CLAUDE.md instructions, the agent should double check that the CLAUDE.md actually calls out that issue specifically. The scale is (give this rubric to the agent verbatim):
+5. For each issue found in #4, launch a parallel Haiku agent that takes the PR, issue description, and list of CLAUDE.md files (from step 2), and returns a score to indicate the agent's level of confidence for whether the issue is real or false positive. To do that, the agent should score each issue on a scale from 0-100, indicating its level of confidence. For issues that were flagged due to CLAUDE.md instructions, the agent should double check that the CLAUDE.md actually calls out that issue specifically. If there are 0 issues or only 1 issue, skip confidence scoring (the single-issue case is scored at face value). The scale is (give this rubric to the agent verbatim):
    a. 0: Not confident at all. This is a false positive that doesn't stand up to light scrutiny, or is a pre-existing issue.
    b. 25: Somewhat confident. This might be a real issue, but may also be a false positive. The agent wasn't able to verify that it's a real issue. If the issue is stylistic, it is one that was not explicitly called out in the relevant CLAUDE.md.
    c. 50: Moderately confident. The agent was able to verify this is a real issue, but it might be a nitpick or not happen very often in practice. Relative to the rest of the PR, it's not very important.
    d. 75: Highly confident. The agent double checked the issue, and verified that it is very likely it is a real issue that will be hit in practice. The existing approach in the PR is insufficient. The issue is very important and will directly impact the code's functionality, or it is an issue that is directly mentioned in the relevant CLAUDE.md.
    e. 100: Absolutely certain. The agent double checked the issue, and confirmed that it is definitely a real issue, that will happen frequently in practice. The evidence directly confirms this.
-6. Filter out any issues with a score less than 80. If there are no issues that meet this criteria, do not proceed.
+6. Filter out any issues with a score less than the configured `confidence` threshold (default: 80). If there are no issues that meet this criteria, do not proceed.
 7. Use a Haiku agent to repeat the eligibility check from #1, to make sure that the pull request is still eligible for code review.
 8. Finally, use the gh bash command to comment back on the pull request with the result. When writing your comment, keep in mind to:
    a. Keep your output brief
@@ -44,9 +65,11 @@ Examples of false positives, for steps 4 and 5:
 Notes:
 
 - Do not check build signal or attempt to build or typecheck the app. These will run separately, and are not relevant to your code review.
+- When `since=<commit-ish>` is provided, use `git diff <commit-ish>..HEAD` as the review scope instead of the full PR diff. This enables fast incremental re-review after addressing prior feedback.
 - Use `gh` to interact with Github (eg. to fetch a pull request, or to create inline comments), rather than web fetch
 - Make a todo list first
 - You must cite and link each bug (eg. if referring to a CLAUDE.md, you must link it)
+- For 0-1 issues found, skip the confidence scoring phase (step 5) — it's an unnecessary cost for trivial reviews
 - For your final comment, follow the following format precisely (assuming for this example that you found 3 issues):
 
 ---

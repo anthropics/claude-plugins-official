@@ -25,12 +25,16 @@ You need to execute the following bash commands to clean up stale local branches
 3. **Finally, remove worktrees and delete [gone] branches (handles both regular and worktree branches)**
    Execute this command:
    ```bash
+   # Pre-fetch worktree list once (avoid repeated calls in loop)
+   WORKTREE_LIST=$(git worktree list)
+   REPO_ROOT=$(git rev-parse --show-toplevel)
+
    # Process all [gone] branches, removing '+' prefix if present
    git branch -v | grep '\[gone\]' | sed 's/^[+* ]//' | awk '{print $1}' | while read branch; do
      echo "Processing branch: $branch"
-     # Find and remove worktree if it exists
-     worktree=$(git worktree list | grep "\\[$branch\\]" | awk '{print $1}')
-     if [ ! -z "$worktree" ] && [ "$worktree" != "$(git rev-parse --show-toplevel)" ]; then
+     # Find and remove worktree if it exists (from pre-fetched list)
+     worktree=$(echo "$WORKTREE_LIST" | grep "\\[$branch\\]" | awk '{print $1}')
+     if [ ! -z "$worktree" ] && [ "$worktree" != "$REPO_ROOT" ]; then
        echo "  Removing worktree: $worktree"
        git worktree remove --force "$worktree"
      fi

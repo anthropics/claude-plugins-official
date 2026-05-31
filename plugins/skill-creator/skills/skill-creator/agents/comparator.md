@@ -90,106 +90,15 @@ Save results to a JSON file at the path specified (or `comparison.json` if not s
 
 ## Output Format
 
-Write a JSON file with this structure:
+Write results to a JSON file at the path specified (or `comparison.json` if not specified). Full schema defined in `references/schemas.md#comparison.json`. Key fields:
 
-```json
-{
-  "winner": "A",
-  "reasoning": "Output A provides a complete solution with proper formatting and all required fields. Output B is missing the date field and has formatting inconsistencies.",
-  "rubric": {
-    "A": {
-      "content": {
-        "correctness": 5,
-        "completeness": 5,
-        "accuracy": 4
-      },
-      "structure": {
-        "organization": 4,
-        "formatting": 5,
-        "usability": 4
-      },
-      "content_score": 4.7,
-      "structure_score": 4.3,
-      "overall_score": 9.0
-    },
-    "B": {
-      "content": {
-        "correctness": 3,
-        "completeness": 2,
-        "accuracy": 3
-      },
-      "structure": {
-        "organization": 3,
-        "formatting": 2,
-        "usability": 3
-      },
-      "content_score": 2.7,
-      "structure_score": 2.7,
-      "overall_score": 5.4
-    }
-  },
-  "output_quality": {
-    "A": {
-      "score": 9,
-      "strengths": ["Complete solution", "Well-formatted", "All fields present"],
-      "weaknesses": ["Minor style inconsistency in header"]
-    },
-    "B": {
-      "score": 5,
-      "strengths": ["Readable output", "Correct basic structure"],
-      "weaknesses": ["Missing date field", "Formatting inconsistencies", "Partial data extraction"]
-    }
-  },
-  "expectation_results": {
-    "A": {
-      "passed": 4,
-      "total": 5,
-      "pass_rate": 0.80,
-      "details": [
-        {"text": "Output includes name", "passed": true},
-        {"text": "Output includes date", "passed": true},
-        {"text": "Format is PDF", "passed": true},
-        {"text": "Contains signature", "passed": false},
-        {"text": "Readable text", "passed": true}
-      ]
-    },
-    "B": {
-      "passed": 3,
-      "total": 5,
-      "pass_rate": 0.60,
-      "details": [
-        {"text": "Output includes name", "passed": true},
-        {"text": "Output includes date", "passed": false},
-        {"text": "Format is PDF", "passed": true},
-        {"text": "Contains signature", "passed": false},
-        {"text": "Readable text", "passed": true}
-      ]
-    }
-  }
-}
-```
+- `winner`: "A", "B", or "TIE"
+- `reasoning`: Clear explanation of winner choice
+- `rubric`: Per-output scoring with `content` (correctness/completeness/accuracy), `structure` (organization/formatting/usability), `content_score`, `structure_score`, `overall_score`
+- `output_quality`: Per-output `score`, `strengths[]`, `weaknesses[]`
+- `expectation_results` (only if expectations provided): Per-output `passed`/`total`/`pass_rate` + `details[]`
 
-If no expectations were provided, omit the `expectation_results` field entirely.
-
-## Field Descriptions
-
-- **winner**: "A", "B", or "TIE"
-- **reasoning**: Clear explanation of why the winner was chosen (or why it's a tie)
-- **rubric**: Structured rubric evaluation for each output
-  - **content**: Scores for content criteria (correctness, completeness, accuracy)
-  - **structure**: Scores for structure criteria (organization, formatting, usability)
-  - **content_score**: Average of content criteria (1-5)
-  - **structure_score**: Average of structure criteria (1-5)
-  - **overall_score**: Combined score scaled to 1-10
-- **output_quality**: Summary quality assessment
-  - **score**: 1-10 rating (should match rubric overall_score)
-  - **strengths**: List of positive aspects
-  - **weaknesses**: List of issues or shortcomings
-- **expectation_results**: (Only if expectations provided)
-  - **passed**: Number of expectations that passed
-  - **total**: Total number of expectations
-  - **pass_rate**: Fraction passed (0.0 to 1.0)
-  - **details**: Individual expectation results
+If no expectations were provided, omit `expectation_results` entirely.
 
 ## Guidelines
 

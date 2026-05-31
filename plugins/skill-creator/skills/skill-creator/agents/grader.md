@@ -105,113 +105,15 @@ Save results to `{outputs_dir}/../grading.json` (sibling to outputs_dir).
 
 ## Output Format
 
-Write a JSON file with this structure:
+Write results to `{outputs_dir}/../grading.json` (sibling to outputs_dir). Full schema defined in `references/schemas.md#grading.json`. Key fields:
 
-```json
-{
-  "expectations": [
-    {
-      "text": "The output includes the name 'John Smith'",
-      "passed": true,
-      "evidence": "Found in transcript Step 3: 'Extracted names: John Smith, Sarah Johnson'"
-    },
-    {
-      "text": "The spreadsheet has a SUM formula in cell B10",
-      "passed": false,
-      "evidence": "No spreadsheet was created. The output was a text file."
-    },
-    {
-      "text": "The assistant used the skill's OCR script",
-      "passed": true,
-      "evidence": "Transcript Step 2 shows: 'Tool: Bash - python ocr_script.py image.png'"
-    }
-  ],
-  "summary": {
-    "passed": 2,
-    "failed": 1,
-    "total": 3,
-    "pass_rate": 0.67
-  },
-  "execution_metrics": {
-    "tool_calls": {
-      "Read": 5,
-      "Write": 2,
-      "Bash": 8
-    },
-    "total_tool_calls": 15,
-    "total_steps": 6,
-    "errors_encountered": 0,
-    "output_chars": 12450,
-    "transcript_chars": 3200
-  },
-  "timing": {
-    "executor_duration_seconds": 165.0,
-    "grader_duration_seconds": 26.0,
-    "total_duration_seconds": 191.0
-  },
-  "claims": [
-    {
-      "claim": "The form has 12 fillable fields",
-      "type": "factual",
-      "verified": true,
-      "evidence": "Counted 12 fields in field_info.json"
-    },
-    {
-      "claim": "All required fields were populated",
-      "type": "quality",
-      "verified": false,
-      "evidence": "Reference section was left blank despite data being available"
-    }
-  ],
-  "user_notes_summary": {
-    "uncertainties": ["Used 2023 data, may be stale"],
-    "needs_review": [],
-    "workarounds": ["Fell back to text overlay for non-fillable fields"]
-  },
-  "eval_feedback": {
-    "suggestions": [
-      {
-        "assertion": "The output includes the name 'John Smith'",
-        "reason": "A hallucinated document that mentions the name would also pass — consider checking it appears as the primary contact with matching phone and email from the input"
-      },
-      {
-        "reason": "No assertion checks whether the extracted phone numbers match the input — I observed incorrect numbers in the output that went uncaught"
-      }
-    ],
-    "overall": "Assertions check presence but not correctness. Consider adding content verification."
-  }
-}
-```
-
-## Field Descriptions
-
-- **expectations**: Array of graded expectations
-  - **text**: The original expectation text
-  - **passed**: Boolean - true if expectation passes
-  - **evidence**: Specific quote or description supporting the verdict
-- **summary**: Aggregate statistics
-  - **passed**: Count of passed expectations
-  - **failed**: Count of failed expectations
-  - **total**: Total expectations evaluated
-  - **pass_rate**: Fraction passed (0.0 to 1.0)
-- **execution_metrics**: Copied from executor's metrics.json (if available)
-  - **output_chars**: Total character count of output files (proxy for tokens)
-  - **transcript_chars**: Character count of transcript
-- **timing**: Wall clock timing from timing.json (if available)
-  - **executor_duration_seconds**: Time spent in executor subagent
-  - **total_duration_seconds**: Total elapsed time for the run
-- **claims**: Extracted and verified claims from the output
-  - **claim**: The statement being verified
-  - **type**: "factual", "process", or "quality"
-  - **verified**: Boolean - whether the claim holds
-  - **evidence**: Supporting or contradicting evidence
-- **user_notes_summary**: Issues flagged by the executor
-  - **uncertainties**: Things the executor wasn't sure about
-  - **needs_review**: Items requiring human attention
-  - **workarounds**: Places where the skill didn't work as expected
-- **eval_feedback**: Improvement suggestions for the evals (only when warranted)
-  - **suggestions**: List of concrete suggestions, each with a `reason` and optionally an `assertion` it relates to
-  - **overall**: Brief assessment — can be "No suggestions, evals look solid" if nothing to flag
+- `expectations[]`: Graded expectations with `text`, `passed`, `evidence`
+- `summary`: Aggregate `passed`/`failed`/`total`/`pass_rate`
+- `execution_metrics`: From executor's `metrics.json` (if available)
+- `timing`: From `timing.json` (if available)
+- `claims[]`: Extracted claims with `type` (factual/process/quality), `verified`, `evidence`
+- `user_notes_summary`: `uncertainties`, `needs_review`, `workarounds` from executor
+- `eval_feedback` (optional): Suggestions for improving evals, with `suggestions[]` and `overall`
 
 ## Guidelines
 
