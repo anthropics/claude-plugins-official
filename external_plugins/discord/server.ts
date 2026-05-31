@@ -522,7 +522,7 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: 'reply',
       description:
-        'Reply on Discord. Pass chat_id from the inbound message. Optionally pass reply_to (message_id) for threading, and files (absolute paths) to attach images or other files.',
+        'Reply on Discord. Pass chat_id from the inbound message. Optionally pass reply_to (message_id) for threading, files (absolute paths) to attach images or other files, and components (button rows). When a user clicks a button, a <button_click> message is delivered back to Claude so you can respond.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -536,6 +536,30 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
             type: 'array',
             items: { type: 'string' },
             description: 'Absolute file paths to attach (images, logs, etc). Max 10 files, 25MB each.',
+          },
+          components: {
+            type: 'array',
+            description: 'Button rows to attach to the message (max 5 rows, 5 buttons per row). Button clicks are delivered back as <button_click> messages.',
+            items: {
+              type: 'object',
+              properties: {
+                buttons: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      id: { type: 'string', description: 'Unique button ID returned in the <button_click> event (max 80 chars, alphanumeric/dash/underscore).' },
+                      label: { type: 'string', description: 'Button label (max 80 chars).' },
+                      style: { type: 'string', enum: ['primary', 'secondary', 'success', 'danger'], description: 'Button colour. Defaults to primary.' },
+                      emoji: { type: 'string', description: 'Unicode emoji or <:name:id> to show next to the label.' },
+                      disabled: { type: 'boolean', description: 'Render the button greyed out.' },
+                    },
+                    required: ['id', 'label'],
+                  },
+                },
+              },
+              required: ['buttons'],
+            },
           },
         },
         required: ['chat_id', 'text'],
@@ -607,6 +631,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         const text = args.text as string
         const reply_to = args.reply_to as string | undefined
         const files = (args.files as string[] | undefined) ?? []
+        const rawComponents = (args.components as Array<{ buttons: Array<{ id: string; label: string; style?: string; emoji?: string; disabled?: boolean }> }> | undefined) ?? []
 
         const ch = await fetchAllowedChannel(chat_id)
         if (!('send' in ch)) throw new Error('channel is not sendable')
@@ -619,6 +644,29 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
           }
         }
         if (files.length > 10) throw new Error('Discord allows max 10 attachments per message')
+        if (rawComponents.length > 5) throw new Error('Discord allows max 5 ActionRows per message')
+
+        const styleMap: Record<string, ButtonStyle> = {
+          primary: ButtonStyle.Primary,
+          secondary: ButtonStyle.Secondary,
+          success: ButtonStyle.Success,
+          danger: ButtonStyle.Danger,
+        }
+
+        const componentRows: ActionRowBuilder<ButtonBuilder>[] = rawComponents.map((row, ri) => {
+          if (row.buttons.length > 5) throw new Error(`ActionRow ${ri + 1} has ${row.buttons.length} buttons (max 5)`)
+          const btns = row.buttons.map(b => {
+            if (b.label.length > 80) throw new Error(`button id=${b.id}: label too long (max 80 chars)`)
+            const btn = new ButtonBuilder()
+              .setCustomId(`mint:${b.id}`)
+              .setLabel(b.label)
+              .setStyle(styleMap[b.style ?? 'primary'] ?? ButtonStyle.Primary)
+            if (b.emoji) btn.setEmoji(b.emoji)
+            if (b.disabled) btn.setDisabled(true)
+            return btn
+          })
+          return new ActionRowBuilder<ButtonBuilder>().addComponents(...btns)
+        })
 
         const access = loadAccess()
         const limit = Math.max(1, Math.min(access.textChunkLimit ?? MAX_CHUNK_LIMIT, MAX_CHUNK_LIMIT))
@@ -633,12 +681,15 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
               reply_to != null &&
               replyMode !== 'off' &&
               (replyMode === 'all' || i === 0)
+            // Attach components only on the last chunk so buttons appear once
+            const isLast = i === chunks.length - 1
             const sent = await ch.send({
               content: chunks[i],
               ...(i === 0 && files.length > 0 ? { files } : {}),
               ...(shouldReplyTo
                 ? { reply: { messageReference: reply_to, failIfNotExists: false } }
                 : {}),
+              ...(isLast && componentRows.length > 0 ? { components: componentRows } : {}),
             })
             noteSent(sent.id)
             sentIds.push(sent.id)
@@ -741,11 +792,46 @@ client.on('error', err => {
   process.stderr.write(`discord channel: client error: ${err}\n`)
 })
 
-// Button-click handler for permission requests. customId is
-// `perm:allow:<id>`, `perm:deny:<id>`, or `perm:more:<id>`.
+// Button-click handler. Handles two namespaces:
+//   perm:allow|deny|more:<id>  — built-in permission buttons (see below)
+//   mint:<button_id>           — user-defined buttons sent via reply components
 // Security mirrors the text-reply path: allowFrom must contain the sender.
 client.on('interactionCreate', async (interaction: Interaction) => {
   if (!interaction.isButton()) return
+
+  // User-defined button click — deliver as a synthetic channel message so
+  // Mint's UserPromptSubmit hook picks it up as normal input.
+  if (interaction.customId.startsWith('mint:')) {
+    const access = loadAccess()
+    if (!access.allowFrom.includes(interaction.user.id)) {
+      await interaction.reply({ content: 'Not authorized.', ephemeral: true }).catch(() => {})
+      return
+    }
+    const button_id = interaction.customId.slice('mint:'.length)
+    const chat_id = interaction.channelId ?? ''
+    const message_id = interaction.message.id
+    const ts = new Date().toISOString()
+    // Acknowledge without modifying the message (keeps buttons visible).
+    await interaction.deferUpdate().catch(() => {})
+    mcp.notification({
+      method: 'notifications/claude/channel',
+      params: {
+        content: `<button_click chat_id="${chat_id}" message_id="${message_id}" button_id="${button_id}" user="${interaction.user.username}" user_id="${interaction.user.id}" ts="${ts}">`,
+        meta: {
+          chat_id,
+          message_id,
+          user: interaction.user.username,
+          user_id: interaction.user.id,
+          ts,
+          button_id,
+        },
+      },
+    }).catch(err => {
+      process.stderr.write(`discord channel: failed to deliver button_click to Claude: ${err}\n`)
+    })
+    return
+  }
+
   const m = /^perm:(allow|deny|more):([a-km-z]{5})$/.exec(interaction.customId)
   if (!m) return
   const access = loadAccess()
