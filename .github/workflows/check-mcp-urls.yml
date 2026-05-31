@@ -35,6 +35,35 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Fail on decommissioned MCP endpoints
+        run: |
+          set -euo pipefail
+
+          # Endpoints turned down upstream. A plugin config still pointing at
+          # one fails silently at runtime — fail the build instead. Keep this
+          # list data-driven so future migrations are easy to maintain.
+          DENYLIST=(
+            "api.anthropic.com/mcp/gdrive/mcp"
+            "gmail.mcp.claude.com/mcp"
+            "gcal.mcp.claude.com/mcp"
+          )
+
+          failures=0
+          while IFS= read -r cfg; do
+            for host in "${DENYLIST[@]}"; do
+              if grep -qF "$host" "$cfg"; then
+                echo "::error file=$cfg::References decommissioned MCP endpoint: $host"
+                failures=$((failures + 1))
+              fi
+            done
+          done < <(find . -type f \( -name '.mcp.json' -o -name 'mcp.json' \) -not -path '*/node_modules/*')
+
+          if (( failures > 0 )); then
+            echo "Found $failures reference(s) to decommissioned MCP endpoints."
+            exit 1
+          fi
+          echo "No decommissioned MCP endpoints referenced."
+
       - name: Discover and probe MCP server URLs
         run: |
           set -euo pipefail
