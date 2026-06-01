@@ -2614,6 +2614,30 @@
       "homepage": "https://windsor.ai"
     },
     {
+      "name": "wire",
+      "description": "Wire MCP server: Ed25519-signed agent-to-agent bus over wireup.net. Per-session identity, bilateral pairing with SPAKE2+SAS, group chat, federated relay. Requires the `wire` binary on $PATH (for example, `cargo install slancha-wire`).",
+      "version": "0.1.0",
+      "author": {
+        "name": "SlanchaAi"
+      },
+      "category": "development",
+      "keywords": [
+        "mcp",
+        "agent-to-agent",
+        "messaging",
+        "ed25519",
+        "federation"
+      ],
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/WILLARDKLEIN/wire-plugin.git",
+        "path": "plugins/wire",
+        "ref": "v0.1.0",
+        "sha": "20f74eb3dda4e59c192619b1f237b934e5a90c62"
+      },
+      "homepage": "https://wireup.net"
+    },
+    {
       "name": "wix",
       "description": "Build, manage, and deploy Wix sites and apps. CLI development skills for dashboard extensions, backend APIs, site widgets, and service plugins with the Wix Design System, plus MCP server for site management.",
       "category": "development",
