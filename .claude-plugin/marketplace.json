@@ -2745,6 +2745,22 @@
         "sha": "be37fb604a07dc9c5a4c3e009312c4f11acaa6d3"
       },
       "homepage": "https://github.com/zscaler/zscaler-mcp-server"
+    },
+    {
+      "name": "auto-forge",
+      "description": "全自动多 Phase 工作流引擎，支持多代理并行评审和 Git 版本控制。自动拆分任务、编码、多代理并行评审、修复、归档，完整 Git 版本控制支持断点续跑和回撤。",
+      "author": {
+        "name": "YaoIsAI"
+      },
+      "category": "development",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/YaoIsAI/auto-forge.git",
+        "path": ".",
+        "ref": "master",
+        "sha": "06b248989fd6450fea3a054439f2cef0dff9f92f"
+      },
+      "homepage": "https://github.com/YaoIsAI/auto-forge"
     }
   ]
 }
