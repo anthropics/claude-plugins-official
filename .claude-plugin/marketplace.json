@@ -340,6 +340,22 @@
       "homepage": "https://github.com/awslabs/agent-plugins"
     },
     {
+      "name": "aws-startup-advisor",
+      "description": "Skills for startups building on AWS: an Activate knowledge base (FAQ, credits, programs, partner offers, sample architectures, 277+ learn articles), a prompt library of 29+ copy-paste prompts plus installable agents, and an interactive discovery workflow that scaffolds an AWS architecture.",
+      "author": {
+        "name": "Amazon Web Services"
+      },
+      "category": "development",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/awslabs/startups.git",
+        "path": "advisor/plugins/aws-startup-advisor",
+        "ref": "main",
+        "sha": "23a4f5eaf74a0f0fcf86f8a05bd36618a3f5faae"
+      },
+      "homepage": "https://github.com/awslabs/startups"
+    },
+    {
       "name": "azure",
       "description": "Transform Claude into an Azure expert. This plugin integrates the Azure MCP server and specialized Azure skills to move beyond generic advice. It enables Claude to perform real-world tasks: listing resources, validating deployments, diagnosing infrastructure issues, and optimizing costs across 50+ Azure services.",
       "category": "deployment",
