@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "telegram": {
-      "command": "bun",
-      "args": ["run", "--cwd", "${CLAUDE_PLUGIN_ROOT}", "--shell=bun", "--silent", "start"]
+      "command": "tsx",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/server.ts"]
     }
   }
 }

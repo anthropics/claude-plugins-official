@@ -19,6 +19,7 @@ import { z } from 'zod'
 import { Bot, GrammyError, InlineKeyboard, InputFile, type Context } from 'grammy'
 import type { ReactionTypeEmoji } from 'grammy/types'
 import { randomBytes } from 'crypto'
+import { createServer } from 'node:http'
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, statSync, renameSync, realpathSync, chmodSync } from 'fs'
 import { homedir } from 'os'
 import { join, extname, sep } from 'path'
@@ -51,6 +52,7 @@ if (!TOKEN) {
   process.exit(1)
 }
 const INBOX_DIR = join(STATE_DIR, 'inbox')
+const INJECT_PORT = parseInt(process.env.INJECT_PORT ?? '7842', 10)
 const PID_FILE = join(STATE_DIR, 'bot.pid')
 
 // Telegram allows exactly one getUpdates consumer per token. If a previous
@@ -441,6 +443,88 @@ mcp.setNotificationHandler(
     }
   },
 )
+
+// node http (was Bun.serve) — runtime is node via tsx, not bun, to avoid the
+// bun (aarch64) event-loop starvation where the MCP stdin watcher freezes the
+// grammy poll. node's libuv loop schedules stdin, timers and HTTP fairly.
+createServer((req, res) => {
+  const path = req.url ?? ''
+  if (req.method !== 'POST' || (path !== '/inject' && path !== '/update')) {
+    res.writeHead(404)
+    res.end('not found')
+    return
+  }
+  let raw = ''
+  req.on('data', chunk => { raw += chunk })
+  req.on('end', () => {
+    void (async () => {
+      // /update: a raw Telegram update forwarded by the external poller process.
+      // The poller runs standalone (idle stdin), so its grammy long-poll is not
+      // starved by the MCP StdioServerTransport stdin watcher — a bun/node
+      // aarch64 issue where an in-process poll loop never fires once Claude
+      // drives the MCP connection. Feeding the update through bot.handleUpdate
+      // here reuses ALL gate / pairing / command logic and channel delivery
+      // (mcp.notification) unchanged.
+      if (path === '/update') {
+        let body: { update: unknown; me?: { id: number; is_bot: boolean; first_name: string; username: string } }
+        try {
+          body = JSON.parse(raw)
+        } catch {
+          res.writeHead(400)
+          res.end('invalid json')
+          return
+        }
+        // The poller already called getMe; set botInfo so handleUpdate works
+        // without an in-process bot.init() (whose getMe would starve under the
+        // MCP stdin watcher).
+        if (body.me && !bot.isInited()) {
+          bot.botInfo = body.me as typeof bot.botInfo
+          botUsername = body.me.username
+        }
+        try {
+          await bot.handleUpdate(body.update as Parameters<typeof bot.handleUpdate>[0])
+        } catch (err) {
+          process.stderr.write(`telegram channel: handleUpdate error: ${err}\n`)
+        }
+        res.writeHead(200)
+        res.end('ok')
+        return
+      }
+      // /inject: scheduler text delivered as a synthetic channel message.
+      let body: { text: string; chat_id: string }
+      try {
+        body = JSON.parse(raw)
+      } catch {
+        res.writeHead(400)
+        res.end('invalid json')
+        return
+      }
+      if (!body.text || !body.chat_id) {
+        res.writeHead(400)
+        res.end('missing text or chat_id')
+        return
+      }
+      void mcp.notification({
+        method: 'notifications/claude/channel',
+        params: {
+          content: body.text,
+          meta: {
+            chat_id: body.chat_id,
+            user: 'scheduler',
+            user_id: 'scheduler',
+            ts: new Date().toISOString(),
+          },
+        },
+      }).catch((err: unknown) => {
+        process.stderr.write(`telegram channel: inject delivery failed: ${err}\n`)
+      })
+      process.stderr.write(`telegram channel: injected via HTTP for chat_id=${body.chat_id}\n`)
+      res.writeHead(200)
+      res.end('ok')
+    })()
+  })
+}).listen(INJECT_PORT, '127.0.0.1')
+process.stderr.write(`telegram channel: inject endpoint listening on 127.0.0.1:${INJECT_PORT}\n`)
 
 mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
@@ -998,48 +1082,10 @@ bot.catch(err => {
   process.stderr.write(`telegram channel: handler error (polling continues): ${err.error}\n`)
 })
 
-// Retry polling with backoff on any error. Previously only 409 was retried —
-// a single ETIMEDOUT/ECONNRESET/DNS failure rejected bot.start(), the catch
-// returned, and polling stopped permanently while the process stayed alive
-// (MCP stdin keeps it running). Outbound tools kept working but the bot was
-// deaf to inbound messages until a full restart.
-void (async () => {
-  for (let attempt = 1; ; attempt++) {
-    try {
-      await bot.start({
-        onStart: info => {
-          attempt = 0
-          botUsername = info.username
-          process.stderr.write(`telegram channel: polling as @${info.username}\n`)
-          void bot.api.setMyCommands(
-            [
-              { command: 'start', description: 'Welcome and setup guide' },
-              { command: 'help', description: 'What this bot can do' },
-              { command: 'status', description: 'Check your pairing status' },
-            ],
-            { scope: { type: 'all_private_chats' } },
-          ).catch(() => {})
-        },
-      })
-      return // bot.stop() was called — clean exit from the loop
-    } catch (err) {
-      if (shuttingDown) return
-      // bot.stop() mid-setup rejects with grammy's "Aborted delay" — expected, not an error.
-      if (err instanceof Error && err.message === 'Aborted delay') return
-      const is409 = err instanceof GrammyError && err.error_code === 409
-      if (is409 && attempt >= 8) {
-        process.stderr.write(
-          `telegram channel: 409 Conflict persists after ${attempt} attempts — ` +
-          `another poller is holding the bot token (stray 'bun server.ts' process or a second session). Exiting.\n`,
-        )
-        return
-      }
-      const delay = Math.min(1000 * attempt, 15000)
-      const detail = is409
-        ? `409 Conflict${attempt === 1 ? ' — another instance is polling (zombie session, or a second Claude Code running?)' : ''}`
-        : `polling error: ${err}`
-      process.stderr.write(`telegram channel: ${detail}, retrying in ${delay / 1000}s\n`)
-      await new Promise(r => setTimeout(r, delay))
-    }
-  }
-})()
+// NO in-process polling here. On bun/node (aarch64) the MCP StdioServerTransport
+// stdin watcher starves an in-process grammy poll loop once Claude drives the
+// MCP connection — the loop silently never fires (even setTimeout timers stall),
+// so inbound updates are never consumed. Polling is delegated to the standalone
+// `poller.ts` process (idle stdin → unaffected), which forwards each update to
+// the /update HTTP endpoint above; bot.handleUpdate runs there, network-driven,
+// which is serviced normally. setMyCommands is also done by the poller.
