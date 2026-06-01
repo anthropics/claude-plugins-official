@@ -8,9 +8,10 @@ for a set of queries. Outputs results as JSON.
 import argparse
 import json
 import os
-import select
+import queue as _queue_module
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -65,7 +66,7 @@ def run_single_query(
             f"# {skill_name}\n\n"
             f"This skill handles: {skill_description}\n"
         )
-        command_file.write_text(command_content)
+        command_file.write_text(command_content, encoding="utf-8")
 
         cmd = [
             "claude",
@@ -97,21 +98,40 @@ def run_single_query(
         pending_tool_name = None
         accumulated_json = ""
 
+        # Background reader thread — portable replacement for select.select
+        # on subprocess pipes. select.select only accepts sockets on Windows,
+        # not subprocess.PIPE file descriptors, so the original loop raised
+        # WinError 10038 on every query for Windows users.
+        data_q = _queue_module.Queue()  # bytes chunks; None as EOF sentinel
+
+        def _reader():
+            try:
+                while True:
+                    chunk = process.stdout.read(8192)
+                    if not chunk:
+                        break
+                    data_q.put(chunk)
+            except Exception:
+                pass
+            finally:
+                data_q.put(None)  # EOF sentinel
+
+        reader_thread = threading.Thread(target=_reader, daemon=True)
+        reader_thread.start()
+
         try:
             while time.time() - start_time < timeout:
-                if process.poll() is not None:
-                    remaining = process.stdout.read()
-                    if remaining:
-                        buffer += remaining.decode("utf-8", errors="replace")
-                    break
-
-                ready, _, _ = select.select([process.stdout], [], [], 1.0)
-                if not ready:
+                try:
+                    chunk = data_q.get(timeout=1.0)
+                except _queue_module.Empty:
+                    # Defensive: process is dead and reader produced nothing — bail.
+                    if process.poll() is not None:
+                        break
                     continue
 
-                chunk = os.read(process.stdout.fileno(), 8192)
-                if not chunk:
+                if chunk is None:  # EOF from reader
                     break
+
                 buffer += chunk.decode("utf-8", errors="replace")
 
                 while "\n" in buffer:
