@@ -2745,6 +2745,22 @@
         "sha": "be37fb604a07dc9c5a4c3e009312c4f11acaa6d3"
       },
       "homepage": "https://github.com/zscaler/zscaler-mcp-server"
+    },
+    {
+      "name": "auto-forge",
+      "description": "Multi-phase workflow engine with automatic task decomposition, parallel multi-agent review (security/performance/style/logic), complete Git version control, breakpoint resume and rollback support.",
+      "author": {
+        "name": "YaoIsAI"
+      },
+      "category": "development",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/YaoIsAI/auto-forge.git",
+        "path": ".",
+        "ref": "main",
+        "sha": "06b248989fd6450fea3a054439f2cef0dff9f92f"
+      },
+      "homepage": "https://github.com/YaoIsAI/auto-forge"
     }
   ]
 }
