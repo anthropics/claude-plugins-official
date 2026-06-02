@@ -1501,7 +1501,7 @@
         "url": "https://github.com/modelcontextprotocol/ext-apps.git",
         "path": "plugins/mcp-apps",
         "ref": "main",
-        "sha": "9a37ad71827d076af06978fa7f7f510449687061"
+        "sha": "7d4434e991516d91286dded5bb10266cd6cddd02"
       },
       "homepage": "https://modelcontextprotocol.io"
     },
