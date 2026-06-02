@@ -400,7 +400,7 @@
         "url": "https://github.com/Bigdata-com/bigdata-plugins-marketplace.git",
         "path": "plugins/bigdata-com",
         "ref": "main",
-        "sha": "c77a09caabdc8783adbcbf8bbe05a0f57da12b19"
+        "sha": "67c30be97a0a3f46bc6e8d56df449ae108eda9c5"
       },
       "homepage": "https://docs.bigdata.com"
     },
