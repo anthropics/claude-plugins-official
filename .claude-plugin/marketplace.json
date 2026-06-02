@@ -203,7 +203,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/atlanhq/agent-toolkit.git",
-        "sha": "b0efcc8e6adc64d052b634ac1103932390413fd9"
+        "sha": "cda594f40503cd2ae144052237fa2890e024828c"
       },
       "homepage": "https://docs.atlan.com/"
     },
