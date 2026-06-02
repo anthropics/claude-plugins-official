@@ -2775,6 +2775,22 @@
         "sha": "be37fb604a07dc9c5a4c3e009312c4f11acaa6d3"
       },
       "homepage": "https://github.com/zscaler/zscaler-mcp-server"
+    },
+    {  
+    "name": "document-to-obsidian",
+    "description": "Convert any document (PDF/EPUB/Word/PPT/Excel/web/images) into Obsidian learning notes. Auto format detection, OCR fallback for scanned PDFs, web-based knowledge verification, vault-aware classification. 6 books battle-tested across Chinese and English.",
+    "author": {
+      "name": "kains2866"
+    },
+    "category": "productivity",
+    "source": {
+      "source": "url",
+      "url": "https://github.com/kains2866/document-to-obsidian.git",
+      "sha": "LATEST_COMMIT_SHA"
+    },
+    "homepage":
+    "https://github.com/kains2866/document-to-obsidian"
     }
+
   ]
 }
