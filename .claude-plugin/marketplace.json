@@ -136,7 +136,7 @@
         "url": "https://github.com/awslabs/agent-plugins.git",
         "path": "plugins/amazon-location-service",
         "ref": "main",
-        "sha": "187edde6e122116b43211049195627a5069bda80"
+        "sha": "fc54dfa24a1f05095b9fcbb4baa4750996bb171d"
       },
       "homepage": "https://github.com/awslabs/agent-plugins"
     },
