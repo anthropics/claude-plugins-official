@@ -1729,7 +1729,7 @@
         "url": "https://github.com/growthxai/output.git",
         "path": "coding_assistants/claude/plugins/outputai",
         "ref": "main",
-        "sha": "5a87ebc13343ce6ebabac0bcc443c1da0bcf2459"
+        "sha": "34badf9feb80a9f8ab83c5945de7342ab8d32d0a"
       },
       "homepage": "https://output.ai"
     },
