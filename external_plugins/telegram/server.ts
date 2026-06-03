@@ -62,8 +62,21 @@ try {
   const stale = parseInt(readFileSync(PID_FILE, 'utf8'), 10)
   if (stale > 1 && stale !== process.pid) {
     process.kill(stale, 0)
-    process.stderr.write(`telegram channel: replacing stale poller pid=${stale}\n`)
+    process.stderr.write(`telegram channel: evicting stale poller pid=${stale}\n`)
     process.kill(stale, 'SIGTERM')
+    // A wedged poller (spinning at 100% CPU on a conflicting long-poll) can't
+    // process SIGTERM — its event loop never idles to run the handler. Left
+    // alive it fights us over the token forever (409 Conflict), and the fight
+    // wedges us too: that is how stray 'bun server.ts' processes pile up. Two
+    // pollers must never run at once, so wait for it to die and escalate to
+    // SIGKILL if it won't. Safe to block synchronously — this is pre-poll
+    // startup, nothing else is running yet.
+    const deadline = Date.now() + 3000
+    while (Date.now() < deadline) {
+      try { process.kill(stale, 0) } catch { break } // ESRCH: it's gone
+      Bun.sleepSync(100)
+    }
+    try { process.kill(stale, 0); process.kill(stale, 'SIGKILL') } catch {}
   }
 } catch {}
 writeFileSync(PID_FILE, String(process.pid))
@@ -997,11 +1010,18 @@ bot.catch(err => {
 // (MCP stdin keeps it running). Outbound tools kept working but the bot was
 // deaf to inbound messages until a full restart.
 void (async () => {
+  // Count 409 Conflicts separately from `attempt`. grammy runs getMe +
+  // deleteWebhook (which succeed even during a conflict) and fires onStart
+  // BEFORE the first getUpdates, so onStart resetting `attempt` to 0 made the
+  // `attempt >= 8` give-up guard below unreachable — a conflicting poller
+  // retried forever instead of exiting. `conflicts` survives onStart.
+  let conflicts = 0
   for (let attempt = 1; ; attempt++) {
     try {
       await bot.start({
         onStart: info => {
           attempt = 0
+          conflicts = 0
           botUsername = info.username
           process.stderr.write(`telegram channel: polling as @${info.username}\n`)
           void bot.api.setMyCommands(
@@ -1020,9 +1040,9 @@ void (async () => {
       // bot.stop() mid-setup rejects with grammy's "Aborted delay" — expected, not an error.
       if (err instanceof Error && err.message === 'Aborted delay') return
       const is409 = err instanceof GrammyError && err.error_code === 409
-      if (is409 && attempt >= 8) {
+      if (is409 && ++conflicts >= 8) {
         process.stderr.write(
-          `telegram channel: 409 Conflict persists after ${attempt} attempts — ` +
+          `telegram channel: 409 Conflict persists after ${conflicts} attempts — ` +
           `another poller is holding the bot token (stray 'bun server.ts' process or a second session). Exiting.\n`,
         )
         return
