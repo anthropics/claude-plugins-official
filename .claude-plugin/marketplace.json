@@ -2818,7 +2818,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/Zoominfo/zoominfo-mcp-plugin.git",
-        "sha": "678c0d1b584b77fb8e0cdc14138fc1afc5a21cf2"
+        "sha": "cfdebda5f3ce24d0d964cc0b3e9e5dd9ea9d507d"
       },
       "homepage": "https://www.zoominfo.com"
     },
