@@ -1,0 +1,9 @@
+{
+  "name": "incident",
+  "description": "Production incident response in Claude Code. Triage errors from Sentry, Datadog, or raw logs. Diagnose root cause with hypothesis-driven analysis, generate fixes, and write blameless postmortems with 5-Why RCA.",
+  "author": {
+    "name": "mturac",
+    "url": "https://github.com/mturac"
+  },
+  "homepage": "https://github.com/mturac/incident"
+}

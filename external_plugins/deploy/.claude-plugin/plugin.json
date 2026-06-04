@@ -1,0 +1,9 @@
+{
+  "name": "deploy",
+  "description": "Multi-platform deployment for Claude Code. Detects your framework, runs preflight checks, and deploys to Vercel, Railway, Fly.io, or Render with preview and production workflows, rollback safety, and build failure troubleshooting.",
+  "author": {
+    "name": "mturac",
+    "url": "https://github.com/mturac"
+  },
+  "homepage": "https://github.com/mturac/deploy"
+}
