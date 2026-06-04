@@ -2652,7 +2652,7 @@
       "homepage": "https://github.com/UI5/plugins-coding-agents"
     },
     {
-      "name": "vals",
+      "name": "valtown",
       "description": "Build and deploy on Val Town. Bundles the Val Town MCP server and platform skills (HTTP vals, cron/intervals, SQLite, email, OAuth, React UI, third-party integrations, templates).",
       "author": {
         "name": "Val Town"
