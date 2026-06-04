@@ -53,6 +53,20 @@ try {
 const TOKEN = process.env.DISCORD_BOT_TOKEN
 const STATIC = process.env.DISCORD_ACCESS_MODE === 'static'
 
+// Opt-out of the gateway connection. When set, the MCP server still boots and
+// advertises its tool list (so plugin discovery doesn't error), but it never
+// calls client.login() — i.e. it never sends a gateway IDENTIFY. Tools that
+// need the gateway/client return a clear error instead of dialing.
+//
+// Why: the plugin's lifecycle is 1:1 with a Claude Code session, and login()
+// runs unconditionally on boot. A setup that spawns many short-lived sessions
+// (cron/watchdog/multi-agent) therefore IDENTIFYs on every spawn and can blow
+// Discord's ~1000-IDENTIFY/24h ceiling, which Discord punishes with an
+// automatic bot-token reset. Sidecar sessions that don't need Discord can set
+// DISCORD_NO_GATEWAY=1 to load the plugin harmlessly; the single session that
+// owns the channel leaves it unset and connects normally. See issue #1965.
+const NO_GATEWAY = process.env.DISCORD_NO_GATEWAY === '1' || process.env.DISCORD_NO_GATEWAY === 'true'
+
 if (!TOKEN) {
   process.stderr.write(
     `discord channel: DISCORD_BOT_TOKEN required\n` +
@@ -600,6 +614,20 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
 
 mcp.setRequestHandler(CallToolRequestSchema, async req => {
   const args = (req.params.arguments ?? {}) as Record<string, unknown>
+  // In NO_GATEWAY mode the client never logged in, so every tool here (all of
+  // which use the authenticated client) would hang or fail opaquely. Return a
+  // clear, immediate error instead of dialing the gateway.
+  if (NO_GATEWAY) {
+    return {
+      content: [{
+        type: 'text',
+        text: `discord ${req.params.name} unavailable: this session runs with ` +
+          `DISCORD_NO_GATEWAY set (no gateway connection). Run Discord from the ` +
+          `single session that owns the channel, without DISCORD_NO_GATEWAY.`,
+      }],
+      isError: true,
+    }
+  }
   try {
     switch (req.params.name) {
       case 'reply': {
@@ -894,7 +922,16 @@ client.once('ready', c => {
   process.stderr.write(`discord channel: gateway connected as ${c.user.tag}\n`)
 })
 
-client.login(TOKEN).catch(err => {
-  process.stderr.write(`discord channel: login failed: ${err}\n`)
-  process.exit(1)
-})
+if (NO_GATEWAY) {
+  // No IDENTIFY. The MCP server keeps serving its tool list (above), but never
+  // dials the gateway, so this process can't contribute to an IDENTIFY storm.
+  process.stderr.write(
+    `discord channel: DISCORD_NO_GATEWAY set — skipping gateway login ` +
+    `(no inbound, gateway-backed tools unavailable in this session)\n`,
+  )
+} else {
+  client.login(TOKEN).catch(err => {
+    process.stderr.write(`discord channel: login failed: ${err}\n`)
+    process.exit(1)
+  })
+}

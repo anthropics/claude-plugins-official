@@ -60,6 +60,8 @@ Writes `DISCORD_BOT_TOKEN=...` to `~/.claude/channels/discord/.env`. You can als
 
 > To run multiple bots on one machine (different tokens, separate allowlists), point `DISCORD_STATE_DIR` at a different directory per instance.
 
+> **`DISCORD_NO_GATEWAY=1`** — load the plugin without opening a gateway connection. The MCP server boots and advertises its tools, but never calls `client.login()` (no `IDENTIFY`); gateway-backed tools return a clear error. Set this in sessions that load the plugin but don't need Discord — e.g. cron/watchdog or multi-agent setups that spawn many short-lived sessions. Each session that calls `client.login()` sends an `IDENTIFY`, and Discord auto-resets a bot's token after ~1000 `IDENTIFY`s in 24h; keep gateway login on the single session that owns the channel. See [#1965](https://github.com/anthropics/claude-plugins-official/issues/1965).
+
 **6. Relaunch with the channel flag.**
 
 The server won't connect without this — exit your session and start a new one:
