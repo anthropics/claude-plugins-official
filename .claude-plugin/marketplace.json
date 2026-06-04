@@ -588,6 +588,7 @@
             ".cc": "cpp",
             ".cxx": "cpp",
             ".hpp": "cpp",
+            ".hh": "cpp",
             ".hxx": "cpp",
             ".C": "cpp",
             ".H": "cpp"
