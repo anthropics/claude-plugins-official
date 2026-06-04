@@ -1299,6 +1299,20 @@
       "homepage": "https://github.com/intercom/claude-plugin-external"
     },
     {
+      "name": "julius",
+      "description": "Token economy plugin for Claude Code — Normal, Pro & Beast modes. Every token counts. Compresses context, routes to cheaper models, and guards against token waste. Saves 15-55% on API costs depending on tier.",
+      "author": {
+        "name": "xDisus"
+      },
+      "category": "development",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/xDisus/Julius-Plugin.git"
+      },
+      "homepage": "https://github.com/xDisus/Julius-Plugin",
+      "tags": ["token-economy", "optimization", "cost-saving"]
+    },
+    {
       "name": "jdtls-lsp",
       "description": "Java language server (Eclipse JDT.LS) for code intelligence",
       "version": "1.0.0",
