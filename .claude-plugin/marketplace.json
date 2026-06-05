@@ -943,6 +943,20 @@
       "homepage": "https://datahub.com"
     },
     {
+      "name": "dataproc",
+      "description": "Manage Dataproc clusters and jobs.",
+      "author": {
+        "name": "Google LLC"
+      },
+      "category": "database",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/gemini-cli-extensions/dataproc.git",
+        "sha": "20eec06eee7683311689f4a1437cbb14ac8cd33e"
+      },
+      "homepage": "https://github.com/gemini-cli-extensions/dataproc"
+    },
+    {
       "name": "datarobot-agent-skills",
       "description": "DataRobot skills for AI/ML workflows — model training, deployment, predictions, feature engineering, monitoring, explainability, data preparation, App Framework CI/CD, and external agent monitoring.",
       "author": {
