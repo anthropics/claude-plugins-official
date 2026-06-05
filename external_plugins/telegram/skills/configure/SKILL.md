@@ -7,6 +7,8 @@ allowed-tools:
   - Write
   - Bash(ls *)
   - Bash(mkdir *)
+  - Bash(command -v bun)
+  - Bash(curl *)
 ---
 
 # /telegram:configure — Telegram Channel Setup
@@ -17,6 +19,40 @@ user on access policy. The server reads both files at boot.
 Arguments passed: `$ARGUMENTS`
 
 ---
+
+## Step 0 — Bun prerequisite check (always run first)
+
+Before doing anything else, run:
+
+```bash
+command -v bun
+```
+
+**If Bun is found** → proceed to Dispatch below.
+
+**If Bun is NOT found** → stop and tell the user:
+
+> "This channel's server runs on **Bun** (a JavaScript runtime), which isn't
+> installed on your system. Without it, the bot server can't start even after
+> the token is saved.
+>
+> I can install it now using the official installer:
+> `curl -fsSL https://bun.sh/install | bash`
+>
+> Would you like me to do that, or would you prefer to install it manually?
+> → https://bun.sh"
+
+- **If user consents** → run `curl -fsSL https://bun.sh/install | bash`, then
+  run `command -v bun` again to confirm success, then proceed to Dispatch.
+- **If user declines** → say *"No problem. Install Bun from https://bun.sh
+  and re-run `/telegram:configure` when ready."* Stop here.
+- **If install fails** → show the error and direct the user to
+  https://bun.sh/docs/installation for manual steps. Stop here.
+
+---
+
+## Dispatch on arguments
+... (rest of file unchanged)
 
 ## Dispatch on arguments
 
