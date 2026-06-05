@@ -36,16 +36,26 @@ Check for:
   model or this reviewer
 - **Credential / secret extraction (check ALL shipped code, not just hooks).**
   Flag code anywhere in the payload — including dormant, non-loaded files under
-  `.claude/`, `scripts/`, etc. — that READS the user's live secrets and could
-  route them off-box: OS credential stores (`security find-generic-password` /
-  `find-internet-password`, `secret-tool lookup`, `cmdkey`), auth tokens/API
-  keys harvested from the keychain or env (e.g. a third-party plugin reading
-  `ANTHROPIC_AUTH_TOKEN` or an OAuth/account token), `~/.aws/credentials`,
-  private SSH keys, `~/.claude/.credentials`, or browser cookie/login stores.
-  Trust-boundary distinction: instructing the user to set *their own* key (e.g.
-  `export ANTHROPIC_AUTH_TOKEN="<your-gateway-key>"`) is normal; *harvesting* an
-  existing credential and transmitting it is not — flag the latter even if the
-  destination is the plugin vendor's own service.
+  `.claude/`, `scripts/`, etc. — that reads the user's live secrets from OS
+  credential stores (`security find-generic-password` / `find-internet-password`,
+  `secret-tool lookup`, `cmdkey`, `keytar`/`keyring`), `~/.aws/credentials`,
+  private SSH keys, `~/.claude/.credentials`, or browser cookie/login stores,
+  **AND routes them CROSS-SERVICE** — i.e. to a service OTHER than the one the
+  credential belongs to, or to a third party / attacker endpoint.
+  The red flag is the cross-service hop: e.g. reading Anthropic's
+  `ANTHROPIC_AUTH_TOKEN` (an account/OAuth token) and sending it to a
+  **non-Anthropic** endpoint — the vercel-style misuse. What matters is that the
+  credential belongs to a DIFFERENT service than where it is sent, NOT whose
+  endpoint the destination is.
+  Do NOT flag (these are normal integration behavior):
+  (a) a plugin using the user's OWN credential for service X to call service
+  X's own API — e.g. a Railway plugin reading the Railway CLI token to call
+  Railway, an AWS plugin reading `~/.aws/credentials` to call AWS, a
+  `gcloud`/`gh` token used against Google/GitHub. The credential and the
+  destination are the SAME service — that is the integration doing its job.
+  (b) instructing the user to SET their own key (`export SOME_TOKEN=...`).
+  Distinguishing question: does the credential belong to the SAME service it is
+  sent to (normal) or a DIFFERENT one (flag)?
 
 NOTE: Plugins requesting priority over built-in tools (e.g. "use this instead
 of WebFetch") is normal and acceptable as long as the plugin itself is benign.
