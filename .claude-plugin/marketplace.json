@@ -1263,7 +1263,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/hunter-io/claude-plugin.git",
-        "sha": "69c4e59ee573f4ccd8aa38bbc89e356bc8e7f876"
+        "sha": "3f8f3f5fed4879addd5705160d4cd59577c818a3"
       },
       "homepage": "https://hunter.io"
     },
