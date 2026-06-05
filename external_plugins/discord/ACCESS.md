@@ -58,6 +58,18 @@ With the default `requireMention: true`, the bot responds only when @mentioned o
 /discord:access group rm 846209781206941736
 ```
 
+### Wildcard group (`"*"`)
+
+To opt the bot into **every** guild channel at once — including channels created later — add a group entry under the special key `"*"`. It acts as a fallback for any channel without its own explicit entry, so you don't have to enable each channel one by one:
+
+```json
+"groups": {
+  "*": { "requireMention": false, "allowFrom": ["184695080709324800"] }
+}
+```
+
+A specific channel entry always takes precedence over `"*"`, so you can still carve out exceptions — e.g. require a mention (or a tighter `allowFrom`) in one busy channel while `"*"` stays open elsewhere. As always, keep `allowFrom` set so the wildcard only responds to the people you trust.
+
 ## Mention detection
 
 In channels with `requireMention: true`, any of the following triggers the bot:

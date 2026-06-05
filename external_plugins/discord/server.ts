@@ -105,7 +105,11 @@ type GroupPolicy = {
 type Access = {
   dmPolicy: 'pairing' | 'allowlist' | 'disabled'
   allowFrom: string[]
-  /** Keyed on channel ID (snowflake), not guild ID. One entry per guild channel. */
+  /**
+   * Keyed on channel ID (snowflake), not guild ID. One entry per guild channel.
+   * The special key "*" is a wildcard fallback applied to any channel without an
+   * explicit entry; a specific channel entry always overrides it.
+   */
   groups: Record<string, GroupPolicy>
   pending: Record<string, PendingEntry>
   mentionPatterns?: string[]
@@ -280,7 +284,10 @@ async function gate(msg: Message): Promise<GateResult> {
   const channelId = msg.channel.isThread()
     ? msg.channel.parentId ?? msg.channelId
     : msg.channelId
-  const policy = access.groups[channelId]
+  // A "*" group is a wildcard fallback for any channel without an explicit
+  // entry, letting the bot opt into all channels at once. A specific channel
+  // entry always takes precedence over "*".
+  const policy = access.groups[channelId] ?? access.groups['*']
   if (!policy) return { action: 'drop' }
   const groupAllowFrom = policy.allowFrom ?? []
   const requireMention = policy.requireMention ?? true
@@ -410,7 +417,8 @@ async function fetchAllowedChannel(id: string) {
     if (userId && access.allowFrom.includes(userId)) return ch
   } else {
     const key = ch.isThread() ? ch.parentId ?? ch.id : ch.id
-    if (key in access.groups) return ch
+    // Mirror the inbound gate's "*" wildcard fallback.
+    if (key in access.groups || '*' in access.groups) return ch
   }
   throw new Error(`channel ${id} is not allowlisted — add via /discord:access`)
 }
