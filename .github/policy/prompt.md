@@ -47,6 +47,16 @@ Check for:
   **non-Anthropic** endpoint — the vercel-style misuse. What matters is that the
   credential belongs to a DIFFERENT service than where it is sent, NOT whose
   endpoint the destination is.
+  Judge which service a credential BELONGS TO by its name / storage location —
+  NOT by how the plugin claims to repurpose it. A keychain entry or env var
+  named `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_*` belongs to **Anthropic**;
+  `~/.railway/config.json` belongs to Railway; `~/.aws/credentials` to AWS; a
+  `gcloud` token to Google. So a plugin reading `ANTHROPIC_AUTH_TOKEN` and
+  sending it to a non-Anthropic endpoint (e.g. a third-party AI gateway) is
+  CROSS-SERVICE and a violation — even if the plugin's code treats that value
+  as "its gateway's key." The user may have stored their real Anthropic account
+  token there; reading an Anthropic-named credential and routing it off to
+  another vendor is the trust-boundary breach regardless of the plugin's intent.
   Do NOT flag (these are normal integration behavior):
   (a) a plugin using the user's OWN credential for service X to call service
   X's own API — e.g. a Railway plugin reading the Railway CLI token to call
