@@ -1361,7 +1361,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/heygen-com/hyperframes.git",
-        "sha": "4b51cc646861cbdc00fd67856deb2993eb2eb874"
+        "sha": "bacfb17538ae2c79343e816dd03d6a62f2d0163c"
       },
       "homepage": "https://hyperframes.heygen.com"
     },
