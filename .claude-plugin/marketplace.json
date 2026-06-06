@@ -1554,7 +1554,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/gemini-cli-extensions/looker.git",
-        "sha": "ca53ea9d8a6950ef75902f95a9c3f951e333482b"
+        "sha": "e912c0342f1bfd436e9236aaef7cc732239c80f7"
       },
       "homepage": "https://github.com/gemini-cli-extensions/looker"
     },
