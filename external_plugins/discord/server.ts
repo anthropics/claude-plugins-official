@@ -868,9 +868,22 @@ async function handleInbound(msg: Message): Promise<void> {
     atts.push(`${safeAttName(att)} (${att.contentType ?? 'unknown'}, ${kb}KB)`)
   }
 
-  // Attachment listing goes in meta only — an in-content annotation is
-  // forgeable by any allowlisted sender typing that string.
-  const content = msg.content || (atts.length > 0 ? '(attachment)' : '')
+  // Stickers are NOT attachments in discord.js — they live in msg.stickers.
+  // A sticker-only message therefore has empty content AND no attachments,
+  // so it would deliver a blank-bodied notification: the model can't see
+  // that anything was sent. Surface stickers like attachments — a non-empty
+  // body that names them — so a sticker-only message is visible.
+  const stickers: string[] = []
+  for (const st of msg.stickers.values()) {
+    stickers.push(st.name)
+  }
+
+  // Attachment / sticker listing goes in meta only — an in-content
+  // annotation is forgeable by any allowlisted sender typing that string.
+  const placeholder = atts.length > 0
+    ? (stickers.length > 0 ? '(attachment + sticker)' : '(attachment)')
+    : (stickers.length > 0 ? `(sticker: ${stickers.join(', ')})` : '')
+  const content = msg.content || placeholder
 
   mcp.notification({
     method: 'notifications/claude/channel',
@@ -883,6 +896,7 @@ async function handleInbound(msg: Message): Promise<void> {
         user_id: msg.author.id,
         ts: msg.createdAt.toISOString(),
         ...(atts.length > 0 ? { attachment_count: String(atts.length), attachments: atts.join('; ') } : {}),
+        ...(stickers.length > 0 ? { sticker_count: String(stickers.length), stickers: stickers.join('; ') } : {}),
       },
     },
   }).catch(err => {
@@ -890,8 +904,15 @@ async function handleInbound(msg: Message): Promise<void> {
   })
 }
 
-client.once('ready', c => {
+client.on('ready', c => {
   process.stderr.write(`discord channel: gateway connected as ${c.user.tag}\n`)
+})
+// discord.js fires `ready` on every full gateway reconnect and `shardResume`
+// on a session resume (laptop wake, brief network blip). Using `.on` (not
+// `.once`) plus a shardResume handler ensures reconnect-time setup re-runs
+// instead of firing only on the very first connect.
+client.on('shardResume', (shardId, replayed) => {
+  process.stderr.write(`discord channel: shard ${shardId} resumed (${replayed} events replayed)\n`)
 })
 
 client.login(TOKEN).catch(err => {
