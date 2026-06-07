@@ -1,0 +1,8 @@
+{
+  "name": "design-qa",
+  "description": "Design QA and critique for frontend interfaces. Scores UI against Nielsen heuristics, detects AI slop patterns, and delivers actionable audit reports.",
+  "author": {
+    "name": "alex410000",
+    "url": "https://github.com/alex410000/design-qa"
+  }
+}
