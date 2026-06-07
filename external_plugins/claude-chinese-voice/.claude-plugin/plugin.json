@@ -1,0 +1,15 @@
+{
+  "name": "chinese-voice",
+  "description": "Chinese TTS voice output for Claude Code. Auto-reads Claude's responses using Windows built-in speech synthesis (Microsoft Huihui). Includes voice input guide (Win+H) and Chinese encoding fix.",
+  "version": "1.0.0",
+  "keywords": [
+    "chinese",
+    "tts",
+    "voice",
+    "speech",
+    "mandarin",
+    "accessibility"
+  ],
+  "author": "Ena",
+  "license": "MIT"
+}
