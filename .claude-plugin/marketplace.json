@@ -1855,7 +1855,7 @@
         "url": "https://github.com/oracle-samples/oracle-aidp-samples.git",
         "path": "ai/claude-code-plugins/oracle-ai-data-platform-workbench-spark-connectors",
         "ref": "main",
-        "sha": "04cc355fbb01402402dd69a4a425a078413a28ea"
+        "sha": "00cedef34c99d642d969f87965736768de01cbd6"
       },
       "homepage": "https://docs.oracle.com/en/cloud/paas/ai-data-platform/index.html"
     },
