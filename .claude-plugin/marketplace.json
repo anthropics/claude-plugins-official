@@ -1890,6 +1890,20 @@
       "homepage": "https://output.ai"
     },
     {
+      "name": "parse-document",
+      "description": "Parse PDF, DOCX, PPTX, XLSX, PNG, JPG, JPEG into Markdown using minerU. Auto-converts legacy Office formats (.doc/.ppt/.xls), supports batch processing with smart caching, academic workflows (translate/summarize/redraw papers), and handles Chinese paths. Requires GPU-enabled minerU conda environment.",
+      "author": {
+        "name": "Enxulansis"
+      },
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/Enxulansis/parse-document-plugin.git",
+        "sha": "46045c9c2afc75170f1c80723eecbfb0706190da"
+      },
+      "homepage": "https://github.com/Enxulansis/parse-document-plugin"
+    },
+    {
       "name": "pagerduty",
       "description": "Enhance code quality and security through PagerDuty risk scoring and incident correlation. Score pre-commit diffs against historical incident data and surface deployment risk before you ship.",
       "category": "monitoring",
