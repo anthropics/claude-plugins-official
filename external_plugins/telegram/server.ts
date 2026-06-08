@@ -991,6 +991,43 @@ bot.catch(err => {
   process.stderr.write(`telegram channel: handler error (polling continues): ${err.error}\n`)
 })
 
+// Telegram allows exactly one getUpdates consumer per token. A stray
+// 'bun server.ts' from a prior session (zombie poller) keeps the slot and
+// makes every new poller hit 409 Conflict forever — the bot stays alive but
+// deaf. When 409 persists, reclaim the slot by killing the local process(es)
+// that hold THIS token (matched precisely via /proc/<pid>/environ), then keep
+// polling. Token-scoped so it can never touch a different bot's poller.
+function evictRivalPollers(): number {
+  if (process.platform !== 'linux') return 0
+  const needle = `TELEGRAM_BOT_TOKEN=${TOKEN}`
+  let killed = 0
+  let pids: string[]
+  try {
+    pids = readdirSync('/proc')
+  } catch {
+    return 0
+  }
+  for (const pid of pids) {
+    if (!/^\d+$/.test(pid)) continue
+    const p = parseInt(pid, 10)
+    if (p === process.pid) continue
+    let environ: string
+    try {
+      environ = readFileSync(`/proc/${pid}/environ`, 'utf8')
+    } catch {
+      continue
+    }
+    if (environ.split('\0').includes(needle)) {
+      try {
+        process.kill(p, 'SIGKILL')
+        killed++
+        process.stderr.write(`telegram channel: evicted rival poller pid=${p} holding this token\n`)
+      } catch {}
+    }
+  }
+  return killed
+}
+
 // Retry polling with backoff on any error. Previously only 409 was retried —
 // a single ETIMEDOUT/ECONNRESET/DNS failure rejected bot.start(), the catch
 // returned, and polling stopped permanently while the process stayed alive
@@ -1021,13 +1058,18 @@ void (async () => {
       if (err instanceof Error && err.message === 'Aborted delay') return
       const is409 = err instanceof GrammyError && err.error_code === 409
       if (is409 && attempt >= 8) {
+        // Don't give up and leave the bot deaf-but-alive. Reclaim the token
+        // slot from a local zombie poller, then keep polling.
+        const killed = evictRivalPollers()
         process.stderr.write(
           `telegram channel: 409 Conflict persists after ${attempt} attempts — ` +
-          `another poller is holding the bot token (stray 'bun server.ts' process or a second session). Exiting.\n`,
+          (killed > 0
+            ? `evicted ${killed} stray same-token poller(s); reclaiming slot.\n`
+            : `no local stray poller found (rival may be on another host); will keep retrying.\n`),
         )
-        return
+        attempt = 0 // reset backoff after an eviction attempt
       }
-      const delay = Math.min(1000 * attempt, 15000)
+      const delay = Math.min(1000 * Math.max(attempt, 1), 15000)
       const detail = is409
         ? `409 Conflict${attempt === 1 ? ' — another instance is polling (zombie session, or a second Claude Code running?)' : ''}`
         : `polling error: ${err}`
