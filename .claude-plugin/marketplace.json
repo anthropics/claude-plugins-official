@@ -1008,7 +1008,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/gemini-cli-extensions/dataproc.git",
-        "sha": "20eec06eee7683311689f4a1437cbb14ac8cd33e"
+        "sha": "80d126d27d84ded752c84668472dd6f75896fc59"
       },
       "homepage": "https://github.com/gemini-cli-extensions/dataproc"
     },
