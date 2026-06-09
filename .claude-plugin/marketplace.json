@@ -2707,7 +2707,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/togethercomputer/skills.git",
-        "sha": "fb94cc1402900eb608c31e7102fc23566f8b0363"
+        "sha": "8aa08ca126a50d5e76f6d378f47386cee4267984"
       },
       "homepage": "https://www.together.ai"
     },
