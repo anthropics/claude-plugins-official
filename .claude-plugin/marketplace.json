@@ -1316,6 +1316,22 @@
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/greptile"
     },
     {
+      "name": "heyimjames",
+      "description": "Four detailed iOS/SwiftUI design-engineering skills for native iOS apps targeting iOS 17, iOS 18, and iOS 26 (Liquid Glass). Covers camera & photos (Halide/Kino/Lapse polish), chat & messaging (iMessage/Telegram/WhatsApp patterns), interaction primitives (widgets, Live Activities, Dynamic Island, haptics, Wallet passes), and the final 5% of polish (motion physics, OKLCH color, typography, MeshGradient backgrounds, shareable image generation). After install, invoke via heyimjames:camera-and-photos, heyimjames:chat-and-messaging, heyimjames:interaction-primitives, heyimjames:the-final-5-percent.",
+      "author": {
+        "name": "James Frewin"
+      },
+      "category": "design",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/heyimjames/ios-design-skills.git",
+        "path": "plugins/heyimjames",
+        "ref": "main",
+        "sha": "de01ee4704e6b21f8a5cd5aaa3280fa32cbc3af5"
+      },
+      "homepage": "https://github.com/heyimjames/ios-design-skills"
+    },
+    {
       "name": "hookify",
       "description": "Easily create custom hooks to prevent unwanted behaviors by analyzing conversation patterns or from explicit instructions. Define rules via simple markdown files.",
       "author": {
