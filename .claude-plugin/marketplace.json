@@ -2620,7 +2620,7 @@
         "source": "url",
         "url": "https://github.com/sumup/sumup-skills.git",
         "path": "providers/claude/plugin",
-        "sha": "715464b459def2d16e930e9ec8008f60e18a8b4d"
+        "sha": "5b9b2d72c63fefd9038db0a9c571d3d64ff6353c"
       },
       "homepage": "https://www.sumup.com/"
     },
