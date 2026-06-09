@@ -254,11 +254,11 @@
       "category": "development",
       "source": {
         "source": "url",
-        "url": "https://github.com/BrainBlend-AI/atomic-agents.git",
+        "url": "https://github.com/eigenwise/atomic-agents.git",
         "path": "claude-plugin/atomic-agents",
-        "sha": "324399402b9b5965313de6a34ea09d6bb149a200"
+        "sha": "dfe17760ab6cfa7fa1567df2dc18627f132d180d"
       },
-      "homepage": "https://github.com/BrainBlend-AI/atomic-agents",
+      "homepage": "https://github.com/eigenwise/atomic-agents",
       "tags": [
         "community-managed"
       ]
