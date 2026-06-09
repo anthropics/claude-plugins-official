@@ -62,6 +62,19 @@ Run a comprehensive pull request review using multiple specialized agents, each 
    - **Suggestions** (nice to have)
    - **Positive Observations** (what's good)
 
+   **Interpreting cross-agent convergence (parallel runs):**
+
+   When multiple agents run in parallel, *convergence* is a signal worth weighing explicitly:
+
+   - **Unanimous flag** (all or nearly all agents flag the same line/issue): structural concern. The issue is inherent to the code shape, not a perspective. Treat as Important/Critical even if each individual agent rated it lower. Prioritize in the action plan.
+   - **Majority flag** (more than half): still structural, usually worth fixing.
+   - **Unique flag** (one agent): perspective-specific. Could be a real issue within that agent's specialty (e.g., only type-design-analyzer notices a type invariant); could also be stylistic. Triage individually — don't automatically down-rank, but don't treat as load-bearing either.
+
+   Call out unanimous flags explicitly in the summary with something like:
+   > "Flagged by all 4 agents: [issue]. Structural concern — highest priority."
+
+   This gives the reviewer clear signal about which findings to act on first, independent of how each agent rated the issue in its individual report.
+
 7. **Provide Action Plan**
 
    Organize findings:
@@ -180,10 +193,82 @@ Run a comprehensive pull request review using multiple specialized agents, each 
 4. Push updates
 ```
 
+## Posting Inline Comments to GitHub
+
+### `position`, not `line`
+
+`POST /repos/{owner}/{repo}/pulls/{pull_number}/reviews` requires **`position`**: the line's integer offset in the unified diff. GitHub accepts `line` + `side` without error but returns `line: null`; the parameters anchor nothing. They belong to `POST /pulls/{n}/comments`, not this endpoint.
+
+### Computing diff positions
+
+Count every line in the unified diff (`@@` headers, `+`, `-`, context); `+++ b/` resets to 0.
+
+```python
+import re, subprocess
+
+diff = subprocess.check_output(['git', 'diff', 'main...HEAD']).decode()
+position = 0
+current_file = None
+new_line = 0
+positions = {}
+
+for raw in diff.splitlines():
+    if raw.startswith('diff --git'):
+        current_file = None
+    elif raw.startswith('+++ b/'):
+        current_file = raw[6:]
+        position = 0
+    elif raw.startswith('@@'):
+        m = re.search(r'\+(\d+)', raw)
+        if m:
+            new_line = int(m.group(1)) - 1
+        position += 1
+    elif current_file and raw.startswith('+'):
+        new_line += 1; position += 1
+        positions[(current_file, new_line)] = position
+    elif current_file and raw.startswith('-'):
+        position += 1
+    elif current_file and raw.startswith(' '):
+        new_line += 1; position += 1
+        positions[(current_file, new_line)] = position
+
+# positions.get(('src/foo.ts', 42))
+```
+
+### Posting the review
+
+Build the body with `json.dump`; `printf`/heredoc escaping corrupts any body with backticks or quotes.
+
+```python
+import json
+
+review = {
+  'event': 'REQUEST_CHANGES',
+  'body': 'Summary.',
+  'comments': [
+    {'path': 'src/foo.ts', 'position': 8, 'body': 'Comment with `backticks`.'},
+  ]
+}
+with open('/tmp/review.json', 'w') as f:
+    json.dump(review, f)
+```
+
+```bash
+gh api repos/{owner}/{repo}/pulls/{number}/reviews \
+  --method POST \
+  --input /tmp/review.json \
+  --jq '[.id, .state]'
+```
+
+### Don't debug against the live PR
+
+COMMENTED reviews are permanent: the API and UI offer no way to remove them. On the first unexpected result, read the docs before retrying. Use a throwaway PR for API experimentation.
+
+### zsh: use `>|` for temp files in loops
+
+In zsh, `noclobber` blocks `>` from overwriting existing files. Use `>|` in loops that write the same path.
+
 ## Notes:
 
-- Agents run autonomously and return detailed reports
-- Each agent focuses on its specialty for deep analysis
-- Results are actionable with specific file:line references
-- Agents use appropriate models for their complexity
-- All agents available in `/agents` list
+- Results include file:line references
+- All agents available in `/agents`
