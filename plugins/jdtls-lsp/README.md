@@ -26,7 +26,7 @@ yay -S jdtls
 3. Create a wrapper script named `jdtls` in your PATH
 
 ## Requirements
-- Java 17 or later (JDK, not just JRE)
+- Java 21 or later (JDK, not just JRE) to run the server itself. Note: launcher wrappers (e.g. Homebrew's) honor `JAVA_HOME` over any bundled JDK — if `JAVA_HOME` points at an older JDK, jdtls exits immediately with "jdtls requires at least Java 21", which surfaces as an LSP initialization timeout.
 
 ## More Information
 - [Eclipse JDT.LS GitHub](https://github.com/eclipse-jdtls/eclipse.jdt.ls)
