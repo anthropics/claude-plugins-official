@@ -1302,6 +1302,10 @@
       "lspServers": {
         "gopls": {
           "command": "gopls",
+          "args": [
+            "-remote=auto",
+            "-remote.listen.timeout=30m"
+          ],
           "extensionToLanguage": {
             ".go": "go"
           }
