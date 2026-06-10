@@ -250,11 +250,12 @@ def emit_metrics(
     Empty/None additional_context emits neither channel (back-compat for
     metrics-only callers).
 
-    `system_message` (optional, asyncRewake only): user-visible TUI message,
-    distinct from rewakeSummary which is the task-notification one-liner.
-    Use sparingly — the rewakeMessage in hooks.json is the primary user
-    surface; systemMessage adds a per-fire override when the static
-    rewakeMessage isn't specific enough for the finding being shown.
+    `system_message` (optional): user-visible TUI message, distinct from
+    rewakeSummary which is the task-notification one-liner. systemMessage
+    is a universal CC hook-output field (valid on every hook event); this
+    file uses it for asyncRewake per-fire overrides and for the
+    UserPromptSubmit billing notice (#65543). Use sparingly — the
+    rewakeMessage in hooks.json is the primary user surface.
 
     `hook_event_name` (used only when additional_context is set): selects the
     delivery channel above. Defaults to "PostToolUse" (commit-review and
@@ -315,6 +316,23 @@ def atomic_check_and_mark_warning(session_id, warning_key):
 
     result = with_locked_state(session_id, _check)
     return result if result is not None else True
+
+def _billing_notice_once(session_id):
+    """One-time-per-session notice when reviews will bill the pay-as-you-go
+    API key even though a Claude Code subscription token is also available
+    (the silent-charge case in #65543). Returns the message the first time
+    per session, else None. Key-only, token-only, 3P, and gateway setups
+    never see it."""
+    if not (llm.will_bill_api_key() and llm.ANTHROPIC_AUTH_TOKEN):
+        return None
+    if not atomic_check_and_mark_warning(session_id, "api-key-billing-notice"):
+        return None
+    return (
+        "security-guidance: automated security reviews are billing your "
+        "ANTHROPIC_API_KEY (pay-as-you-go), not your Claude subscription, "
+        "because an API key is set in this environment. To route reviews "
+        "through your subscription, unset ANTHROPIC_API_KEY. (Shown once per session.)"
+    )
 
 def atomic_check_counter(session_id, counter_key, max_count):
     """
@@ -581,6 +599,14 @@ def handle_user_prompt_submit(input_data):
         # invocation failure. See #2099.
         debug_log(f"Failed to capture git baseline (cwd={cwd!r}) — not a git repo, "
                   f"or git invocation failed (check log entries above)")
+
+    notice = _billing_notice_once(session_id)
+    if notice:
+        # systemMessage is a universal hook-output field (honored on every
+        # hook event, incl. UserPromptSubmit); JSON stdout is parsed as
+        # structured output, not injected as prompt context. See
+        # https://code.claude.com/docs/en/hooks (hook output, common fields).
+        print(json.dumps({"systemMessage": notice}), flush=True)
 
     sys.exit(0)
 

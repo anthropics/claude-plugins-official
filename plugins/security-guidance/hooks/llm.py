@@ -332,6 +332,27 @@ def _is_3p_provider() -> bool:
     return False
 
 
+def will_bill_api_key() -> bool:
+    """True when reviews will authenticate with the pay-as-you-go
+    ANTHROPIC_API_KEY rather than the Claude Code subscription token.
+    Mirrors the auth precedence in _call_claude() and _agentic_spawn_env()
+    so the user-facing billing notice can't drift from actual behavior.
+
+    Returns False on 3P providers (Bedrock/Vertex/Foundry/Mantle) — the
+    spawned child CLI inherits ANTHROPIC_API_KEY from os.environ, but the
+    3P flag routes its auth to provider credentials. Also returns False
+    when ANTHROPIC_BASE_URL points at a gateway (LiteLLM, Bifrost, …):
+    there the "API key" is a gateway credential and "billing your
+    pay-as-you-go key" would be wrong — and would nag a deliberate setup
+    every session.
+    """
+    if _is_3p_provider():
+        return False
+    if os.environ.get("ANTHROPIC_BASE_URL", "").rstrip("/") not in ("", "https://api.anthropic.com"):
+        return False
+    return bool(ANTHROPIC_API_KEY)
+
+
 def _call_claude_via_sdk(prompt, output_schema, *, max_tokens=16000, model=None):
     """Single-turn SDK call as a substitute for the HTTP _call_claude path on
     3P providers. Uses the same `output_format` JSON-schema contract so the
