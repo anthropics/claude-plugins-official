@@ -2088,7 +2088,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/qdrant/skills.git",
-        "sha": "82337ccd4be601e52871f101844d57b2adbac52b"
+        "sha": "0814a0875db7a31bf29e46821668ef1b07f9f696"
       },
       "homepage": "https://skills.qdrant.tech"
     },
