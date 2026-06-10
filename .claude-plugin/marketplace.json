@@ -2314,7 +2314,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/sanity-io/agent-toolkit.git",
-        "sha": "66f0ec5d9167b3ccb8b3450e5ec34f3b523d4139"
+        "sha": "be762f2fc6c82432ff7e4e5d6f27becfc7a95b06"
       },
       "homepage": "https://www.sanity.io"
     },
