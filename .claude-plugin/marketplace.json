@@ -2300,7 +2300,7 @@
         "url": "https://github.com/awslabs/agent-plugins.git",
         "path": "plugins/sagemaker-ai",
         "ref": "main",
-        "sha": "f985fddc69953f103d9c16fa9e97096d2bc29b02"
+        "sha": "58373593c6ed2e4684181f81369c0b7a4c916423"
       },
       "homepage": "https://github.com/awslabs/agent-plugins"
     },
