@@ -720,7 +720,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/cloudflare/skills.git",
-        "sha": "c5b7b06b073fa0b4abbd63964630f97d81da69c4"
+        "sha": "12520fd63a1e958be217a93f48ce1f04bc9055f3"
       },
       "description": "Skills for the Cloudflare developer platform: Workers, Durable Objects, Agents SDK, MCP servers, Wrangler CLI, and web performance.",
       "category": "deployment",
