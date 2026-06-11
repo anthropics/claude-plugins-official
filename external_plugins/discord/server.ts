@@ -720,8 +720,6 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
   }
 })
 
-await mcp.connect(new StdioServerTransport())
-
 // When Claude Code closes the MCP connection, stdin gets EOF. Without this
 // the gateway stays connected as a zombie holding resources.
 let shuttingDown = false
@@ -890,11 +888,25 @@ async function handleInbound(msg: Message): Promise<void> {
   })
 }
 
-client.once('ready', c => {
-  process.stderr.write(`discord channel: gateway connected as ${c.user.tag}\n`)
+const gatewayReady = new Promise<void>(resolve => {
+  client.once('ready', c => {
+    process.stderr.write(`discord channel: gateway connected as ${c.user.tag}\n`)
+    resolve()
+  })
 })
 
 client.login(TOKEN).catch(err => {
   process.stderr.write(`discord channel: login failed: ${err}\n`)
   process.exit(1)
 })
+
+// Start the MCP stdio transport only after the Discord gateway is live. If the
+// stdio reader starts first, on some hosts (observed: Amazon Linux 2023 + Bun)
+// it starves the discord.js gateway handshake — the shard WebSocket connects
+// but READY never fires, so messageCreate is never delivered when the plugin
+// is launched by `claude --channels`. The same server run standalone (stdin
+// held open, no MCP traffic) connects fine, which isolates the issue to
+// transport/gateway contention during startup. Claude Code's `initialize`
+// request just waits in the pipe buffer until the transport starts reading.
+await gatewayReady
+await mcp.connect(new StdioServerTransport())
