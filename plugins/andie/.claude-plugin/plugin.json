@@ -1,0 +1,13 @@
+{
+  "name": "andie",
+  "description": "Disciplined thinking skill for people who build with AI. Four playbooks — teach (Deep), debate (Drama), firefight (War), root-cause (Kaizen) — with named expert triads, HITL gates, and continuous OODA. Get it right, not just fast.",
+  "version": "6.4.0",
+  "license": "MIT",
+  "author": {
+    "name": "Giggso Inc",
+    "url": "https://github.com/giggsoinc"
+  },
+  "homepage": "https://github.com/giggsoinc/andie",
+  "repository": "https://github.com/giggsoinc/andie",
+  "keywords": ["ai", "reasoning", "thinking", "decision-making", "debate", "kaizen", "six-sigma", "incident-command", "claude-code", "agent-skill", "productivity"]
+}
