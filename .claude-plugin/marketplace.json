@@ -1602,7 +1602,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/lusha-oss/lusha-mcp-plugin.git",
-        "sha": "8fc71d5473ea40e01a92001787f0f3caaf5ca30e"
+        "sha": "affbc76b03c1a46c0dffc5b7a374cf7af17b26e8"
       },
       "homepage": "https://www.lusha.com"
     },
