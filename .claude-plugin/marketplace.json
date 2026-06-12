@@ -304,7 +304,7 @@
         "url": "https://github.com/awslabs/agent-plugins.git",
         "path": "plugins/aws-amplify",
         "ref": "main",
-        "sha": "58373593c6ed2e4684181f81369c0b7a4c916423"
+        "sha": "7a17df718d26f07414b876e77a7480fa25089b08"
       },
       "homepage": "https://github.com/awslabs/agent-plugins"
     },
