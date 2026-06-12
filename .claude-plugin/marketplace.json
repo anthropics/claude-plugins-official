@@ -1022,7 +1022,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/datarobot-oss/datarobot-agent-skills.git",
-        "sha": "ec2ecdd49d54ef490b344a850cff1feb1230c409"
+        "sha": "574dd2dfc549c0181458e7be6bee5755baa3c533"
       },
       "homepage": "https://datarobot.com"
     },
