@@ -8,13 +8,17 @@ You need to execute the following bash commands to clean up stale local branches
 
 ## Commands to Execute
 
-1. **First, list branches to identify any with [gone] status**
+1. **First, refresh remote-tracking refs and list branches with their upstream status**
    Execute this command:
    ```bash
-   git branch -v
+   git fetch --prune
+   git branch -vv
    ```
-   
-   Note: Branches with a '+' prefix have associated worktrees and must have their worktrees removed before deletion.
+
+   Notes:
+   - `git fetch --prune` deletes stale remote-tracking refs so the `[gone]` status is accurate. Without it, a branch deleted on the remote since the last fetch is not yet flagged `[gone]`, and the cleanup silently misses it.
+   - The `[<upstream>: gone]` marker only appears with `git branch -vv` (two `v`s). Plain `git branch -v` (one `v`) never shows upstream/gone status.
+   - Branches with a '+' prefix have associated worktrees and must have their worktrees removed before deletion.
 
 2. **Next, identify worktrees that need to be removed for [gone] branches**
    Execute this command:
@@ -25,8 +29,10 @@ You need to execute the following bash commands to clean up stale local branches
 3. **Finally, remove worktrees and delete [gone] branches (handles both regular and worktree branches)**
    Execute this command:
    ```bash
-   # Process all [gone] branches, removing '+' prefix if present
-   git branch -v | grep '\[gone\]' | sed 's/^[+* ]//' | awk '{print $1}' | while read branch; do
+   # Step 1's `git fetch --prune` must have run first so [gone] is accurate.
+   # Process all [gone] branches (matched via the `-vv` "[<upstream>: gone]"
+   # marker), removing any '+'/'*' prefix.
+   git branch -vv | grep ': gone]' | sed 's/^[+* ]//' | awk '{print $1}' | while read branch; do
      echo "Processing branch: $branch"
      # Find and remove worktree if it exists
      worktree=$(git worktree list | grep "\\[$branch\\]" | awk '{print $1}')
@@ -44,7 +50,8 @@ You need to execute the following bash commands to clean up stale local branches
 
 After executing these commands, you will:
 
-- See a list of all local branches with their status
+- Prune stale remote-tracking refs so the `[gone]` detection reflects the current remote
+- See a list of all local branches with their upstream (`-vv`) status
 - Identify and remove any worktrees associated with [gone] branches
 - Delete all branches marked as [gone]
 - Provide feedback on which worktrees and branches were removed
