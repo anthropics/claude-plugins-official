@@ -15,6 +15,7 @@ import time
 import uuid
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
+from shutil import rmtree
 
 from scripts.utils import parse_skill_md
 
@@ -22,7 +23,7 @@ from scripts.utils import parse_skill_md
 def find_project_root() -> Path:
     """Find the project root by walking up from cwd looking for .claude/.
 
-    Mimics how Claude Code discovers its project root, so the command file
+    Mimics how Claude Code discovers its project root, so the test skill
     we create ends up where claude -p will look for it.
     """
     current = Path.cwd()
@@ -42,7 +43,7 @@ def run_single_query(
 ) -> bool:
     """Run a single query and return whether the skill was triggered.
 
-    Creates a command file in .claude/commands/ so it appears in Claude's
+    Creates a temporary skill in .claude/skills/ so it appears in Claude's
     available_skills list, then runs `claude -p` with the raw query.
     Uses --include-partial-messages to detect triggering early from
     stream events (content_block_start) rather than waiting for the
@@ -50,22 +51,23 @@ def run_single_query(
     """
     unique_id = uuid.uuid4().hex[:8]
     clean_name = f"{skill_name}-skill-{unique_id}"
-    project_commands_dir = Path(project_root) / ".claude" / "commands"
-    command_file = project_commands_dir / f"{clean_name}.md"
+    skill_dir = Path(project_root) / ".claude" / "skills" / clean_name
+    skill_file = skill_dir / "SKILL.md"
 
     try:
-        project_commands_dir.mkdir(parents=True, exist_ok=True)
+        skill_dir.mkdir(parents=True, exist_ok=True)
         # Use YAML block scalar to avoid breaking on quotes in description
         indented_desc = "\n  ".join(skill_description.split("\n"))
-        command_content = (
+        skill_content = (
             f"---\n"
+            f"name: {clean_name}\n"
             f"description: |\n"
             f"  {indented_desc}\n"
             f"---\n\n"
             f"# {skill_name}\n\n"
             f"This skill handles: {skill_description}\n"
         )
-        command_file.write_text(command_content)
+        skill_file.write_text(skill_content)
 
         cmd = [
             "claude",
@@ -177,8 +179,8 @@ def run_single_query(
 
         return triggered
     finally:
-        if command_file.exists():
-            command_file.unlink()
+        if skill_dir.exists():
+            rmtree(skill_dir)
 
 
 def run_eval(
