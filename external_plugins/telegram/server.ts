@@ -667,10 +667,39 @@ process.on('SIGHUP', shutdown)
 // Orphan watchdog: stdin events above don't reliably fire when the parent
 // chain (`bun run` wrapper → shell → us) is severed by a crash. Poll for
 // reparenting (POSIX) or a dead stdin pipe and self-terminate.
+//
+// On Linux, `bun run` survives Claude Code exit because init (PID 1)
+// reparents it. The parent's ppid never changes from our perspective, so
+// the simple ppid check is insufficient. Instead, track the grandparent
+// PID (Claude Code itself) and watch whether `bun run`'s parent changes
+// — reparenting to init signals the real parent exited.
+function readParentPid(pid: number): number | null {
+  try {
+    const status = readFileSync(`/proc/${pid}/status`, 'utf8')
+    const m = status.match(/^PPid:\s+(\d+)/m)
+    return m ? parseInt(m[1], 10) : null
+  } catch {
+    return null
+  }
+}
+
 const bootPpid = process.ppid
+const bootGrandparentPid =
+  process.platform === 'linux' ? readParentPid(bootPpid) : null
+
 setInterval(() => {
+  let parentOrphaned = false
+  if (
+    process.platform === 'linux' &&
+    bootGrandparentPid != null &&
+    bootGrandparentPid > 1
+  ) {
+    const gp = readParentPid(bootPpid)
+    parentOrphaned = gp === null || gp !== bootGrandparentPid
+  }
   const orphaned =
-    (process.platform !== 'win32' && process.ppid !== bootPpid) ||
+    (process.platform !== 'win32' &&
+      (process.ppid !== bootPpid || parentOrphaned)) ||
     process.stdin.destroyed ||
     process.stdin.readableEnded
   if (orphaned) shutdown()
