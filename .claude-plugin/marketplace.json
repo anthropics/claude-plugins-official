@@ -1,6 +1,6 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
-  "name": "claude-plugins-fork",
+  "name": "telegram-rich",
   "description": "Artem's fork — enhanced Telegram plugin (reply/quote context + emoji reactions as inbound events). Only telegram is served here; other plugins come from the official marketplace.",
   "owner": {
     "name": "Artem Shaban"
