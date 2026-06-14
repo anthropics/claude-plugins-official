@@ -1826,7 +1826,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/Nimbleway/agent-skills.git",
-        "sha": "bcc5159da6ae1e46ca366ff949d196112b47c5e9"
+        "sha": "e72345e283f977d4f7bb4d6d415b5964a385bdf1"
       },
       "homepage": "https://docs.nimbleway.com/integrations/agent-skills/plugin-installation"
     },
