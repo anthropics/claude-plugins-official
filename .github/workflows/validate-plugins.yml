@@ -32,11 +32,17 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: anthropics/claude-plugins-community/.github/actions/validate-plugins@f846a0bcb0e721b1f93d60e8b73e91dafc4a1e87
+      - uses: anthropics/claude-plugins-community/.github/actions/validate-plugins@2324c6d8d9d8ceebc9bf253e5d683320dbf40760
         with:
           marketplace-path: .claude-plugin/marketplace.json
           # Official curated marketplace: SHA-pin (I5) is a HARD error.
           # I8/I11 are warnings until the 15 known vendored-path/name issues
           # are cleaned up (see PR body); tighten to "I1 I3" after.
           warn-invariants: "I1 I3 I8 I11"
+          # Plugins allowed to omit source.sha (deliberately unpinned,
+          # tracking a branch). Space-separated names. Any name added here
+          # MUST also be added to sha-exempt in bump-plugin-shas.yml, or the
+          # nightly bump re-pins it. A malformed sha still fails even for
+          # listed names.
+          sha-exempt: ""
           claude-cli-version: latest
