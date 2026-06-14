@@ -19,7 +19,7 @@ import { z } from 'zod'
 import { Bot, GrammyError, InlineKeyboard, InputFile, API_CONSTANTS, type Context } from 'grammy'
 import type { ReactionTypeEmoji } from 'grammy/types'
 import { randomBytes } from 'crypto'
-import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, statSync, renameSync, realpathSync, chmodSync } from 'fs'
+import { readFileSync, writeFileSync, appendFileSync, mkdirSync, readdirSync, rmSync, statSync, renameSync, realpathSync, chmodSync } from 'fs'
 import { homedir } from 'os'
 import { join, extname, sep } from 'path'
 
@@ -48,10 +48,26 @@ if (!TOKEN) {
     `  set in ${ENV_FILE}\n` +
     `  format: TELEGRAM_BOT_TOKEN=123456789:AAH...\n`,
   )
+  try {
+    mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 })
+    appendFileSync(join(STATE_DIR, 'shutdown.log'), `${new Date().toISOString()}  startup-error: TELEGRAM_BOT_TOKEN not set\n`)
+  } catch {}
   process.exit(1)
 }
 const INBOX_DIR = join(STATE_DIR, 'inbox')
 const PID_FILE = join(STATE_DIR, 'bot.pid')
+const SHUTDOWN_LOG = join(STATE_DIR, 'shutdown.log')
+
+// Append one line to shutdown.log so post-mortem analysis can find the cause.
+// Synchronous write — the process may exit immediately after. Never throws
+// (logging must not itself crash the shutdown path).
+function logShutdown(reason: string, detail?: string): void {
+  try {
+    const ts = new Date().toISOString()
+    const extra = detail ? `  [${detail}]` : ''
+    appendFileSync(SHUTDOWN_LOG, `${ts}  ${reason}${extra}\n`)
+  } catch {}
+}
 
 // Telegram allows exactly one getUpdates consumer per token. If a previous
 // session crashed (SIGKILL, terminal closed) its server.ts grandchild can
@@ -72,9 +88,11 @@ writeFileSync(PID_FILE, String(process.pid))
 // unhandled promise rejection. With them it logs and keeps serving tools.
 process.on('unhandledRejection', err => {
   process.stderr.write(`telegram channel: unhandled rejection: ${err}\n`)
+  logShutdown('unhandledRejection', String(err).slice(0, 200))
 })
 process.on('uncaughtException', err => {
   process.stderr.write(`telegram channel: uncaught exception: ${err}\n`)
+  logShutdown('uncaughtException', String(err).slice(0, 200))
 })
 
 // Permission-reply spec from anthropics/claude-cli-internal
@@ -681,10 +699,11 @@ await mcp.connect(new StdioServerTransport())
 // the bot keeps polling forever as a zombie, holding the token and blocking
 // the next session with 409 Conflict.
 let shuttingDown = false
-function shutdown(): void {
+function shutdown(reason = 'shutdown: unknown'): void {
   if (shuttingDown) return
   shuttingDown = true
   process.stderr.write('telegram channel: shutting down\n')
+  logShutdown(reason)
   try {
     if (parseInt(readFileSync(PID_FILE, 'utf8'), 10) === process.pid) rmSync(PID_FILE)
   } catch {}
@@ -693,11 +712,11 @@ function shutdown(): void {
   setTimeout(() => process.exit(0), 2000)
   void Promise.resolve(bot.stop()).finally(() => process.exit(0))
 }
-process.stdin.on('end', shutdown)
-process.stdin.on('close', shutdown)
-process.on('SIGTERM', shutdown)
-process.on('SIGINT', shutdown)
-process.on('SIGHUP', shutdown)
+process.stdin.on('end', () => shutdown('stdin: end'))
+process.stdin.on('close', () => shutdown('stdin: close'))
+process.on('SIGTERM', () => shutdown('signal: SIGTERM'))
+process.on('SIGINT', () => shutdown('signal: SIGINT'))
+process.on('SIGHUP', () => shutdown('signal: SIGHUP'))
 
 // Orphan watchdog: stdin events above don't reliably fire when the parent
 // chain (`bun run` wrapper → shell → us) is severed by a crash. Poll for
@@ -708,7 +727,15 @@ setInterval(() => {
     (process.platform !== 'win32' && process.ppid !== bootPpid) ||
     process.stdin.destroyed ||
     process.stdin.readableEnded
-  if (orphaned) shutdown()
+  if (orphaned) {
+    const detail =
+      process.platform !== 'win32' && process.ppid !== bootPpid
+        ? `ppid changed ${bootPpid}→${process.ppid}`
+        : process.stdin.destroyed
+          ? 'stdin.destroyed'
+          : 'stdin.readableEnded'
+    shutdown(`orphan-watchdog: ${detail}`)
+  }
 }, 5000).unref()
 
 // Commands are DM-only. Responding in groups would: (1) leak pairing codes via
@@ -1155,6 +1182,7 @@ void (async () => {
           `telegram channel: 409 Conflict persists after ${attempt} attempts — ` +
           `another poller is holding the bot token (stray 'bun server.ts' process or a second session). Exiting.\n`,
         )
+        logShutdown('polling-stopped: 409 Conflict', `attempt=${attempt}`)
         return
       }
       const delay = Math.min(1000 * attempt, 15000)
