@@ -1,5 +1,5 @@
 ---
-description: Full discovery & portfolio analysis of a legacy system — inventory, complexity, debt, effort estimation
+description: Full discovery & portfolio analysis of a legacy system — inventory, complexity, debt, relative scale
 argument-hint: <system-dir> [--show-secrets] | --portfolio <parent-dir>
 ---
 
@@ -15,6 +15,34 @@ dir is the first non-flag token.
 
 Sweep every immediate subdirectory of the parent dir and produce a
 heat-map a steering committee can use to sequence a multi-year program.
+
+**Preferred — Workflow orchestration.** If the **Workflow tool** is available
+in this session (this command invocation is your authorization), enumerate
+the immediate subdirectories first — the workflow script has no filesystem
+access — then launch one survey agent per system, all independent:
+
+```bash
+ls -d <parent-dir>/*/ | xargs -n1 basename   # bare subdir names, not paths
+```
+
+```
+Workflow({
+  scriptPath: "${CLAUDE_PLUGIN_ROOT}/workflows/portfolio-assess.js",
+  args: { parentDir: "<parent-dir>", systems: ["<sub1>", "<sub2>", ...] }
+})
+```
+
+This is one agent per system (a 30-system estate = 30 agents — tell the user
+the count before launching; the runtime queues them against its concurrency
+cap). Each agent returns a structured metrics row and the workflow computes
+COCOMO-II uniformly in code, so every row uses the identical formula. On
+return, render `rows` (plus an "unmeasured" marker row for anything in
+`unmeasured`) into the Step P4 heat-map, add the sequencing recommendation
+yourself, and skip Steps P1–P3. For very long sweeps, note the workflow's
+`runId` — if the session dies mid-sweep, relaunch with `resumeFromRunId` and
+completed systems return instantly from cache.
+
+**Fallback** (no Workflow tool): run Steps P1–P3 per system yourself, then P4.
 
 ## Step P1 — Per-system metrics
 
@@ -34,11 +62,19 @@ cyclomatic complexity (CCN). For dependency freshness, locate the
 manifest (`package.json`, `pom.xml`, `*.csproj`, `requirements*.txt`,
 copybook dir) and note its age / pinned-version count.
 
-## Step P2 — COCOMO-II effort
+## Step P2 — COCOMO-II complexity index
 
-Compute person-months per system using COCOMO-II basic:
-`PM = 2.94 × (KSLOC)^1.10` (nominal scale factors). Show the formula and
-inputs so the figure is defensible, not a guess.
+Compute the COCOMO-II basic figure per system: `2.94 × (KSLOC)^1.10`
+(nominal scale factors). Show the formula and inputs so it is defensible,
+not a guess.
+
+**Use this only as a relative complexity/scale index** for ranking and
+sequencing systems — bigger number = bigger, more complex estate. **It is
+not a modernization timeline or cost.** The COCOMO person-month figure
+assumes traditional human-team productivity; agentic transformation does
+not follow those productivity curves, so do not present it (or convert it)
+as how long the work will take or what it will cost. Label the column as an
+index, not "person-months", and never attach a date or duration to it.
 
 ## Step P3 — Documentation coverage
 
@@ -51,7 +87,7 @@ Report coverage % and the top undocumented subsystems.
 Write `analysis/portfolio.html` (dark `#1e1e1e` bg, `#d4d4d4` text,
 `#cc785c` accent, system-ui font, all CSS inline). One row per system;
 columns: **System · Lang · KSLOC · Files · Mean CCN · Max CCN · Dep
-Freshness · Doc Coverage % · COCOMO PM · Risk**. Color-grade the PM and
+Freshness · Doc Coverage % · Complexity (COCOMO index) · Risk**. Color-grade the index and
 Risk cells (green→amber→red). Below the table, a 2-3 sentence
 sequencing recommendation: which system first and why.
 
@@ -73,11 +109,15 @@ Run and show the output of:
 scc legacy/$1
 ```
 Then run `scc --by-file -s complexity legacy/$1 | head -25` to identify the
-highest-complexity files. Capture the COCOMO effort/cost estimate scc provides.
+highest-complexity files. Capture scc's COCOMO figure **only as a relative
+complexity/scale index** — and **ignore scc's "Estimated Schedule Effort"
+and cost-in-dollars lines**: those project a human-team timeline and budget,
+which are invalid for agentic modernization (see the not-a-timeline note in
+Step 6).
 
 If `scc` is not installed, fall back in order:
-1. `cloc legacy/$1` for the LOC table, then compute COCOMO-II effort
-   yourself: `PM = 2.94 × (KSLOC)^1.10` (nominal scale factors). Show the
+1. `cloc legacy/$1` for the LOC table, then compute the COCOMO-II index
+   yourself: `2.94 × (KSLOC)^1.10` (nominal scale factors). Show the
    inputs.
 2. If `cloc` is also missing, use `find` + `wc -l` grouped by extension
    for LOC, and rank file complexity by counting decision keywords
@@ -180,8 +220,8 @@ Create `analysis/$1/ASSESSMENT.md` with these sections:
 - **Technical Debt** (top 10, ranked)
 - **Security Findings** (CWE table)
 - **Documentation Gaps** (top 5)
-- **Effort Estimation** (COCOMO-derived person-months, ±range, key cost drivers)
-- **Recommended Modernization Pattern** (one of: Rehost / Replatform / Refactor / Rearchitect / Rebuild / Replace — with one-paragraph rationale)
+- **Relative Scale** (the COCOMO-II index + KSLOC as a complexity/scale signal for ranking this system against others. **Not a timeline:** state plainly that this is a relative size measure, not an estimate of how long modernization will take or what it will cost — it assumes traditional human-team productivity, which agentic transformation does not follow. Do not print person-months, a schedule, a cost, or a date.)
+- **Recommended Modernization Pattern** (one of: Rehost / Replatform / Refactor / Rearchitect / Rebuild / Replace — with one-paragraph rationale, and the command it routes to: **Replatform / Refactor-in-place same-stack version bump → `/modernize-uplift`**; Rearchitect/cross-stack → `/modernize-transform`; Rebuild → `/modernize-reimagine`)
 
 Also create `analysis/$1/ARCHITECTURE.mmd` containing the Mermaid domain
 dependency diagram from the legacy-analyst.

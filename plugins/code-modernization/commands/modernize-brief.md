@@ -35,16 +35,28 @@ store, and integration. Below it, a table mapping legacy component → target
 component(s).
 
 ### 3. Phased Sequence
-Break the work into 3-6 phases using **strangler-fig ordering** — lowest-risk,
-fewest-dependencies first. For each phase:
+Break the work into 3-6 phases. Order by **strangler-fig** for a cross-stack
+rewrite (lowest-risk, fewest-dependencies first), or **build-graph leaf-first**
+for a same-stack uplift (libraries before the apps that depend on them). Name
+the per-phase execution command: `/modernize-transform` (cross-stack module
+rewrite), `/modernize-reimagine` (greenfield rebuild), or `/modernize-uplift`
+(same-stack version bump — when the target is a newer version of the *same*
+stack, this is the path, not transform). For each phase:
 - Scope (which legacy modules, which target services)
 - Entry criteria (what must be true to start)
 - Exit criteria (what tests/metrics prove it's done)
-- Estimated effort (person-months, same unit as the assessment's COCOMO
-  figure — convert deliberately if you present weeks)
+- Relative scale (T-shirt size — S/M/L/XL — anchored to the phase's share
+  of the assessment's COCOMO complexity index. This ranks phases by size
+  against each other; it is **not** a duration. Do **not** state
+  person-months, weeks, calendar dates, or a delivery estimate — agentic
+  transformation does not follow the human-team productivity curves those
+  units assume, so any time figure here would be misleading.)
 - Risk level + top 2 risks + mitigation
 
-Render the phases as a Mermaid `gantt` chart.
+Render the phases as a Mermaid `flowchart LR` showing **sequence and
+dependencies** (Phase 1 → Phase 2 → …, with branches where phases are
+independent). Do **not** use a `gantt` chart — gantt encodes calendar
+durations, and this plan deliberately makes no time claims.
 
 ### 4. Business Walkthroughs
 For each persona flow in `analysis/$1/topology.json` (`flows` — produced

@@ -27,7 +27,7 @@ used for, and what degrades without it:
 
 | Tool | Used by | Without it |
 |---|---|---|
-| `scc` (or `cloc`) | assess | LOC/complexity fall back to `find`+`wc`; COCOMO estimate gets coarser |
+| `scc` (or `cloc`) | assess | LOC/complexity fall back to `find`+`wc`; the COCOMO complexity index gets coarser |
 | `lizard` | assess --portfolio | complexity estimated from decision-keyword counts |
 | `glow` | all | markdown artifacts render as plain text |
 | `delta` | transform | side-by-side diffs fall back to `diff -y` |
@@ -93,6 +93,15 @@ followed by a **Ready / Ready-with-gaps / Not ready** verdict per command:
   recorded traces / golden-master fixtures instead of dual execution
   (common and expected for CICS/IMS code that has no local runtime)
 - `harden` — needs Check 2 plus any stack-specific SAST tooling found
+- `uplift` (same-stack version bump) — needs Check 3 green for the **target**
+  version. Two uplift-specific signals to report when a `[target-stack]` that
+  looks like a version bump was passed: (a) is the **source** runtime also
+  available here? Both present = a true dual-run is possible; target-only =
+  equivalence degrades to characterization tests against recorded outputs (say
+  which). (b) Is the stack's **migration tool** installed (`dotnet tool list`
+  for `upgrade-assistant`, `apiport`, OpenRewrite, `pyupgrade`, `ng`)? Missing
+  is Ready-with-gaps, not Not-ready — the delta catalog is then fully
+  Claude-derived and loses the tool's coverage; note that.
 
 Print the table in the session too, and end with the single most
 important fix if anything is red.

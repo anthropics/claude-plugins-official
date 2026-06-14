@@ -146,6 +146,12 @@ tpl = open(tpl_path).read()
 marker = "/*__TOPOLOGY_DATA__*/ null"
 assert marker in tpl, f"injection marker not found in {tpl_path}"
 data = json.dumps(json.load(open(f"{out_dir}/topology.json")))
+# topology.json is derived from UNTRUSTED source (node names come from filenames,
+# observations/flows from analyzed code). The data is injected into a <script>
+# block, and the HTML parser closes <script> on the literal bytes "</script>"
+# regardless of JS string context — so a node named "x</script><script>…" would
+# execute. json.dumps does NOT escape "<". Escape it (JSON-safe) to kill the breakout.
+data = data.replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
 open(f"{out_dir}/TOPOLOGY.html", "w").write(
     tpl.replace(marker, "/*__TOPOLOGY_DATA__*/ " + data))
 print(f"wrote {out_dir}/TOPOLOGY.html")

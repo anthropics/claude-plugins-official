@@ -3,6 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Defense-in-depth: the data island is built from untrusted source. Allow only
+     inline script/style (the viewer is self-contained) and block network egress, so
+     even a breakout cannot exfiltrate. The injector also escapes < > & in the data. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
 <title>System topology</title>
 <style>
   :root {
