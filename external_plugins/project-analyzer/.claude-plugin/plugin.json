@@ -1,0 +1,8 @@
+{
+  "name": "project-analyzer",
+  "description": "Deep 8-dimension analysis framework for open-source projects and software architectures. Produces living architectural analysis with Progressive Disclosure, ADR, Scenario Walkthrough, Degradation & Fallback, Competitive Landscape, Quantification, Closed Loop, and Longitudinal Narrative dimensions.",
+  "author": {
+    "name": "Li Gen"
+  },
+  "category": "development"
+}
