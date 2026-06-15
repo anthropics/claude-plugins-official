@@ -22,7 +22,7 @@ IMO success drops to <5% under human grading.
 
 17/18 IMO+Putnam 2025 problems solved, 0 false positives, 2 novel proofs found.
 See the skill's eval data in the
-[anthropic monorepo](https://github.com/anthropics/anthropic/tree/staging/sandbox/sandbox/ralph/math_skills/eval_harness).
+[math-olympiad evals](skills/math-olympiad/evals).
 
 ## Install
 
