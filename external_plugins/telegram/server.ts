@@ -897,6 +897,46 @@ function safeName(s: string | undefined): string | undefined {
   return s?.replace(/[<>\[\]\r\n;]/g, '_')
 }
 
+// Quote-replies: Telegram delivers only the NEW text on a reply; the message the
+// user quoted lives in reply_to_message and would otherwise be lost. Surface it
+// so the session sees the context the user is actually responding to. The quoted
+// body is uploader-controlled, so scrub the same tag-delimiter chars safeName
+// does (it lands inside the <channel> tag) and cap it so a long quote can't blow
+// the tag out.
+const QUOTED_BODY_MAX = 2000
+function replyContext(
+  ctx: Context,
+): { block: string; replyToMessageId: string } | undefined {
+  const rm = ctx.message?.reply_to_message
+  if (!rm) return undefined
+  const who =
+    safeName(rm.from?.username) ??
+    (rm.from?.id != null ? String(rm.from.id) : 'unknown')
+  // Note media on the quoted message even when it carried no text/caption.
+  const media = rm.photo
+    ? '[photo]'
+    : rm.document
+      ? '[document]'
+      : rm.voice
+        ? '[voice]'
+        : rm.audio
+          ? '[audio]'
+          : rm.video
+            ? '[video]'
+            : rm.sticker
+              ? '[sticker]'
+              : rm.video_note
+                ? '[video note]'
+                : ''
+  let body = (rm.text ?? rm.caption ?? '').replace(/[<>\[\]\r\n;]/g, ' ').trim()
+  if (body.length > QUOTED_BODY_MAX) body = body.slice(0, QUOTED_BODY_MAX) + '…'
+  const shown = body || media || '[no text]'
+  return {
+    block: `[in reply to @${who} (message ${rm.message_id}): "${shown}"]`,
+    replyToMessageId: String(rm.message_id),
+  }
+}
+
 async function handleInbound(
   ctx: Context,
   text: string,
@@ -958,15 +998,21 @@ async function handleInbound(
 
   const imagePath = downloadImage ? await downloadImage() : undefined
 
+  // Prepend the quoted message (if this is a reply) so the session sees the
+  // context the user is responding to; expose its id in meta for threading.
+  const reply = replyContext(ctx)
+  const content = reply ? `${reply.block}\n\n${text}` : text
+
   // image_path goes in meta only — an in-content "[image attached — read: PATH]"
   // annotation is forgeable by any allowlisted sender typing that string.
   mcp.notification({
     method: 'notifications/claude/channel',
     params: {
-      content: text,
+      content,
       meta: {
         chat_id,
         ...(msgId != null ? { message_id: String(msgId) } : {}),
+        ...(reply ? { reply_to_message_id: reply.replyToMessageId } : {}),
         user: from.username ?? String(from.id),
         user_id: String(from.id),
         ts: new Date((ctx.message?.date ?? 0) * 1000).toISOString(),
