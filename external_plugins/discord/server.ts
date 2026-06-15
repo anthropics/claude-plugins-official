@@ -152,6 +152,21 @@ function readAccessFile(): Access {
   try {
     const raw = readFileSync(ACCESS_FILE, 'utf8')
     const parsed = JSON.parse(raw) as Partial<Access>
+    // Keys placed inside a group that the gate never reads are a common footgun:
+    // mentionPatterns / ackReaction / replyToMode are TOP-LEVEL, not per-group.
+    // Warn rather than silently ignore so misconfigurations are visible.
+    const GROUP_KEYS = new Set(['requireMention', 'allowFrom'])
+    for (const [chan, policy] of Object.entries(parsed.groups ?? {})) {
+      for (const key of Object.keys((policy ?? {}) as Record<string, unknown>)) {
+        if (!GROUP_KEYS.has(key)) {
+          process.stderr.write(
+            `discord: access.json groups[${JSON.stringify(chan)}].${key} is ignored — ` +
+              `groups only support requireMention and allowFrom; ` +
+              `mentionPatterns, ackReaction and replyToMode are top-level keys.\n`,
+          )
+        }
+      }
+    }
     return {
       dmPolicy: parsed.dmPolicy ?? 'pairing',
       allowFrom: parsed.allowFrom ?? [],

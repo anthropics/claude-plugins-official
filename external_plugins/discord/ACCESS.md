@@ -116,6 +116,9 @@ Configure outbound behavior with `/discord:access set <key> <value>`.
   "allowFrom": ["184695080709324800"],
 
   // Guild channels the bot is active in. Empty object = DM-only.
+  // A group object supports ONLY requireMention + allowFrom. Other keys here
+  // (e.g. mentionPatterns / ackReaction / replyToMode) are ignored — they are
+  // top-level keys, see below. The server logs a warning if it finds them in a group.
   "groups": {
     "846209781206941736": {
       // true: respond only to @mentions and replies.
