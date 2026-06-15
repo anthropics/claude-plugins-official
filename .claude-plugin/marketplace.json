@@ -2367,6 +2367,22 @@
       "homepage": "https://github.com/SAP/open-ux-tools/tree/main/packages/fiori-mcp-server"
     },
     {
+      "name": "sap-hana-cli",
+      "description": "150+ SAP HANA database tools for AI assistants. Query tables, import/export data, profile data quality, compare schemas, manage backups, monitor performance, and more. Connects to SAP HANA Cloud and on-premise databases.",
+      "author": {
+        "name": "SAP SE",
+        "email": "ospo@sap.com",
+        "url": "https://www.sap.com"
+      },
+      "category": "database",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/SAP-samples/hana-cli-claude-plugin.git",
+        "sha": "160ae47efaffea2e1dd9d6877ab9ec49b78542a0"
+      },
+      "homepage": "https://github.com/SAP-samples/hana-cli-claude-plugin"
+    },
+    {
       "name": "sap-mdk-server",
       "description": "MCP server for SAP Mobile Development Kit (MDK). Build and modify MDK applications with AI assistance — schema lookups, action validation, rule editing, and project scaffolding.",
       "author": {
