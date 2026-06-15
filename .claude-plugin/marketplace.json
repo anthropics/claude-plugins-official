@@ -486,7 +486,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/buildkite/skills.git",
-        "sha": "a43e944f2017146d0a6b7d8ea2bf21b02484e1d3"
+        "sha": "e6c7784f46a2c070fdf7e6fe1b61cd3ca0e20166"
       },
       "homepage": "https://buildkite.com"
     },
