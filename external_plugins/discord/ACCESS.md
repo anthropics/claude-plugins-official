@@ -52,6 +52,8 @@ Guild channels are off by default. Opt each one in individually, keyed on the **
 
 With the default `requireMention: true`, the bot responds only when @mentioned or replied to. Pass `--no-mention` to process every message in the channel, or `--allow id1,id2` to restrict which members can trigger it.
 
+Bot-authored messages are dropped by default even in enabled channels. To allow a trusted peer bot to trigger this bot in a specific channel, add its bot user snowflake to that channel's `allowBotFrom` list in `access.json`; the message must still satisfy `requireMention` unless the channel was added with `--no-mention`. This keeps bot-to-bot workflows opt-in per channel and avoids accidental loops.
+
 ```
 /discord:access group add 846209781206941736 --no-mention
 /discord:access group add 846209781206941736 --allow 184695080709324800,221773638772129792
@@ -120,8 +122,10 @@ Configure outbound behavior with `/discord:access set <key> <value>`.
     "846209781206941736": {
       // true: respond only to @mentions and replies.
       "requireMention": true,
-      // Restrict triggers to these senders. Empty = any member (subject to requireMention).
-      "allowFrom": []
+      // Restrict triggers to these human senders. Empty = any human member (subject to requireMention).
+      "allowFrom": [],
+      // Restrict bot-authored triggers to these bot users. Empty/missing = no bots.
+      "allowBotFrom": []
     }
   },
 

@@ -100,6 +100,7 @@ type PendingEntry = {
 type GroupPolicy = {
   requireMention: boolean
   allowFrom: string[]
+  allowBotFrom?: string[]
 }
 
 type Access = {
@@ -242,8 +243,11 @@ async function gate(msg: Message): Promise<GateResult> {
 
   const senderId = msg.author.id
   const isDM = msg.channel.type === ChannelType.DM
+  const isBot = msg.author.bot
 
   if (isDM) {
+    // DM bot messages are always dropped — avoid bots triggering pairing or loops.
+    if (isBot) return { action: 'drop' }
     if (access.allowFrom.includes(senderId)) return { action: 'deliver', access }
     if (access.dmPolicy === 'allowlist') return { action: 'drop' }
 
@@ -283,8 +287,13 @@ async function gate(msg: Message): Promise<GateResult> {
   const policy = access.groups[channelId]
   if (!policy) return { action: 'drop' }
   const groupAllowFrom = policy.allowFrom ?? []
+  const groupAllowBotFrom = policy.allowBotFrom ?? []
   const requireMention = policy.requireMention ?? true
-  if (groupAllowFrom.length > 0 && !groupAllowFrom.includes(senderId)) {
+  // Bots are dropped unless explicitly whitelisted for this channel.
+  if (isBot && !groupAllowBotFrom.includes(senderId)) {
+    return { action: 'drop' }
+  }
+  if (!isBot && groupAllowFrom.length > 0 && !groupAllowFrom.includes(senderId)) {
     return { action: 'drop' }
   }
   if (requireMention && !(await isMentioned(msg, access.mentionPatterns))) {
@@ -803,7 +812,8 @@ client.on('interactionCreate', async (interaction: Interaction) => {
 })
 
 client.on('messageCreate', msg => {
-  if (msg.author.bot) return
+  // Bot filtering is handled per-channel in gate() via allowBotFrom; the entry
+  // point no longer hard-drops all bot messages.
   handleInbound(msg).catch(e => process.stderr.write(`discord: handleInbound failed: ${e}\n`))
 })
 
