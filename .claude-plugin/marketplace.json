@@ -2264,6 +2264,20 @@
       "homepage": "https://www.revenuecat.com"
     },
     {
+      "name": "rill",
+      "description": "Skills for developing and querying projects in the Rill business intelligence platform",
+      "author": {
+        "name": "Rill Data"
+      },
+      "category": "development",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/rilldata/agent-skills.git",
+        "sha": "9bdc4efa38a9ad419104fc2d1bb3e89529202487"
+      },
+      "homepage": "https://docs.rilldata.com/developers/build/ai-configuration"
+    },
+    {
       "name": "rootly",
       "description": "Full-lifecycle incident management: deploy safety, incident response, on-call management, and retrospectives.",
       "author": {
