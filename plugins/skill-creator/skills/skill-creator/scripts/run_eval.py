@@ -9,8 +9,10 @@ import argparse
 import json
 import os
 import select
+import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import uuid
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -47,10 +49,17 @@ def run_single_query(
     Uses --include-partial-messages to detect triggering early from
     stream events (content_block_start) rather than waiting for the
     full assistant message, which only arrives after tool execution.
+
+    Each query runs in a fresh isolated temp directory (its own empty
+    .claude/) so that find_project_root inside claude -p resolves to the
+    sandbox rather than walking up into a real repo full of competing
+    skills/commands. project_root is unused but kept for signature
+    compatibility.
     """
     unique_id = uuid.uuid4().hex[:8]
     clean_name = f"{skill_name}-skill-{unique_id}"
-    project_commands_dir = Path(project_root) / ".claude" / "commands"
+    sandbox = Path(tempfile.mkdtemp(prefix=f"skilleval-{unique_id}-"))
+    project_commands_dir = sandbox / ".claude" / "commands"
     command_file = project_commands_dir / f"{clean_name}.md"
 
     try:
@@ -86,11 +95,10 @@ def run_single_query(
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
-            cwd=project_root,
+            cwd=str(sandbox),
             env=env,
         )
 
-        triggered = False
         start_time = time.time()
         buffer = ""
         # Track state for stream event detection
@@ -125,7 +133,11 @@ def run_single_query(
                     except json.JSONDecodeError:
                         continue
 
-                    # Early detection via stream events
+                    # Early detection via stream events. We scan the WHOLE
+                    # session: the model may explore (Glob/Bash/Read of other
+                    # files) before invoking the skill, so a non-matching tool
+                    # must not abort detection. Only a final `result` (or
+                    # timeout) ends the scan.
                     if event.get("type") == "stream_event":
                         se = event.get("event", {})
                         se_type = se.get("type", "")
@@ -138,7 +150,9 @@ def run_single_query(
                                     pending_tool_name = tool_name
                                     accumulated_json = ""
                                 else:
-                                    return False
+                                    # Non-matching tool: ignore this block but
+                                    # keep scanning for a later skill invocation.
+                                    pending_tool_name = None
 
                         elif se_type == "content_block_delta" and pending_tool_name:
                             delta = se.get("delta", {})
@@ -147,11 +161,10 @@ def run_single_query(
                                 if clean_name in accumulated_json:
                                     return True
 
-                        elif se_type in ("content_block_stop", "message_stop"):
-                            if pending_tool_name:
-                                return clean_name in accumulated_json
-                            if se_type == "message_stop":
-                                return False
+                        elif se_type == "content_block_stop":
+                            if pending_tool_name and clean_name in accumulated_json:
+                                return True
+                            pending_tool_name = None
 
                     # Fallback: full assistant message
                     elif event.get("type") == "assistant":
@@ -162,23 +175,23 @@ def run_single_query(
                             tool_name = content_item.get("name", "")
                             tool_input = content_item.get("input", {})
                             if tool_name == "Skill" and clean_name in tool_input.get("skill", ""):
-                                triggered = True
+                                return True
                             elif tool_name == "Read" and clean_name in tool_input.get("file_path", ""):
-                                triggered = True
-                            return triggered
+                                return True
 
+                    # The session ended without the skill being invoked.
                     elif event.get("type") == "result":
-                        return triggered
+                        return False
         finally:
             # Clean up process on any exit path (return, exception, timeout)
             if process.poll() is None:
                 process.kill()
                 process.wait()
 
-        return triggered
+        # Loop exited via timeout or stream close without a trigger.
+        return False
     finally:
-        if command_file.exists():
-            command_file.unlink()
+        shutil.rmtree(sandbox, ignore_errors=True)
 
 
 def run_eval(
