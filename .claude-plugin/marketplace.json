@@ -109,7 +109,7 @@
         "url": "https://github.com/airwallex/airwallex-marketplace.git",
         "path": "plugins/airwallex",
         "ref": "master",
-        "sha": "d772717065d55180eb44231de60d5aedfc843122"
+        "sha": "683a7536f9445c07439d087607b44b0383b8c41d"
       },
       "homepage": "https://www.airwallex.com/docs"
     },
