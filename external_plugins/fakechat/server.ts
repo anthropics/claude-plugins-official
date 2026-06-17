@@ -147,7 +147,7 @@ function deliver(id: string, text: string, file?: { path: string; name: string }
   })
 }
 
-Bun.serve({
+const http = Bun.serve({
   port: PORT,
   hostname: '127.0.0.1',
   fetch(req, server) {
@@ -208,6 +208,24 @@ Bun.serve({
 })
 
 process.stderr.write(`fakechat: http://localhost:${PORT}\n`)
+
+// Bun.serve keeps the event loop alive on its own, so closing the parent CLI's
+// stdio pipe doesn't end this process — the port would stay bound by an orphan.
+// Bind the HTTP server's lifecycle to the parent connection: when stdin reaches
+// EOF (pipe closed), the MCP transport closes, or we get a termination signal,
+// release the port and exit.
+let stopped = false
+function shutdown() {
+  if (stopped) return
+  stopped = true
+  http.stop(true)
+  process.exit(0)
+}
+
+mcp.onclose = shutdown
+process.stdin.on('end', shutdown)
+process.stdin.on('close', shutdown)
+for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) process.on(sig, shutdown)
 
 const HTML = `<!doctype html>
 <meta charset="utf-8">
