@@ -1068,7 +1068,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/datarobot-oss/datarobot-agent-skills.git",
-        "sha": "6597148f13471d951322f5321a35cef59a47f6bc"
+        "sha": "5f8979cd971441214066339410aeafeeb6f4c403"
       },
       "homepage": "https://datarobot.com"
     },
