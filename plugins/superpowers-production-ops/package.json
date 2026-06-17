@@ -1,0 +1,10 @@
+{
+  "name": "superpowers-production-ops",
+  "version": "1.0.0",
+  "description": "Production operations skill — enforces structural separation between planning and execution to prevent context-poisoning improvisation",
+  "claude-plugin": {
+    "skills": [
+      "skills/production-operations"
+    ]
+  }
+}
