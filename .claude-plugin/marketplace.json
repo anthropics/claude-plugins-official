@@ -1094,7 +1094,7 @@
         "url": "https://github.com/awslabs/agent-plugins.git",
         "path": "plugins/deploy-on-aws",
         "ref": "main",
-        "sha": "7a17df718d26f07414b876e77a7480fa25089b08"
+        "sha": "46fd59cd1a0751ac15e34754f86f9a06b0900d2c"
       },
       "homepage": "https://github.com/awslabs/agent-plugins"
     },
