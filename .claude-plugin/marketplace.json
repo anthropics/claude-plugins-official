@@ -296,6 +296,22 @@
       "homepage": "https://github.com/aws/agent-toolkit-for-aws"
     },
     {
+      "name": "aws-agents-for-devsecops",
+      "description": "Investigate incidents, review code and execute UAT for release readiness, scan code for vulnerabilities, and run penetration tests with AWS DevOps Agent and AWS Security Agent.",
+      "author": {
+        "name": "Amazon Web Services"
+      },
+      "category": "development",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/aws/agent-toolkit-for-aws.git",
+        "path": "plugins/aws-agents-for-devsecops",
+        "ref": "main",
+        "sha": "9ad8fe7d729435ae3788a16fdbf308520ee2b78e"
+      },
+      "homepage": "https://github.com/aws/agent-toolkit-for-aws"
+    },
+    {
       "name": "aws-amplify",
       "description": "Build full-stack apps with AWS Amplify Gen 2 using guided workflows for authentication, data models, storage, GraphQL APIs, and Lambda functions.",
       "category": "development",
