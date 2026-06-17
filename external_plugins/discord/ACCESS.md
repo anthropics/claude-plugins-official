@@ -89,6 +89,13 @@ Configure outbound behavior with `/discord:access set <key> <value>`.
 
 **`chunkMode`** chooses the split strategy: `length` cuts exactly at the limit; `newline` prefers paragraph boundaries.
 
+**`permissionChannel`** routes permission requests to a guild channel (snowflake) instead of DMing each allowlisted user. The Allow/Deny buttons stay gated by `allowFrom`, so even though the prompt is visible in the channel, only allowlisted users can act on it. If the channel can't be reached, it falls back to DMs. Unset = default DM behavior. Pair this with a channel locked down to your own user ID for a single-pane approval workflow.
+
+```
+/discord:access set permissionChannel 846209781206941736
+/discord:access set permissionChannel ""
+```
+
 ## Skill reference
 
 | Command | Effect |
@@ -101,7 +108,7 @@ Configure outbound behavior with `/discord:access set <key> <value>`.
 | `/discord:access policy allowlist` | Set `dmPolicy`. Values: `pairing`, `allowlist`, `disabled`. |
 | `/discord:access group add 846209781206941736` | Enable a guild channel. Flags: `--no-mention`, `--allow id1,id2`. |
 | `/discord:access group rm 846209781206941736` | Disable a guild channel. |
-| `/discord:access set ackReaction 🔨` | Set a config key: `ackReaction`, `replyToMode`, `textChunkLimit`, `chunkMode`, `mentionPatterns`. |
+| `/discord:access set ackReaction 🔨` | Set a config key: `ackReaction`, `replyToMode`, `textChunkLimit`, `chunkMode`, `mentionPatterns`, `permissionChannel`. |
 
 ## Config file
 
@@ -138,6 +145,10 @@ Configure outbound behavior with `/discord:access set <key> <value>`.
   "textChunkLimit": 2000,
 
   // length = cut at limit. newline = prefer paragraph boundaries.
-  "chunkMode": "newline"
+  "chunkMode": "newline",
+
+  // Opt-in: post permission requests to this channel instead of DMs.
+  // Buttons stay gated by allowFrom. Unset = DM each allowlisted user.
+  "permissionChannel": "846209781206941736"
 }
 ```
