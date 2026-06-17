@@ -397,7 +397,7 @@
         "url": "https://github.com/awslabs/startups.git",
         "path": "advisor/plugins/aws-startup-advisor",
         "ref": "main",
-        "sha": "f28c66d966e8b03b387ffd44a47c6c53b73ff775"
+        "sha": "2e1d603a43b241f13ed40e4d1762f5e4ed744ecc"
       },
       "homepage": "https://github.com/awslabs/startups"
     },
