@@ -518,11 +518,19 @@ mcp.setNotificationHandler(
     // allowlisted users can approve even though the message is visible in the
     // channel. Falls back to DMs if the channel can't be reached.
     if (access.permissionChannel) {
+      // Surface the command/input inline so it can be approved without the
+      // extra "See more" click (the channel is opt-in, so this detail is
+      // wanted — especially when approving from mobile).
+      let preview = input_preview
+      try { preview = JSON.stringify(JSON.parse(input_preview), null, 2) } catch {}
+      if (preview.length > 1500) preview = preview.slice(0, 1500) + '\n…(truncated, tap See more)'
+      const channelText =
+        `${text}${description ? `\n${description}` : ''}\n\`\`\`\n${preview}\n\`\`\``
       void (async () => {
         try {
           const ch = await client.channels.fetch(access.permissionChannel!)
           if (ch && ch.isTextBased() && 'send' in ch) {
-            await ch.send({ content: text, components: [row] })
+            await ch.send({ content: channelText, components: [row] })
             return
           }
           throw new Error('permissionChannel is not a sendable text channel')
