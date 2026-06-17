@@ -1114,7 +1114,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/dominodatalab/domino-claude-plugin.git",
-        "sha": "56c3fc39d2f2f26d58d0f27d4dad138b0edec456"
+        "sha": "c2649c78bac350715594352ca61d2df9e3340783"
       },
       "homepage": "https://www.domino.ai"
     },
