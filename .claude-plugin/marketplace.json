@@ -3053,7 +3053,7 @@
         "source": "url",
         "url": "https://github.com/zilliztech/zilliz-plugin.git",
         "path": "plugins/zilliz",
-        "sha": "e960396da0bd0b1cb219fa97e3bcbb425ee1abbd"
+        "sha": "768d3db5fdb69b74116ada2b371032a49bfb3fe1"
       },
       "homepage": "https://docs.zilliz.com"
     },
