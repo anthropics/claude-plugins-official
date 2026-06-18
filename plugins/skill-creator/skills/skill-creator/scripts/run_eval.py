@@ -8,9 +8,12 @@ for a set of queries. Outputs results as JSON.
 import argparse
 import json
 import os
+import platform
+import queue
 import select
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -97,21 +100,48 @@ def run_single_query(
         pending_tool_name = None
         accumulated_json = ""
 
+        # Windows: select() only works on sockets, not pipes — use threading instead
+        if platform.system() == "Windows":
+            chunk_queue: queue.Queue[bytes | None] = queue.Queue()
+
+            def _reader(stream, q):
+                try:
+                    while True:
+                        chunk = stream.read(8192)
+                        if not chunk:
+                            break
+                        q.put(chunk)
+                finally:
+                    q.put(None)
+
+            reader_thread = threading.Thread(target=_reader, args=(process.stdout, chunk_queue), daemon=True)
+            reader_thread.start()
+
         try:
             while time.time() - start_time < timeout:
-                if process.poll() is not None:
-                    remaining = process.stdout.read()
-                    if remaining:
-                        buffer += remaining.decode("utf-8", errors="replace")
-                    break
+                if platform.system() == "Windows":
+                    try:
+                        chunk = chunk_queue.get(timeout=1.0)
+                    except queue.Empty:
+                        if process.poll() is not None:
+                            break
+                        continue
+                    if chunk is None:
+                        break
+                else:
+                    if process.poll() is not None:
+                        remaining = process.stdout.read()
+                        if remaining:
+                            buffer += remaining.decode("utf-8", errors="replace")
+                        break
 
-                ready, _, _ = select.select([process.stdout], [], [], 1.0)
-                if not ready:
-                    continue
+                    ready, _, _ = select.select([process.stdout], [], [], 1.0)
+                    if not ready:
+                        continue
 
-                chunk = os.read(process.stdout.fileno(), 8192)
-                if not chunk:
-                    break
+                    chunk = os.read(process.stdout.fileno(), 8192)
+                    if not chunk:
+                        break
                 buffer += chunk.decode("utf-8", errors="replace")
 
                 while "\n" in buffer:
