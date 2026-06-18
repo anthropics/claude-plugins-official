@@ -2519,7 +2519,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/getsentry/sentry-for-claude.git",
-        "sha": "d86aedebf52db128fb081edc46b87ee88affa793"
+        "sha": "88b2adfc59751ba569c399f90c1024859a20c390"
       },
       "homepage": "https://github.com/getsentry/sentry-for-claude/tree/main"
     },
