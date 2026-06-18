@@ -281,7 +281,8 @@
     },
     {
       "name": "aws-agents",
-      "description": "Build, deploy, and operate AI agents on AWS. Skills for scaffolding agents with Amazon Bedrock AgentCore, connecting tools, memory, policies, evaluation, debugging, and production hardening.",
+      "description": "Build, deploy, and operate AI agents on AWS. Skills for scaffolding agents with Amazon Bedrock AgentCore (Strands, LangGraph), connecting tools via Gateway and MCP, multi-agent and A2A orchestration, memory, Cedar policies, evaluation, observability, debugging traces and logs, and production hardening (inbound auth, IAM, rate limiting, cold-start tuning).",
+      "keywords": ["aws", "amazon", "ai-agents", "agents", "agentcore", "bedrock", "strands", "langgraph", "mcp", "a2a", "multi-agent", "tool-use", "rag", "observability", "tracing", "production-hardening", "sigv4", "cedar", "evaluation"],
       "author": {
         "name": "Amazon Web Services"
       },
@@ -298,6 +299,7 @@
     {
       "name": "aws-agents-for-devsecops",
       "description": "Investigate incidents, review code and execute UAT for release readiness, scan code for vulnerabilities, and run penetration tests with AWS DevOps Agent and AWS Security Agent.",
+      "keywords": ["aws", "amazon", "devops", "devsecops", "security", "incident", "code-review", "penetration-test", "release-readiness", "testing", "vulnerability", "remediation"],
       "author": {
         "name": "Amazon Web Services"
       },
@@ -326,7 +328,8 @@
     },
     {
       "name": "aws-core",
-      "description": "Build, deploy, and operate applications on AWS. Skills to author infrastructure-as-code, use core services, and complete common tasks.",
+      "description": "Build, deploy, and operate applications on AWS. Skills to author infrastructure-as-code (CDK, CloudFormation), use core services (Lambda, API Gateway, Step Functions, ECS/Fargate, ECR, IAM, Amazon Bedrock with Knowledge Bases and Guardrails, Amplify, Amazon OpenSearch Service), and complete common tasks across observability (CloudWatch, X-Ray, CloudTrail, ADOT), messaging and streaming (SQS, SNS, EventBridge, Kinesis, MSK), search and analytics (OpenSearch, vector/semantic/hybrid search, log analytics), AWS SDKs (boto3, JS v3, Swift), and cost optimization.",
+      "keywords": ["aws", "amazon", "iam", "bedrock", "cdk", "cloudformation", "serverless", "lambda", "api-gateway", "step-functions", "containers", "ecs", "fargate", "sqs", "sns", "eventbridge", "kinesis", "msk", "kafka", "observability", "cloudwatch", "x-ray", "opensearch", "opensearch-serverless", "amazon-opensearch-service", "elasticsearch", "vector-search", "semantic-search", "boto3", "aws-sdk", "cost-optimization"],
       "author": {
         "name": "Amazon Web Services"
       },
@@ -342,7 +345,8 @@
     },
     {
       "name": "aws-data-analytics",
-      "description": "Data lake, analytics, and ETL workflows with S3 Tables, AWS Glue, and Athena.",
+      "description": "Data lake, analytics, and ETL workflows with S3 Tables, AWS Glue, and Athena. Covers managed Iceberg tables on S3 Tables, ingestion from JDBC databases (Oracle, SQL Server, PostgreSQL, MySQL, RDS), Amazon Redshift, Snowflake, BigQuery, and DynamoDB, AWS Glue Data Catalog inventory and asset discovery, federated Athena queries, and vector storage and semantic search on Amazon S3 Vectors.",
+      "keywords": ["aws", "amazon", "analytics", "data-lake", "athena", "glue", "s3-tables", "s3-vectors", "iceberg", "etl", "redshift", "snowflake", "bigquery", "dynamodb", "vector-search", "semantic-search", "rag", "aurora"],
       "author": {
         "name": "Amazon Web Services"
       },
