@@ -397,7 +397,7 @@ const mcp = new Server(
     instructions: [
       'The sender reads Telegram, not this session. Anything you want them to see must go through the reply tool — your transcript output never reaches their chat.',
       '',
-      'Messages from Telegram arrive as <channel source="telegram" chat_id="..." message_id="..." user="..." ts="...">. If the tag has an image_path attribute, Read that file — it is a photo the sender attached. If the tag has attachment_file_id, call download_attachment with that file_id to fetch the file, then Read the returned path. Reply with the reply tool — pass chat_id back. Use reply_to (set to a message_id) only when replying to an earlier message; the latest message doesn\'t need a quote-reply, omit reply_to for normal responses.',
+      'Messages from Telegram arrive as <channel source="telegram" chat_id="..." message_id="..." user="..." ts="..."> (an `edited="true"` attribute marks a revision of an earlier message_id — replace your in-memory copy of that message_id with the new content; do not treat it as a fresh message). If the tag has an image_path attribute, Read that file — it is a photo the sender attached. If the tag has attachment_file_id, call download_attachment with that file_id to fetch the file, then Read the returned path. Reply with the reply tool — pass chat_id back. Use reply_to (set to a message_id) only when replying to an earlier message; the latest message doesn\'t need a quote-reply, omit reply_to for normal responses.',
       '',
       'reply accepts file paths (files: ["/abs/path.png"]) for attachments. Use react to add emoji reactions, and edit_message for interim progress updates. Edits don\'t trigger push notifications — when a long task completes, send a new reply so the user\'s device pings.',
       '',
@@ -788,6 +788,16 @@ bot.on('message:text', async ctx => {
   await handleInbound(ctx, ctx.message.text, undefined)
 })
 
+// Forward text edits through the same inbound path so the agent's view
+// of message_id stays in sync with what the user actually sees on
+// Telegram. `edited: true` flips the meta flag so the agent can detect
+// a revision instead of treating it as a fresh send.
+bot.on('edited_message:text', async ctx => {
+  const text = ctx.editedMessage!.text
+  if (!text) return
+  await handleInbound(ctx, text, undefined, undefined, { edited: true })
+})
+
 bot.on('message:photo', async ctx => {
   const caption = ctx.message.caption ?? '(photo)'
   // Defer download until after the gate approves — any user can send photos,
@@ -902,6 +912,7 @@ async function handleInbound(
   text: string,
   downloadImage: (() => Promise<string | undefined>) | undefined,
   attachment?: AttachmentMeta,
+  opts?: { edited?: boolean },
 ): Promise<void> {
   const result = gate(ctx)
 
@@ -918,7 +929,11 @@ async function handleInbound(
   const access = result.access
   const from = ctx.from!
   const chat_id = String(ctx.chat!.id)
-  const msgId = ctx.message?.message_id
+  // ctx.message is undefined for edited_message updates; ctx.editedMessage
+  // carries the payload there. Fall back so msgId and date resolve in both
+  // cases and the agent sees the user's CURRENT view of the conversation.
+  const inboundMsg = ctx.message ?? ctx.editedMessage
+  const msgId = inboundMsg?.message_id
 
   // Permission-reply intercept: if this looks like "yes xxxxx" for a
   // pending permission request, emit the structured event instead of
@@ -969,7 +984,8 @@ async function handleInbound(
         ...(msgId != null ? { message_id: String(msgId) } : {}),
         user: from.username ?? String(from.id),
         user_id: String(from.id),
-        ts: new Date((ctx.message?.date ?? 0) * 1000).toISOString(),
+        ts: new Date((inboundMsg?.date ?? 0) * 1000).toISOString(),
+        ...(opts?.edited ? { edited: 'true' } : {}),
         ...(imagePath ? { image_path: imagePath } : {}),
         ...(attachment ? {
           attachment_kind: attachment.kind,
@@ -1000,6 +1016,16 @@ void (async () => {
   for (let attempt = 1; ; attempt++) {
     try {
       await bot.start({
+        // Grammy's default subscription omits edited_message, so an edit
+        // to a Telegram message never reaches the bot. List every update
+        // type the plugin actually consumes here -- a partial list would
+        // silently drop the others (Bot API replaces the default with the
+        // exact set you pass).
+        allowed_updates: [
+          'message',
+          'edited_message',
+          'callback_query',
+        ],
         onStart: info => {
           attempt = 0
           botUsername = info.username
