@@ -30,10 +30,12 @@ import {
   type Interaction,
 } from 'discord.js'
 import { randomBytes } from 'crypto'
+import { createServer } from 'node:http'
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, statSync, renameSync, realpathSync, chmodSync } from 'fs'
 import { homedir } from 'os'
 import { join, sep } from 'path'
 import { BusyGate, capturePaneBusy } from './busy-gate'
+import { parseInjectBody, type ChannelDelivery } from './inject'
 
 const STATE_DIR = process.env.DISCORD_STATE_DIR ?? join(homedir(), '.claude', 'channels', 'discord')
 const ACCESS_FILE = join(STATE_DIR, 'access.json')
@@ -63,6 +65,9 @@ if (!TOKEN) {
   process.exit(1)
 }
 const INBOX_DIR = join(STATE_DIR, 'inbox')
+// Scheduler-inject HTTP port. Default 7843 — distinct from telegram's 7842 so
+// both channel servers can run concurrently without a port clash.
+const INJECT_PORT = parseInt(process.env.INJECT_PORT ?? '7843', 10)
 
 // Last-resort safety net — without these the process dies silently on any
 // unhandled promise rejection. With them it logs and keeps serving tools.
@@ -467,11 +472,6 @@ const mcp = new Server(
   },
 )
 
-type ChannelDelivery = {
-  content: string
-  meta: Record<string, string>
-}
-
 // Single busy-gated choke point for inbound Discord delivery (JP-44).
 // notifications/claude/channel does NOT enroll in Claude's pty type-ahead
 // queue, so a mid-turn delivery orphans in the input box and never submits.
@@ -482,7 +482,7 @@ type ChannelDelivery = {
 // next flush across that lag window so two rapid messages cannot both read
 // idle and re-wedge the second.
 // Permission relays and button interactions bypass this (they don't pass through here).
-// Discord has no /inject / scheduler path, so this is the only gate site.
+// Inbound gateway messages and the /inject scheduler endpoint both funnel here.
 const channelGate = new BusyGate<ChannelDelivery>({
   isBusy: () => capturePaneBusy(),
   deliver: async ({ content, meta }) => {
@@ -549,6 +549,37 @@ mcp.setNotificationHandler(
     }
   },
 )
+
+// node http (mirrors telegram's /inject) — bound to loopback only. The
+// scheduler POSTs report text here; we wrap it as a synthetic channel message
+// and funnel it through the same busy-gate as inbound gateway messages, so it
+// reaches the agent as if it came from Discord. Telegram also exposes /update
+// for its external poller; Discord runs on the gateway, so /inject is the only
+// route.
+createServer((req, res) => {
+  const path = req.url ?? ''
+  if (req.method !== 'POST' || path !== '/inject') {
+    res.writeHead(404)
+    res.end('not found')
+    return
+  }
+  let raw = ''
+  req.on('data', chunk => { raw += chunk })
+  req.on('end', () => {
+    // /inject: scheduler text delivered as a synthetic channel message.
+    const parsed = parseInjectBody(raw)
+    if (!parsed.ok) {
+      res.writeHead(parsed.status)
+      res.end(parsed.message)
+      return
+    }
+    channelGate.submit(parsed.delivery)
+    process.stderr.write(`discord channel: injected via HTTP for chat_id=${parsed.delivery.meta.chat_id}\n`)
+    res.writeHead(200)
+    res.end('ok')
+  })
+}).listen(INJECT_PORT, '127.0.0.1')
+process.stderr.write(`discord channel: inject endpoint listening on 127.0.0.1:${INJECT_PORT}\n`)
 
 mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
