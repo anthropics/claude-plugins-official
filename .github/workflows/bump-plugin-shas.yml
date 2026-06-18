@@ -51,12 +51,16 @@ jobs:
 
       # createCommitOnBranch-based bump so commits are signed by GitHub and
       # satisfy the org-level required_signatures ruleset on main.
-      - uses: anthropics/claude-plugins-community/.github/actions/bump-plugin-shas@e2019b2a01f11aa1484c53540b1cfab5eebbc299
+      - uses: anthropics/claude-plugins-community/.github/actions/bump-plugin-shas@2324c6d8d9d8ceebc9bf253e5d683320dbf40760
         id: bump
         with:
           marketplace-path: .claude-plugin/marketplace.json
           max-bumps: ${{ inputs.max_bumps || '30' }}
           pr-mode: per-entry
+          # Keep in sync with sha-exempt in validate-plugins.yml: names
+          # listed there have no source.sha on purpose, so the nightly bump
+          # must skip them instead of re-pinning them.
+          sha-exempt: ""
           claude-cli-version: latest
 
       # Per-entry fan-out: dispatch the three required checks against each bump
