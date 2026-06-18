@@ -275,7 +275,7 @@
         "url": "https://github.com/auth0/agent-skills.git",
         "path": "plugins/auth0",
         "ref": "main",
-        "sha": "fcc4f206e938116c2abb44f3484235e6f728ced2"
+        "sha": "5ea574addd98d585edafde7ba7df9957cd04d0d3"
       },
       "homepage": "https://auth0.com/docs/quickstart/agent-skills"
     },
