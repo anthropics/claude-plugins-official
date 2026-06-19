@@ -2338,7 +2338,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/Digital-Process-Tools/claude-remember.git",
-        "sha": "02791ae02fce39217a360e53f3227183179814a9"
+        "sha": "afb83cc76af7242e2792e7ca88572550b386592d"
       },
       "homepage": "https://github.com/Digital-Process-Tools/claude-remember"
     },
