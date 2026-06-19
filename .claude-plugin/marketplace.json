@@ -2715,7 +2715,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/SonarSource/sonarqube-agent-plugins.git",
-        "sha": "5995f2b4c68da6707fec05dac944b0fa5d7b65c8"
+        "sha": "86eb67ba72ae804f604baa58990f5388c6655410"
       },
       "homepage": "https://www.sonarsource.com"
     },
