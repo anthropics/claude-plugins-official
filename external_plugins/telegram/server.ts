@@ -33,8 +33,9 @@ const ENV_FILE = join(STATE_DIR, '.env')
 try {
   // Token is a credential — lock to owner. No-op on Windows (would need ACLs).
   chmodSync(ENV_FILE, 0o600)
-  for (const line of readFileSync(ENV_FILE, 'utf8').split('\n')) {
-    const m = line.match(/^(\w+)=(.*)$/)
+  const raw = readFileSync(ENV_FILE, 'utf8').replace(/^﻿/, '')
+  for (const line of raw.split(/\r?\n/)) {
+    const m = line.match(/^(\w+)=(.*?)\r?$/)
     if (m && process.env[m[1]] === undefined) process.env[m[1]] = m[2]
   }
 } catch {}

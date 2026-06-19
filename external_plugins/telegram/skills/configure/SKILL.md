@@ -76,7 +76,8 @@ offer.
    like `123456789:AAH...` — numeric prefix, colon, long string.
 2. `mkdir -p ~/.claude/channels/telegram`
 3. Read existing `.env` if present; update/add the `TELEGRAM_BOT_TOKEN=` line,
-   preserve other keys. Write back, no quotes around the value.
+   preserve other keys. Write back with UTF-8 encoding **without BOM** and **LF
+   line endings** (not CRLF), no quotes around the value.
 4. `chmod 600 ~/.claude/channels/telegram/.env` — the token is a credential.
 5. Confirm, then show the no-args status so the user sees where they stand.
 
