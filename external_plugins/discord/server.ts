@@ -894,7 +894,75 @@ client.once('ready', c => {
   process.stderr.write(`discord channel: gateway connected as ${c.user.tag}\n`)
 })
 
-client.login(TOKEN).catch(err => {
-  process.stderr.write(`discord channel: login failed: ${err}\n`)
-  process.exit(1)
+// === Session limit guard ===
+// Discord allows 1000 IDENTIFY payloads per 24h. Each reconnect that can't
+// RESUME consumes one. Exhausting the limit resets the bot token.
+async function checkSessionLimitAndWait(): Promise<void> {
+  try {
+    const res = await fetch('https://discord.com/api/v10/gateway/bot', {
+      headers: { Authorization: `Bot ${TOKEN}` },
+    })
+    const data = await res.json() as {
+      session_start_limit: { remaining: number; total: number; reset_after: number }
+    }
+    const { remaining, total, reset_after } = data.session_start_limit
+    process.stderr.write(
+      `discord channel: session_start_limit ${remaining}/${total}, resets in ${Math.round(reset_after / 1000)}s\n`,
+    )
+    if (remaining < 5) {
+      const waitMs = reset_after + 5_000
+      process.stderr.write(
+        `discord channel: session limit critical (${remaining}/${total}) — sleeping ${Math.round(waitMs / 1000)}s until reset\n`,
+      )
+      await new Promise(r => setTimeout(r, waitMs))
+    }
+  } catch (err) {
+    process.stderr.write(`discord channel: could not check session limit: ${err}\n`)
+  }
+}
+
+// === Reconnection limiter ===
+// Tracks how many times a new IDENTIFY was sent in the current hour window.
+// RESUME (shardResume) does NOT consume a session and decrements the counter.
+// If too many non-resume reconnects happen, exit cleanly so the systemd
+// RestartSec delay kicks in rather than burning through the daily session quota.
+let reconnectCount = 0
+let reconnectWindowStart = Date.now()
+const MAX_RECONNECTS_PER_HOUR = 15
+
+client.on('shardReconnecting', (id) => {
+  const now = Date.now()
+  if (now - reconnectWindowStart > 3_600_000) {
+    reconnectCount = 0
+    reconnectWindowStart = now
+  }
+  reconnectCount++
+  process.stderr.write(
+    `discord channel: shard ${id} reconnecting (${reconnectCount}/${MAX_RECONNECTS_PER_HOUR} this hour)\n`,
+  )
+  if (reconnectCount >= MAX_RECONNECTS_PER_HOUR) {
+    process.stderr.write(
+      `discord channel: reconnect limit reached — exiting to prevent session exhaustion\n`,
+    )
+    process.exit(1)
+  }
+})
+
+client.on('shardResume', (id, replayedEvents) => {
+  process.stderr.write(
+    `discord channel: shard ${id} resumed (replayed ${replayedEvents} events) — session NOT consumed\n`,
+  )
+  reconnectCount = Math.max(0, reconnectCount - 1)
+})
+
+client.on('shardDisconnect', (event, id) => {
+  process.stderr.write(`discord channel: shard ${id} disconnected (code=${event.code})\n`)
+})
+
+// Check session limit before connecting, then login
+checkSessionLimitAndWait().then(() => {
+  client.login(TOKEN).catch(err => {
+    process.stderr.write(`discord channel: login failed: ${err}\n`)
+    process.exit(1)
+  })
 })
