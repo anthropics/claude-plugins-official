@@ -493,7 +493,7 @@
         "url": "https://github.com/boltz-bio/boltz-api-skills.git",
         "path": "plugins/boltz",
         "ref": "main",
-        "sha": "2d2830181a349415a172bdbd5272d84038924da8"
+        "sha": "59c4c2868b8ebbd1eca1f4b94bb99bf96220d15e"
       },
       "homepage": "https://boltz.bio"
     },
