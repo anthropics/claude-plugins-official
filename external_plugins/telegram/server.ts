@@ -551,10 +551,27 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
               reply_to != null &&
               replyMode !== 'off' &&
               (replyMode === 'all' || i === 0)
-            const sent = await bot.api.sendMessage(chat_id, chunks[i], {
-              ...(shouldReplyTo ? { reply_parameters: { message_id: reply_to } } : {}),
-              ...(parseMode ? { parse_mode: parseMode } : {}),
-            })
+            let sent
+            try {
+              sent = await bot.api.sendMessage(chat_id, chunks[i], {
+                ...(shouldReplyTo ? { reply_parameters: { message_id: reply_to } } : {}),
+                ...(parseMode ? { parse_mode: parseMode } : {}),
+              })
+            } catch (err) {
+              // Telegram rejects MarkdownV2 text with any unescaped reserved
+              // character (even a literal ".") with "can't parse entities".
+              // Without a fallback the whole reply throws and never reaches the
+              // user. Retry the chunk once as plain text so delivery is
+              // guaranteed; formatting is best-effort.
+              const em = err instanceof Error ? err.message : String(err)
+              if (parseMode && /parse entities/i.test(em)) {
+                sent = await bot.api.sendMessage(chat_id, chunks[i], {
+                  ...(shouldReplyTo ? { reply_parameters: { message_id: reply_to } } : {}),
+                })
+              } else {
+                throw err
+              }
+            }
             sentIds.push(sent.message_id)
           }
         } catch (err) {
