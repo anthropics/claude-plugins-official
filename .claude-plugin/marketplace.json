@@ -626,7 +626,7 @@
         "url": "https://github.com/circlefin/skills.git",
         "path": "plugins/circle",
         "ref": "master",
-        "sha": "8ee9281f6e5ab737236ce969348adc463e6c2f79"
+        "sha": "b70cfe27a8a03936a8977e5f8bea42d07ecd088c"
       },
       "homepage": "https://www.circle.com"
     },
