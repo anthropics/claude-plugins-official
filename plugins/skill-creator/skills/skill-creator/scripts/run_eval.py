@@ -8,9 +8,10 @@ for a set of queries. Outputs results as JSON.
 import argparse
 import json
 import os
-import select
+import queue
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -30,6 +31,20 @@ def find_project_root() -> Path:
         if (parent / ".claude").is_dir():
             return parent
     return current
+
+
+def _drain_pipe(stream, q: "queue.Queue") -> None:
+    """Feed a subprocess pipe to a queue, one line at a time, on a worker thread.
+
+    Portable replacement for select.select()/os.read(fileno), which are
+    POSIX-only and raise on native Windows (its select accepts sockets only).
+    Emits a None sentinel at EOF so the consumer knows the stream is finished.
+    """
+    try:
+        for line in iter(stream.readline, b""):
+            q.put(line)
+    finally:
+        q.put(None)
 
 
 def run_single_query(
@@ -90,6 +105,17 @@ def run_single_query(
             env=env,
         )
 
+        # Stream the subprocess pipe via a background reader thread + Queue.
+        # The previous select.select()/os.read(fileno) approach is POSIX-only and
+        # raises on native Windows, where select accepts sockets only. Queue.get's
+        # timeout preserves the ~1s wakeups that enforce the per-query `timeout`;
+        # the reader thread drains to EOF and emits a None sentinel.
+        line_queue: "queue.Queue[bytes | None]" = queue.Queue()
+        reader = threading.Thread(
+            target=_drain_pipe, args=(process.stdout, line_queue), daemon=True
+        )
+        reader.start()
+
         triggered = False
         start_time = time.time()
         buffer = ""
@@ -99,19 +125,12 @@ def run_single_query(
 
         try:
             while time.time() - start_time < timeout:
-                if process.poll() is not None:
-                    remaining = process.stdout.read()
-                    if remaining:
-                        buffer += remaining.decode("utf-8", errors="replace")
-                    break
-
-                ready, _, _ = select.select([process.stdout], [], [], 1.0)
-                if not ready:
-                    continue
-
-                chunk = os.read(process.stdout.fileno(), 8192)
-                if not chunk:
-                    break
+                try:
+                    chunk = line_queue.get(timeout=1.0)
+                except queue.Empty:
+                    continue  # no output this interval; re-check the timeout
+                if chunk is None:
+                    break  # EOF: subprocess closed stdout
                 buffer += chunk.decode("utf-8", errors="replace")
 
                 while "\n" in buffer:
