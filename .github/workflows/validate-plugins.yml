@@ -38,6 +38,25 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Check for renamed plugins without renames entry
+        run: |
+          set -euo pipefail
+          base="${{ github.event.pull_request.base.sha || 'origin/main' }}"
+          # Names removed from plugins[] in this diff
+          removed=$(comm -23 \
+            <(git show "$base:.claude-plugin/marketplace.json" | jq -r '.plugins[].name' | sort) \
+            <(jq -r '.plugins[].name' .claude-plugin/marketplace.json | sort))
+          [ -z "$removed" ] && { echo "No plugin names removed."; exit 0; }
+          # Renames keys present in HEAD
+          rename_keys=$(jq -r '.renames // {} | keys[]' .claude-plugin/marketplace.json | sort)
+          missing=$(comm -23 <(echo "$removed" | sort) <(echo "$rename_keys"))
+          if [ -n "$missing" ]; then
+            echo "::error::Plugin name(s) removed without a renames entry: $missing"
+            echo "Add to .claude-plugin/marketplace.json top-level \"renames\": {\"<old>\": \"<new>\"} (or null if intentionally removed)."
+            exit 1
+          fi
+          echo "All removed names have renames entries."
+
       - uses: anthropics/claude-plugins-community/.github/actions/validate-plugins@426e469f322952061102b286b378c0c9733a0934
         with:
           marketplace-path: .claude-plugin/marketplace.json
