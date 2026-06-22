@@ -1,0 +1,19 @@
+{
+  "name": "canva",
+  "description": "Create, generate, and manage Canva designs directly from Claude. Generate AI-powered presentations, social media posts, flyers, docs, and more — with your brand kit applied.",
+  "author": {
+    "name": "Canva"
+  },
+  "keywords": [
+    "canva",
+    "design",
+    "presentation",
+    "social media",
+    "brand kit",
+    "ai generation",
+    "flyer",
+    "poster",
+    "graphic design",
+    "marketing"
+  ]
+}
