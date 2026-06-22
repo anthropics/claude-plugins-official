@@ -1858,6 +1858,86 @@ async function summarizeViaHaiku(text: string): Promise<string | null> {
   }
 }
 
+// ISO-8601 timestamp -> compact "1h05m" / "3d8h" / "now" relative to now.
+// Day-aware (7d windows reset days out, where formatElapsed would show "80h").
+function usageResetIn(iso: unknown): string {
+  if (typeof iso !== 'string' || !iso) return ''
+  const t = Date.parse(iso)
+  if (Number.isNaN(t)) return ''
+  const secs = Math.floor((t - Date.now()) / 1000)
+  if (secs <= 0) return 'now'
+  const h = Math.floor(secs / 3600)
+  const m = Math.floor((secs % 3600) / 60)
+  if (h >= 24) return `${Math.floor(h / 24)}d${h % 24}h`
+  return `${h}h${String(m).padStart(2, '0')}m`
+}
+
+// /usage — fetch the OAuth usage endpoint and format a compact report.
+// Mirrors summarizeViaHaiku's credential handling (CRED_FILE -> claudeAiOauth +
+// Bearer token + anthropic-beta). Self-contained so every bot sharing this
+// plugin reports its own account; returns a friendly string on any failure.
+async function buildUsageReply(): Promise<string> {
+  let cred
+  try { cred = JSON.parse(readFileSync(CRED_FILE, 'utf8'))?.claudeAiOauth } catch { return 'usage unavailable: no OAuth credentials found.' }
+  const token = cred?.accessToken
+  if (!token) return 'usage unavailable: no OAuth access token.'
+  if (cred.expiresAt && cred.expiresAt < Date.now()) return 'usage unavailable: OAuth token expired — open Claude Code to refresh it.'
+
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), 10000)
+  let data: Record<string, any> = {}
+  try {
+    const res = await fetch('https://api.anthropic.com/api/oauth/usage', {
+      headers: {
+        'authorization': `Bearer ${token}`,
+        'content-type': 'application/json',
+        'anthropic-beta': 'oauth-2025-04-20',
+        'user-agent': 'claude-code/2.1.81',
+      },
+      signal: ctrl.signal,
+    })
+    // The usage endpoint returns the usage buckets even on a 429 (the account is
+    // rate-limited, but the limit data is exactly what we want), so parse the
+    // body on 429 too — only bail on other non-OK statuses.
+    if (!res.ok && res.status !== 429) {
+      process.stderr.write(`discord /usage: ${res.status} ${await res.text()}\n`)
+      return `usage unavailable: API returned ${res.status}.`
+    }
+    data = await res.json() as Record<string, any>
+  } catch (e) {
+    process.stderr.write(`discord /usage: fetch failed: ${e}\n`)
+    return 'usage unavailable: could not reach the usage API.'
+  } finally {
+    clearTimeout(timer)
+  }
+
+  // Plan tier, normalized like the usage CLI (strip the default_claude_ prefix).
+  const planRaw = cred.rateLimitTier ?? cred.subscriptionType ?? 'unknown'
+  const plan = String(planRaw).replace(/^default_claude_/, '')
+  const lines: string[] = [`**Usage** · plan: ${plan}`]
+  let any = false
+  for (const [apiKey, label] of [
+    ['five_hour', '5h'], ['seven_day', '7d'],
+    ['seven_day_opus', '7d opus'], ['seven_day_sonnet', '7d sonnet'],
+  ] as const) {
+    const b = data?.[apiKey]
+    if (!b) continue
+    any = true
+    const pct = Math.round(Number(b.utilization ?? 0))
+    const resets = usageResetIn(b.resets_at)
+    lines.push(`• ${label}: ${pct}%${resets ? ` · resets in ${resets}` : ''}`)
+  }
+  if (!any) lines.push('• (no usage windows returned)')
+
+  const extra = data?.extra_usage
+  if (extra?.is_enabled) {
+    const used = (Number(extra.used_credits ?? 0) / 100).toFixed(2)
+    const limit = (Number(extra.monthly_limit ?? 0) / 100).toFixed(2)
+    lines.push(`• extra usage: $${used} / $${limit}`)
+  }
+  return lines.join('\n')
+}
+
 function formatHumanAgo(ts: number | null): string {
   if (ts === null) return 'never'
   const ago = Date.now() - ts
@@ -2028,6 +2108,24 @@ client.on('interactionCreate', async (interaction: Interaction) => {
         await interaction.editReply({ content: safeSlice(reply, 1900) }).catch(() => {})
       } catch (e) {
         await interaction.editReply({ content: `status failed: ${safeSlice(String(e), 200)}` }).catch(() => {})
+      }
+      return
+    }
+
+    // /usage — owner-gated: reveals plan tier, utilization, and extra-usage
+    // dollars, and the reply is ephemeral-only, so restrict to allowFrom.
+    if (cmd === 'usage') {
+      const access = loadAccess()
+      if (!access.allowFrom.includes(interaction.user.id)) {
+        await interaction.reply({ content: 'Not authorized.', flags: MessageFlags.Ephemeral }).catch(() => {})
+        return
+      }
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral }).catch(() => {})
+      try {
+        const reply = await buildUsageReply()
+        await interaction.editReply({ content: safeSlice(reply, 1900) }).catch(() => {})
+      } catch (e) {
+        await interaction.editReply({ content: `usage failed: ${safeSlice(String(e), 200)}` }).catch(() => {})
       }
       return
     }
@@ -2284,6 +2382,7 @@ async function handleInbound(msg: Message): Promise<void> {
 // cost is fine for low-cadence command set changes.
 const SLASH_COMMANDS = [
   { name: 'status',  description: 'Show what the bot is currently working on', type: 1 },
+  { name: 'usage',   description: 'Show this bot account\'s Claude usage limits (5h / 7d)', type: 1 },
   { name: 'dunk',    description: 'Silence this channel — bot stops forwarding messages to claude until /dedunk', type: 1,
     options: [
       { type: 3, name: 'for', description: 'Optional duration like 2h30m (units s/m/h/d). Omit for indefinite.', required: false },
@@ -2309,7 +2408,7 @@ async function syncSlashCommands(appId: string): Promise<void> {
       JSON.stringify(cmds.map(c => ({ name: c.name, description: c.description, options: c.options || [] })).sort((a, b) => a.name.localeCompare(b.name)))
     const aligned = normalize(SLASH_COMMANDS) === normalize(current)
     if (aligned) {
-      process.stderr.write(`discord: slash commands already aligned (${[...wantNames].join(', ')})\n`)
+      process.stderr.write(`discord: slash commands already aligned (${SLASH_COMMANDS.map(c => c.name).join(', ')})\n`)
       return
     }
     const put = await fetch(`https://discord.com/api/v10/applications/${appId}/commands`, {
