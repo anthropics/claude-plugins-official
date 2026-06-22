@@ -2602,10 +2602,10 @@
       "category": "monitoring",
       "source": {
         "source": "url",
-        "url": "https://github.com/getsentry/sentry-for-claude.git",
-        "sha": "bd84576db74e3e1d13361c7eda3bb303ae017b90"
+        "url": "https://github.com/getsentry/plugin-claude.git",
+        "sha": "8f36afa0314b872702e0f5dfb272a2418ca596a1"
       },
-      "homepage": "https://github.com/getsentry/sentry-for-claude/tree/main"
+      "homepage": "https://github.com/getsentry/plugin-claude"
     },
     {
       "name": "sentry-cli",
