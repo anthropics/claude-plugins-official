@@ -93,23 +93,30 @@ def run_single_query(
         triggered = False
         start_time = time.time()
         buffer = ""
+        # [win-pipe-fix] daemon reader thread + queue replace select()/os.read,
+        # which raise WinError 10038 on Windows (select accepts sockets, not pipes).
+        import queue as _q_mod, threading as _t_mod
+        _q = _q_mod.Queue()
+        def _win_reader():
+            try:
+                while True:
+                    b = process.stdout.read1(8192)
+                    if not b:
+                        break
+                    _q.put(b)
+            finally:
+                _q.put(b"")
+        _t_mod.Thread(target=_win_reader, daemon=True).start()
         # Track state for stream event detection
         pending_tool_name = None
         accumulated_json = ""
 
         try:
             while time.time() - start_time < timeout:
-                if process.poll() is not None:
-                    remaining = process.stdout.read()
-                    if remaining:
-                        buffer += remaining.decode("utf-8", errors="replace")
-                    break
-
-                ready, _, _ = select.select([process.stdout], [], [], 1.0)
-                if not ready:
+                try:
+                    chunk = _q.get(timeout=1.0)
+                except _q_mod.Empty:
                     continue
-
-                chunk = os.read(process.stdout.fileno(), 8192)
                 if not chunk:
                     break
                 buffer += chunk.decode("utf-8", errors="replace")
