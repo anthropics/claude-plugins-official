@@ -1213,7 +1213,7 @@
         "url": "https://github.com/expo/skills.git",
         "path": "plugins/expo",
         "ref": "main",
-        "sha": "b553ae4e1755bec11eac21517fe63040c7e07f2c"
+        "sha": "81ee6546b0745dc666ebacfc1f48e4bff74fbf44"
       },
       "homepage": "https://github.com/expo/skills/blob/main/plugins/expo/README.md"
     },
