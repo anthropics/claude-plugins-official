@@ -2363,7 +2363,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/Digital-Process-Tools/claude-remember.git",
-        "sha": "e6bc86214ea62e069465c064c185e3742bac55c0"
+        "sha": "8bd6255f081dc7123b6b64d335a2c8c5a379ea00"
       },
       "homepage": "https://github.com/Digital-Process-Tools/claude-remember"
     },
