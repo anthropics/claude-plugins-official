@@ -66,4 +66,4 @@ Configure external tool integration via Model Context Protocol:
 
 - `/example-command [args]` - Run the example slash command
 - The example skill activates based on task context
-- The example MCP activates based on task context
+- The example MCP server exposes tools Claude can call
