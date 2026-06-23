@@ -2536,7 +2536,7 @@
         "url": "https://github.com/SAP/open-ux-tools.git",
         "path": "packages/fiori-mcp-server",
         "ref": "main",
-        "sha": "fdc185d3db4046847d3d660354f1b371eff88c19"
+        "sha": "c494ffbea8c202395e908574cdb290ecefdbd4fc"
       },
       "homepage": "https://github.com/SAP/open-ux-tools/tree/main/packages/fiori-mcp-server"
     },
