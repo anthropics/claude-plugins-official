@@ -17,7 +17,8 @@ To do this, follow these steps precisely:
    c. Agent #3: Read the git blame and history of the code modified, to identify any bugs in light of that historical context
    d. Agent #4: Read previous pull requests that touched these files, and check for any comments on those pull requests that may also apply to the current pull request.
    e. Agent #5: Read code comments in the modified files, and make sure the changes in the pull request comply with any guidance in the comments.
-5. For each issue found in #4, launch a parallel Haiku agent that takes the PR, issue description, and list of CLAUDE.md files (from step 2), and returns a score to indicate the agent's level of confidence for whether the issue is real or false positive. To do that, the agent should score each issue on a scale from 0-100, indicating its level of confidence. For issues that were flagged due to CLAUDE.md instructions, the agent should double check that the CLAUDE.md actually calls out that issue specifically. The scale is (give this rubric to the agent verbatim):
+   f. Agent #6: Check whether the PR introduces a new AB test config flag — a new boolean configuration key, feature flag, or config parameter that gates behavior (e.g. a new entry in a config object, a new constant, or a new field that is checked with an if/else to enable new behavior). If the PR does NOT introduce any such flag, return an empty list of issues and stop. If it does: (1) identify every flag introduced, (2) for each change in the PR, determine whether it is strictly necessary to implement the new behavior gated by that flag — i.e., it only affects execution when the flag is true/enabled, (3) flag as a HIGH PRIORITY issue any change that: (a) modifies code that executes when the flag is false/disabled (baseline behavior altered), or (b) is unrelated to the flag entirely (refactoring, renaming, logic changes in code paths that do not reference the flag). Label every such finding "AB test baseline violation: <short description>".
+5. For each issue found in #4, launch a parallel Haiku agent that takes the PR, issue description, and list of CLAUDE.md files (from step 2), and returns a score to indicate the agent's level of confidence for whether the issue is real or false positive. To do that, the agent should score each issue on a scale from 0-100, indicating its level of confidence. For issues that were flagged due to CLAUDE.md instructions, the agent should double check that the CLAUDE.md actually calls out that issue specifically. Issues labeled "AB test baseline violation" (from Agent #6) must automatically receive a score of 100 — do not apply the normal scoring rubric to these. The scale for all other issues is (give this rubric to the agent verbatim):
    a. 0: Not confident at all. This is a false positive that doesn't stand up to light scrutiny, or is a pre-existing issue.
    b. 25: Somewhat confident. This might be a real issue, but may also be a false positive. The agent wasn't able to verify that it's a real issue. If the issue is stylistic, it is one that was not explicitly called out in the relevant CLAUDE.md.
    c. 50: Moderately confident. The agent was able to verify this is a real issue, but it might be a nitpick or not happen very often in practice. Relative to the rest of the PR, it's not very important.
@@ -29,6 +30,7 @@ To do this, follow these steps precisely:
    a. Keep your output brief
    b. Avoid emojis
    c. Link and cite relevant code, files, and URLs
+   d. Issues labeled "AB test baseline violation" must be prefixed with **[HIGH PRIORITY]** in the comment
 
 Examples of false positives, for steps 4 and 5:
 
@@ -55,15 +57,19 @@ Notes:
 
 Found 3 issues:
 
-1. <brief description of bug> (CLAUDE.md says "<...>")
+1. **[HIGH PRIORITY]** <brief description of AB test baseline violation> (AB test baseline violation: baseline behavior altered when flag is false)
 
 <link to file and line with full sha1 + line range for context, note that you MUST provide the full sha and not use bash here, eg. https://github.com/anthropics/claude-code/blob/1d54823877c4de72b2316a64032a54afc404e619/README.md#L13-L17>
 
-2. <brief description of bug> (some/other/CLAUDE.md says "<...>")
+2. <brief description of bug> (CLAUDE.md says "<...>")
 
 <link to file and line with full sha1 + line range for context>
 
-3. <brief description of bug> (bug due to <file and code snippet>)
+3. <brief description of bug> (some/other/CLAUDE.md says "<...>")
+
+<link to file and line with full sha1 + line range for context>
+
+4. <brief description of bug> (bug due to <file and code snippet>)
 
 <link to file and line with full sha1 + line range for context>
 
