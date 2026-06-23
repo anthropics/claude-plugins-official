@@ -8,10 +8,24 @@ on:
       - '*/agents/**'
       - '*/skills/**'
       - '*/commands/**'
+      # `validate` is a required status check, so a PR that touches ONLY workflow
+      # files (e.g. an action-SHA re-pin) would otherwise never trigger validate
+      # and sit "Expected — Waiting for status to be reported" forever (workflow_dispatch
+      # check runs aren't associated with the PR, so they don't satisfy it). Run
+      # validate on workflow changes too so those PRs can clear the gate in-context.
+      - '.github/workflows/**'
   push:
     branches: [main]
     paths:
       - '.claude-plugin/**'
+  # `validate` is a required status check on main. Bump PRs are opened with
+  # GITHUB_TOKEN, which doesn't fire on:pull_request (recursion guard), so the
+  # path-filtered trigger above never reports on them and the PR would be
+  # blocked forever. The bump workflow dispatches this against each per-entry
+  # bump branch instead; the check run lands on the branch HEAD (= PR head)
+  # and satisfies the required check. The validate job runs unconditionally,
+  # so a dispatch always reports.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -24,7 +38,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: anthropics/claude-plugins-community/.github/actions/validate-plugins@f846a0bcb0e721b1f93d60e8b73e91dafc4a1e87
+      - uses: anthropics/claude-plugins-community/.github/actions/validate-plugins@426e469f322952061102b286b378c0c9733a0934
         with:
           marketplace-path: .claude-plugin/marketplace.json
           # Official curated marketplace: SHA-pin (I5) is a HARD error.
