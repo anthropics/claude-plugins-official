@@ -2301,7 +2301,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/quarkusio/quarkus-agent-mcp.git",
-        "sha": "4c1fcf1cba1f292315f7d33261274798305ea954"
+        "sha": "aa4fc9f4cbca4c9aca8455b1e76ddb99e7669b35"
       },
       "homepage": "https://quarkus.io"
     },
