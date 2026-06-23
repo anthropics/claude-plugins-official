@@ -788,6 +788,24 @@ bot.on('message:text', async ctx => {
   await handleInbound(ctx, ctx.message.text, undefined)
 })
 
+// EM-5001: surface PINNED messages. The Bot API delivers a pinned_message
+// SERVICE MESSAGE when a message is pinned (grammy filter 'message:pinned_message';
+// Message.pinned_message: MaybeInaccessibleMessage). Without this handler the
+// event is dropped, so pins are invisible to Claude. NOTE: getChat does NOT
+// expose pinned_message for private/DM chats, so this service-message handler
+// is the only reliable path to surface a pin.
+bot.on('message:pinned_message', async ctx => {
+  const pinned = ctx.message.pinned_message
+  if (pinned == null) return
+  const pinnedText =
+    'text' in pinned && pinned.text
+      ? pinned.text
+      : 'caption' in pinned && pinned.caption
+        ? pinned.caption
+        : '(pinned a non-text or inaccessible message)'
+  await handleInbound(ctx, `[PINNED #${pinned.message_id}] ${pinnedText}`, undefined)
+})
+
 bot.on('message:photo', async ctx => {
   const caption = ctx.message.caption ?? '(photo)'
   // Defer download until after the gate approves — any user can send photos,
@@ -977,6 +995,11 @@ async function handleInbound(
           ...(attachment.size != null ? { attachment_size: String(attachment.size) } : {}),
           ...(attachment.mime ? { attachment_mime: attachment.mime } : {}),
           ...(attachment.name ? { attachment_name: attachment.name } : {}),
+        } : {}),
+        ...(ctx.message?.reply_to_message ? {
+          reply_to_message_id: String(ctx.message.reply_to_message.message_id),
+          reply_to_text: ctx.message.reply_to_message.text ?? ctx.message.reply_to_message.caption ?? '',
+          ...(ctx.message.reply_to_message.from?.username ? { reply_to_user: ctx.message.reply_to_message.from.username } : {}),
         } : {}),
       },
     },
