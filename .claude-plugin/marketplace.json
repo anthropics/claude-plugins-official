@@ -2772,7 +2772,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/gemini-cli-extensions/spanner.git",
-        "sha": "e6a93f9ce95758ce7b7c54330871cfb40e53b976"
+        "sha": "88030b07ba0d39475ff22e3d410b92fa543d0b67"
       },
       "homepage": "https://github.com/gemini-cli-extensions/spanner"
     },
