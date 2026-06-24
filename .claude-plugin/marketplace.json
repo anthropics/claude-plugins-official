@@ -1824,7 +1824,7 @@
         "url": "https://github.com/mercadopago/mercadopago-claude-marketplace.git",
         "path": "plugins/mercadopago",
         "ref": "main",
-        "sha": "d591e4feb061243df69db541d8115559e8a3ffe8"
+        "sha": "fffc567d1cbfe18b361bf00da5677b470a94f49a"
       },
       "homepage": "https://github.com/mercadopago/mercadopago-claude-marketplace/tree/main/plugins/mercadopago"
     },
