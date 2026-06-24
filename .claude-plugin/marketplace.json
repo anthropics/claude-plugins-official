@@ -244,7 +244,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/atlassian/atlassian-mcp-server.git",
-        "sha": "19f71578abc4e52543505b362c0b6e456a8a80d3"
+        "sha": "55cfdc55afed1e273354f840a238421fbd9eee86"
       },
       "homepage": "https://github.com/atlassian/atlassian-mcp-server"
     },
