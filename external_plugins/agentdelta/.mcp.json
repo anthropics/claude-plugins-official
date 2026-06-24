@@ -1,0 +1,7 @@
+{
+  "agentdelta": {
+    "type": "stdio",
+    "command": "uvx",
+    "args": ["agentdelta-mcp"]
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "humanproof": {
+    "type": "stdio",
+    "command": "uvx",
+    "args": ["humanproof-mcp"]
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "name": "rulegraph",
+  "description": "Natural-language rulebook compiler for game arbitration",
+  "author": {
+    "name": "sandeep-alluru"
+  },
+  "category": "development"
+}

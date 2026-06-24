@@ -1,0 +1,7 @@
+{
+  "normsync": {
+    "type": "stdio",
+    "command": "uvx",
+    "args": ["normsync-mcp"]
+  }
+}

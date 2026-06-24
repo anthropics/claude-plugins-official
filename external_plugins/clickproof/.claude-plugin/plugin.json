@@ -1,0 +1,8 @@
+{
+  "name": "clickproof",
+  "description": "Persistent GUI behavioral facts for computer-use agents",
+  "author": {
+    "name": "sandeep-alluru"
+  },
+  "category": "development"
+}

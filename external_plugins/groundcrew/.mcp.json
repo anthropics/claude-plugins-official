@@ -1,0 +1,7 @@
+{
+  "groundcrew": {
+    "type": "stdio",
+    "command": "uvx",
+    "args": ["groundcrew-mcp"]
+  }
+}

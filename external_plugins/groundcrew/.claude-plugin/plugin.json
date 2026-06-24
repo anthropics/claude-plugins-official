@@ -1,0 +1,8 @@
+{
+  "name": "groundcrew",
+  "description": "Deterministic state oracle and semantic action codec for computer-use agents",
+  "author": {
+    "name": "sandeep-alluru"
+  },
+  "category": "development"
+}

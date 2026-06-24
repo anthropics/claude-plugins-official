@@ -1,0 +1,8 @@
+{
+  "name": "foghorn",
+  "description": "Decision staleness alerts for AI agents",
+  "author": {
+    "name": "sandeep-alluru"
+  },
+  "category": "development"
+}

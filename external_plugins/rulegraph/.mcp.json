@@ -1,0 +1,7 @@
+{
+  "rulegraph": {
+    "type": "stdio",
+    "command": "uvx",
+    "args": ["rulegraph-mcp"]
+  }
+}

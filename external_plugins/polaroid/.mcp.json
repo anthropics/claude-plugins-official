@@ -1,0 +1,7 @@
+{
+  "polaroid": {
+    "type": "stdio",
+    "command": "uvx",
+    "args": ["polaroid-mcp"]
+  }
+}

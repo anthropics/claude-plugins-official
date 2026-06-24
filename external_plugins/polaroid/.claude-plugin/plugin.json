@@ -1,0 +1,8 @@
+{
+  "name": "polaroid",
+  "description": "Embeddable CRDT scene graph for embodied AI agents",
+  "author": {
+    "name": "sandeep-alluru"
+  },
+  "category": "development"
+}

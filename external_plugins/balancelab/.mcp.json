@@ -1,0 +1,7 @@
+{
+  "balancelab": {
+    "type": "stdio",
+    "command": "uvx",
+    "args": ["balancelab-mcp"]
+  }
+}

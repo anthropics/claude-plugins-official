@@ -1,0 +1,7 @@
+{
+  "notarize": {
+    "type": "stdio",
+    "command": "uvx",
+    "args": ["notarize-mcp"]
+  }
+}

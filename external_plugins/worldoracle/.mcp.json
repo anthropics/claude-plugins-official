@@ -1,0 +1,7 @@
+{
+  "worldoracle": {
+    "type": "stdio",
+    "command": "uvx",
+    "args": ["worldoracle-mcp"]
+  }
+}

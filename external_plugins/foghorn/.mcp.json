@@ -1,0 +1,7 @@
+{
+  "foghorn": {
+    "type": "stdio",
+    "command": "uvx",
+    "args": ["foghorn-mcp"]
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "name": "normsync",
+  "description": "World constitution engine for norm-governed multi-agent games",
+  "author": {
+    "name": "sandeep-alluru"
+  },
+  "category": "development"
+}

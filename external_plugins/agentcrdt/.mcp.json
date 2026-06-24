@@ -1,0 +1,7 @@
+{
+  "agentcrdt": {
+    "type": "stdio",
+    "command": "uvx",
+    "args": ["agentcrdt-mcp"]
+  }
+}

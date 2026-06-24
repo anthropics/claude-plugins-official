@@ -1,0 +1,8 @@
+{
+  "name": "worldoracle",
+  "description": "NPC contradiction detector and belief repair for game worlds",
+  "author": {
+    "name": "sandeep-alluru"
+  },
+  "category": "development"
+}

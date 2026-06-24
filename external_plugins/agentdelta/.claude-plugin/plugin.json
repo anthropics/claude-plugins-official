@@ -1,0 +1,8 @@
+{
+  "name": "agentdelta",
+  "description": "Semantic diff engine for AI agent behavior — find the exact decision fork between two runs",
+  "author": {
+    "name": "sandeep-alluru"
+  },
+  "category": "development"
+}

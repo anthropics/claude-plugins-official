@@ -1,0 +1,8 @@
+{
+  "name": "agentcrdt",
+  "description": "Semantic-causal CRDT for agent-mutable world state",
+  "author": {
+    "name": "sandeep-alluru"
+  },
+  "category": "development"
+}

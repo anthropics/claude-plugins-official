@@ -1,0 +1,7 @@
+{
+  "clickproof": {
+    "type": "stdio",
+    "command": "uvx",
+    "args": ["clickproof-mcp"]
+  }
+}

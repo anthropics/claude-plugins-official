@@ -1,0 +1,8 @@
+{
+  "name": "notarize",
+  "description": "Canonical trace format and verifier for agent execution attestation",
+  "author": {
+    "name": "sandeep-alluru"
+  },
+  "category": "development"
+}
