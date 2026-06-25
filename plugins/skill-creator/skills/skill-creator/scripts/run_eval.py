@@ -5,12 +5,16 @@ Tests whether a skill's description causes Claude to trigger (read the skill)
 for a set of queries. Outputs results as JSON.
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import os
 import select
+import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import uuid
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -42,19 +46,26 @@ def run_single_query(
 ) -> bool:
     """Run a single query and return whether the skill was triggered.
 
-    Creates a command file in .claude/commands/ so it appears in Claude's
-    available_skills list, then runs `claude -p` with the raw query.
-    Uses --include-partial-messages to detect triggering early from
-    stream events (content_block_start) rather than waiting for the
-    full assistant message, which only arrives after tool execution.
+    Runs `claude -p` inside an ISOLATED throwaway project that contains ONLY the
+    candidate skill (written as a command file so it appears in available_skills).
+    Running inside the host project (the previous behavior) let a real same-named
+    skill and the host's project hooks/CLAUDE.md win every query, so the candidate
+    clone was never the one invoked and recall was pinned at 0 regardless of the
+    description under test. Isolation makes the trigger rate reflect the candidate
+    description alone. `project_root` is kept for signature compatibility but is
+    intentionally no longer used to locate cwd.
+
+    Uses --include-partial-messages to detect triggering from stream events; the
+    whole turn is scanned (the model may run other tools first) and only a
+    confirmed match counts as a trigger.
     """
     unique_id = uuid.uuid4().hex[:8]
     clean_name = f"{skill_name}-skill-{unique_id}"
-    project_commands_dir = Path(project_root) / ".claude" / "commands"
-    command_file = project_commands_dir / f"{clean_name}.md"
+    sandbox = Path(tempfile.mkdtemp(prefix="skilleval_"))
+    command_file = sandbox / ".claude" / "commands" / f"{clean_name}.md"
 
     try:
-        project_commands_dir.mkdir(parents=True, exist_ok=True)
+        command_file.parent.mkdir(parents=True, exist_ok=True)
         # Use YAML block scalar to avoid breaking on quotes in description
         indented_desc = "\n  ".join(skill_description.split("\n"))
         command_content = (
@@ -86,7 +97,7 @@ def run_single_query(
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
-            cwd=project_root,
+            cwd=str(sandbox),
             env=env,
         )
 
@@ -125,20 +136,25 @@ def run_single_query(
                     except json.JSONDecodeError:
                         continue
 
-                    # Early detection via stream events
+                    # Detection via stream events. Scan the WHOLE assistant turn:
+                    # the model may run other tools (Bash, TodoWrite, ...) or
+                    # consult other skills before the one under test, so we must
+                    # NOT conclude on the first tool block. Only a confirmed match
+                    # of the candidate returns True; its absence is concluded at
+                    # message_stop / result.
                     if event.get("type") == "stream_event":
                         se = event.get("event", {})
                         se_type = se.get("type", "")
 
                         if se_type == "content_block_start":
                             cb = se.get("content_block", {})
-                            if cb.get("type") == "tool_use":
-                                tool_name = cb.get("name", "")
-                                if tool_name in ("Skill", "Read"):
-                                    pending_tool_name = tool_name
-                                    accumulated_json = ""
-                                else:
-                                    return False
+                            if cb.get("type") == "tool_use" and cb.get("name", "") in ("Skill", "Read"):
+                                pending_tool_name = cb.get("name", "")
+                                accumulated_json = ""
+                            else:
+                                # A non-skill tool block: ignore it and keep scanning.
+                                pending_tool_name = None
+                                accumulated_json = ""
 
                         elif se_type == "content_block_delta" and pending_tool_name:
                             delta = se.get("delta", {})
@@ -147,11 +163,12 @@ def run_single_query(
                                 if clean_name in accumulated_json:
                                     return True
 
-                        elif se_type in ("content_block_stop", "message_stop"):
-                            if pending_tool_name:
-                                return clean_name in accumulated_json
-                            if se_type == "message_stop":
-                                return False
+                        elif se_type == "content_block_stop":
+                            pending_tool_name = None
+                            accumulated_json = ""
+
+                        elif se_type == "message_stop":
+                            return False
 
                     # Fallback: full assistant message
                     elif event.get("type") == "assistant":
@@ -162,10 +179,9 @@ def run_single_query(
                             tool_name = content_item.get("name", "")
                             tool_input = content_item.get("input", {})
                             if tool_name == "Skill" and clean_name in tool_input.get("skill", ""):
-                                triggered = True
-                            elif tool_name == "Read" and clean_name in tool_input.get("file_path", ""):
-                                triggered = True
-                            return triggered
+                                return True
+                            if tool_name == "Read" and clean_name in tool_input.get("file_path", ""):
+                                return True
 
                     elif event.get("type") == "result":
                         return triggered
@@ -177,8 +193,7 @@ def run_single_query(
 
         return triggered
     finally:
-        if command_file.exists():
-            command_file.unlink()
+        shutil.rmtree(sandbox, ignore_errors=True)
 
 
 def run_eval(

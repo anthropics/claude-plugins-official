@@ -6,12 +6,16 @@ by calling `claude -p` as a subprocess (same auth pattern as run_eval.py —
 uses the session's Claude Code auth, no separate ANTHROPIC_API_KEY needed).
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 from scripts.utils import parse_skill_md
@@ -32,14 +36,22 @@ def _call_claude(prompt: str, model: str | None, timeout: int = 300) -> str:
     # programmatic subprocess usage is safe. Same pattern as run_eval.py.
     env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
 
-    result = subprocess.run(
-        cmd,
-        input=prompt,
-        capture_output=True,
-        text=True,
-        env=env,
-        timeout=timeout,
-    )
+    # Run in a throwaway empty cwd so the host project's CLAUDE.md, hooks and
+    # skills aren't injected into (or made to slow down) this pure text-generation
+    # step; the prompt already carries everything the rewrite needs.
+    sandbox = tempfile.mkdtemp(prefix="skillimprove_")
+    try:
+        result = subprocess.run(
+            cmd,
+            input=prompt,
+            capture_output=True,
+            text=True,
+            env=env,
+            cwd=sandbox,
+            timeout=timeout,
+        )
+    finally:
+        shutil.rmtree(sandbox, ignore_errors=True)
     if result.returncode != 0:
         raise RuntimeError(
             f"claude -p exited {result.returncode}\nstderr: {result.stderr}"

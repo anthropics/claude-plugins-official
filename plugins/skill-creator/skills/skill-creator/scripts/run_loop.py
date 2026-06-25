@@ -6,6 +6,8 @@ and returning the best description found. Supports train/test split to prevent
 overfitting.
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import random
@@ -151,7 +153,7 @@ def run_loop(
             live_report_path.write_text(generate_html(partial_output, auto_refresh=True, skill_name=name))
 
         if verbose:
-            def print_eval_stats(label, results, elapsed):
+            def print_eval_stats(label, results, elapsed=None):
                 pos = [r for r in results if r["should_trigger"]]
                 neg = [r for r in results if not r["should_trigger"]]
                 tp = sum(r["triggers"] for r in pos)
@@ -164,15 +166,18 @@ def run_loop(
                 precision = tp / (tp + fp) if (tp + fp) > 0 else 1.0
                 recall = tp / (tp + fn) if (tp + fn) > 0 else 1.0
                 accuracy = (tp + tn) / total if total > 0 else 0.0
-                print(f"{label}: {tp+tn}/{total} correct, precision={precision:.0%} recall={recall:.0%} accuracy={accuracy:.0%} ({elapsed:.1f}s)", file=sys.stderr)
+                timing = f" ({elapsed:.1f}s)" if elapsed is not None else ""
+                print(f"{label}: {tp+tn}/{total} correct, precision={precision:.0%} recall={recall:.0%} accuracy={accuracy:.0%}{timing}", file=sys.stderr)
                 for r in results:
                     status = "PASS" if r["pass"] else "FAIL"
                     rate_str = f"{r['triggers']}/{r['runs']}"
                     print(f"  [{status}] rate={rate_str} expected={r['should_trigger']}: {r['query'][:60]}", file=sys.stderr)
 
+            # train + test are scored in one batch, so eval_elapsed covers both;
+            # attribute it once (Train) and omit a misleading per-split time on Test.
             print_eval_stats("Train", train_results["results"], eval_elapsed)
             if test_summary:
-                print_eval_stats("Test ", test_results["results"], 0)
+                print_eval_stats("Test ", test_results["results"])
 
         if train_summary["failed"] == 0:
             exit_reason = f"all_passed (iteration {iteration})"
