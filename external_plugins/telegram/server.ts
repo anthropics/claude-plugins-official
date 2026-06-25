@@ -666,15 +666,60 @@ process.on('SIGHUP', shutdown)
 
 // Orphan watchdog: stdin events above don't reliably fire when the parent
 // chain (`bun run` wrapper → shell → us) is severed by a crash. Poll for
-// reparenting (POSIX) or a dead stdin pipe and self-terminate.
-const bootPpid = process.ppid
+// ancestor death (Claude process) or a dead stdin pipe and self-terminate.
+
+// Helper: walk up the process tree to find the Claude ancestor
+function findClaudeAncestor(): number | null {
+  try {
+    let currentPid = process.ppid
+    const maxDepth = 10
+    let depth = 0
+
+    while (currentPid > 1 && depth < maxDepth) {
+      try {
+        const stat = readFileSync(`/proc/${currentPid}/stat`, 'utf8')
+        const comm = stat.split(' ')[1].replace(/\(|\)/g, '')
+        const ppid = parseInt(stat.split(' ')[3], 10)
+
+        // Check if this is the Claude process
+        if (comm === 'claude' || stat.includes('claude --')) {
+          return currentPid
+        }
+
+        currentPid = ppid
+        depth++
+      } catch {
+        // Process died during check
+        break
+      }
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
+// Store Claude ancestor PID at startup
+const claudeAncestorPid = findClaudeAncestor()
+
 setInterval(() => {
   const orphaned =
-    (process.platform !== 'win32' && process.ppid !== bootPpid) ||
+    (process.platform !== 'win32' && claudeAncestorPid !== null && !claudeAncestorPidAlive()) ||
     process.stdin.destroyed ||
     process.stdin.readableEnded
   if (orphaned) shutdown()
 }, 5000).unref()
+
+// Helper: check if Claude ancestor is still alive
+function claudeAncestorPidAlive(): boolean {
+  if (claudeAncestorPid === null) return true // No Claude ancestor found, assume alive
+  try {
+    readFileSync(`/proc/${claudeAncestorPid}/stat`, 'utf8')
+    return true
+  } catch {
+    return false // Claude ancestor died
+  }
+}
 
 // Commands are DM-only. Responding in groups would: (1) leak pairing codes via
 // /status to other group members, (2) confirm bot presence in non-allowlisted
