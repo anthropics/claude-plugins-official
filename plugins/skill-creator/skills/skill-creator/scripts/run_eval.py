@@ -8,9 +8,9 @@ for a set of queries. Outputs results as JSON.
 import argparse
 import json
 import os
-import select
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -90,36 +90,21 @@ def run_single_query(
             env=env,
         )
 
-        triggered = False
-        start_time = time.time()
-        buffer = ""
-        # Track state for stream event detection
-        pending_tool_name = None
-        accumulated_json = ""
+        # Windows-compatible streaming read (select() on pipes is POSIX-only).
+        # A reader thread parses stream-json line-by-line and signals early.
+        triggered = {"val": False}
+        done = threading.Event()
 
-        try:
-            while time.time() - start_time < timeout:
-                if process.poll() is not None:
-                    remaining = process.stdout.read()
-                    if remaining:
-                        buffer += remaining.decode("utf-8", errors="replace")
-                    break
-
-                ready, _, _ = select.select([process.stdout], [], [], 1.0)
-                if not ready:
-                    continue
-
-                chunk = os.read(process.stdout.fileno(), 8192)
-                if not chunk:
-                    break
-                buffer += chunk.decode("utf-8", errors="replace")
-
-                while "\n" in buffer:
-                    line, buffer = buffer.split("\n", 1)
-                    line = line.strip()
+        def _reader():
+            pending_tool_name = None
+            accumulated_json = ""
+            try:
+                for raw in iter(process.stdout.readline, b""):
+                    if done.is_set():
+                        return
+                    line = raw.decode("utf-8", errors="replace").strip()
                     if not line:
                         continue
-
                     try:
                         event = json.loads(line)
                     except json.JSONDecodeError:
@@ -129,7 +114,6 @@ def run_single_query(
                     if event.get("type") == "stream_event":
                         se = event.get("event", {})
                         se_type = se.get("type", "")
-
                         if se_type == "content_block_start":
                             cb = se.get("content_block", {})
                             if cb.get("type") == "tool_use":
@@ -138,20 +122,26 @@ def run_single_query(
                                     pending_tool_name = tool_name
                                     accumulated_json = ""
                                 else:
-                                    return False
-
+                                    triggered["val"] = False
+                                    done.set()
+                                    return
                         elif se_type == "content_block_delta" and pending_tool_name:
                             delta = se.get("delta", {})
                             if delta.get("type") == "input_json_delta":
                                 accumulated_json += delta.get("partial_json", "")
                                 if clean_name in accumulated_json:
-                                    return True
-
+                                    triggered["val"] = True
+                                    done.set()
+                                    return
                         elif se_type in ("content_block_stop", "message_stop"):
                             if pending_tool_name:
-                                return clean_name in accumulated_json
+                                triggered["val"] = clean_name in accumulated_json
+                                done.set()
+                                return
                             if se_type == "message_stop":
-                                return False
+                                triggered["val"] = False
+                                done.set()
+                                return
 
                     # Fallback: full assistant message
                     elif event.get("type") == "assistant":
@@ -162,20 +152,27 @@ def run_single_query(
                             tool_name = content_item.get("name", "")
                             tool_input = content_item.get("input", {})
                             if tool_name == "Skill" and clean_name in tool_input.get("skill", ""):
-                                triggered = True
+                                triggered["val"] = True
                             elif tool_name == "Read" and clean_name in tool_input.get("file_path", ""):
-                                triggered = True
-                            return triggered
+                                triggered["val"] = True
+                            done.set()
+                            return
 
                     elif event.get("type") == "result":
-                        return triggered
-        finally:
-            # Clean up process on any exit path (return, exception, timeout)
-            if process.poll() is None:
-                process.kill()
-                process.wait()
+                        done.set()
+                        return
+            except Exception:
+                pass
+            finally:
+                done.set()
 
-        return triggered
+        reader_thread = threading.Thread(target=_reader, daemon=True)
+        reader_thread.start()
+        done.wait(timeout)
+        if process.poll() is None:
+            process.kill()
+            process.wait()
+        return triggered["val"]
     finally:
         if command_file.exists():
             command_file.unlink()
