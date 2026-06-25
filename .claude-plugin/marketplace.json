@@ -3026,6 +3026,24 @@
       "homepage": "https://github.com/UI5/plugins-coding-agents"
     },
     {
+      "name": "ui5-modernization",
+      "description": "Complete UI5 modernization toolkit with workflow and specialized fix patterns for modernizing SAPUI5/OpenUI5 applications.",
+      "author": {
+        "name": "SAP SE",
+        "email": "openui5@sap.com",
+        "url": "https://www.sap.com"
+      },
+      "category": "development",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/UI5/plugins-coding-agents.git",
+        "path": "plugins/ui5-modernization",
+        "ref": "main",
+        "sha": "1d4dedd56afcd1c3269c4d80f09e2ddb7f1bf5be"
+      },
+      "homepage": "https://github.com/UI5/plugins-coding-agents"
+    },
+    {
       "name": "ui5-typescript-conversion",
       "description": "SAPUI5 / OpenUI5 plugin for coding agents. Convert JavaScript based UI5 projects to TypeScript.",
       "author": {
