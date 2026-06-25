@@ -1,0 +1,148 @@
+name: External PR Scope Guard
+
+# Constrains what an allowlisted EXTERNAL contributor (see .github/external-contributors.json)
+# may change in a pull request. Anthropic members (write/admin) are unrestricted and skip this
+# check. For an allowlisted external author this is a REQUIRED status check (configure in branch
+# protection) that fails unless:
+#   1. the PR changes ONLY .claude-plugin/marketplace.json (no workflow edits, no other plugins'
+#      files, and crucially not the allowlist itself), and
+#   2. the marketplace.json delta is additions-only — no existing entry is modified or removed, and
+#      every ADDED entry's source.url points at a repo under that author's allowed_sources.
+#
+# Security: runs on pull_request_target but checks out only the BASE repo (trusted) for the
+# allowlist; the head's marketplace.json is fetched as DATA via the API and parsed, never executed.
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  scope-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4   # base repo (trusted) — for the allowlist
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const pr = context.payload.pull_request;
+            const author = pr.user.login;
+            const MARKETPLACE = '.claude-plugin/marketplace.json';
+
+            // Anthropic members are unrestricted.
+            const { data: perm } = await github.rest.repos.getCollaboratorPermissionLevel({
+              owner: context.repo.owner, repo: context.repo.repo, username: author,
+            });
+            if (['admin', 'write'].includes(perm.permission)) {
+              console.log(`${author} is ${perm.permission} (Anthropic member) — scope guard not applicable.`);
+              return;
+            }
+
+            // Look up the author in the allowlist (read from the trusted base checkout).
+            let entry;
+            try {
+              const list = JSON.parse(fs.readFileSync('.github/external-contributors.json', 'utf8'));
+              entry = (list.contributors || []).find(
+                c => (c.github_username || '').toLowerCase() === author.toLowerCase()
+              );
+            } catch (e) {
+              core.setFailed(`Could not read .github/external-contributors.json: ${e.message}`);
+              return;
+            }
+            if (!entry) {
+              // Not allowlisted: the Close External PRs workflow governs this author. Nothing to guard.
+              console.log(`${author} is not on the external-contributor allowlist — scope guard is a no-op (the close workflow handles this PR).`);
+              return;
+            }
+            const allowed = (entry.allowed_sources || []).map(normalizeUrl);
+            if (allowed.length === 0) {
+              core.setFailed(`Allowlist entry for ${author} has no allowed_sources — cannot validate scope.`);
+              return;
+            }
+
+            // (1) Changed-files gate: marketplace.json only.
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner: context.repo.owner, repo: context.repo.repo, pull_number: pr.number, per_page: 100,
+            });
+            const offlimits = files.map(f => f.filename).filter(n => n !== MARKETPLACE);
+            if (offlimits.length > 0) {
+              core.setFailed(
+                `As an allowlisted external contributor, ${author} may only modify ${MARKETPLACE}. ` +
+                `This PR also changes: ${offlimits.join(', ')}.`
+              );
+              return;
+            }
+            if (!files.some(f => f.filename === MARKETPLACE)) {
+              console.log('No change to marketplace.json — nothing to validate.');
+              return;
+            }
+
+            // (2) Semantic base-vs-head diff of marketplace.json (head fetched as data, not executed).
+            const base = await readPlugins(context.repo.owner, context.repo.repo, pr.base.sha);
+            const head = await readPlugins(pr.head.repo.owner.login, pr.head.repo.name, pr.head.sha);
+            if (base === null || head === null) {
+              core.setFailed('Could not read marketplace.json at base and/or head.');
+              return;
+            }
+
+            const baseNames = new Set(Object.keys(base));
+            const headNames = new Set(Object.keys(head));
+            const removed = [...baseNames].filter(n => !headNames.has(n));
+            const added = [...headNames].filter(n => !baseNames.has(n));
+            const modified = [...headNames].filter(
+              n => baseNames.has(n) && JSON.stringify(base[n]) !== JSON.stringify(head[n])
+            );
+
+            const problems = [];
+            if (removed.length)  problems.push(`removes existing entr${removed.length > 1 ? 'ies' : 'y'}: ${removed.join(', ')}`);
+            if (modified.length) problems.push(`modifies existing entr${modified.length > 1 ? 'ies' : 'y'}: ${modified.join(', ')}`);
+
+            for (const name of added) {
+              const url = head[name] && head[name].source && head[name].source.url;
+              if (!url) { problems.push(`added "${name}" has no source.url to validate`); continue; }
+              const n = normalizeUrl(url);
+              // Require a real host/org/repo path (rejects a bare org URL).
+              if (n.split('/').length < 3) {
+                problems.push(`added "${name}" source.url ${url} is not a valid repo URL`);
+                continue;
+              }
+              // Boundary-safe: an exact repo match, or a path strictly under the allowed prefix.
+              // (Prevents "github.com/ui5" from matching "github.com/ui5-evil/x".)
+              if (!allowed.some(a => n === a || n.startsWith(a + '/'))) {
+                problems.push(`added "${name}" points at ${url}, outside ${author}'s allowed_sources (${entry.allowed_sources.join(', ')})`);
+              }
+            }
+
+            if (problems.length) {
+              core.setFailed(
+                `Scope guard: an allowlisted external contributor may only ADD entries for their own repos.\n - ` +
+                problems.join('\n - ')
+              );
+              return;
+            }
+            console.log(`Scope guard passed: ${author} adds ${added.length} entr${added.length === 1 ? 'y' : 'ies'} (${added.join(', ') || 'none'}), all within allowed_sources.`);
+
+            // --- helpers ---
+            function normalizeUrl(u) {
+              return String(u).trim().toLowerCase()
+                .replace(/^git\+/, '')
+                .replace(/^https?:\/\//, '')
+                .replace(/\.git$/, '')
+                .replace(/\/+$/, '');   // no trailing slash; matching adds the boundary
+            }
+            async function readPlugins(owner, repo, ref) {
+              try {
+                const { data } = await github.rest.repos.getContent({ owner, repo, ref, path: MARKETPLACE });
+                const json = JSON.parse(Buffer.from(data.content, 'base64').toString('utf8'));
+                const map = {};
+                for (const p of (json.plugins || [])) { if (p && p.name) map[p.name] = p; }
+                return map;
+              } catch (e) {
+                console.log(`readPlugins(${owner}/${repo}@${ref}): ${e.message}`);
+                return null;
+              }
+            }

@@ -13,10 +13,14 @@ jobs:
     if: vars.DISABLE_EXTERNAL_PR_CHECK != 'true'
     runs-on: ubuntu-latest
     steps:
+      # pull_request_target: this checks out the BASE repo (trusted), so the allowlist
+      # we read below is this repo's version, never the fork's.
+      - uses: actions/checkout@v4
       - name: Check if author has write access
         uses: actions/github-script@v7
         with:
           script: |
+            const fs = require('fs');
             const author = context.payload.pull_request.user.login;
 
             const { data } = await github.rest.repos.getCollaboratorPermissionLevel({
@@ -28,6 +32,23 @@ jobs:
             if (['admin', 'write'].includes(data.permission)) {
               console.log(`${author} has ${data.permission} access, allowing PR`);
               return;
+            }
+
+            // Allowlisted external contributors (e.g. enterprise partners who cannot use the
+            // submission form) may OPEN a PR. This does NOT grant merge: all CI still runs,
+            // the external-pr-scope-guard check constrains what they can change, and an
+            // Anthropic maintainer approval is still required by branch protection.
+            try {
+              const list = JSON.parse(fs.readFileSync('.github/external-contributors.json', 'utf8'));
+              const allowed = (list.contributors || []).some(
+                c => (c.github_username || '').toLowerCase() === author.toLowerCase()
+              );
+              if (allowed) {
+                console.log(`${author} is an allowlisted external contributor, allowing PR (scope guard + maintainer review still apply)`);
+                return;
+              }
+            } catch (e) {
+              console.log(`Could not read external-contributors allowlist: ${e.message}`);
             }
 
             console.log(`${author} has ${data.permission} access, closing PR`);

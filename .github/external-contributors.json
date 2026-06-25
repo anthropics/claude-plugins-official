@@ -1,0 +1,34 @@
+{
+  "$comment": [
+    "Allowlist of external (non-Anthropic) developers permitted to open pull requests",
+    "against this repository. Used by .github/workflows/close-external-prs.yml (to skip",
+    "the auto-close) and .github/workflows/external-pr-scope-guard.yml (to constrain what",
+    "an allowlisted external author may change).",
+    "",
+    "Being on this list grants ONLY the right to OPEN a reviewable PR. It does NOT grant",
+    "merge rights: all CI still runs and an Anthropic maintainer approval is still required",
+    "by branch protection before merge.",
+    "",
+    "Criterion for inclusion: a developer who already has at least one plugin live in this",
+    "marketplace and cannot use the submission form (https://clau.de/plugin-directory-submission),",
+    "e.g. an enterprise partner without a Claude account. Add an entry via a normal reviewed PR.",
+    "",
+    "allowed_sources: the scope guard requires every plugin entry this author ADDS to point",
+    "at a source.url under one of these prefixes (match is a case-insensitive prefix on the",
+    "normalized https URL, with any leading https:// and trailing .git removed). Keep it as",
+    "tight as the author's actual repos."
+  ],
+  "contributors": [
+    {
+      "github_username": "flovogt",
+      "name": "Florian Vogt",
+      "affiliation": "SAP SE",
+      "allowed_sources": [
+        "github.com/UI5/",
+        "github.com/SAP/",
+        "github.com/SAP-samples/"
+      ],
+      "note": "SAP UI5 org. Live plugins from github.com/UI5/plugins-coding-agents: ui5, ui5-typescript-conversion, ui5-modernization. SAP cannot currently use the submission form (no Claude account)."
+    }
+  ]
+}
