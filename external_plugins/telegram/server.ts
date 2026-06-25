@@ -39,11 +39,56 @@ try {
   }
 } catch {}
 
+// --- Stdio failure handling -------------------------------------------------
+// stderr (and stdout) are pipes to the parent (Claude Code) process. When the
+// parent goes away — session end, or the MCP stdio transport being torn down —
+// the read end of the pipe closes and every subsequent write fails with EPIPE.
+// Node/Bun surface a failed stream write as an 'error' event; with NO listener
+// it escalates to 'uncaughtException'. The previous handlers reacted to that by
+// writing the error to the very same broken stderr, which threw EPIPE again and
+// re-entered the handler — an unbounded recursion that pinned a CPU core at
+// 100% (strace: millions of write()→EPIPE→SIGPIPE). The guards below make a
+// broken stdio pipe terminal and non-recursive:
+//   1. an 'error' listener on each stream so EPIPE is HANDLED, never escalating
+//      to uncaughtException;
+//   2. a single log() chokepoint that never throws and goes permanently silent
+//      once the pipe breaks, so a log call can never feed the loop it reports;
+//   3. EPIPE detection in the uncaughtException/unhandledRejection handlers so
+//      they shut down instead of trying to log.
+let stdioBroken = false
+
+function isBrokenPipe(err: unknown): boolean {
+  const code = (err as NodeJS.ErrnoException | null)?.code
+  return code === 'EPIPE' || code === 'ERR_STREAM_DESTROYED' || code === 'ERR_STREAM_WRITE_AFTER_END'
+}
+
+// All diagnostic output goes through here. Never throws; silent after a break.
+function log(msg: string): void {
+  if (stdioBroken) return
+  try {
+    const sink: NodeJS.WriteStream = process.stderr
+    sink.write(msg)
+  } catch (err) {
+    if (isBrokenPipe(err)) stdioBroken = true
+  }
+}
+
+// Handling the stream 'error' event is what keeps EPIPE from ever becoming an
+// uncaughtException. A broken parent pipe means "parent gone" → shut down.
+function onStdioError(err: NodeJS.ErrnoException): void {
+  if (isBrokenPipe(err)) {
+    stdioBroken = true
+    shutdown()
+  }
+}
+process.stdout.on('error', onStdioError)
+process.stderr.on('error', onStdioError)
+
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN
 const STATIC = process.env.TELEGRAM_ACCESS_MODE === 'static'
 
 if (!TOKEN) {
-  process.stderr.write(
+  log(
     `telegram channel: TELEGRAM_BOT_TOKEN required\n` +
     `  set in ${ENV_FILE}\n` +
     `  format: TELEGRAM_BOT_TOKEN=123456789:AAH...\n`,
@@ -62,7 +107,7 @@ try {
   const stale = parseInt(readFileSync(PID_FILE, 'utf8'), 10)
   if (stale > 1 && stale !== process.pid) {
     process.kill(stale, 0)
-    process.stderr.write(`telegram channel: replacing stale poller pid=${stale}\n`)
+    log(`telegram channel: replacing stale poller pid=${stale}\n`)
     process.kill(stale, 'SIGTERM')
   }
 } catch {}
@@ -70,11 +115,15 @@ writeFileSync(PID_FILE, String(process.pid))
 
 // Last-resort safety net — without these the process dies silently on any
 // unhandled promise rejection. With them it logs and keeps serving tools.
+// A broken stdio pipe (parent gone) must NOT be logged — logging it is exactly
+// what produced the 100% CPU recursion. In that case shut down instead.
 process.on('unhandledRejection', err => {
-  process.stderr.write(`telegram channel: unhandled rejection: ${err}\n`)
+  if (isBrokenPipe(err)) { stdioBroken = true; shutdown(); return }
+  log(`telegram channel: unhandled rejection: ${err}\n`)
 })
 process.on('uncaughtException', err => {
-  process.stderr.write(`telegram channel: uncaught exception: ${err}\n`)
+  if (isBrokenPipe(err)) { stdioBroken = true; shutdown(); return }
+  log(`telegram channel: uncaught exception: ${err}\n`)
 })
 
 // Permission-reply spec from anthropics/claude-cli-internal
@@ -164,7 +213,7 @@ function readAccessFile(): Access {
     try {
       renameSync(ACCESS_FILE, `${ACCESS_FILE}.corrupt-${Date.now()}`)
     } catch {}
-    process.stderr.write(`telegram channel: access.json is corrupt, moved aside. Starting fresh.\n`)
+    log(`telegram channel: access.json is corrupt, moved aside. Starting fresh.\n`)
     return defaultAccess()
   }
 }
@@ -176,7 +225,7 @@ const BOOT_ACCESS: Access | null = STATIC
   ? (() => {
       const a = readAccessFile()
       if (a.dmPolicy === 'pairing') {
-        process.stderr.write(
+        log(
           'telegram channel: static mode — dmPolicy "pairing" downgraded to "allowlist"\n',
         )
         a.dmPolicy = 'allowlist'
@@ -341,7 +390,7 @@ function checkApprovals(): void {
     void bot.api.sendMessage(senderId, "Paired! Say hi to Claude.").then(
       () => rmSync(file, { force: true }),
       err => {
-        process.stderr.write(`telegram channel: failed to send approval confirm: ${err}\n`)
+        log(`telegram channel: failed to send approval confirm: ${err}\n`)
         // Remove anyway — don't loop on a broken send.
         rmSync(file, { force: true })
       },
@@ -436,7 +485,7 @@ mcp.setNotificationHandler(
       .text('❌ Deny', `perm:deny:${request_id}`)
     for (const chat_id of access.allowFrom) {
       void bot.api.sendMessage(chat_id, text, { reply_markup: keyboard }).catch(e => {
-        process.stderr.write(`permission_request send to ${chat_id} failed: ${e}\n`)
+        log(`permission_request send to ${chat_id} failed: ${e}\n`)
       })
     }
   },
@@ -649,7 +698,7 @@ let shuttingDown = false
 function shutdown(): void {
   if (shuttingDown) return
   shuttingDown = true
-  process.stderr.write('telegram channel: shutting down\n')
+  log('telegram channel: shutting down\n')
   try {
     if (parseInt(readFileSync(PID_FILE, 'utf8'), 10) === process.pid) rmSync(PID_FILE)
   } catch {}
@@ -808,7 +857,7 @@ bot.on('message:photo', async ctx => {
       writeFileSync(path, buf)
       return path
     } catch (err) {
-      process.stderr.write(`telegram channel: photo download failed: ${err}\n`)
+      log(`telegram channel: photo download failed: ${err}\n`)
       return undefined
     }
   })
@@ -981,14 +1030,14 @@ async function handleInbound(
       },
     },
   }).catch(err => {
-    process.stderr.write(`telegram channel: failed to deliver inbound to Claude: ${err}\n`)
+    log(`telegram channel: failed to deliver inbound to Claude: ${err}\n`)
   })
 }
 
 // Without this, any throw in a message handler stops polling permanently
 // (grammy's default error handler calls bot.stop() and rethrows).
 bot.catch(err => {
-  process.stderr.write(`telegram channel: handler error (polling continues): ${err.error}\n`)
+  log(`telegram channel: handler error (polling continues): ${err.error}\n`)
 })
 
 // Retry polling with backoff on any error. Previously only 409 was retried —
@@ -1003,7 +1052,7 @@ void (async () => {
         onStart: info => {
           attempt = 0
           botUsername = info.username
-          process.stderr.write(`telegram channel: polling as @${info.username}\n`)
+          log(`telegram channel: polling as @${info.username}\n`)
           void bot.api.setMyCommands(
             [
               { command: 'start', description: 'Welcome and setup guide' },
@@ -1021,7 +1070,7 @@ void (async () => {
       if (err instanceof Error && err.message === 'Aborted delay') return
       const is409 = err instanceof GrammyError && err.error_code === 409
       if (is409 && attempt >= 8) {
-        process.stderr.write(
+        log(
           `telegram channel: 409 Conflict persists after ${attempt} attempts — ` +
           `another poller is holding the bot token (stray 'bun server.ts' process or a second session). Exiting.\n`,
         )
@@ -1031,7 +1080,7 @@ void (async () => {
       const detail = is409
         ? `409 Conflict${attempt === 1 ? ' — another instance is polling (zombie session, or a second Claude Code running?)' : ''}`
         : `polling error: ${err}`
-      process.stderr.write(`telegram channel: ${detail}, retrying in ${delay / 1000}s\n`)
+      log(`telegram channel: ${detail}, retrying in ${delay / 1000}s\n`)
       await new Promise(r => setTimeout(r, delay))
     }
   }
