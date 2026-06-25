@@ -4,14 +4,14 @@ name: External PR Scope Guard
 # Members (write/admin) are unrestricted and skip this check. For a non-member PR this
 # fails unless the PR is an in-scope external contribution per .github/scripts/external-pr-scope.js:
 # it changes ONLY .claude-plugin/marketplace.json, the delta is additions-only (no existing
-# entry modified or removed), and every ADDED entry's source.url is under an allowlisted prefix
-# in .github/external-pr-allowed-sources.json.
+# entry modified or removed), and every ADDED entry's source.url is a repo that ALREADY backs
+# a live plugin in this marketplace (the allowed set is derived from the live marketplace —
+# there is no maintained allowlist).
 #
 # Add the scope-guard job as a REQUIRED status check in branch protection for it to block merge.
 #
 # Security: runs on pull_request_target but checks out only the BASE repo (trusted) for the
-# allowlist + script; the head marketplace.json is fetched as DATA via the API and parsed,
-# never executed.
+# shared script; the head marketplace.json is fetched as DATA via the API and parsed, never executed.
 
 on:
   pull_request_target:
@@ -40,16 +40,13 @@ jobs:
             }
 
             const { evaluate } = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/external-pr-scope.js`);
-            const result = await evaluate({
-              github, context,
-              allowlistPath: `${process.env.GITHUB_WORKSPACE}/.github/external-pr-allowed-sources.json`,
-            });
+            const result = await evaluate({ github, context });
 
             if (!result.ok) {
               core.setFailed(
-                `Scope guard: a non-member PR may only ADD marketplace.json entries for an allowlisted source org.\n - ` +
+                `Scope guard: a non-member PR may only ADD marketplace.json entries whose source repo already backs a live plugin here.\n - ` +
                 result.problems.join('\n - ')
               );
               return;
             }
-            console.log(`Scope guard passed: adds ${result.added.join(', ') || 'none'}, all within allowed sources.`);
+            console.log(`Scope guard passed: adds ${result.added.join(', ') || 'none'}, all from repos already live here.`);

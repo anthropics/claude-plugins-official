@@ -1,33 +1,29 @@
 'use strict';
-// Shared logic for the external-PR allowlist (keyed on source org, not on individuals).
+// Shared logic for letting a NON-MEMBER pull request stay open and be reviewed, scoped to
+// the contributor's own already-listed plugin repo. No maintained allowlist, no individuals.
 //
-// A pull request opened by a non-member is "in scope" only if it ADDS plugin entries to
-// .claude-plugin/marketplace.json whose source.url is under an allowlisted prefix
-// (.github/external-pr-allowed-sources.json) and changes nothing else — no other files,
-// no removals, no edits to existing entries.
+// Trust model: we do NOT verify the submitter's identity. We trust the SOURCE REPO. A PR is
+// in scope only if it ADDS marketplace.json entries whose source.url is a repo that ALREADY
+// backs a live entry in this marketplace (derived from the base marketplace.json), pinned to
+// a commit in that repo. Because the repo is org-controlled and the SHA pins to a real commit
+// there, the shipped code is the org's code regardless of who opened the PR. Merge still
+// requires CI + a maintainer approval.
 //
 // Used by:
 //   - close-external-prs.yml      (skip the auto-close when in scope)
 //   - external-pr-scope-guard.yml (required status check: fail a non-member PR that is out of scope)
 //
-// Security: evaluate() reads the head marketplace.json as DATA via the API and parses it;
-// it never checks out or executes head code. The allowlist + this script are read from the
-// trusted base checkout.
+// Security: evaluate() reads base + head marketplace.json as DATA via the API and parses them;
+// it never checks out or executes head code.
 
-const fs = require('fs');
 const MARKETPLACE = '.claude-plugin/marketplace.json';
 
-function normalizeUrl(u) {
-  return String(u).trim().toLowerCase()
+function normalizeRepo(u) {
+  return String(u || '').trim().toLowerCase()
     .replace(/^git\+/, '')
     .replace(/^https?:\/\//, '')
     .replace(/\.git$/, '')
-    .replace(/\/+$/, '');   // no trailing slash; matching adds the boundary
-}
-
-function loadAllowed(allowlistPath) {
-  const j = JSON.parse(fs.readFileSync(allowlistPath, 'utf8'));
-  return (j.allowed_sources || []).map(normalizeUrl);
+    .replace(/\/+$/, '');
 }
 
 function pluginsByName(json) {
@@ -36,20 +32,26 @@ function pluginsByName(json) {
   return map;
 }
 
-function sourceAllowed(url, allowed) {
-  const n = normalizeUrl(url);
-  if (n.split('/').length < 3) return false;          // require a real host/org/repo path
-  // Boundary-safe: exact repo, or strictly under the allowed prefix.
-  return allowed.some(a => n === a || n.startsWith(a + '/'));
+// Repos that already back a live entry, derived from the base marketplace.json.
+function liveReposOf(base) {
+  const s = new Set();
+  for (const name of Object.keys(base)) {
+    const u = base[name] && base[name].source && base[name].source.url;
+    if (!u) continue;
+    const r = normalizeRepo(u);
+    if (r.split('/').length >= 3) s.add(r);   // host/org/repo
+  }
+  return s;
 }
 
 // Pure decision over an already-computed diff. Returns { ok, problems, added, removed, modified }.
-function analyze({ changedFiles, base, head, allowed }) {
+function analyze({ changedFiles, base, head }) {
   const problems = [];
 
   const off = changedFiles.filter(n => n !== MARKETPLACE);
   if (off.length) problems.push(`changes files other than ${MARKETPLACE}: ${off.join(', ')}`);
 
+  const liveRepos = liveReposOf(base);
   const baseNames = new Set(Object.keys(base));
   const headNames = new Set(Object.keys(head));
   const removed = [...baseNames].filter(n => !headNames.has(n));
@@ -65,14 +67,16 @@ function analyze({ changedFiles, base, head, allowed }) {
   }
 
   for (const name of added) {
-    const url = head[name] && head[name].source && head[name].source.url;
-    if (!url) { problems.push(`added "${name}" has no source.url to validate`); continue; }
-    if (!sourceAllowed(url, allowed)) {
-      problems.push(`added "${name}" points at ${url}, outside the allowed sources`);
+    const u = head[name] && head[name].source && head[name].source.url;
+    if (!u) { problems.push(`added "${name}" has no source.url to validate`); continue; }
+    const r = normalizeRepo(u);
+    if (r.split('/').length < 3) { problems.push(`added "${name}" source.url ${u} is not a valid repo URL`); continue; }
+    if (!liveRepos.has(r)) {
+      problems.push(`added "${name}" points at ${u}, a repo with no existing live plugin in this marketplace`);
     }
   }
 
-  return { ok: problems.length === 0, problems, added, removed, modified };
+  return { ok: problems.length === 0, problems, added, removed, modified, liveRepoCount: liveRepos.size };
 }
 
 async function readPlugins(github, owner, repo, ref) {
@@ -84,13 +88,10 @@ async function readPlugins(github, owner, repo, ref) {
   }
 }
 
-// API wrapper used by both workflows. Fetches the diff and delegates to analyze().
-async function evaluate({ github, context, allowlistPath }) {
+// API wrapper used by both workflows. Fetches the diff + base/head marketplace.json, delegates to analyze().
+async function evaluate({ github, context }) {
   const pr = context.payload.pull_request;
   const owner = context.repo.owner, repo = context.repo.repo;
-
-  const allowed = loadAllowed(allowlistPath);
-  if (!allowed.length) return { ok: false, problems: ['allowed_sources is empty'], added: [], removed: [], modified: [] };
 
   const files = await github.paginate(github.rest.pulls.listFiles, {
     owner, repo, pull_number: pr.number, per_page: 100,
@@ -103,7 +104,7 @@ async function evaluate({ github, context, allowlistPath }) {
     return { ok: false, problems: ['could not read marketplace.json at base and/or head'], added: [], removed: [], modified: [] };
   }
 
-  return analyze({ changedFiles, base, head, allowed });
+  return analyze({ changedFiles, base, head });
 }
 
-module.exports = { normalizeUrl, sourceAllowed, analyze, readPlugins, evaluate, MARKETPLACE };
+module.exports = { normalizeRepo, liveReposOf, analyze, readPlugins, evaluate, MARKETPLACE };
