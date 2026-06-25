@@ -1014,7 +1014,14 @@ void (async () => {
           ).catch(() => {})
         },
       })
-      return // bot.stop() was called — clean exit from the loop
+      if (shuttingDown) return // bot.stop() was called — clean exit from the loop
+      // grammy's bot.start() can resolve without error on certain network
+      // failures (e.g. ECONNRESET mid-poll). The polling loop exits silently
+      // while the process stays alive (MCP stdin keeps it running), making the
+      // bot deaf to all inbound messages until a full restart.
+      process.stderr.write(`telegram channel: polling ended unexpectedly, restarting in 2s\n`)
+      await new Promise(r => setTimeout(r, 2000))
+      continue
     } catch (err) {
       if (shuttingDown) return
       // bot.stop() mid-setup rejects with grammy's "Aborted delay" — expected, not an error.
