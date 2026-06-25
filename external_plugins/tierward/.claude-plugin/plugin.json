@@ -1,0 +1,20 @@
+{
+  "name": "tierward",
+  "displayName": "Tierward",
+  "description": "Governance skills for Claude Code: commit enforcement (Conventional Commits), architecture audits, security scans, code quality, and structured development pipelines. Tier by tier, from a Stop hook to a full governed workflow.",
+  "author": {
+    "name": "Marco Guillermaz",
+    "url": "https://github.com/marcoguillermaz"
+  },
+  "homepage": "https://marcoguillermaz.github.io/Tierward/",
+  "repository": "https://github.com/marcoguillermaz/Tierward",
+  "license": "MIT",
+  "category": "development",
+  "keywords": ["claude-code", "governance", "audit", "commits", "pipeline"],
+  "source": {
+    "source": "url",
+    "url": "https://github.com/marcoguillermaz/Tierward.git",
+    "ref": "main",
+    "sha": "3c7fe9f03f40c72c7ea12dac5ca8f8fbe5e7d09f"
+  }
+}
