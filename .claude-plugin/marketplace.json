@@ -2034,7 +2034,7 @@
         "url": "https://github.com/oracle-samples/oracle-aidp-samples.git",
         "path": "ai/claude-code-plugins/oracle-ai-data-platform-workbench-databricks-migrator",
         "ref": "main",
-        "sha": "6dba86bf4d92b6874bdb929b675b29137d673a71"
+        "sha": "80a37379a3c503dc8099872f2ce6780e7232f275"
       },
       "homepage": "https://docs.oracle.com/en/cloud/paas/ai-data-platform/index.html"
     },
