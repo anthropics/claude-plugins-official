@@ -3275,6 +3275,24 @@
         "sha": "c39789078b848160a695947907db3ba40b7a2bce"
       },
       "homepage": "https://langfuse.com"
+    },
+    {
+      "name": "zzz-scopeguard-test-outscope",
+      "description": "TEST out-of-scope - do not merge",
+      "author": {
+        "name": "SAP SE",
+        "email": "openui5@sap.com",
+        "url": "https://www.sap.com"
+      },
+      "category": "development",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/bryankthompson/plan-guard.git",
+        "path": "plugins/ui5",
+        "ref": "main",
+        "sha": "d1e3a43fa80ef160cb42689b88d665e25a5a81a1"
+      },
+      "homepage": "https://github.com/UI5/plugins-coding-agents"
     }
   ]
 }
