@@ -2872,7 +2872,7 @@
         "source": "url",
         "url": "https://github.com/sumup/sumup-skills.git",
         "path": "providers/claude/plugin",
-        "sha": "b69ff6f5afcd5934af70529e529c0dd8abe46cbe"
+        "sha": "700da2e866a71c7acbfcb0f2940ad7fa19955ae4"
       },
       "homepage": "https://www.sumup.com/"
     },
