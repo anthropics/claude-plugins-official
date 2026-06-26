@@ -4,6 +4,8 @@
 Loads and parses .claude/hookify.*.local.md files.
 """
 
+from __future__ import annotations  # PEP 563: defer annotation eval so tuple[...] works on Py<3.9
+
 import os
 import sys
 import glob
