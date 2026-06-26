@@ -2928,7 +2928,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/JetBrains/teamcity-cli.git",
-        "sha": "42ce6a22b1a8167120adbfa8de8b79f36e698133"
+        "sha": "3776102f8ba27ae61cf3e6b7cf8e4983bb70700e"
       },
       "homepage": "https://www.jetbrains.com/teamcity/"
     },
