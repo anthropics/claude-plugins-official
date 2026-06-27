@@ -1,5 +1,4 @@
 {
-  "description": "Security guidance plugin — pattern-based warnings on edits, git-diff-based LLM review on stop",
   "hooks": {
     "SessionStart": [
       {

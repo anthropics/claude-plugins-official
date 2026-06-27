@@ -1,5 +1,4 @@
 {
-  "description": "Explanatory mode hook that adds educational insights instructions",
   "hooks": {
     "SessionStart": [
       {
