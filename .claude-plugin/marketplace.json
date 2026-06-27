@@ -2467,7 +2467,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/rilldata/agent-skills.git",
-        "sha": "c8c8738f44826150d52304cd4fb70cc3ecbdca2e"
+        "sha": "5ac72459d4ec43c6e818bfdb1f3f2696e0cb21d4"
       },
       "homepage": "https://docs.rilldata.com/developers/build/ai-configuration"
     },
