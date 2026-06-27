@@ -1195,7 +1195,7 @@
         "url": "https://github.com/dropbox/dropbox-ai-plugins.git",
         "path": "claude",
         "ref": "main",
-        "sha": "2f9c81a5d012cc9c389132331a93f4ade06a97a9"
+        "sha": "4135e81caf8275b4c97caef244479e0dcb6fb823"
       },
       "homepage": "https://www.dropbox.com"
     },
