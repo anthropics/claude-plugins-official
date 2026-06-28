@@ -114,6 +114,21 @@
       "homepage": "https://www.airwallex.com/docs"
     },
     {
+      "name": "aiven",
+      "description": "Easily deploy managed PostgreSQL, Kafka, OpenSearch, Clickhouse, and other databases, streaming, and apps through Aiven. Free tier available, up and running in minutes.",
+      "author": {
+        "name": "Aiven",
+        "url": "https://aiven.io"
+      },
+      "category": "database",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/aiven/aiven-ai-plugins.git",
+        "sha": "914b79822770399614441ddd6e472bd7c206bd2e"
+      },
+      "homepage": "https://aiven.io"
+    },
+    {
       "name": "alloydb",
       "description": "Create, connect, and interact with an AlloyDB for PostgreSQL database and data.",
       "author": {
