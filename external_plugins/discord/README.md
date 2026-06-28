@@ -101,6 +101,25 @@ Quick reference: IDs are Discord **snowflakes** (numeric — enable Developer Mo
 Inbound messages trigger a typing indicator automatically — Discord shows
 "botname is typing…" while the assistant works on a response.
 
+## Reactions
+
+Reactions added to or removed from the bot's **own** messages are forwarded to
+the assistant — a lightweight feedback channel, e.g. a 👍/👎 on a reply. Only
+reactions on the bot's own messages count, and only from allowlisted senders
+(DMs) or members of opted-in guild channels — the same gate as messages. The
+bot's own reactions (such as an `ackReaction`) are ignored, and `requireMention`
+does not apply, since a reaction is already an explicit signal.
+
+The event arrives as a `<channel>` notification carrying `event_type`
+(`reaction_added` or `reaction_removed`) and `reaction_emoji`:
+
+```
+<channel source="discord" chat_id="…" message_id="…" user="alice" event_type="reaction_added" reaction_emoji="👍">
+[reaction-added] alice added 👍 on the bot's message (message_id …)
+```
+
+`message_id` is the bot's message that was reacted to. See [ACCESS.md](./ACCESS.md#reactions) for how the gate applies.
+
 ## Attachments
 
 Attachments are **not** auto-downloaded. The `<channel>` notification lists

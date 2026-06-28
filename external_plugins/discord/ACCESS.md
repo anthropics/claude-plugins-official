@@ -72,6 +72,15 @@ Example regex setup for a nickname trigger:
 /discord:access set mentionPatterns '["^hey claude\\b", "\\bassistant\\b"]'
 ```
 
+## Reactions
+
+Reactions on the bot's own messages are forwarded to the assistant as inbound
+events (see [README.md](./README.md#reactions)). They pass through the same gate
+as messages: in DMs the reacting user must be on `allowFrom`; in guild channels
+the channel must be opted in, and `allowFrom` (when set on the group) must list
+the user. `requireMention` is not applied — a reaction is already explicit
+intent. Reactions are dropped entirely when `dmPolicy` is `disabled`.
+
 ## Delivery
 
 Configure outbound behavior with `/discord:access set <key> <value>`.

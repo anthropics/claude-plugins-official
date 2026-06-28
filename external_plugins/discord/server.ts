@@ -28,6 +28,10 @@ import {
   type Message,
   type Attachment,
   type Interaction,
+  type MessageReaction,
+  type PartialMessageReaction,
+  type User,
+  type PartialUser,
 } from 'discord.js'
 import { randomBytes } from 'crypto'
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, statSync, renameSync, realpathSync, chmodSync } from 'fs'
@@ -84,9 +88,12 @@ const client = new Client({
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildMessageReactions,
+    GatewayIntentBits.DirectMessageReactions,
   ],
   // DMs arrive as partial channels — messageCreate never fires without this.
-  partials: [Partials.Channel],
+  // Reactions on uncached messages arrive as partials too — needs Message/Reaction.
+  partials: [Partials.Channel, Partials.Message, Partials.Reaction, Partials.User],
 })
 
 type PendingEntry = {
@@ -806,6 +813,85 @@ client.on('messageCreate', msg => {
   if (msg.author.bot) return
   handleInbound(msg).catch(e => process.stderr.write(`discord: handleInbound failed: ${e}\n`))
 })
+
+// Forward reactions on the bot's own messages to Claude. This lets
+// allowlisted senders give 👍/👎 feedback the assistant can act on.
+// Filters:
+//   - ignore the bot's own reactions (e.g. ackReaction)
+//   - only forward when the reacted-to message was sent by the bot
+//   - only from allowlisted senders / opted-in channels (mirrors gate())
+//   - skip the requireMention check — reactions ARE the explicit signal
+client.on('messageReactionAdd', (reaction, user) => {
+  handleReactionEvent(reaction, user, 'added').catch(e =>
+    process.stderr.write(`discord: reactionAdd failed: ${e}\n`),
+  )
+})
+client.on('messageReactionRemove', (reaction, user) => {
+  handleReactionEvent(reaction, user, 'removed').catch(e =>
+    process.stderr.write(`discord: reactionRemove failed: ${e}\n`),
+  )
+})
+
+async function handleReactionEvent(
+  reaction: MessageReaction | PartialMessageReaction,
+  user: User | PartialUser,
+  action: 'added' | 'removed',
+): Promise<void> {
+  try {
+    if (reaction.partial) await reaction.fetch()
+    if (reaction.message.partial) await reaction.message.fetch()
+    if (user.partial) await user.fetch()
+  } catch (err) {
+    process.stderr.write(`discord: reaction partial fetch failed: ${err}\n`)
+    return
+  }
+
+  if (user.id === client.user?.id) return
+  if (reaction.message.author?.id !== client.user?.id) return
+
+  const msg = reaction.message
+  const access = loadAccess()
+  if (access.dmPolicy === 'disabled') return
+
+  const isDM = msg.channel.type === ChannelType.DM
+  if (isDM) {
+    if (!access.allowFrom.includes(user.id)) return
+  } else {
+    const channelId = msg.channel.isThread()
+      ? msg.channel.parentId ?? msg.channelId
+      : msg.channelId
+    const policy = access.groups[channelId]
+    if (!policy) return
+    const groupAllowFrom = policy.allowFrom ?? []
+    if (groupAllowFrom.length > 0 && !groupAllowFrom.includes(user.id)) return
+  }
+
+  const emoji = reaction.emoji.name ?? reaction.emoji.toString()
+  const username = user.username ?? 'unknown'
+  const content =
+    `[reaction-${action}] ${username} ${action} ${emoji} ` +
+    `on the bot's message (message_id ${msg.id})`
+
+  mcp
+    .notification({
+      method: 'notifications/claude/channel',
+      params: {
+        content,
+        meta: {
+          chat_id: msg.channelId,
+          message_id: msg.id,
+          user: username,
+          user_id: user.id,
+          ts: new Date().toISOString(),
+          event_type: `reaction_${action}`,
+          reaction_emoji: emoji,
+        },
+      },
+    })
+    .catch(err => {
+      process.stderr.write(`discord: failed to deliver reaction to Claude: ${err}\n`)
+    })
+}
 
 async function handleInbound(msg: Message): Promise<void> {
   const result = await gate(msg)
