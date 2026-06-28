@@ -405,12 +405,19 @@ async function fetchTextChannel(id: string) {
 async function fetchAllowedChannel(id: string) {
   const ch = await fetchTextChannel(id)
   const access = loadAccess()
+  // Authorize from explicit access config BEFORE trusting the live-fetched
+  // channel type. client.channels.fetch() can resolve a cold/partial channel
+  // object whose type is momentarily mis-classified, which made a correctly
+  // allowlisted channel throw 'not allowlisted' on the first (cold) call and
+  // succeed only on retry. Keying on the requested id (or resolved thread
+  // parent) makes the verdict deterministic from config and independent of
+  // cache warmth. This does not widen access: only ids the operator already
+  // placed in access.groups / allowFrom can pass.
+  const groupKey = ch.isThread() ? ch.parentId ?? ch.id : ch.id
+  if (id in access.groups || groupKey in access.groups) return ch
   if (ch.type === ChannelType.DM) {
     const userId = ch.recipientId ?? dmChannelUsers.get(id)
     if (userId && access.allowFrom.includes(userId)) return ch
-  } else {
-    const key = ch.isThread() ? ch.parentId ?? ch.id : ch.id
-    if (key in access.groups) return ch
   }
   throw new Error(`channel ${id} is not allowlisted — add via /discord:access`)
 }
