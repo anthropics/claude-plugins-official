@@ -109,6 +109,12 @@ type Access = {
   groups: Record<string, GroupPolicy>
   pending: Record<string, PendingEntry>
   mentionPatterns?: string[]
+  /** Allow messages from other bot accounts (default false). Opt in for multi-bot /
+   *  orchestrator-to-orchestrator setups. Bot DMs stay blocked regardless (pairing-loop safety). */
+  allowBots?: boolean
+  /** When allowBots is true, restrict accepted bot messages to these bot user IDs.
+   *  Empty/unset = accept all bots (subject to the usual gate/allowlist). */
+  allowedBotIds?: string[]
   // delivery/UX config — optional, defaults live in the reply handler
   /** Emoji to react with on receipt. Empty string disables. Unicode char or custom emoji ID. */
   ackReaction?: string
@@ -158,6 +164,8 @@ function readAccessFile(): Access {
       groups: parsed.groups ?? {},
       pending: parsed.pending ?? {},
       mentionPatterns: parsed.mentionPatterns,
+      allowBots: parsed.allowBots ?? false,
+      allowedBotIds: parsed.allowedBotIds ?? [],
       ackReaction: parsed.ackReaction,
       replyToMode: parsed.replyToMode,
       textChunkLimit: parsed.textChunkLimit,
@@ -803,7 +811,19 @@ client.on('interactionCreate', async (interaction: Interaction) => {
 })
 
 client.on('messageCreate', msg => {
-  if (msg.author.bot) return
+  // Never process our own messages. (The blanket bot-block below used to cover
+  // this; with bots optionally allowed we must guard self-echo explicitly.)
+  if (msg.author.id === client.user?.id) return
+  // Bot messages are ignored by default. Opt in via access.json "allowBots": true
+  // for bot-to-bot comms (e.g. multi-orchestrator setups). Even when enabled, bot
+  // DMs stay blocked (pairing-loop safety) and "allowedBotIds" (if set) restricts
+  // which bot accounts are accepted.
+  if (msg.author.bot) {
+    const access = readAccessFile()
+    if (!access.allowBots) return
+    if (msg.channel.type === ChannelType.DM) return
+    if (access.allowedBotIds && access.allowedBotIds.length > 0 && !access.allowedBotIds.includes(msg.author.id)) return
+  }
   handleInbound(msg).catch(e => process.stderr.write(`discord: handleInbound failed: ${e}\n`))
 })
 
