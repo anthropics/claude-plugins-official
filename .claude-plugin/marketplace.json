@@ -2683,7 +2683,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/getsentry/plugin-claude.git",
-        "sha": "83df938b934e154c5be2a059fab500711ac54c3f"
+        "sha": "280cf38323d1c288535023da2608053c3dd2f89f"
       },
       "homepage": "https://github.com/getsentry/plugin-claude"
     },
