@@ -2053,7 +2053,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/netlify/context-and-tools.git",
-        "sha": "7fcceabbc53cad0934bb24c722bfc6d2283861ea"
+        "sha": "b922fd4d6fe02a63034e175b452dc2660c2ed3e4"
       },
       "homepage": "https://github.com/netlify/context-and-tools"
     },
