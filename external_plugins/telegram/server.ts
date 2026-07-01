@@ -64,6 +64,19 @@ try {
     process.kill(stale, 0)
     process.stderr.write(`telegram channel: replacing stale poller pid=${stale}\n`)
     process.kill(stale, 'SIGTERM')
+    // An orphaned poller left by a crashed session spins a broken stdin pipe at
+    // ~100% CPU, which starves its own event loop so the SIGTERM handler never
+    // runs. SIGTERM alone therefore leaves it alive — holding the token and
+    // burning a core. Give it a brief grace period, then force-kill whatever is
+    // still there so zombies never accumulate across sessions.
+    await new Promise(r => setTimeout(r, 500))
+    try {
+      process.kill(stale, 0)
+      process.stderr.write(
+        `telegram channel: stale poller pid=${stale} ignored SIGTERM, sending SIGKILL\n`,
+      )
+      process.kill(stale, 'SIGKILL')
+    } catch {}
   }
 } catch {}
 writeFileSync(PID_FILE, String(process.pid))
@@ -660,6 +673,7 @@ function shutdown(): void {
 }
 process.stdin.on('end', shutdown)
 process.stdin.on('close', shutdown)
+process.stdin.on('error', shutdown)
 process.on('SIGTERM', shutdown)
 process.on('SIGINT', shutdown)
 process.on('SIGHUP', shutdown)
@@ -673,8 +687,16 @@ setInterval(() => {
     (process.platform !== 'win32' && process.ppid !== bootPpid) ||
     process.stdin.destroyed ||
     process.stdin.readableEnded
-  if (orphaned) shutdown()
-}, 5000).unref()
+  if (!orphaned) return
+  // Do NOT route an orphan through shutdown(): its exit is scheduled via
+  // setTimeout()/bot.stop(), and a broken-stdin busy loop can starve the timer
+  // queue so that exit never fires. An orphan has no session left to flush for,
+  // so drop the PID file and hard-exit synchronously the moment we notice.
+  try {
+    if (parseInt(readFileSync(PID_FILE, 'utf8'), 10) === process.pid) rmSync(PID_FILE)
+  } catch {}
+  process.exit(0)
+}, 2000).unref()
 
 // Commands are DM-only. Responding in groups would: (1) leak pairing codes via
 // /status to other group members, (2) confirm bot presence in non-allowlisted
