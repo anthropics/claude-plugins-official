@@ -14,6 +14,11 @@ on:
       # check runs aren't associated with the PR, so they don't satisfy it). Run
       # validate on workflow changes too so those PRs can clear the gate in-context.
       - '.github/workflows/**'
+      # Same rationale for the scan policy prompt: a policy-only PR (.github/policy/**)
+      # touches none of the plugin paths above, so validate would never trigger via
+      # pull_request and the required check would sit "Expected" forever (a dispatch
+      # check run isn't associated with the PR, so it can't satisfy the gate either).
+      - '.github/policy/**'
   push:
     branches: [main]
     paths:

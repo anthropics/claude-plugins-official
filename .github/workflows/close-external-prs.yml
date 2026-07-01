@@ -23,14 +23,13 @@ jobs:
           script: |
             const author = context.payload.pull_request.user.login;
 
-            const { data } = await github.rest.repos.getCollaboratorPermissionLevel({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              username: author
-            });
+            const { evaluate, isExemptAuthor } = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/external-pr-scope.js`);
 
-            if (['admin', 'write'].includes(data.permission)) {
-              console.log(`${author} has ${data.permission} access, allowing PR`);
+            // Members (write/admin) and the repo's own automation bot (bump SHA PRs) are never
+            // auto-closed.
+            const ex = await isExemptAuthor({ github, context });
+            if (ex.exempt) {
+              console.log(`${ex.reason} — allowing PR`);
               return;
             }
 
@@ -38,9 +37,9 @@ jobs:
             // contribution — it adds marketplace.json entries whose source repo ALREADY backs
             // a live plugin here, and changes nothing else. (No maintained allowlist: the set
             // of allowed repos is derived from the live marketplace.) This grants only the
-            // right to open a reviewable PR; the External PR Scope Guard required check and a
-            // maintainer approval still gate the merge.
-            const { evaluate } = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/external-pr-scope.js`);
+            // right to open a reviewable PR; the validate + scan checks and a maintainer
+            // approval still gate the merge (the External PR Scope Guard is advisory signal,
+            // not a required check).
             const result = await evaluate({ github, context });
             if (result.ok && result.added.length > 0) {
               console.log(`In-scope external contribution (adds: ${result.added.join(', ')}) — allowing PR.`);

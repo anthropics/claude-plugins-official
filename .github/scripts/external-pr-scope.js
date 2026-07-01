@@ -121,4 +121,33 @@ async function evaluate({ github, context }) {
   return analyze({ changedFiles, before, after, liveRepos: liveReposOf(liveBase) });
 }
 
-module.exports = { normalizeRepo, liveReposOf, analyze, readPlugins, evaluate, MARKETPLACE };
+// Authors that are NOT subject to the external-contributor scope rules:
+//   - the repo's own automation bot — its bump PRs legitimately MODIFY existing entries
+//     (SHA bumps), which the additions-only external-contributor rule forbids; AND
+//   - org members (write/admin).
+// Safe under pull_request_target: a fork PR cannot set its author to github-actions[bot]
+// (that login is only ever the org's own GITHUB_TOKEN workflow), and the member path is a
+// real permission lookup. Wrapped in try/catch because getCollaboratorPermissionLevel throws
+// for a non-collaborator/unknown user — without this, both callers would error the job rather
+// than fall through to scope evaluation.
+const EXEMPT_BOTS = new Set(['github-actions[bot]']);
+
+async function isExemptAuthor({ github, context }) {
+  const author = context.payload.pull_request.user.login;
+  if (EXEMPT_BOTS.has(author)) {
+    return { exempt: true, reason: `${author} is the trusted automation bot` };
+  }
+  try {
+    const { data } = await github.rest.repos.getCollaboratorPermissionLevel({
+      owner: context.repo.owner, repo: context.repo.repo, username: author,
+    });
+    if (['admin', 'write'].includes(data.permission)) {
+      return { exempt: true, reason: `${author} is ${data.permission} (member)` };
+    }
+  } catch (e) {
+    // not a collaborator / lookup failed → not exempt; fall through to scope evaluation
+  }
+  return { exempt: false };
+}
+
+module.exports = { normalizeRepo, liveReposOf, analyze, readPlugins, evaluate, isExemptAuthor, MARKETPLACE };
