@@ -92,10 +92,11 @@ Complete workflow command that commits, pushes, and creates a pull request in on
 Cleans up local branches that have been deleted from the remote repository.
 
 **What it does:**
-1. Lists all local branches to identify [gone] status
-2. Identifies and removes worktrees associated with [gone] branches
-3. Deletes all branches marked as [gone]
-4. Provides feedback on removed branches
+1. Runs `git fetch --prune` to refresh remote-tracking refs
+2. Lists all local branches with `git branch -vv` to identify [gone] status
+3. Identifies and removes worktrees associated with [gone] branches
+4. Deletes all branches marked as [gone]
+5. Provides feedback on removed branches
 
 **Usage:**
 ```bash
@@ -206,8 +207,8 @@ This plugin is included in the Claude Code repository. The commands are automati
 **Issue**: No branches marked as [gone]
 
 **Solution**:
-- Run `git fetch --prune` to update remote tracking
 - Branches must be deleted from the remote to show as [gone]
+- The command runs `git fetch --prune` automatically; if branches were deleted very recently, run `/clean_gone` again after the remote deletion completes
 
 ## Tips
 
