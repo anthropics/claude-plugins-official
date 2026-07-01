@@ -811,7 +811,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/cockroachdb/claude-plugin.git",
-        "sha": "736bd11df55bac97e2a6c98be8e93503b125902c"
+        "sha": "c511ba806b1797b1737fc4cbffbe3dba8697b1f2"
       },
       "homepage": "https://github.com/cockroachdb/claude-plugin"
     },
