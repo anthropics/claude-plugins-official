@@ -2029,7 +2029,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/mongodb/agent-skills.git",
-        "sha": "9ea7387c7a1638604542c6efd52e5efc6a7fc393"
+        "sha": "be846b4deb482c22a5fb4d133d6c1e6c4a32eb08"
       },
       "homepage": "https://www.mongodb.com/docs/mcp-server/overview/"
     },
