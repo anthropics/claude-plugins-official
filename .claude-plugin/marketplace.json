@@ -2349,7 +2349,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/Postman-Devrel/postman-claude-code-plugin.git",
-        "sha": "cb8e002ec9b94d84e1d247bcb3e854dec4de0ace"
+        "sha": "1c47a9b10170316c4eced15777ab2ac45ffdac80"
       },
       "homepage": "https://learning.postman.com/docs/developer/postman-mcp-server/"
     },
