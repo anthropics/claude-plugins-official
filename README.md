@@ -42,6 +42,21 @@ plugin-name/
 └── README.md            # Documentation
 ```
 
+## Plugin names are immutable
+
+The `name` field in a marketplace entry is an **immutable slug**. Once a plugin has been published, its `name` must not change — users have it installed under that slug, and renaming it breaks their install with a `plugin-not-found` error.
+
+- To change how a plugin is labeled in the UI, set or update `displayName` instead.
+- If a rename is genuinely unavoidable, add an entry to the top-level `renames` map in `.claude-plugin/marketplace.json` so existing installs auto-migrate:
+
+```json
+"renames": {
+  "old-name": "new-name"
+}
+```
+
+The Claude Code plugin loader reads this map and transparently rewrites the old slug to the new one on the user's next sync.
+
 ## Skill-bundle plugins
 
 When a plugin's source repository ships skills (`SKILL.md` files) without a `.claude-plugin/plugin.json` manifest, the marketplace entry can declare the skills directly using `strict: false` and an explicit `skills` array.
