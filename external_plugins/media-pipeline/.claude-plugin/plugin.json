@@ -1,0 +1,8 @@
+{
+  "name": "media-pipeline",
+  "description": "Produce faceless videos, shorts, and podcasts with AI-generated images, TTS voiceover, and ffmpeg assembly.",
+  "author": {
+    "name": "Ilias Aberkane"
+  },
+  "homepage": "https://github.com/iliasaberkane/claude-skill-media-pipeline"
+}
