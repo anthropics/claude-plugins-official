@@ -2204,7 +2204,7 @@
         "url": "https://github.com/growthxai/output.git",
         "path": "coding_assistants/claude/plugins/outputai",
         "ref": "main",
-        "sha": "2da721305432195c2d92020167bf11905421fe61"
+        "sha": "38ae07ca87a97251f6e44886c4f3737c06960546"
       },
       "homepage": "https://output.ai"
     },
