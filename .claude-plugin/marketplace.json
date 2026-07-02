@@ -776,7 +776,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/gemini-cli-extensions/cloud-sql-sqlserver.git",
-        "sha": "5069d84c78ccdc6a0177f2c7a7849b9708bde425"
+        "sha": "9d73a7bf606c6e6f00adcb52f2b763da90cf1812"
       },
       "homepage": "https://github.com/gemini-cli-extensions/cloud-sql-sqlserver"
     },
