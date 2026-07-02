@@ -25,8 +25,9 @@ project-artifact structure stays domain-neutral.
 1. **Resolve the artifact config, then locate the project.** Each project gets a directory
    at `${CLAUDE_PLUGIN_DATA}/artifacts/<slug>/` holding `config.md` (see **"The artifact
    config"** below) and `page.html` (the current render); listing `artifacts/` is the
-   registry of this skill's artifacts on this machine. If the
-   user names a project,
+   registry of this skill's artifacts on this machine (enumerate it with Glob or a
+   directory read — a shell listing of the data dir can be blocked in restricted
+   environments). If the user names a project,
    load that slug; if exactly one config matches the session (its repo is the cwd, or its
    project came up in conversation), use it; a config that exists means this is a
    **refresh** — follow **"Refreshing an artifact"** below. No config means a first build:
@@ -99,6 +100,11 @@ project-artifact structure stays domain-neutral.
    updates follow **"Refreshing an artifact"** below. If a publish reports a conflict (another
    session published a newer version), WebFetch the URL to see the current content,
    reconcile, then publish again.
+
+Headless note: the Artifact tool is not available in non-interactive (`claude -p`)
+sessions, and writing into the plugin data dir may require a permission grant the run
+cannot answer. In that case build the page, save it where the caller asked, and report
+that publishing needs an interactive session — don't improvise another publishing path.
 
 ## The artifact config (one per project)
 

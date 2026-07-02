@@ -36,3 +36,6 @@ sequence so the dependency order is obvious and pulls live PR/CI/review state vi
 - Artifact URLs are minted by the server. The plugin records yours after the first publish
   so refreshes land on the same address — bookmark it or add it to your team's hub so
   others can find it.
+- Publishing needs an interactive session: headless (`claude -p`) runs don't have the
+  Artifact tool, so automation can build and update pages but the publish step happens
+  interactively.
