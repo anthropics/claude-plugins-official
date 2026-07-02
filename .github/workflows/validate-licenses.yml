@@ -22,10 +22,14 @@ jobs:
         run: |
           set -euo pipefail
           missing=()
+          wrong_content=()
           for plugin_dir in plugins/*/; do
             plugin="${plugin_dir%/}"
             if [[ ! -f "$plugin/LICENSE" ]]; then
               missing+=("$plugin")
+            elif ! grep -q "Apache License" "$plugin/LICENSE" || \
+                 ! grep -q "Version 2.0" "$plugin/LICENSE"; then
+              wrong_content+=("$plugin")
             fi
           done
           if [[ "${#missing[@]}" -gt 0 ]]; then
@@ -35,4 +39,11 @@ jobs:
             done
             exit 1
           fi
-          echo "All $(ls -d plugins/*/ | wc -l) plugins have a LICENSE file."
+          if [[ "${#wrong_content[@]}" -gt 0 ]]; then
+            echo "::error::The following plugins have a LICENSE file that does not contain Apache 2.0 text:"
+            for p in "${wrong_content[@]}"; do
+              echo "  - $p"
+            done
+            exit 1
+          fi
+          echo "All $(ls -d plugins/*/ | wc -l) plugins have an Apache 2.0 LICENSE file."
