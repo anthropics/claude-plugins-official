@@ -748,7 +748,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/gemini-cli-extensions/cloud-sql-mysql.git",
-        "sha": "fda5aac59a50258d61f115f4962325b7ca8c3b36"
+        "sha": "6576cec36e2438d3ed4d190790dc3e1d858c37c3"
       },
       "homepage": "https://github.com/gemini-cli-extensions/cloud-sql-mysql"
     },
