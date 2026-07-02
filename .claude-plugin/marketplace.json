@@ -504,7 +504,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/box/box-for-ai.git",
-        "sha": "16f1a0427710b0812519ea634cd5ce6830bde8fc"
+        "sha": "172a8273f5d532c13ef6a3057e50c30e5368a2aa"
       },
       "skills": [
         "./skills/box",
