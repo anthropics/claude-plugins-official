@@ -1298,7 +1298,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/voxel51/fiftyone-skills.git",
-        "sha": "d34365bd643b889d67dafcc120a8c525699fb54c"
+        "sha": "b64f982e06a2831f934ab6c42298d4d1c4fe9852"
       },
       "homepage": "https://docs.voxel51.com/"
     },
