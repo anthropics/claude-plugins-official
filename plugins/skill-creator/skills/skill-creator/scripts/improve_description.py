@@ -10,8 +10,10 @@ import argparse
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from scripts.utils import parse_skill_md
@@ -23,7 +25,7 @@ def _call_claude(prompt: str, model: str | None, timeout: int = 300) -> str:
     Prompt goes over stdin (not argv) because it embeds the full SKILL.md
     body and can easily exceed comfortable argv length.
     """
-    cmd = ["claude", "-p", "--output-format", "text"]
+    cmd = [shutil.which("claude") or "claude", "-p", "--output-format", "text"]
     if model:
         cmd.extend(["--model", model])
 
@@ -32,19 +34,23 @@ def _call_claude(prompt: str, model: str | None, timeout: int = 300) -> str:
     # programmatic subprocess usage is safe. Same pattern as run_eval.py.
     env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
 
-    result = subprocess.run(
-        cmd,
-        input=prompt,
-        capture_output=True,
-        text=True,
-        env=env,
-        timeout=timeout,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(
-            f"claude -p exited {result.returncode}\nstderr: {result.stderr}"
+    # Retry on transient failures (a single `claude -p exited 1` should not
+    # kill an entire multi-iteration optimization run).
+    last_err = ""
+    for attempt in range(3):
+        result = subprocess.run(
+            cmd,
+            input=prompt,
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=timeout,
         )
-    return result.stdout
+        if result.returncode == 0:
+            return result.stdout
+        last_err = result.stderr
+        time.sleep(2 * (attempt + 1))
+    raise RuntimeError(f"claude -p exited nonzero after 3 attempts\nstderr: {last_err}")
 
 
 def improve_description(
