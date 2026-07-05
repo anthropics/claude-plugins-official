@@ -12,6 +12,9 @@ from typing import List, Optional, Dict, Any
 from dataclasses import dataclass, field
 
 
+UNFILTERED_EVENT = object()
+
+
 @dataclass
 class Condition:
     """A single condition for matching."""
@@ -195,11 +198,13 @@ def extract_frontmatter(content: str) -> tuple[Dict[str, Any], str]:
     return frontmatter, message
 
 
-def load_rules(event: Optional[str] = None) -> List[Rule]:
+def load_rules(event: Any = UNFILTERED_EVENT) -> List[Rule]:
     """Load all hookify rules from .claude directory.
 
     Args:
-        event: Optional event filter ("bash", "file", "stop", etc.)
+        event: Event filter ("bash", "file", "stop", "prompt", "other").
+            Omit the argument to preserve the compatibility behavior of loading
+            all enabled rules.
 
     Returns:
         List of enabled Rule objects matching the event.
@@ -216,8 +221,8 @@ def load_rules(event: Optional[str] = None) -> List[Rule]:
             if not rule:
                 continue
 
-            # Filter by event if specified
-            if event:
+            # Filter by event when a caller explicitly supplies one.
+            if event is not UNFILTERED_EVENT:
                 if rule.event != 'all' and rule.event != event:
                     continue
 

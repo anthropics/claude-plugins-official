@@ -16,6 +16,7 @@ if PLUGIN_ROOT and PLUGIN_ROOT not in sys.path:
 
 try:
     from core.config_loader import load_rules
+    from core.events import event_for_tool
     from core.rule_engine import RuleEngine
 except ImportError as e:
     # If imports fail, allow operation and log error
@@ -34,11 +35,7 @@ def main():
         # For PreToolUse, we use tool_name to determine "bash" vs "file" event
         tool_name = input_data.get('tool_name', '')
 
-        event = None
-        if tool_name == 'Bash':
-            event = 'bash'
-        elif tool_name in ['Edit', 'Write', 'MultiEdit']:
-            event = 'file'
+        event = event_for_tool(tool_name)
 
         # Load rules
         rules = load_rules(event=event)

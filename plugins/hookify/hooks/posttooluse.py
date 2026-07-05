@@ -16,6 +16,7 @@ if PLUGIN_ROOT and PLUGIN_ROOT not in sys.path:
 
 try:
     from core.config_loader import load_rules
+    from core.events import event_for_tool
     from core.rule_engine import RuleEngine
 except ImportError as e:
     error_msg = {"systemMessage": f"Hookify import error: {e}"}
@@ -31,11 +32,7 @@ def main():
 
         # Determine event type based on tool
         tool_name = input_data.get('tool_name', '')
-        event = None
-        if tool_name == 'Bash':
-            event = 'bash'
-        elif tool_name in ['Edit', 'Write', 'MultiEdit']:
-            event = 'file'
+        event = event_for_tool(tool_name)
 
         # Load rules
         rules = load_rules(event=event)
