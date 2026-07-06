@@ -3251,6 +3251,24 @@
       "homepage": "https://github.com/UI5/plugins-coding-agents"
     },
     {
+      "name": "ui-theme-designer",
+      "description": "UI theme designer plugin for coding agents. Equips AI coding agents with knowledge and tooling for working with UI theme designer, the SAP Design System, and SAP Fiori design tokens.",
+      "author": {
+        "name": "SAP SE",
+        "email": "themedesigner@sap.com",
+        "url": "https://www.sap.com"
+      },
+      "category": "development",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/SAP/ui-theme-designer-plugins-for-coding-agents.git",
+        "path": "plugins/ui-theme-designer",
+        "ref": "main",
+        "sha": "8514ff6cd61ef1dc9e3a4e5155c3010a630623f0"
+      },
+      "homepage": "https://github.com/SAP/ui-theme-designer-plugins-for-coding-agents"
+    },
+    {
       "name": "unreal-engine-skills-for-claude-code",
       "description": "Control Unreal Editor directly from Claude Code via MCP. Hundreds of tools exposed via Unreal's ToolsetRegistry across 30+ toolsets: actors, blueprints, materials, Niagara, Control Rigs, Sequencer, State Trees, widgets, Gameplay Ability System, automation testing, and more.",
       "author": {
