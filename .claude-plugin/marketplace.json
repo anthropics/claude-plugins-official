@@ -1998,7 +1998,7 @@
         "url": "https://github.com/awslabs/startups.git",
         "path": "migrate/plugins/migration-to-aws",
         "ref": "main",
-        "sha": "cc6609038a5cb89c1b85f1f97283439eb0ee256b"
+        "sha": "653b0c87c6ebdf16a2af87ac1ca6864ee1ddb6df"
       },
       "homepage": "https://github.com/awslabs/startups"
     },
