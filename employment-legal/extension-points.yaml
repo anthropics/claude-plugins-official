@@ -1,0 +1,88 @@
+# employment-legal/extension-points.yaml
+#
+# Bu vertical'ın (Core Vertical) hangi core/ sözleşmelerine ve hangi ülkeye
+# özgü Legal Source Registry alanlarına ihtiyaç duyduğunun beyanı. Bir
+# Country Plugin'in bu vertical için "full" kapsam iddia edebilmesi için
+# aşağıdaki her zorunlu (`required: true`) girdiyi karşılaması gerekir.
+#
+# Bu dosya, employment-legal/skills/*/SKILL.md ve agents/leave-tracker.md
+# içindeki mevcut davranışın envanterinden çıkarılmıştır (bkz. migration
+# planı §Wave 3). Bu commit'te henüz hiçbir SKILL.md değişmedi — bu saf bir
+# manifest ekleme adımıdır.
+
+vertical: employment-legal
+extension_points_version: "@2026-07"
+
+providers:
+  citation_provider:
+    required: true
+    methods_used:
+      - formatStatuteCitation      # ör. wage-hour-qa'daki aşırı mesai maddesi ataması
+      - formatCaseCitation         # ör. worker-classification'daki içtihat atıfları
+      - getProvenanceTagVocabulary
+      - getHighRiskPinpointPatterns  # madde/fıkra numarası riski — wage-hour-qa'nın back-pay hesaplarında kritik
+      - classifyCitationRisk
+
+  search_provider:
+    required: true
+    methods_used:
+      - search              # içtihat/mevzuat araması (worker-classification, termination-review, wage-hour-qa)
+      - preflightCheck       # her atıf öncesi zorunlu ön-uçuş kontrolü
+      - getSourceCatalog
+
+  document_provider:
+    required: false
+    methods_used:
+      - getIrreversibilityFlags   # ör. bir fesih/teklif mektubunun gönderilmesi geri döndürülemezlik taşıyabilir
+    notes: >
+      Şu an opsiyonel — employment-legal bugün DocuSign/e-imza gibi bir
+      connector'a doğrudan bağlı değil (bu commercial-legal/corporate-legal'e
+      özgü). Bir ülke bunu 'not_supported' bırakabilir, bu 'partial' değil
+      'full' sayılır çünkü required:false.
+
+# Bu vertical'ın Legal Source Registry'den beklediği İÇERİK ALANLARI —
+# somut kanun/madde değil, "hangi konuda bir kaynağa ihtiyaç var" beyanı.
+legal_source_registry_topics:
+  - topic_id: overtime-framework
+    required: true
+    used_by_skills: [wage-hour-qa]
+    description: "Fazla mesai / aşırı mesai hesaplama çerçevesi (oran, likidite edilmiş tazminat, zamanaşımı)."
+  - topic_id: worker-classification-test
+    required: true
+    used_by_skills: [worker-classification]
+    description: "Bağımsız yüklenici / işçi ayrımı testi (ör. ABD'nin ABC testi; TR'de muvazaa/bağımlılık kriterleri)."
+  - topic_id: mass-layoff-notice
+    required: true
+    used_by_skills: [termination-review]
+    description: "Toplu işten çıkarmada önceden bildirim yükümlülüğü (ör. ABD WARN Act; TR İş Kanunu m.29)."
+  - topic_id: leave-types
+    required: true
+    used_by_skills: [leave-tracker, log-leave]
+    description: "İzin türleri ve süreleri (ör. ABD FMLA/CFRA/PFL/USERRA; TR yıllık izin/doğum-babalık izni vb.)."
+  - topic_id: worker-classification-remediation
+    required: false
+    used_by_skills: [worker-classification]
+    description: "Yanlış sınıflandırma tespit edildiğinde geriye dönük düzeltme/ceza rejimi (ör. ABD IRS §530, CA PAGA)."
+
+# Tool Registry'den (core/engine/registries/tool-registry.schema.md) talep
+# edilen soyut yetenekler.
+tool_capabilities:
+  - capability_id: case-law-search
+    required: true
+  - capability_id: calendar-deadline
+    required: true
+    notes: "leave-tracker izin bitiş tarihlerini iş günü takvimine göre hesaplar."
+  - capability_id: regulatory-feed
+    required: false
+    notes: "handbook-updates, eyalet/il bazlı mevzuat değişikliğinden haberdar olmak için opsiyonel olarak kullanabilir."
+
+# Bu vertical'ın guardrail fragment kullanımı — core/shared/guardrail-fragments/
+guardrail_fragments_used:
+  - destination-check
+  - no-silent-supplement
+  - jurisdiction-recognition
+  - reviewer-note-format
+  - cross-skill-severity-floor
+  - retrieved-content-trust
+  - large-input-output
+  - scaffolding-not-blinders
