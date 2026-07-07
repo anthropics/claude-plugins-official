@@ -1,0 +1,34 @@
+name: "Validate country plugins"
+on:
+  pull_request:
+    paths:
+      - "core/**"
+      - "countries/**"
+      - "scripts/validate.py"
+      - "scripts/lint-country-plugin.py"
+      - "scripts/lint-tool-scope.py"
+  push:
+    branches: [main]
+    paths:
+      - "core/**"
+      - "countries/**"
+      - "scripts/validate.py"
+      - "scripts/lint-country-plugin.py"
+      - "scripts/lint-tool-scope.py"
+permissions:
+  contents: read
+jobs:
+  lint-country-plugins:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install jsonschema pyyaml
+      - name: Lint country plugins against core/ schemas
+        run: python scripts/lint-country-plugin.py
+      - name: Lint managed-agent-cookbook tool scope (existing check, unchanged)
+        run: python scripts/lint-tool-scope.py
