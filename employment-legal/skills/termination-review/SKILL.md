@@ -126,15 +126,13 @@ after. Before.
 > - Required notices — research any jurisdiction-specific notices required at
 >   termination (e.g., state unemployment, continuation-coverage notices
 >   beyond federal COBRA, benefits continuation).
-> - Mass-layoff / plant-closing notices — research federal WARN Act and any
->   state "mini-WARN" or local ordinance that may apply if this is part of a
->   larger reduction. Coverage thresholds and notice periods differ.
+> - Mass-layoff / plant-closing notices — load the active country's Legal Source Registry `mass-layoff-notice` topic (see [`employment-legal/extension-points.yaml`](../../extension-points.yaml)) if this is part of a larger reduction. For the US this concretely means the federal WARN Act and any state "mini-WARN" or local ordinance (see [`countries/us/knowledge/employment-legal/mass-layoff-notice.md`](../../../countries/us/knowledge/employment-legal/mass-layoff-notice.md)) — coverage thresholds and notice periods differ by jurisdiction and must be researched, not assumed.
 >
 > Cite primary sources. Verify currency.
 >
-> **No silent supplement.** If a research query to the configured legal research tool returns few or no results for the jurisdiction's final-pay, PTO, notice, or WARN rule, report what was found and stop. Do NOT fill the gap from web search or model knowledge without asking. Say: "The search returned [N] results from [tool]. Coverage appears thin for [jurisdiction / rule]. Options: (1) broaden the search query, (2) try a different research tool, (3) search the web — results will be tagged `[web search — verify]` and should be checked against a primary source before relying, or (4) stop here and flag for attorney verification. Which would you like?" A lawyer decides whether to accept lower-confidence sources.
+> **No silent supplement.** If a research query to the active country's Search Provider returns few or no results for the jurisdiction's final-pay, PTO, notice, or mass-layoff-notice rule, report what was found and stop. Do NOT fill the gap from web search or model knowledge without asking. Say: "The search returned [N] results from [tool]. Coverage appears thin for [jurisdiction / rule]. Options: (1) broaden the search query, (2) try a different research tool, (3) search the web — results will be tagged `[web search — verify]` and should be checked against a primary source before relying, or (4) stop here and flag for attorney verification. Which would you like?" A lawyer decides whether to accept lower-confidence sources.
 >
-> **Source attribution.** Tag every citation in the plan — final-pay rule, PTO rule, notices, WARN / mini-WARN, OWBPA consideration periods, state release restrictions — with where it came from: `[Westlaw]`, `[CourtListener]`, or the MCP tool name for citations retrieved from a legal research connector; `[web search — verify]` for web-search citations; `[model knowledge — verify]` for citations recalled from training data; `[user provided]` for citations the user supplied. Citations tagged `verify` carry higher fabrication risk and should be checked first. Never strip or collapse the tags.
+> **Source attribution.** Tag every citation in the plan — final-pay rule, PTO rule, notices, mass-layoff-notice rule, release-consideration periods, jurisdiction-specific release restrictions — using the active country's provenance tag vocabulary (see [`core/shared/guardrail-fragments/source-attribution.md`](../../../core/shared/guardrail-fragments/source-attribution.md); for US: `[CourtListener]`, `[Trellis]`, `[Westlaw]`) for citations retrieved from a legal research connector; `[web search — verify]` for web-search citations; `[model knowledge — verify]` for citations recalled from training data; `[user provided]` for citations the user supplied. Citations tagged `verify` carry higher fabrication risk and should be checked first. Never strip or collapse the tags.
 
 ### Step 4: Severance and release
 
@@ -144,10 +142,7 @@ Per `~/.claude/plugins/config/claude-for-legal/employment-legal/CLAUDE.md` → s
 - Release required? (Usually yes if paying severance — that's the
   consideration.)
 
-> **Research the applicable release-consideration rules.** If the employee is
-> 40 or over, federal law (OWBPA) imposes specific requirements that affect
-> the consideration period, revocation period, required advisements, and —
-> for group terminations — required decisional-unit disclosures. The specific
+> **Research the applicable release-consideration rules.** Age-based release requirements are jurisdiction-specific; for the US, federal law (OWBPA) imposes specific requirements for employees 40 or over that affect the consideration period, revocation period, required advisements, and — for group terminations — required decisional-unit disclosures when the active country is US. The specific
 > consideration period differs between an individual termination, a group
 > RIF, and a group exit incentive; the rule also depends on the employee's
 > age and the number of employees affected. Do not state the day count from
