@@ -1,0 +1,76 @@
+country_code: "TR"
+
+sources:
+  - source_id: resmi-gazete
+    name: "Resmî Gazete"
+    source_type: official_gazette
+    citation_format:
+      pattern_description: "[Kanun No] sayılı [Kanun Adı] (RG: [Tarih], Sayı: [Sayı No])"
+      example: "4857 sayılı İş Kanunu (RG: 10.06.2003, Sayı: 25134)"
+    primary_url_pattern: "https://www.resmigazete.gov.tr/eskiler/{yil}/{ay}/{tarih}.htm"
+    tier: free
+
+  - source_id: mevzuat-bilgi-sistemi
+    name: "Mevzuat Bilgi Sistemi (mevzuat.gov.tr)"
+    source_type: legislature
+    citation_format:
+      pattern_description: "[Kanun No] sayılı [Kanun Adı] m.[Madde No]"
+      example: "4857 sayılı İş Kanunu m.41"
+    primary_url_pattern: "https://www.mevzuat.gov.tr/mevzuat?MevzuatNo={no}&MevzuatTur=1"
+    tier: free
+    notes: "employment-legal wage-hour-qa (fazla mesai, m.41) ve termination-review (toplu işten çıkarma, m.29) için birincil kaynak."
+
+  - source_id: yargitay
+    name: "Yargıtay (Temyiz Mahkemesi)"
+    source_type: court
+    hierarchy_level: yargitay
+    citation_format:
+      pattern_description: "Yargıtay [Daire No]. Hukuk Dairesi, [Esas No] E., [Karar No] K., [Tarih] T."
+      example: "Yargıtay 9. Hukuk Dairesi, 2021/1234 E., 2022/5678 K., 15.03.2022 T."
+    tier: free
+    notes: "9. Hukuk Dairesi iş hukuku uyuşmazlıklarında ihtisas dairesidir; worker-classification (muvazaa) ve termination-review (haklı/geçersiz fesih) içtihatlarının birincil kaynağı."
+
+  - source_id: bam
+    name: "Bölge Adliye Mahkemesi (İstinaf)"
+    source_type: court
+    hierarchy_level: bolge-adliye-mahkemesi
+    citation_format:
+      pattern_description: "[İl] BAM, [Daire No]. Hukuk Dairesi, [Esas No] E., [Karar No] K., [Tarih] T."
+      example: "İstanbul BAM, 27. Hukuk Dairesi, 2021/100 E., 2022/200 K., 10.01.2022 T."
+    tier: free
+
+  - source_id: csgb
+    name: "Çalışma ve Sosyal Güvenlik Bakanlığı (ÇSGB)"
+    source_type: regulator
+    citation_format:
+      pattern_description: "ÇSGB Genelge/Tebliğ numarasıyla atıf"
+      example: "ÇSGB 2024/1 sayılı Genelge"
+    primary_url_pattern: "https://www.csgb.gov.tr"
+    tier: free
+    notes: "İş Kanunu uygulama yönetmelikleri ve genelgelerinin kaynağı — FMLA/WARN Act'in ABD idari kaynağı DOL'un TR karşılığı."
+
+  - source_id: sgk
+    name: "Sosyal Güvenlik Kurumu (SGK)"
+    source_type: regulator
+    citation_format:
+      pattern_description: "5510 sayılı Kanun m.[Madde No]"
+      example: "5510 sayılı Sosyal Sigortalar ve Genel Sağlık Sigortası Kanunu m.4"
+    tier: free
+    notes: "İşçi/bağımsız yüklenici ayrımının sosyal güvenlik boyutu (muvazaa denetimi) için birincil kaynak — ABD'nin IRS §530 analizinin TR karşılığı bağlamı."
+
+  - source_id: tbb
+    name: "Türkiye Barolar Birliği (TBB)"
+    source_type: regulator
+    citation_format:
+      pattern_description: "TBB Meslek Kuralları madde numarasıyla atıf"
+      example: "TBB Meslek Kuralları m.4"
+    tier: free
+
+  - source_id: turkpatent
+    name: "Türk Patent ve Marka Kurumu (TÜRKPATENT)"
+    source_type: ip_office
+    citation_format:
+      pattern_description: "Başvuru/Tescil numarasıyla atıf"
+      example: "TÜRKPATENT Marka Tescil No. 2024/12345"
+    tier: free
+    notes: "employment-legal kapsamında değil (ip-legal kapsamı) — ülke kataloğunun tamamlayıcı parçası."
