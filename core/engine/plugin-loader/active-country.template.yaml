@@ -1,0 +1,22 @@
+# active-country.template.yaml
+#
+# Bu, kullanıcı makinesinde oluşacak GERÇEK dosyanın (
+#   ~/.claude/plugins/config/claude-for-legal/active-country.yaml
+# ) ŞABLONUDUR. Bu repo bu dosyanın kendisini içermez — yalnızca şeklini
+# dokümante eder. Dosya, bir Country Plugin'in aktivasyon skill'i tarafından
+# yazılır (bir sonraki dalgada eklenecek).
+
+# Şu an aktif olan tek ülke. MVP kapsamında çoklu-aktif-ülke desteklenmez
+# (bkz. mimari tasarımın "Riskler ve Açık Kararlar" bölümü).
+active_country: "TR"                 # ISO 3166-1 alpha-2
+
+# Bu işaretçiyi hangi plugin'in ve ne zaman yazdığı — teşhis/denetim amaçlı.
+set_by:
+  plugin: "countries/tr"
+  plugin_version: "0.1.0"
+  set_at: "2026-07-07T00:00:00Z"
+
+# Birden fazla Country Plugin kuruluysa burada listelenir; Plugin Loader
+# active_country ile bu listeyi karşılaştırıp kuruluğunu doğrular.
+installed_country_plugins:
+  - "TR"
