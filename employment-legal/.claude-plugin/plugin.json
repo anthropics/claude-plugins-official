@@ -1,7 +1,7 @@
 {
   "name": "employment-legal",
-  "version": "1.0.2",
-  "description": "Reviews hires and terminations for jurisdiction-specific risk flags, classifies workers against the controlling state test, tracks leave deadlines before they're missed, runs internal investigations, and drafts policies with state supplements where the law differs.",
+  "version": "1.1.0",
+  "description": "Reviews hires and terminations for jurisdiction-specific risk flags, classifies workers against the controlling state test, tracks leave deadlines before they're missed, runs internal investigations, and drafts policies with state supplements where the law differs. Country-aware: works standalone (US behavior, unchanged) or alongside a countries/<code> plugin (e.g. countries/tr) for localized frameworks, citations, and connectors — see extension-points.yaml.",
   "author": {
     "name": "Anthropic"
   }
