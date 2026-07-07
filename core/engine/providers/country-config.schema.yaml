@@ -1,0 +1,164 @@
+# country-config.schema.yaml
+#
+# Her ülke plugin'inin (countries/<code>/country.config.yaml) uyması gereken
+# kök meta-veri şeması. Bu dosyanın kendisi bir ülke config'i DEĞİLDİR — bir
+# şemadır. Hiçbir alan varsayılan/örnek olarak belirli bir ülkeye özgü değer
+# içermez (bkz. core/README.md tasarım kuralı).
+#
+# Kullanım: bir Country Plugin bu şemaya karşı doğrulanır
+# (scripts/lint-country-plugin.py — ayrı commit).
+
+$schema: "https://json-schema.org/draft/2020-12/schema"
+$id: "core/engine/providers/country-config.schema.yaml"
+title: "Country Config"
+type: object
+additionalProperties: false
+required:
+  - country_code
+  - country_name
+  - languages
+  - legal_family
+  - professional_regulator
+  - privilege_doctrine
+  - coverage
+
+properties:
+  country_code:
+    type: string
+    description: "ISO 3166-1 alpha-2 ülke kodu (ör. TR, US, DE, FR, GB, AE, SA)."
+    pattern: "^[A-Z]{2}$"
+
+  country_name:
+    type: string
+    description: "Ülkenin okunabilir adı."
+
+  languages:
+    type: array
+    description: "Resmî dil(ler), BCP-47 kodlarıyla."
+    items:
+      type: string
+    minItems: 1
+
+  legal_family:
+    type: string
+    description: >
+      Ülkenin hukuk sistemi ailesi. Bu alan, bir Core Vertical'ın hangi
+      kavramların (ör. 'discovery', 'jury instruction') o ülkede hiç
+      karşılığı olmayabileceğini önceden tahmin edebilmesi için vardır.
+    enum:
+      - civil_law
+      - common_law
+      - mixed_civil_common
+      - mixed_civil_religious
+
+  date_format:
+    type: string
+    description: "Varsayılan tarih gösterim biçimi (ör. DD.MM.YYYY)."
+
+  currency:
+    type: string
+    description: "ISO 4217 para birimi kodu."
+    pattern: "^[A-Z]{3}$"
+
+  business_calendar:
+    type: object
+    description: "İş günü / resmî tatil hesaplaması için referans takvim kaynağı."
+    additionalProperties: false
+    properties:
+      weekend_days:
+        type: array
+        items:
+          type: integer
+          minimum: 0
+          maximum: 6
+      holiday_source:
+        type: string
+        description: "Resmî tatil listesinin kaynağı (bir Legal Source Registry girdi kimliği)."
+
+  entity_types:
+    type: array
+    description: "Bu ülkede tanınan tüzel kişilik türleri (corporate-legal/entity-compliance kapsamı için)."
+    items:
+      type: object
+      additionalProperties: false
+      required: [type_id, label]
+      properties:
+        type_id:
+          type: string
+        label:
+          type: string
+
+  court_hierarchy:
+    type: array
+    description: "Mahkeme/idari itiraz hiyerarşisi, en alt dereceden en üst dereceye."
+    items:
+      type: object
+      additionalProperties: false
+      required: [level_id, label]
+      properties:
+        level_id:
+          type: string
+        label:
+          type: string
+
+  professional_regulator:
+    type: object
+    description: "Avukatlık/hukuk mesleği düzenleyicisi ve yönlendirme mekanizması."
+    additionalProperties: false
+    required: [name]
+    properties:
+      name:
+        type: string
+      referral_mechanism:
+        type: string
+
+  privilege_doctrine:
+    type: object
+    description: >
+      Bu ülkede 'attorney work product' / 'legal professional privilege'
+      benzeri bir doktrin var mı, varsa dayanağı ne. Yok ise fallback header
+      zorunludur (bkz. reponun mevcut jurisdiction-aware header mantığı).
+    additionalProperties: false
+    required: [exists]
+    properties:
+      exists:
+        type: boolean
+      name:
+        type: string
+      statutory_basis:
+        type: string
+      fallback_header:
+        type: string
+        description: "exists=false ise ZORUNLU: yanlış güvence vermeyen alternatif başlık metni."
+
+  data_protection_authority:
+    type: object
+    description: "Veri koruma otoritesi (privacy-legal kapsamı için)."
+    additionalProperties: false
+    properties:
+      name:
+        type: string
+      framework:
+        type: string
+
+  default_providers:
+    type: object
+    description: "Bu ülkenin hangi Provider implementasyon dosyalarını sağladığı."
+    additionalProperties: false
+    properties:
+      citation_provider:
+        type: string
+        description: "countries/<code>/providers/citation-provider.<code>.md yoluna göreli/mutlak referans."
+      search_provider:
+        type: string
+      document_provider:
+        type: string
+
+  coverage:
+    type: object
+    description: >
+      Her Core Vertical için bu ülkenin kapsam durumu. Anahtarlar mevcut
+      plugin dizin adlarıyla birebir eşleşir (ör. employment-legal).
+    additionalProperties:
+      type: string
+      enum: [full, partial, not_applicable]
