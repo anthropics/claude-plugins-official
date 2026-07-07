@@ -8,9 +8,10 @@ for a set of queries. Outputs results as JSON.
 import argparse
 import json
 import os
-import select
+import queue
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -97,22 +98,42 @@ def run_single_query(
         pending_tool_name = None
         accumulated_json = ""
 
+        # Read stdout on a background thread and hand chunks back over a queue.
+        # We deliberately avoid select.select() on the pipe: on Windows select
+        # only accepts sockets, so select.select([process.stdout], ...) raises
+        # "OSError: [WinError 10038] An operation was attempted on something that
+        # is not a socket" and every query fails. A reader thread + queue is
+        # portable and preserves the same streaming / timeout behaviour.
+        output_queue: "queue.Queue[str | None]" = queue.Queue()
+
+        def _drain_stdout(stream, out_queue):
+            try:
+                while True:
+                    # read1() returns as soon as any data is available rather
+                    # than blocking until the full size is read, so early
+                    # trigger detection still fires mid-stream.
+                    chunk = stream.read1(8192)
+                    if not chunk:
+                        break
+                    out_queue.put(chunk.decode("utf-8", errors="replace"))
+            finally:
+                out_queue.put(None)  # sentinel: stream closed
+
+        reader_thread = threading.Thread(
+            target=_drain_stdout, args=(process.stdout, output_queue), daemon=True
+        )
+        reader_thread.start()
+
         try:
             while time.time() - start_time < timeout:
-                if process.poll() is not None:
-                    remaining = process.stdout.read()
-                    if remaining:
-                        buffer += remaining.decode("utf-8", errors="replace")
-                    break
-
-                ready, _, _ = select.select([process.stdout], [], [], 1.0)
-                if not ready:
+                try:
+                    chunk = output_queue.get(timeout=1.0)
+                except queue.Empty:
+                    # No data within the poll window; re-check the deadline.
                     continue
-
-                chunk = os.read(process.stdout.fileno(), 8192)
-                if not chunk:
-                    break
-                buffer += chunk.decode("utf-8", errors="replace")
+                if chunk is None:
+                    break  # reader reached EOF
+                buffer += chunk
 
                 while "\n" in buffer:
                     line, buffer = buffer.split("\n", 1)
