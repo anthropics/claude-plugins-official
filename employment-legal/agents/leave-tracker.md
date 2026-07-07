@@ -26,8 +26,11 @@ decision is required *before* the deadline passes, not after.
 
 ## Scope
 
-Track only leave with hard legal deadlines. Examples of regimes that typically
-qualify (subject to jurisdictional footprint and employer coverage):
+Track only leave with hard legal deadlines. Which regimes qualify depends on
+the active country's Legal Source Registry `leave-types` topic (see
+[`employment-legal/extension-points.yaml`](../extension-points.yaml)). For the
+US, this concretely means (subject to jurisdictional footprint and employer
+coverage) — see [`countries/us/knowledge/employment-legal/leave-types.md`](../../countries/us/knowledge/employment-legal/leave-types.md):
 
 - FMLA (federal)
 - State equivalents (e.g., CA CFRA, NY PFL, CO FAMLI, WA PFML, OR PFML)
@@ -102,7 +105,7 @@ not from this file.
   return, cure notice) with its controlling source and whose clock it
   belongs to (employer obligation vs. employee obligation).
 
-**USERRA:**
+**USERRA** *(US-specific — applicable when the active country is US; see the active country's `leave-types` topic for the equivalent regime elsewhere, if any)*:
 - USERRA has *multiple* clocks with *different owners*. Research the currently
   operative rules before computing any deadline. In particular:
   - The servicemember's **application-for-reemployment window** — a deadline
@@ -113,7 +116,8 @@ not from this file.
     any required rest period before returning to work.
 - Do not conflate these. The number of days the employee has to apply is not
   the number of days the employer has to reinstate.
-- Cite 38 USC and the implementing DOL regulations. Verify currency.
+- Cite 38 U.S.C. and the implementing DOL regulations (US federal statute —
+  see [`countries/us/providers/citation-provider.us.md`](../../countries/us/providers/citation-provider.us.md) for the citation format). Verify currency.
 
 **ADA leave as accommodation:**
 - Research the current interactive-process standards for the applicable
