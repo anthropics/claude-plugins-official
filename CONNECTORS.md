@@ -45,6 +45,10 @@ Connectors shipped in the default `.mcp.json` of each plugin:
 
 See the `.mcp.json` in each plugin directory for the authoritative list.
 
+## Country-plugin-scoped connectors (pilot)
+
+Verticals migrated to the country-aware architecture (currently: `employment-legal`) no longer hardcode all of their country-specific connectors directly in the vertical's own `.mcp.json`. Instead, the concrete MCP bindings live in the active `countries/<code>/mcp/mcp-tool-registry.<code>.yaml`, resolved at runtime — see [`core/engine/registries/mcp-tool-registry.schema.yaml`](./core/engine/registries/mcp-tool-registry.schema.yaml). `countries/us` binds to CourtListener, Trellis, the Federal Register API, DocuSign, and iManage (all real, already-listed connectors above); `countries/tr` documents target public sources (Yargıtay Karar Arama, Resmi Gazete) that do not yet have a working MCP wrapper — see [`CONNECTORS.md` → "Wanted connectors"](#wanted-connectors) and [`countries/tr/mcp/mcp-tool-registry.tr.yaml`](./countries/tr/mcp/mcp-tool-registry.tr.yaml). If you're building a connector for a country covered by a `countries/<code>` package, add it there in addition to (or instead of) a specific vertical's `.mcp.json`.
+
 ## Wanted connectors
 
 These would make specific plugins significantly more useful. If you build or operate one, see "How to submit" above.

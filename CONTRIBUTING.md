@@ -80,3 +80,32 @@ Examples of this rule in practice:
   check the structural invariants the plugin loader depends on.
 - **Do not remove the shared guardrails from CLAUDE.md.** The net stays. The
   goal is a skill that doesn't need the net, not a plugin without one.
+
+## Country Plugin design principles (new, pilot)
+
+A small number of verticals (starting with `employment-legal`) now separate
+country-agnostic workflow shape from country-specific content, via `core/`
+and `countries/<code>/`. If you're touching a migrated vertical or building a
+new country plugin:
+
+- **Never hardcode a country's law into a Core Vertical's `SKILL.md`/`CLAUDE.md`.**
+  If you're about to write a statute number, a court name, or a citation
+  format directly into a migrated skill, that content belongs in
+  `countries/<code>/knowledge/<vertical>/` instead, resolved via the active
+  country's Legal Source Registry — see `core/README.md`.
+- **Preserve the embedded fallback.** A migrated skill's existing (usually
+  US) behavior must remain byte-for-byte reachable when no country plugin is
+  installed or active — this is the backward-compatibility contract every
+  migration commit in this repo's history has followed. Don't delete it to
+  "clean up" the file.
+- **Declare capability honestly.** A new `countries/<code>/capabilities.yaml`
+  must mark a Provider method `not_supported` rather than silently omitting
+  it, and `not_applicable` (not a forced `partial`) when a vertical's core
+  concept has no equivalent in that country's legal family (see
+  `core/shared/guardrail-fragments/jurisdiction-recognition.md`).
+- **Run `scripts/lint-country-plugin.py`** before opening a PR that touches
+  `countries/` — it validates every country package against the `core/`
+  schemas and catches unresolved `[PLACEHOLDER]` markers.
+- **New country plugins need a counsel review** before being described as
+  production-ready in their own `README.md` — see the "Country Plugin Trust
+  Review" language in `countries/tr/README.md` for the pattern to follow.
