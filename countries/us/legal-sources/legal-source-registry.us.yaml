@@ -1,0 +1,97 @@
+country_code: "US"
+
+sources:
+  - source_id: us-code
+    name: "United States Code (U.S.C.)"
+    source_type: legislature
+    citation_format:
+      pattern_description: "Title U.S.C. §Section(Subsection) — ör. 29 U.S.C. §207(e)"
+      example: "29 U.S.C. §207(e)"
+    primary_url_pattern: "https://www.law.cornell.edu/uscode/text/{title}/{section}"
+    tier: free
+    notes: "employment-legal wage-hour-qa (FLSA, Title 29) ve worker-classification (IRS §530, Title 26) için birincil kaynak."
+
+  - source_id: cfr
+    name: "Code of Federal Regulations (C.F.R.)"
+    source_type: regulator
+    citation_format:
+      pattern_description: "Title C.F.R. §Section"
+      example: "29 C.F.R. §541.100"
+    primary_url_pattern: "https://www.ecfr.gov/current/title-{title}"
+    tier: free
+
+  - source_id: federal-register
+    name: "Federal Register"
+    source_type: official_gazette
+    citation_format:
+      pattern_description: "Cilt Fed. Reg. Sayfa (Tarih)"
+      example: "89 Fed. Reg. 12345 (Mar. 1, 2026)"
+    primary_url_pattern: "https://www.federalregister.gov/documents/{year}/{month}/{day}/{docket}"
+    tier: free
+
+  - source_id: federal-courts
+    name: "Federal court opinions (District / Circuit / Supreme Court)"
+    source_type: court
+    hierarchy_level: "federal-district | federal-circuit | federal-supreme"
+    citation_format:
+      pattern_description: "Case Name, Volume Reporter Page (Court Year)"
+      example: "Smith v. Jones, 123 F.3d 456 (9th Cir. 2025)"
+    tier: free
+    notes: "PACER dosyalama verisi CourtListener MCP bağlaması üzerinden erişilir — bkz. mcp/mcp-tool-registry.us.yaml."
+
+  - source_id: dol
+    name: "U.S. Department of Labor (Wage and Hour Division)"
+    source_type: regulator
+    citation_format:
+      pattern_description: "DOL Opinion Letter / Fact Sheet numarasıyla atıf"
+      example: "DOL Fact Sheet #23"
+    primary_url_pattern: "https://www.dol.gov/agencies/whd"
+    tier: free
+    notes: "FLSA aşırı mesai (§207(e)) ve FMLA (izin) yorumlarının birincil idari kaynağı — employment-legal/knowledge/overtime-framework.md ve leave-types.md bu kaynağa dayanır."
+
+  - source_id: eeoc
+    name: "Equal Employment Opportunity Commission (EEOC)"
+    source_type: regulator
+    citation_format:
+      pattern_description: "EEOC Guidance/Enforcement Guidance belge numarasıyla atıf"
+      example: "EEOC Enforcement Guidance on Harassment (2024)"
+    tier: free
+
+  - source_id: nlrb
+    name: "National Labor Relations Board (NLRB)"
+    source_type: regulator
+    citation_format:
+      pattern_description: "NLRB karar numarasıyla atıf"
+      example: "NLRB Case No. 12-CA-123456"
+    tier: free
+
+  - source_id: irs
+    name: "Internal Revenue Service (IRS)"
+    source_type: regulator
+    citation_format:
+      pattern_description: "26 U.S.C. § veya IRS Revenue Ruling numarasıyla"
+      example: "IRS §530 relief"
+    tier: free
+    notes: "worker-classification-remediation extension point'i için — IRS §530 rahatlatma analizi."
+
+  - source_id: state-labor-agencies
+    name: "State labor/employment agencies (varies by state, e.g. CA DIR, NY DOL)"
+    source_type: regulator
+    citation_format:
+      pattern_description: "Eyalete göre değişir — ör. Cal. Lab. Code § veya NY Lab. Law §"
+      example: "Cal. Lab. Code §2775"
+    tier: free
+    notes: >
+      50 eyaletin her birinin kendi ajansı var; bu tek bir source_id
+      altında genellenmiştir. Eyalete-özgü ayrım gerektiğinde
+      (worker-classification'ın CA-özel ABC testi gibi) knowledge pack
+      seviyesinde ele alınır, Legal Source Registry seviyesinde değil.
+
+  - source_id: uspto
+    name: "United States Patent and Trademark Office (USPTO)"
+    source_type: ip_office
+    citation_format:
+      pattern_description: "Başvuru/Sicil numarasıyla atıf"
+      example: "U.S. Trademark Reg. No. 1,234,567"
+    tier: free
+    notes: "employment-legal kapsamında değil (ip-legal kapsamı) — burada tam ülke kataloğunun parçası olarak yer alır."
