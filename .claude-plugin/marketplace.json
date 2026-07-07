@@ -605,7 +605,7 @@
         "url": "https://github.com/carta/plugins.git",
         "path": "plugins/carta-investors",
         "ref": "main",
-        "sha": "27e98f1acdcbfa66337b6646098e3a547b60423b"
+        "sha": "16a615b291cd5f52c45c956dc37a4e969f5ffdce"
       },
       "homepage": "https://carta.com"
     },
