@@ -129,6 +129,8 @@ For Managed Agent deployment — `agent.yaml`, leaf-worker subagents, steering-e
 
 ## Repository Layout
 
+> **New: country-aware architecture (in progress).** Some verticals (starting with `employment-legal`) now resolve their US-specific content (citation formats, statutory frameworks, connectors) through a country-agnostic core plus an installable `countries/<code>` package, instead of having it hardcoded. **This is fully backward compatible** — if you don't install a country plugin, the vertical behaves exactly as it always has (US content, embedded as the default fallback). See `core/README.md` and `countries/README.md` for the architecture, and install `countries/tr` alongside `employment-legal` to see it in action. Most verticals have not been migrated yet; this is a pilot.
+
 ```
 commercial-legal/         # in-house commercial — vendor/NDA/SaaS review, renewals, escalations
 corporate-legal/          # M&A diligence, closing checklists, board consents, entity compliance
@@ -150,7 +152,11 @@ managed-agent-cookbooks/  # Claude Managed Agent cookbooks — one dir per sched
   launch-radar/
   reg-monitor/
   renewal-watcher/
-scripts/                  # deploy-managed-agent.sh · validate.py · orchestrate.py · lint-tool-scope.py · test-cookbooks.sh
+core/                     # country-agnostic engine: Provider interfaces, Registry schemas,
+                          # Plugin Loader protocol, canonical guardrail fragments (see core/README.md)
+countries/                # installable country plugins — countries/us (reference), countries/tr
+                          # (first new-market pilot); see countries/README.md
+scripts/                  # deploy-managed-agent.sh · validate.py · orchestrate.py · lint-tool-scope.py · test-cookbooks.sh · lint-country-plugin.py
 .claude-plugin/
   marketplace.json        # plugin registry
 ```
@@ -189,6 +195,12 @@ After install, skills fire automatically when relevant, slash commands are avail
 /plugin install commercial-legal@claude-for-legal
 /plugin install privacy-legal@claude-for-legal
 /plugin install corporate-legal@claude-for-legal
+
+# Optional — install a country plugin alongside a migrated vertical
+# (currently: employment-legal) to get localized content instead of the
+# US default. Not required; skip this if you're a US-based team.
+/plugin install countries-tr@claude-for-legal
+/plugin install employment-legal@claude-for-legal
 
 # Restart Claude Code, then run setup for each plugin you installed.
 # This writes your practice profile to ~/.claude/plugins/config/claude-for-legal/<plugin>/CLAUDE.md

@@ -66,6 +66,8 @@ Each plugin learns your playbook through a setup interview, writes it to a pract
 
 12 practice-area plugins, 5 managed-agent cookbooks, 16+ connectors. The full reference is in [README.md](README.md).
 
+**Outside the US?** A pilot country-aware architecture is in progress — `employment-legal` can now be paired with an installable `countries/<code>` plugin (starting with `countries/tr`) for localized content instead of US defaults. This is optional and additive; if you skip it, everything works exactly as before. See [`core/README.md`](core/README.md) and [`countries/README.md`](countries/README.md).
+
 ## Stuck?
 
 - **"Command not found"** after install → you forgot step 4. Restart Claude Code.
