@@ -1,0 +1,32 @@
+country_code: "TR"
+
+bindings:
+  - capability_id: case-law-search
+    tier: free
+    mcp_server:
+      name: "Yargitay Karar Arama"
+      url: "https://karararama.yargitay.gov.tr/"
+      transport: http
+    auth_type: none
+    coverage_notes: "Yargıtay daire kararlarında tam metin arama. Resmî, kamuya açık. NOT: Bu depoda gerçek bir MCP sunucu implementasyonu değil, hedeflenen kamu kaynağının URL'i belgelenmiştir — bir MCP wrapper'ın inşa edilmesi gerekir (bkz. CONNECTORS.md 'wanted connectors')."
+    degrades_gracefully: false
+
+  - capability_id: regulatory-feed
+    tier: free
+    mcp_server:
+      name: "Resmi Gazete"
+      url: "https://www.resmigazete.gov.tr/"
+      transport: http
+    auth_type: none
+    coverage_notes: "Günlük resmi yayın — kanun, yönetmelik, tebliğ, KHK. NOT: Federal Register API'nin sahip olduğu yapılandırılmış JSON API'nin TR karşılığı henüz mevcut değil — bkz. CONNECTORS.md'nin 'Regulatory primary sources' istek listesi kalemi."
+    degrades_gracefully: false
+
+  - capability_id: case-law-search
+    tier: paid
+    mcp_server:
+      name: "Lexpera"
+      url: "https://www.lexpera.com.tr/"
+      transport: http
+    auth_type: oauth
+    coverage_notes: "Kapsamlı içtihat ve doktrin veritabanı. Abonelik gerektirir. NOT: MCP entegrasyonu bu commit itibarıyla mevcut değil — placeholder bağlama."
+    degrades_gracefully: false
