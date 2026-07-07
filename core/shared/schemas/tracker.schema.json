@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "core/shared/schemas/tracker.schema.json",
+  "title": "Tracker (izleyici/register) veri şeması",
+  "description": "Ülke bağımsız. compliance-tracker.yaml, renewal register, gaps tracker, leave register gibi bugün her vertical'ın kendi ad-hoc YAML şeklini kullandığı 'takip listesi' yapılarının ortak iskeleti. Vertical'lar bu şemayı genişletir (additionalProperties: true), daraltmaz.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["tracker_type", "items"],
+  "properties": {
+    "tracker_type": {
+      "type": "string",
+      "description": "Vertical'a özgü tür (ör. 'entity-compliance', 'renewal', 'leave', 'reg-gap')."
+    },
+    "country_code": {
+      "type": "string",
+      "pattern": "^[A-Z]{2}$",
+      "description": "Bu tracker'ın hangi ülkenin takvim/kural varsayımlarıyla hesaplandığı — bir tracker asla ülke belirtmeden tarih hesaplamamalıdır."
+    },
+    "last_updated": { "type": "string", "format": "date-time" },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["item_id", "status"],
+        "properties": {
+          "item_id": { "type": "string" },
+          "status": { "type": "string" },
+          "due_date": { "type": "string", "format": "date" },
+          "severity": {
+            "type": "string",
+            "enum": ["blocking", "high", "medium", "low"],
+            "description": "Kanonik ölçek — bkz. cross-skill-severity-floor guardrail fragment."
+          },
+          "source_tag": {
+            "type": "string",
+            "description": "Bu öğenin nereden geldiği (ör. '[user provided]', '[Yargıtay]') — provenance sözlüğüne uygun olmalı."
+          }
+        }
+      }
+    }
+  }
+}

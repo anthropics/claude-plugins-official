@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "core/shared/schemas/matter.schema.json",
+  "title": "Matter (mesele/dosya) veri şeması",
+  "description": "Ülke bağımsız. Bugün litigation-legal, corporate-legal, commercial-legal, ip-legal gibi vertical'ların matters/<matter-slug>/matter.md dosyalarında serbest metin olarak taşıdığı yapının biçimsel karşılığı. Bir vertical bu şemayı extension-points.yaml üzerinden 'matter-workspace' capability'sinin veri şekli olarak referans verir.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["matter_slug", "matter_type", "opened_at", "status"],
+  "properties": {
+    "matter_slug": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+    "matter_type": {
+      "type": "string",
+      "description": "Vertical'a özgü bir tür (ör. 'litigation', 'diligence', 'contract-review'). Core bu değeri sabitlemez."
+    },
+    "opened_at": { "type": "string", "format": "date" },
+    "status": { "type": "string", "enum": ["open", "on-hold", "closed"] },
+    "jurisdiction": {
+      "type": "string",
+      "description": "Bu meseleye özgü yargı yetkisi — aktif ülkeden FARKLI olabilir (bkz. jurisdiction-recognition guardrail fragment)."
+    },
+    "side": { "type": "string", "description": "Vertical'a özgü taraf/rol bilgisi (ör. 'purchasing-side', 'plaintiff')." },
+    "cross_matter_context": { "type": "boolean", "default": false },
+    "history_ref": {
+      "type": "string",
+      "description": "Bu meseleye ait history.md dosyasının göreli yolu."
+    }
+  }
+}

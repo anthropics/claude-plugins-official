@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "core/shared/schemas/claim-chart.schema.json",
+  "title": "Claim / Element Chart veri şeması",
+  "description": "Ülke bağımsız. litigation-legal:claim-chart skill'inin ürettiği patent/civil element chart yapısının biçimsel karşılığı. 'Element kaynağı' (pattern jury instruction, Restatement, madde metni) alanı bilinçli olarak serbest bırakılmıştır çünkü bu kaynak ülkeye/hukuk ailesine göre kökten değişir (bkz. jurisdiction-recognition).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["chart_type", "target", "elements"],
+  "properties": {
+    "chart_type": { "type": "string", "enum": ["patent-infringement", "patent-invalidity", "patent-review", "civil-element"] },
+    "country_code": { "type": "string", "pattern": "^[A-Z]{2}$" },
+    "target": {
+      "type": "string",
+      "description": "İncelenen ürün / önceki teknik / dava iddiası / incelenen chart."
+    },
+    "element_source": {
+      "type": "string",
+      "description": "Elementlerin kaynağı — ülkeye göre değişir: ABD'de 'pattern jury instruction (CACI/NYPJI)', TR'de 'ilgili kanun maddesi / Yargıtay içtihadı ile oluşturulan unsur listesi' gibi. Bu alan asla sabit bir ülkeye özgü değerle önceden doldurulamaz."
+    },
+    "elements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["element_id", "element_text", "mapping", "citation"],
+        "properties": {
+          "element_id": { "type": "string" },
+          "element_text": { "type": "string" },
+          "mapping": { "type": "string", "description": "Bu unsurun hedefte nasıl karşılandığı/karşılanmadığı." },
+          "citation": { "type": "string", "description": "Pin-cited kaynak — Citation Provider tarafından biçimlendirilmiş olmalı." },
+          "gap_flag": { "type": "boolean", "default": false }
+        }
+      }
+    },
+    "gap_list": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Öncelikli çıktı — bkz. reponun mevcut 'gap detection is the priority output' ilkesi."
+    }
+  }
+}
