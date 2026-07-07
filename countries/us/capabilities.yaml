@@ -1,0 +1,29 @@
+country_code: "US"
+
+provider_versions:
+  citation_provider: "@2026-07"
+  search_provider: "@2026-07"
+  document_provider: "@2026-07"
+
+verticals:
+  employment-legal:
+    citation_provider:
+      formatStatuteCitation: full
+      formatCaseCitation: full
+      getProvenanceTagVocabulary: full
+      getHighRiskPinpointPatterns: full
+      classifyCitationRisk: full
+    search_provider:
+      search: full
+      preflightCheck: full
+      getSourceCatalog: full
+    document_provider:
+      getDocumentStatus: partial
+      getSignatureStatus: full
+      getFilingStatus: not_supported
+      getIrreversibilityFlags: full
+    notes: >
+      getFilingStatus not_supported for employment-legal: this vertical does
+      not today integrate with a court e-filing system (that is
+      litigation-legal's concern). getDocumentStatus is partial because DMS
+      metadata (iManage-style) is not wired for employment-legal specifically.

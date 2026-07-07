@@ -1,0 +1,57 @@
+country_code: "US"
+country_name: "United States"
+
+languages:
+  - "en-US"
+
+legal_family: common_law
+
+date_format: "MM/DD/YYYY"
+currency: "USD"
+
+business_calendar:
+  weekend_days: [0, 6]
+  holiday_source: "federal-reserve-holidays"
+
+entity_types:
+  - type_id: de-c-corp
+    label: "Delaware C-Corporation"
+  - type_id: de-llc
+    label: "Delaware LLC"
+  - type_id: de-lp
+    label: "Delaware Limited Partnership"
+  - type_id: s-corp
+    label: "S-Corporation (tax election)"
+
+court_hierarchy:
+  - level_id: federal-district
+    label: "U.S. District Court"
+  - level_id: federal-circuit
+    label: "U.S. Court of Appeals (Circuit)"
+  - level_id: federal-supreme
+    label: "Supreme Court of the United States"
+  - level_id: state-trial
+    label: "State trial court (varies by state)"
+  - level_id: state-appellate
+    label: "State appellate court (varies by state)"
+
+professional_regulator:
+  name: "State Bar (varies by state — e.g. State Bar of California, New York State Bar Association)"
+  referral_mechanism: "State bar lawyer referral service"
+
+privilege_doctrine:
+  exists: true
+  name: "Attorney work product"
+  statutory_basis: "FRCP 26(b)(3)"
+
+data_protection_authority:
+  name: "No single federal DPA — sectoral enforcement (FTC for consumer protection; state AGs and dedicated agencies for state privacy laws, e.g. CPPA for California)"
+  framework: "Sectoral (FTC Act §5, state comprehensive privacy laws e.g. CCPA/CPRA)"
+
+default_providers:
+  citation_provider: "providers/citation-provider.us.md"
+  search_provider: "providers/search-provider.us.md"
+  document_provider: "providers/document-provider.us.md"
+
+coverage:
+  employment-legal: full
