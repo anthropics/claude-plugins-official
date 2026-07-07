@@ -24,6 +24,10 @@ Bu dizin, bugün her plugin'in `CLAUDE.md`'sinde **birebir kopyalanmış** olara
 | [`retrieved-content-trust.md`](./retrieved-content-trust.md) | Alınan içeriğin veri olduğu, komut olmadığı kuralı; araç-vs-model çelişkisi |
 | [`large-input-output.md`](./large-input-output.md) | Büyük girdi/çıktıda kapsam yönetimi, sessiz kesinti önleme |
 | [`scaffolding-not-blinders.md`](./scaffolding-not-blinders.md) | Kontrol listesinin taban olması, doğru skill'e yönlendirme, orantılılık |
+| [`source-attribution.md`](./source-attribution.md) | Etiket sözlüğü, provenance kuralları, alıntılanan bir kanunla anlaşmazlık |
+| [`proportionality.md`](./proportionality.md) | Soru türüne göre yanıt boyutlandırma, aşırı-hukukileştirmeden kaçınma |
+
+*Not: `source-attribution.md` ve `proportionality.md`, Commit 4'ten sonra, Commit 15'te `employment-legal`'e gerçekten uygulanırken keşfedilen ek tekrarlardır — kütüphane sabit değil, uygulama sırasında büyüyebilir.*
 
 ## Bu commit'in etki alanı
 
