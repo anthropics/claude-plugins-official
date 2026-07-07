@@ -63,9 +63,9 @@ State the rule in one paragraph, tied to the cite. Use your tools (web search,
 legal research integrations, team reference materials) to verify currency —
 especially for:
 
-> **No silent supplement.** If a research query to the configured legal research tool (Westlaw, CourtListener, or firm platform) returns few or no results for the jurisdiction-and-question, report what was found and stop. Do NOT fill the gap from web search or model knowledge without asking. Say: "The search returned [N] results from [tool]. Coverage appears thin for [jurisdiction / question]. Options: (1) broaden the search query, (2) try a different research tool, (3) search the web — results will be tagged `[web search — verify]` and should be checked against a primary source before relying, or (4) flag the question as unverified and stop here. Which would you like?" A lawyer decides whether to accept lower-confidence sources.
+> **No silent supplement.** If a query to the active country's Search Provider (see [`core/engine/providers/search-provider.interface.md`](../../../core/engine/providers/search-provider.interface.md) — concretely: CourtListener/Trellis/Westlaw when the active country is US, per [`countries/us/providers/search-provider.us.md`](../../../countries/us/providers/search-provider.us.md)) returns few or no results for the jurisdiction-and-question, report what was found and stop. Do NOT fill the gap from web search or model knowledge without asking. Say: "The search returned [N] results from [tool]. Coverage appears thin for [jurisdiction / question]. Options: (1) broaden the search query, (2) try a different research tool, (3) search the web — results will be tagged `[web search — verify]` and should be checked against a primary source before relying, or (4) flag the question as unverified and stop here. Which would you like?" A lawyer decides whether to accept lower-confidence sources.
 >
-> **Source attribution.** Tag every citation in the answer with where it came from: `[Westlaw]`, `[CourtListener]`, or the MCP tool name for citations retrieved from a legal research connector; `[web search — verify]` for web-search citations; `[model knowledge — verify]` for citations recalled from training data; `[user provided]` for citations the user supplied. Citations tagged `verify` carry higher fabrication risk and should be checked first. Never strip or collapse the tags.
+> **Source attribution.** Tag every citation in the answer with where it came from — use the active country's provenance tag vocabulary (see [`core/shared/guardrail-fragments/source-attribution.md`](../../../core/shared/guardrail-fragments/source-attribution.md); for US: `[CourtListener]`, `[Trellis]`, `[Westlaw]`) for citations retrieved from a legal research connector; `[web search — verify]` for web-search citations; `[model knowledge — verify]` for citations recalled from training data; `[user provided]` for citations the user supplied. Citations tagged `verify` carry higher fabrication risk and should be checked first. Never strip or collapse the tags.
 
 
 - Salary thresholds for any exemption (federal and state — several states
@@ -99,12 +99,23 @@ to research:
 - "Can we classify this person as a contractor?" — Route to
   `/employment-legal:worker-classification` if the facts are not already clear.
 
-### Step 2a: FLSA regular-rate and back-pay calculations
+### Step 2a: Overtime/regular-rate and back-pay calculations
 
 When the question is a back-pay computation, unpaid-OT computation, or any
-question that turns on the FLSA "regular rate," use this scaffold. Do not
-answer from bare hourly wage × OT hours; that's the two most common errors
-this skill exists to catch.
+question that turns on an overtime "regular rate" concept, use this scaffold.
+Do not answer from bare hourly wage × OT hours; that's the two most common
+errors this skill exists to catch.
+
+**Resolve the framework from the active country first.** Load the
+Legal Source Registry `overtime-framework` topic for the active country
+(see [`employment-legal/extension-points.yaml`](../../extension-points.yaml)
+→ `legal_source_registry_topics` → `overtime-framework`). If no country is
+active, or the active country is US, use the embedded US default below
+(kept byte-for-byte identical to this skill's pre-parametrization behavior —
+mirrored at [`countries/us/knowledge/employment-legal/overtime-framework.md`](../../../countries/us/knowledge/employment-legal/overtime-framework.md)).
+
+<details>
+<summary>US default overtime scaffold (FLSA) — used when active country is US or unresolved</summary>
 
 **The regular rate is NOT just the hourly wage.** Under 29 U.S.C. §207(e),
 the regular rate is **all remuneration** for employment EXCEPT the eight
@@ -153,15 +164,23 @@ Anything NOT within those eight exclusions is IN.
    and flag where state law compounds (higher cap) or replaces (different
    rate) federal. California, New York, Massachusetts, and Washington are
    the most frequent overlay hits.
-7. **Attach the verify tag to the number.** Any back-pay amount produced by
+
+</details>
+
+**Rules that apply regardless of which country's framework is used:**
+
+1. **Attach the verify tag to the number.** Any back-pay amount produced by
    this skill carries `[verify — consult wage-and-hour counsel before
    asserting or paying]` on the line the number appears. The computation is
    specialist work; the skill is scaffolding, not opinion.
+2. **Cite using the active country's Citation Provider format** (see
+   [`core/engine/providers/citation-provider.interface.md`](../../../core/engine/providers/citation-provider.interface.md)).
 
-If the question is a back-pay calculation and any of these inputs are
-missing (bonus breakdown, whether straight time was paid for OT hours,
-willfulness posture, state jurisdiction), **ask before computing**. A
-confident wrong number is the worst output this skill can produce.
+If the question is a back-pay calculation and any of the framework's required
+inputs are missing (bonus breakdown, whether straight time was paid for OT
+hours, willfulness/lookback posture, state/regional jurisdiction), **ask
+before computing**. A confident wrong number is the worst output this skill
+can produce.
 
 ### Step 3: The flag
 
@@ -182,7 +201,7 @@ Is this a close call? Be honest.
 
 Conversational. This is a Q&A, not a memo.
 
-> **Research-connector pre-flight.** Before emitting the answer, check whether a legal research connector is reachable for this session — Westlaw, CourtListener, or any firm-configured research MCP. Collect this into the reviewer note per CLAUDE.md `## Outputs`: if no connector returns results in Step 2 (or none is configured at run time), record it in the **Sources:** line of the reviewer note — e.g., `not connected — cites from training knowledge; pinpoint cites (volume/page/subsection) carry the highest fabrication risk, spot-check those first`. Per-citation `[model knowledge — verify]` tags remain inline. Do not emit a standalone banner above the output.
+> **Research-connector pre-flight.** Before emitting the answer, call the active country's Search Provider `preflightCheck()` (see [`core/engine/providers/search-provider.interface.md`](../../../core/engine/providers/search-provider.interface.md); for US this resolves to CourtListener/Trellis/Westlaw per [`countries/us/providers/search-provider.us.md`](../../../countries/us/providers/search-provider.us.md)) to confirm a connector is actually reachable for this session. Collect this into the reviewer note per CLAUDE.md `## Outputs`: if no connector returns results in Step 2 (or none is configured at run time), record it in the **Sources:** line of the reviewer note — e.g., `not connected — cites from training knowledge; pinpoint cites (volume/page/subsection) carry the highest fabrication risk, spot-check those first`. Per-citation `[model knowledge — verify]` tags remain inline. Do not emit a standalone banner above the output.
 
 > **Jurisdiction assumption.** Answers apply only to the jurisdiction identified. Wage-hour rules, exemption thresholds, and final-pay timing vary materially by state and country, and many rules index or change year over year. If the employee works in another jurisdiction, or the question is answered for the default-footprint state, this answer may not apply as written.
 
@@ -196,7 +215,7 @@ and currency note.]
 and whether the differences are material.]
 ```
 
-> **Verify citations.** Any case, statute, regulation, or wage-order cite above was generated with AI assistance. Before relying on a cite, check it against Westlaw, CourtListener, the relevant state agency's site, or your firm's research tool for accuracy, currency, and subsequent history. Fabricated or misquoted citations in filings or formal advice have resulted in sanctions.
+> **Verify citations.** Any case, statute, regulation, or wage-order cite above was generated with AI assistance. Before relying on a cite, check it against the active country's Search Provider sources (for US: Westlaw, CourtListener, the relevant state agency's site), or your firm's research tool for accuracy, currency, and subsequent history. Fabricated or misquoted citations in filings or formal advice have resulted in sanctions.
 
 ## Close with the next-steps decision tree
 
