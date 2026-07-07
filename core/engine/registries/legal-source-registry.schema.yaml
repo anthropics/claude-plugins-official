@@ -1,0 +1,60 @@
+# legal-source-registry.schema.yaml
+#
+# Her ülke plugin'inin hukuki otorite kataloğu dosyasının
+# (countries/<code>/legal-sources/legal-source-registry.<code>.yaml)
+# uyması gereken şema. Saf referans VERİSİDİR — davranış içermez.
+#
+# Citation Provider (atıf formatı) ve Search Provider (nereye sorulacağı)
+# implementasyonları bu kataloğu okur.
+
+$schema: "https://json-schema.org/draft/2020-12/schema"
+$id: "core/engine/registries/legal-source-registry.schema.yaml"
+title: "Legal Source Registry (ülke-bağlamalı)"
+type: object
+additionalProperties: false
+required:
+  - country_code
+  - sources
+
+properties:
+  country_code:
+    type: string
+    pattern: "^[A-Z]{2}$"
+
+  sources:
+    type: array
+    items:
+      type: object
+      additionalProperties: false
+      required: [source_id, name, source_type, citation_format]
+      properties:
+        source_id:
+          type: string
+          description: "Provenance etiketlerinde kullanılacak kimlik (ör. 'yargitay', 'resmi-gazete')."
+        name:
+          type: string
+          description: "Okunabilir kurum/otorite adı."
+        source_type:
+          type: string
+          enum: [legislature, court, regulator, official_gazette, ip_office, data_protection_authority, other]
+        hierarchy_level:
+          type: string
+          description: "Bu otoritenin mahkeme/idari hiyerarşideki konumu (varsa) — country-config.schema.yaml → court_hierarchy ile tutarlı olmalı."
+        citation_format:
+          type: object
+          additionalProperties: false
+          required: [pattern_description]
+          properties:
+            pattern_description:
+              type: string
+              description: "Bu kaynaktan gelen bir atfın nasıl yazılacağının düz anlatımı."
+            example:
+              type: string
+        primary_url_pattern:
+          type: string
+          description: "Bu otoritenin birincil kaynak URL kalıbı (varsa)."
+        tier:
+          type: string
+          enum: [free, paid]
+        notes:
+          type: string

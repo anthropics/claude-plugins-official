@@ -1,0 +1,67 @@
+# mcp-tool-registry.schema.yaml
+#
+# Her ülke plugin'inin somut MCP bağlama dosyasının
+# (countries/<code>/mcp/mcp-tool-registry.<code>.yaml) uyması gereken şema.
+# Bu dosya bir bağlama listesi DEĞİLDİR — şemadır. Hiçbir somut sunucu adı
+# içermez.
+#
+# Tool Registry'deki soyut capability_id'leri somut MCP sunucularına eşler.
+
+$schema: "https://json-schema.org/draft/2020-12/schema"
+$id: "core/engine/registries/mcp-tool-registry.schema.yaml"
+title: "MCP Tool Registry (ülke-bağlamalı)"
+type: object
+additionalProperties: false
+required:
+  - country_code
+  - bindings
+
+properties:
+  country_code:
+    type: string
+    pattern: "^[A-Z]{2}$"
+
+  bindings:
+    type: array
+    description: "Her biri bir soyut capability_id'yi bir veya daha fazla somut MCP sunucusuna bağlar."
+    items:
+      type: object
+      additionalProperties: false
+      required: [capability_id, tier, mcp_server, auth_type]
+      properties:
+        capability_id:
+          type: string
+          description: "core/engine/registries/tool-registry.schema.md içinde tanımlı bir capability_id."
+        tier:
+          type: string
+          enum: [free, paid]
+        mcp_server:
+          type: object
+          additionalProperties: false
+          required: [name, url, transport]
+          properties:
+            name:
+              type: string
+            url:
+              type: string
+              format: uri
+            transport:
+              type: string
+              enum: [http, sse]
+        auth_type:
+          type: string
+          enum: [none, oauth, api_key]
+        tool_name:
+          type: string
+          description: "Bu sunucu üzerindeki spesifik tool/method adı (varsa)."
+        coverage_notes:
+          type: string
+          description: "Bu bağlamanın kapsam sınırları (ör. 'yalnızca bölge mahkemeleri, temyiz kapsam dışı')."
+        degrades_gracefully:
+          type: boolean
+          description: >
+            CONNECTORS.md'nin 'iyi bir legal MCP connector' kriterine göre:
+            bu sunucu yanıt vermediğinde temiz bir hata mı döner, yoksa
+            zaman aşımına mı düşer. false ise bu bağlama Search/Document
+            Provider'ın preflightCheck() metodunda düşük güven olarak
+            işaretlenmelidir.
