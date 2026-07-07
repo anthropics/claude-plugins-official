@@ -1,0 +1,16 @@
+# countries/_template/legal-sources/legal-source-registry.TEMPLATE.yaml
+#
+# Şema: core/engine/registries/legal-source-registry.schema.yaml
+
+country_code: "[PLACEHOLDER]"
+
+sources:
+  - source_id: "[PLACEHOLDER — ör. resmi-gazete]"
+    name: "[PLACEHOLDER]"
+    source_type: "official_gazette"
+    citation_format:
+      pattern_description: "[PLACEHOLDER]"
+      example: "[PLACEHOLDER]"
+    primary_url_pattern: "[PLACEHOLDER]"
+    tier: "free"
+    notes: "[PLACEHOLDER]"

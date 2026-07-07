@@ -1,0 +1,35 @@
+# countries/_template/capabilities.yaml
+#
+# Bu ülkenin, kurulu her Core Vertical'ın extension-points.yaml'ında talep
+# ettiği her Provider metodu için sağladığı destek seviyesinin beyanı.
+# Hiçbir metod sessizce atlanamaz — full / partial / not_supported'dan biri
+# EXPLICIT olarak yazılmalıdır.
+
+country_code: "[PLACEHOLDER]"
+
+# Anahtarlar core/ altındaki Provider arayüzlerinin versiyonlarıyla eşleşir.
+provider_versions:
+  citation_provider: "@2026-07"
+  search_provider: "@2026-07"
+  document_provider: "@2026-07"
+
+# Her vertical için, o vertical'ın extension-points.yaml'ında listelenen
+# her capability_id / provider metodu için bir giriş.
+verticals:
+  "[PLACEHOLDER — ör. employment-legal]":
+    citation_provider:
+      formatStatuteCitation: "[PLACEHOLDER — full|partial|not_supported]"
+      formatCaseCitation: "[PLACEHOLDER]"
+      getProvenanceTagVocabulary: "[PLACEHOLDER]"
+      getHighRiskPinpointPatterns: "[PLACEHOLDER]"
+      classifyCitationRisk: "[PLACEHOLDER]"
+    search_provider:
+      search: "[PLACEHOLDER]"
+      preflightCheck: "[PLACEHOLDER]"
+      getSourceCatalog: "[PLACEHOLDER]"
+    document_provider:
+      getDocumentStatus: "[PLACEHOLDER]"
+      getSignatureStatus: "[PLACEHOLDER]"
+      getFilingStatus: "[PLACEHOLDER]"
+      getIrreversibilityFlags: "[PLACEHOLDER]"
+    notes: "[PLACEHOLDER — partial/not_supported olan her metod için KISA gerekçe]"

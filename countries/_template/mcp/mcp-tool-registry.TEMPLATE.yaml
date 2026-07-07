@@ -1,0 +1,19 @@
+# countries/_template/mcp/mcp-tool-registry.TEMPLATE.yaml
+#
+# Şema: core/engine/registries/mcp-tool-registry.schema.yaml
+# Yeni ülke için: countries/<code>/mcp/mcp-tool-registry.<code>.yaml olarak
+# kopyala ve doldur.
+
+country_code: "[PLACEHOLDER]"
+
+bindings:
+  - capability_id: "[PLACEHOLDER — bkz. core/engine/registries/tool-registry.schema.md kataloğu]"
+    tier: "free"
+    mcp_server:
+      name: "[PLACEHOLDER]"
+      url: "[PLACEHOLDER — https://...]"
+      transport: "http"
+    auth_type: "oauth"
+    tool_name: "[PLACEHOLDER]"
+    coverage_notes: "[PLACEHOLDER]"
+    degrades_gracefully: true

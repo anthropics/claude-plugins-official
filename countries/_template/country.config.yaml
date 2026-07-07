@@ -1,0 +1,52 @@
+# countries/_template/country.config.yaml
+#
+# Yeni bir ülke eklerken bu dosyayı countries/<code>/country.config.yaml
+# olarak kopyala ve TÜM [PLACEHOLDER] alanlarını doldur. Şema:
+# core/engine/providers/country-config.schema.yaml
+
+country_code: "[PLACEHOLDER — ör. DE]"
+country_name: "[PLACEHOLDER — ör. Almanya]"
+
+languages:
+  - "[PLACEHOLDER — BCP-47, ör. de-DE]"
+
+legal_family: "[PLACEHOLDER — civil_law | common_law | mixed_civil_common | mixed_civil_religious]"
+
+date_format: "[PLACEHOLDER — ör. DD.MM.YYYY]"
+currency: "[PLACEHOLDER — ISO 4217, ör. EUR]"
+
+business_calendar:
+  weekend_days: []            # [PLACEHOLDER — 0=Pazar ... 6=Cumartesi]
+  holiday_source: "[PLACEHOLDER — legal-sources/ içindeki bir source_id]"
+
+entity_types:
+  - type_id: "[PLACEHOLDER]"
+    label: "[PLACEHOLDER]"
+
+court_hierarchy:
+  - level_id: "[PLACEHOLDER]"
+    label: "[PLACEHOLDER]"
+
+professional_regulator:
+  name: "[PLACEHOLDER — ör. Türkiye Barolar Birliği]"
+  referral_mechanism: "[PLACEHOLDER]"
+
+privilege_doctrine:
+  exists: false                # [PLACEHOLDER — doğruysa true yap ve name/statutory_basis doldur]
+  name: null
+  statutory_basis: null
+  fallback_header: "[PLACEHOLDER — ZORUNLU eğer exists:false — yanlış güvence vermeyen dürüst başlık]"
+
+data_protection_authority:
+  name: "[PLACEHOLDER]"
+  framework: "[PLACEHOLDER]"
+
+default_providers:
+  citation_provider: "providers/citation-provider.[code].md"
+  search_provider: "providers/search-provider.[code].md"
+  document_provider: "providers/document-provider.[code].md"
+
+# Her kurulu Core Vertical için: full | partial | not_applicable
+# not_applicable SADECE bilinçli bir kavramsal-karşılıksızlık kararıysa kullanılır
+# (bkz. jurisdiction-recognition guardrail fragment).
+coverage: {}
