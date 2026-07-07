@@ -122,6 +122,24 @@
       "author": {
         "name": "Thomson Reuters"
       }
+    },
+    {
+      "name": "countries-us",
+      "displayName": "Country Plugin — United States",
+      "source": "./countries/us",
+      "description": "United States country plugin for claude-for-legal — the retroactively-extracted package that reconstructs today's default US behavior for Core Verticals via the Provider/Registry system, starting with employment-legal. Reference implementation new country plugins are modeled on.",
+      "author": {
+        "name": "Anthropic"
+      }
+    },
+    {
+      "name": "countries-tr",
+      "displayName": "Country Plugin — Turkey",
+      "source": "./countries/tr",
+      "description": "Turkey country plugin for claude-for-legal — supplies Turkish Citation/Search/Document Provider bindings, Legal Source Registry, and localized knowledge packs so Core Verticals (starting with employment-legal) produce Turkey-specific output instead of US defaults. General-knowledge draft pending TR counsel review.",
+      "author": {
+        "name": "Community — TR pilot (unreviewed)"
+      }
     }
   ]
 }

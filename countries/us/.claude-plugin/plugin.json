@@ -1,0 +1,8 @@
+{
+  "name": "countries-us",
+  "version": "0.1.0",
+  "description": "United States country plugin for claude-for-legal — the retroactively-extracted package that reconstructs today's default (pre-country-architecture) US behavior for Core Verticals via the Provider/Registry system, starting with employment-legal (FLSA overtime, ABC worker-classification test, WARN Act, FMLA/CFRA/PFL/USERRA/ADA leave types). Serves as the reference implementation new country plugins are modeled on.",
+  "author": {
+    "name": "Anthropic"
+  }
+}

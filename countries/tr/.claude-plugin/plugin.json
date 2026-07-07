@@ -1,0 +1,8 @@
+{
+  "name": "countries-tr",
+  "version": "0.1.0",
+  "description": "Turkey country plugin for claude-for-legal — supplies Turkish Citation/Search/Document Provider bindings, Legal Source Registry (Resmi Gazete, Yargıtay, Mevzuat Bilgi Sistemi, ÇSGB, SGK, TBB), and localized knowledge packs so Core Verticals (starting with employment-legal) produce Turkey-specific output instead of US defaults. General-knowledge draft pending TR counsel review — see capabilities.yaml for honest full/partial/not_supported coverage.",
+  "author": {
+    "name": "Community — TR pilot (unreviewed)"
+  }
+}
