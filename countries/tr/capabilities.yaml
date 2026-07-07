@@ -1,0 +1,37 @@
+country_code: "TR"
+
+provider_versions:
+  citation_provider: "@2026-07"
+  search_provider: "@2026-07"
+  document_provider: "@2026-07"
+
+verticals:
+  employment-legal:
+    citation_provider:
+      formatStatuteCitation: full
+      formatCaseCitation: full
+      getProvenanceTagVocabulary: full
+      getHighRiskPinpointPatterns: full
+      classifyCitationRisk: full
+    search_provider:
+      search: partial
+      preflightCheck: partial
+      getSourceCatalog: full
+    document_provider:
+      getDocumentStatus: not_supported
+      getSignatureStatus: partial
+      getFilingStatus: partial
+      getIrreversibilityFlags: full
+    notes: >
+      search_provider.search/preflightCheck are 'partial', not 'full': the
+      MCP bindings in mcp/mcp-tool-registry.tr.yaml document target public
+      sources (Yargitay Karar Arama, Resmi Gazete) but no working MCP
+      wrapper exists yet for them (degrades_gracefully:false, see that
+      file's notes) -- unlike countries/us, which binds to real, already-
+      operational MCP servers. document_provider.getDocumentStatus is
+      not_supported (no DMS/CLM binding documented for TR yet);
+      getSignatureStatus/getFilingStatus are partial because e-imza/UYAP
+      bindings are documented but not wired to a working MCP server.
+      This entire package is a general-knowledge draft pending a TR
+      counsel review (Country Plugin Trust Review) before production use --
+      see every [verify] tag in knowledge/employment-legal/*.md.
