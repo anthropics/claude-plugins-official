@@ -1,0 +1,50 @@
+country_code: "TR"
+country_name: "Türkiye"
+
+languages:
+  - "tr-TR"
+
+legal_family: civil_law
+
+date_format: "DD.MM.YYYY"
+currency: "TRY"
+
+business_calendar:
+  weekend_days: [0, 6]
+  holiday_source: "resmi-tatiller"
+
+entity_types:
+  - type_id: anonim-sirket
+    label: "Anonim Şirket (A.Ş.)"
+  - type_id: limited-sirket
+    label: "Limited Şirket (Ltd. Şti.)"
+  - type_id: sahis-isletmesi
+    label: "Şahıs İşletmesi"
+
+court_hierarchy:
+  - level_id: is-mahkemesi
+    label: "İş Mahkemesi"
+  - level_id: bolge-adliye-mahkemesi
+    label: "Bölge Adliye Mahkemesi (İstinaf)"
+  - level_id: yargitay
+    label: "Yargıtay (Temyiz)"
+
+professional_regulator:
+  name: "Türkiye Barolar Birliği (TBB)"
+  referral_mechanism: "İl barolarının avukat yönlendirme/adli yardım servisi"
+
+privilege_doctrine:
+  exists: false
+  fallback_header: "GİZLİ VE MÜŞTEREK — İÇ HUKUKİ DEĞERLENDİRME — AVUKATLIK KANUNU M.36 KAPSAMINDA SIR SAKLAMA YÜKÜMLÜLÜĞÜNE TABİDİR"
+
+data_protection_authority:
+  name: "Kişisel Verileri Koruma Kurumu (KVKK)"
+  framework: "6698 sayılı Kişisel Verilerin Korunması Kanunu"
+
+default_providers:
+  citation_provider: "providers/citation-provider.tr.md"
+  search_provider: "providers/search-provider.tr.md"
+  document_provider: "providers/document-provider.tr.md"
+
+coverage:
+  employment-legal: full
