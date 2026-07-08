@@ -573,7 +573,7 @@
         "url": "https://github.com/carta/plugins.git",
         "path": "plugins/carta-cap-table",
         "ref": "main",
-        "sha": "218e403fd99af2d3e4932602e9b3731affbc9732"
+        "sha": "ce224404fdb0b262bb9574d1827b4a544f0237bb"
       },
       "homepage": "https://carta.com"
     },
@@ -605,7 +605,7 @@
         "url": "https://github.com/carta/plugins.git",
         "path": "plugins/carta-investors",
         "ref": "main",
-        "sha": "16a615b291cd5f52c45c956dc37a4e969f5ffdce"
+        "sha": "ce224404fdb0b262bb9574d1827b4a544f0237bb"
       },
       "homepage": "https://carta.com"
     },
@@ -957,7 +957,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/CrowdStrike/foundry-skills.git",
-        "sha": "2f0ce3524fa4eee769f7fdf173fe54b82450b6c0"
+        "sha": "da02d919df5079e78f6feb3bed1c4bfefd0e3a88"
       },
       "homepage": "https://github.com/CrowdStrike/foundry-skills"
     },
@@ -1051,7 +1051,7 @@
         "url": "https://github.com/awslabs/agent-plugins.git",
         "path": "plugins/databases-on-aws",
         "ref": "main",
-        "sha": "96a073a195491f2192c256ba66730b631ced03e1"
+        "sha": "aca4faec319d9a13e8c2bf43b61f3d48538cc116"
       },
       "homepage": "https://github.com/awslabs/agent-plugins"
     },
@@ -1556,7 +1556,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/heygen-com/hyperframes.git",
-        "sha": "2bd9bb6f69e59c2bb178f937ce8ead711bebc74c"
+        "sha": "c6408b620eb27878533a8cbd551b2ec51d9e687b"
       },
       "homepage": "https://hyperframes.heygen.com"
     },
@@ -2076,7 +2076,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/netlify/context-and-tools.git",
-        "sha": "fce2a2fd13fa32a9d6a9b603634c2c26cd95f2e5"
+        "sha": "dd1e780705c6d4e9bc938f316f34072d26ed5e59"
       },
       "homepage": "https://github.com/netlify/context-and-tools"
     },
@@ -2149,7 +2149,7 @@
         "url": "https://github.com/NVIDIA/skills.git",
         "path": "plugins/nvidia-skills",
         "ref": "main",
-        "sha": "1f01acfe1aece58ba95d124eafdfb5bb93523db6"
+        "sha": "edd5b9b9ad8e4c6ad19e838d94e598ad98fcee26"
       },
       "homepage": "https://github.com/NVIDIA/skills"
     },
@@ -2471,7 +2471,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/qdrant/skills.git",
-        "sha": "b12b75c01f567eb1f7a3e05a991641627c30998a"
+        "sha": "4f77cb1ada4917202b64d54b6b8a78bc0a387373"
       },
       "homepage": "https://skills.qdrant.tech"
     },
@@ -2945,7 +2945,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/slackapi/slack-mcp-plugin.git",
-        "sha": "e1d5c929a85273cea4fdf41c92db33f2e43c0cbd"
+        "sha": "c4caf79d5a11f4da273d6749048420e4f5b49424"
       },
       "homepage": "https://github.com/slackapi/slack-mcp-plugin/tree/main"
     },
@@ -2961,7 +2961,7 @@
         "url": "https://github.com/Snowflake-Labs/snowflake-ai-kit.git",
         "path": "plugins/cortex-code",
         "ref": "main",
-        "sha": "8150954bb8066a49c25f5ef2d08b3da0897921cb"
+        "sha": "90d4926120505fbe817b2daf6ff9c57b9709ea11"
       },
       "homepage": "https://docs.snowflake.com/en/user-guide/cortex-code"
     },
