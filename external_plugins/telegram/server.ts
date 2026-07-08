@@ -467,6 +467,11 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
             enum: ['text', 'markdownv2'],
             description: "Rendering mode. 'markdownv2' enables Telegram formatting (bold, italic, code, links). Caller must escape special chars per MarkdownV2 rules. Default: 'text' (plain, no escaping needed).",
           },
+          buttons: {
+            type: 'array',
+            items: { type: 'string' },
+            description: "Optional inline answer buttons rendered under the message (one per row). Each string is a button label. When the user taps one, its label is delivered back as a new inbound <channel> message from that chat. Use for yes/no or multiple-choice questions to save the user typing. Keep labels short.",
+          },
         },
         required: ['chat_id', 'text'],
       },
@@ -527,8 +532,23 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         const files = (args.files as string[] | undefined) ?? []
         const format = (args.format as string | undefined) ?? 'text'
         const parseMode = format === 'markdownv2' ? 'MarkdownV2' as const : undefined
+        const buttons = ((args.buttons as string[] | undefined) ?? [])
+          .filter(b => typeof b === 'string' && b.trim() !== '')
 
         assertAllowedChat(chat_id)
+
+        // Build an inline keyboard when answer-buttons are requested. The label
+        // set is held in-memory keyed by a short id; the callback carries only
+        // `btn:<id>:<index>` (well under Telegram's 64-byte callback_data cap).
+        let keyboard: InlineKeyboard | undefined
+        if (buttons.length) {
+          const id = randomBytes(4).toString('hex')
+          pendingButtons.set(id, buttons)
+          keyboard = new InlineKeyboard()
+          buttons.forEach((label, idx) => {
+            keyboard!.text(label, `btn:${id}:${idx}`).row()
+          })
+        }
 
         for (const f of files) {
           assertSendable(f)
@@ -551,9 +571,11 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
               reply_to != null &&
               replyMode !== 'off' &&
               (replyMode === 'all' || i === 0)
+            const isLast = i === chunks.length - 1
             const sent = await bot.api.sendMessage(chat_id, chunks[i], {
               ...(shouldReplyTo ? { reply_parameters: { message_id: reply_to } } : {}),
               ...(parseMode ? { parse_mode: parseMode } : {}),
+              ...(keyboard && isLast ? { reply_markup: keyboard } : {}),
             })
             sentIds.push(sent.message_id)
           }
@@ -725,11 +747,59 @@ bot.command('status', async ctx => {
   await ctx.reply(`Not paired. Send me a message to get a pairing code.`)
 })
 
-// Inline-button handler for permission requests. Callback data is
-// `perm:allow:<id>`, `perm:deny:<id>`, or `perm:more:<id>`.
+// Answer-button option sets from the reply tool, keyed by a short id.
+// In-memory only: ephemeral choices, safe to lose on restart.
+const pendingButtons = new Map<string, string[]>()
+
+// Inline-button handler. Handles two callback-data namespaces:
+//   `btn:<id>:<index>`            — answer buttons from the reply tool
+//   `perm:(allow|deny|more):<id>` — permission-request buttons
 // Security mirrors the text-reply path: allowFrom must contain the sender.
 bot.on('callback_query:data', async ctx => {
   const data = ctx.callbackQuery.data
+
+  // Answer-button tap: deliver the chosen label back as inbound chat.
+  const btnM = /^btn:([a-f0-9]{8}):(\d+)$/.exec(data)
+  if (btnM) {
+    const access = loadAccess()
+    if (!access.allowFrom.includes(String(ctx.from.id))) {
+      await ctx.answerCallbackQuery({ text: 'Not authorized.' }).catch(() => {})
+      return
+    }
+    const [, id, idxStr] = btnM
+    const label = pendingButtons.get(id)?.[Number(idxStr)]
+    if (label == null) {
+      await ctx.answerCallbackQuery({ text: 'This choice expired.' }).catch(() => {})
+      return
+    }
+    pendingButtons.delete(id)
+    await ctx.answerCallbackQuery({ text: label }).catch(() => {})
+    // Record the choice in the message and drop the buttons so it can't be
+    // tapped twice.
+    const msg = ctx.callbackQuery.message
+    if (msg && 'text' in msg && msg.text) {
+      await ctx.editMessageText(`${msg.text}\n\n\u{1F449} ${label}`).catch(() => {})
+    } else {
+      await ctx.editMessageReplyMarkup().catch(() => {})
+    }
+    mcp.notification({
+      method: 'notifications/claude/channel',
+      params: {
+        content: label,
+        meta: {
+          chat_id: String(ctx.chat!.id),
+          ...(msg?.message_id != null ? { message_id: String(msg.message_id) } : {}),
+          user: ctx.from.username ?? String(ctx.from.id),
+          user_id: String(ctx.from.id),
+          ts: new Date().toISOString(),
+        },
+      },
+    }).catch(err => {
+      process.stderr.write(`telegram channel: failed to deliver button choice: ${err}\n`)
+    })
+    return
+  }
+
   const m = /^perm:(allow|deny|more):([a-km-z]{5})$/.exec(data)
   if (!m) {
     await ctx.answerCallbackQuery().catch(() => {})
