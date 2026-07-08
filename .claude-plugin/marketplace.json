@@ -388,7 +388,7 @@
         "url": "https://github.com/awslabs/agent-plugins.git",
         "path": "plugins/aws-serverless",
         "ref": "main",
-        "sha": "8adddcc285b8c7f55a29f256fe657e8e870b350f"
+        "sha": "efe040ab66ed7eb4bccc0a94133181da5bc57567"
       },
       "homepage": "https://github.com/awslabs/agent-plugins"
     },
