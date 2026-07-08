@@ -32,3 +32,5 @@ jobs:
         run: python scripts/lint-country-plugin.py
       - name: Lint managed-agent-cookbook tool scope (existing check, unchanged)
         run: python scripts/lint-tool-scope.py
+      - name: Run the Plugin Engine end-to-end (discover/load/validate/register every plugin)
+        run: python -m core.engine.plugin_engine .
