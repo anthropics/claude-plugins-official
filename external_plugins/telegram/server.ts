@@ -464,8 +464,8 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
           },
           format: {
             type: 'string',
-            enum: ['text', 'markdownv2'],
-            description: "Rendering mode. 'markdownv2' enables Telegram formatting (bold, italic, code, links). Caller must escape special chars per MarkdownV2 rules. Default: 'text' (plain, no escaping needed).",
+            enum: ['text', 'markdownv2', 'rich'],
+            description: "Rendering mode. 'markdownv2' enables Telegram formatting (bold, italic, code, links); caller must escape special chars per MarkdownV2 rules. 'rich' enables document-grade rendering (real tables, headings, nested lists, quotes, inline images) from plain GFM markdown with no escaping, via Bot API 10.1 sendRichMessage — use it for summaries and comparisons with columns. Default: 'text' (plain).",
           },
         },
         required: ['chat_id', 'text'],
@@ -546,7 +546,26 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         const sentIds: number[] = []
 
         try {
-          for (let i = 0; i < chunks.length; i++) {
+          if (format === 'rich') {
+            // Document-grade message via sendRichMessage (Bot API 10.1). grammY
+            // has no typed binding for it yet, hence the raw call. Sent as a
+            // single message — the rich limit (32768 chars) far exceeds chunk
+            // sizes. On any API error (e.g. older Bot API server) we fall
+            // through to the plain-text path below so content is never lost.
+            try {
+              const sent = await (bot.api.raw as unknown as {
+                sendRichMessage: (p: Record<string, unknown>) => Promise<{ message_id: number }>
+              }).sendRichMessage({
+                chat_id,
+                rich_message: { markdown: text },
+                ...(reply_to != null && replyMode !== 'off' ? { reply_parameters: { message_id: reply_to } } : {}),
+              })
+              sentIds.push(sent.message_id)
+            } catch (err) {
+              process.stderr.write(`telegram channel: sendRichMessage failed, falling back to plain text: ${err}\n`)
+            }
+          }
+          if (sentIds.length === 0) for (let i = 0; i < chunks.length; i++) {
             const shouldReplyTo =
               reply_to != null &&
               replyMode !== 'off' &&
