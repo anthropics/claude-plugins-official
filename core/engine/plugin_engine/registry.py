@@ -142,21 +142,47 @@ class ToolRegistry:
 class ProviderBinding:
     provider_type: str  # "citation_provider" | "search_provider" | "document_provider"
     country_code: str
-    definition_path: Path
+    definition_path: Path | None = None
+    instance: object | None = None
 
 
 @dataclass
 class ProviderRegistry:
     """Registry mapping (provider_type, country_code) -> the concrete
-    Provider implementation definition file for that country."""
+    Provider implementation for that country.
+
+    A binding starts life with just `definition_path` (the markdown spec
+    a country plugin ships, e.g. countries/tr/providers/citation-provider.tr.md,
+    registered by the engine's Loader). A country's *code* package (e.g.
+    plugins/turkey/) can later attach the real, executable object via
+    `attach_instance()` without re-registering the whole binding -- this
+    lets the markdown-driven and code-driven halves of a country plugin
+    evolve independently while sharing one source of truth for "what
+    provides X for country Y"."""
 
     _bindings: dict[tuple[str, str], ProviderBinding] = field(default_factory=dict)
 
-    def register(self, provider_type: str, country_code: str, definition_path: Path) -> None:
+    def register(
+        self,
+        provider_type: str,
+        country_code: str,
+        definition_path: Path | None = None,
+        instance: object | None = None,
+    ) -> None:
         key = (provider_type, country_code)
         if key in self._bindings:
             raise RegistrationError(f"duplicate provider binding: {provider_type}/{country_code}")
-        self._bindings[key] = ProviderBinding(provider_type, country_code, definition_path)
+        self._bindings[key] = ProviderBinding(provider_type, country_code, definition_path, instance)
+
+    def attach_instance(self, provider_type: str, country_code: str, instance: object) -> None:
+        """Attach a concrete, executable Provider implementation to an
+        already-registered binding. Raises RegistrationError if no binding
+        exists yet -- attach, unlike register, never creates a new entry."""
+        key = (provider_type, country_code)
+        existing = self._bindings.get(key)
+        if existing is None:
+            raise RegistrationError(f"no binding registered for {provider_type}/{country_code} yet")
+        existing.instance = instance
 
     def resolve(self, provider_type: str, country_code: str) -> ProviderBinding | None:
         return self._bindings.get((provider_type, country_code))
