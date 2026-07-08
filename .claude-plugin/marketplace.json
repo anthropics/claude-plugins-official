@@ -1971,7 +1971,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/mergifyio/mergify-cli.git",
-        "sha": "204649e633454e4f197e06bb71f5b6000b62fde5"
+        "sha": "4fbe3e7413878a51335007bf138bf6212e0fe438"
       },
       "homepage": "https://mergify.com"
     },
