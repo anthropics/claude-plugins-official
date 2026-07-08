@@ -1,0 +1,72 @@
+# extension-points.schema.yaml
+#
+# Her Core Vertical'ın (employment-legal/extension-points.yaml gibi) uyması
+# gereken şema. Bir vertical'ın hangi Provider metodlarına, Legal Source
+# Registry konularına ve Tool Registry yeteneklerine ihtiyaç duyduğunu
+# beyan eder. Şema bir vertical adı ya da ülke adı içermez — tamamen
+# ülke/vertical bağımsızdır.
+
+$schema: "https://json-schema.org/draft/2020-12/schema"
+$id: "core/engine/registries/extension-points.schema.yaml"
+title: "Core Vertical Extension Points"
+type: object
+additionalProperties: false
+required: [vertical, extension_points_version, providers]
+
+properties:
+  vertical:
+    type: string
+    description: "Bu manifestonun ait olduğu Core Vertical'ın dizin adı."
+
+  extension_points_version:
+    type: string
+    pattern: "^@\\d{4}-\\d{2}$"
+
+  providers:
+    type: object
+    additionalProperties: false
+    properties:
+      citation_provider: { "$ref": "#/$defs/providerSpec" }
+      search_provider: { "$ref": "#/$defs/providerSpec" }
+      document_provider: { "$ref": "#/$defs/providerSpec" }
+
+  legal_source_registry_topics:
+    type: array
+    items:
+      type: object
+      additionalProperties: false
+      required: [topic_id, required]
+      properties:
+        topic_id: { type: string }
+        required: { type: boolean }
+        used_by_skills:
+          type: array
+          items: { type: string }
+        description: { type: string }
+
+  tool_capabilities:
+    type: array
+    items:
+      type: object
+      additionalProperties: false
+      required: [capability_id, required]
+      properties:
+        capability_id: { type: string }
+        required: { type: boolean }
+        notes: { type: string }
+
+  guardrail_fragments_used:
+    type: array
+    items: { type: string }
+
+$defs:
+  providerSpec:
+    type: object
+    additionalProperties: false
+    required: [required]
+    properties:
+      required: { type: boolean }
+      methods_used:
+        type: array
+        items: { type: string }
+      notes: { type: string }

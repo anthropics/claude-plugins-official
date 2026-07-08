@@ -1,0 +1,44 @@
+# capabilities.schema.yaml
+#
+# Her ülke plugin'inin (countries/<code>/capabilities.yaml) uyması gereken
+# şema. Hangi vertical'lar için hangi Provider metodlarının ne düzeyde
+# (full/partial/not_supported) desteklendiğinin beyanıdır. Şema hiçbir
+# ülke kodu veya vertical adı sabitlemez.
+
+$schema: "https://json-schema.org/draft/2020-12/schema"
+$id: "core/engine/registries/capabilities.schema.yaml"
+title: "Country Plugin Capabilities"
+type: object
+additionalProperties: false
+required: [country_code, provider_versions, verticals]
+
+properties:
+  country_code:
+    type: string
+    pattern: "^[A-Z]{2}$"
+
+  provider_versions:
+    type: object
+    additionalProperties:
+      type: string
+      pattern: "^@\\d{4}-\\d{2}$"
+
+  verticals:
+    type: object
+    minProperties: 1
+    additionalProperties:
+      type: object
+      additionalProperties: false
+      required: [citation_provider, search_provider, document_provider]
+      properties:
+        citation_provider: { "$ref": "#/$defs/verdictMap" }
+        search_provider: { "$ref": "#/$defs/verdictMap" }
+        document_provider: { "$ref": "#/$defs/verdictMap" }
+        notes: { type: string }
+
+$defs:
+  verdictMap:
+    type: object
+    additionalProperties:
+      type: string
+      enum: [full, partial, not_supported]
