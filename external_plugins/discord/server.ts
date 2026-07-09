@@ -487,7 +487,21 @@ mcp.setNotificationHandler(
     const { request_id, tool_name, description, input_preview } = params
     pendingPermissions.set(request_id, { tool_name, description, input_preview })
     const access = loadAccess()
-    const text = `🔐 Permission: ${tool_name}`
+    // Show a preview of what's actually being approved (command, file path,
+    // or URL) inline instead of only the tool name. Full detail still lives
+    // behind "See more" (description + complete input_preview).
+    let preview = ''
+    try {
+      const parsed = JSON.parse(input_preview)
+      preview = parsed.command ?? parsed.file_path ?? parsed.path ?? parsed.url ?? ''
+    } catch {
+      preview = input_preview
+    }
+    if (typeof preview !== 'string') preview = String(preview)
+    if (preview.length > 400) preview = preview.slice(0, 400) + '…'
+    const text = preview
+      ? `🔐 Permission: ${tool_name}\n\`\`\`\n${preview}\n\`\`\``
+      : `🔐 Permission: ${tool_name}`
     const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
       new ButtonBuilder()
         .setCustomId(`perm:more:${request_id}`)
