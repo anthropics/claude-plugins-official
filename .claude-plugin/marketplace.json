@@ -115,7 +115,7 @@
         "url": "https://github.com/airwallex/airwallex-marketplace.git",
         "path": "plugins/airwallex-agentos",
         "ref": "master",
-        "sha": "683a7536f9445c07439d087607b44b0383b8c41d"
+        "sha": "b0bd2c3d65da47e39db8c779501119376d91c431"
       },
       "homepage": "https://www.airwallex.com/docs"
     },
