@@ -44,7 +44,7 @@ Examples of false positives, for steps 4 and 5:
 Notes:
 
 - Do not check build signal or attempt to build or typecheck the app. These will run separately, and are not relevant to your code review.
-- Use `gh` to interact with Github (eg. to fetch a pull request, or to create inline comments), rather than web fetch
+- Use `gh` to interact with GitHub (eg. to fetch a pull request, or to create inline comments), rather than web fetch
 - Make a todo list first
 - You must cite and link each bug (eg. if referring to a CLAUDE.md, you must link it)
 - For your final comment, follow the following format precisely (assuming for this example that you found 3 issues):

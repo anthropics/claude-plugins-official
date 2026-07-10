@@ -6,7 +6,7 @@ Complete reference for all MCP server types supported in Claude Code plugins.
 
 ### Overview
 
-Execute local MCP servers as child processes with communication via stdin/stdout. Best choice for local tools, custom servers, and NPM packages.
+Execute local MCP servers as child processes with communication via stdin/stdout. Best choice for local tools, custom servers, and npm packages.
 
 ### Configuration
 
@@ -44,7 +44,7 @@ Execute local MCP servers as child processes with communication via stdin/stdout
 
 ### Use Cases
 
-**NPM Packages:**
+**npm Packages:**
 ```json
 {
   "filesystem": {
@@ -528,7 +528,7 @@ Set different values for dev/prod:
 ## Conclusion
 
 Choose the MCP server type based on your use case:
-- **stdio** for local, custom, or NPM-packaged servers
+- **stdio** for local, custom, or npm-packaged servers
 - **SSE** for hosted services with OAuth
 - **HTTP** for REST APIs with token auth
 - **WebSocket** for real-time bidirectional communication

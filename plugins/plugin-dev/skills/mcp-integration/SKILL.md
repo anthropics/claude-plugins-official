@@ -85,7 +85,7 @@ Execute local MCP servers as child processes. Best for local tools and custom se
 - File system access
 - Local database connections
 - Custom MCP servers
-- NPM-packaged MCP servers
+- npm-packaged MCP servers
 
 **Process management:**
 - Claude Code spawns and manages the process
