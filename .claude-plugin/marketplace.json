@@ -129,7 +129,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/gemini-cli-extensions/alloydb.git",
-        "sha": "96aa704a2dc551e8b9ddee5056bf60aa0364e215"
+        "sha": "8ac1efeaf074f4d581c3b9b1512d02f5b18626c5"
       },
       "homepage": "https://cloud.google.com/alloydb"
     },
