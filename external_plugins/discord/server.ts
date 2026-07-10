@@ -517,8 +517,7 @@ mcp.setNotificationHandler(
   },
 )
 
-mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
-  tools: [
+const ALL_TOOLS = [
     {
       name: 'reply',
       description:
@@ -595,11 +594,29 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
         required: ['channel'],
       },
     },
-  ],
-}))
+] as const
+
+const getHiddenTools = (): Set<string> => new Set(
+  (process.env.DISCORD_HIDE_TOOLS || '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean),
+)
+
+mcp.setRequestHandler(ListToolsRequestSchema, async () => {
+  const hidden = getHiddenTools()
+  return { tools: ALL_TOOLS.filter(t => !hidden.has(t.name)) }
+})
 
 mcp.setRequestHandler(CallToolRequestSchema, async req => {
   const args = (req.params.arguments ?? {}) as Record<string, unknown>
+  const hidden = getHiddenTools()
+  if (hidden.has(req.params.name)) {
+    return {
+      content: [{ type: 'text', text: `tool "${req.params.name}" is hidden by DISCORD_HIDE_TOOLS` }],
+      isError: true,
+    }
+  }
   try {
     switch (req.params.name) {
       case 'reply': {

@@ -101,6 +101,22 @@ Quick reference: IDs are Discord **snowflakes** (numeric — enable Developer Mo
 Inbound messages trigger a typing indicator automatically — Discord shows
 "botname is typing…" while the assistant works on a response.
 
+## Hiding tools
+
+Set the `DISCORD_HIDE_TOOLS` environment variable to a comma-separated list of tool names to omit them from the exposed tool set. Hidden tools are removed from the `ListTools` response (so the assistant doesn't see them in its system prompt, saving tokens) and rejected at the `CallTool` boundary with `isError: true` as a fail-safe.
+
+Example — hide the `reply` tool (useful when you have another mechanism that already delivers assistant output to Discord, e.g. a poller forwarding terminal output, and want to avoid double posting):
+
+```
+DISCORD_HIDE_TOOLS=reply
+```
+
+Multiple tools can be hidden with commas:
+
+```
+DISCORD_HIDE_TOOLS=reply,react
+```
+
 ## Attachments
 
 Attachments are **not** auto-downloaded. The `<channel>` notification lists
