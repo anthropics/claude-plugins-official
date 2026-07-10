@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "unforgit": {
+      "command": "unforgit-mcp",
+      "args": []
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "unforgit",
+  "version": "0.1.0",
+  "description": "Persistent repository memory for AI coding agents using MCP tools, repository rules, and durable project knowledge.",
+  "author": {
+    "name": "Unforgit"
+  },
+  "homepage": "https://unforgit.com",
+  "repository": "https://github.com/MiguelMedeiros/unforgit",
+  "license": "MIT",
+  "keywords": [
+    "memory",
+    "mcp",
+    "agents",
+    "repository",
+    "claude-code"
+  ],
+  "displayName": "Unforgit"
+}
