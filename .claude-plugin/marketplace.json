@@ -1641,7 +1641,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/gemini-cli-extensions/knowledge-catalog.git",
-        "sha": "cf5fbeb58a767709b5fc880f06f46f5dab5ee31c"
+        "sha": "82f4d0951e67ff1e7247b002e0e7a3002697594e"
       },
       "homepage": "https://github.com/gemini-cli-extensions/knowledge-catalog"
     },
