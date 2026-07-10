@@ -926,7 +926,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/get-convex/convex-backend-skill.git",
-        "sha": "254ea9b7121612eb26bdf6f516a06d9b28f038ff"
+        "sha": "cd35e61627dd7905b07c03b3da268e16c5df5009"
       },
       "homepage": "https://github.com/get-convex/convex-backend-skill",
       "keywords": [
