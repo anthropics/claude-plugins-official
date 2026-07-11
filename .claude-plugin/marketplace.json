@@ -1096,7 +1096,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/datahub-project/datahub-skills.git",
-        "sha": "68585b1710601c8195eda1e7690218cc0a31d81d"
+        "sha": "864ee5800c55eb90628f290bd8e91602b0a3e28e"
       },
       "homepage": "https://datahub.com"
     },
