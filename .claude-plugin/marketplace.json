@@ -454,7 +454,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/base44/skills.git",
-        "sha": "8f2e550013694b5feab5f34cc5320f27036e297b"
+        "sha": "b7610fe5082d38b9eddd7180b49e4008608700ab"
       },
       "homepage": "https://docs.base44.com"
     },
@@ -574,7 +574,7 @@
         "url": "https://github.com/carta/plugins.git",
         "path": "plugins/carta-cap-table",
         "ref": "main",
-        "sha": "193e1a48b45599aa7d1d371d1d8c70e5ad20b13a"
+        "sha": "660e3f601f3d15bcc827f56aa36e140ce4f95e0d"
       },
       "homepage": "https://carta.com"
     },
@@ -633,7 +633,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/ChromeDevTools/chrome-devtools-mcp.git",
-        "sha": "58ba1742731109a860b9c3ba5a292f7a3b1df3d8"
+        "sha": "78ccb193e08137b48cef6f665ad0b3a98c9538da"
       },
       "homepage": "https://github.com/ChromeDevTools/chrome-devtools-mcp"
     },
@@ -1557,7 +1557,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/heygen-com/hyperframes.git",
-        "sha": "505003e0a6954be0ded6592de72d32f04bfdc7fc"
+        "sha": "ccf5f20b3beea2b245c398a89cb686077b546de2"
       },
       "homepage": "https://hyperframes.heygen.com"
     },
@@ -1628,7 +1628,7 @@
         "source": "github",
         "repo": "jfrog/claude-plugin",
         "commit": "259c8e718266c16e99b4f30ae9b1ed0f9f00d98d",
-        "sha": "a828bda791913acf4a406ee4de61ae006a14e211"
+        "sha": "427d2e68848b2d04df586bd6be4904a5934828fb"
       },
       "homepage": "https://jfrog.com"
     },
@@ -2483,7 +2483,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/qodo-ai/qodo-skills.git",
-        "sha": "1b3af00dee61541f3843a0e881deb926b9c6931a"
+        "sha": "5c31f3275199c6ccf07fa84c3a34d6d338f97aee"
       },
       "homepage": "https://github.com/qodo-ai/qodo-skills.git"
     },
