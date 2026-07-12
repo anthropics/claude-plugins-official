@@ -33,6 +33,7 @@ import { randomBytes } from 'crypto'
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, statSync, renameSync, realpathSync, chmodSync } from 'fs'
 import { homedir } from 'os'
 import { join, sep } from 'path'
+import { isPermissionReplyAuthorized } from './permission-auth.js'
 
 const STATE_DIR = process.env.DISCORD_STATE_DIR ?? join(homedir(), '.claude', 'channels', 'discord')
 const ACCESS_FILE = join(STATE_DIR, 'access.json')
@@ -749,7 +750,7 @@ client.on('interactionCreate', async (interaction: Interaction) => {
   const m = /^perm:(allow|deny|more):([a-km-z]{5})$/.exec(interaction.customId)
   if (!m) return
   const access = loadAccess()
-  if (!access.allowFrom.includes(interaction.user.id)) {
+  if (!isPermissionReplyAuthorized(access.allowFrom, interaction.user.id)) {
     await interaction.reply({ content: 'Not authorized.', ephemeral: true }).catch(() => {})
     return
   }
@@ -836,7 +837,7 @@ async function handleInbound(msg: Message): Promise<void> {
   const permMatch = PERMISSION_REPLY_RE.exec(msg.content)
   if (permMatch) {
     const latestAccess = loadAccess()
-    if (!latestAccess.allowFrom.includes(msg.author.id)) {
+    if (!isPermissionReplyAuthorized(latestAccess.allowFrom, msg.author.id)) {
       return
     }
     void mcp.notification({
