@@ -830,12 +830,15 @@ async function handleInbound(msg: Message): Promise<void> {
     dmChannelUsers.set(chat_id, msg.author.id)
   }
 
-  // Permission-reply intercept: if this looks like "yes xxxxx" for a
-  // pending permission request, emit the structured event instead of
-  // relaying as chat. The sender is already gate()-approved at this point
-  // (non-allowlisted senders were dropped above), so we trust the reply.
+  // Permission-reply intercept: only the top-level paired DM allowlist may
+  // answer. Passing the general inbound gate is insufficient because a group
+  // can intentionally allow members or mentions that must not approve tools.
   const permMatch = PERMISSION_REPLY_RE.exec(msg.content)
   if (permMatch) {
+    const latestAccess = loadAccess()
+    if (!latestAccess.allowFrom.includes(msg.author.id)) {
+      return
+    }
     void mcp.notification({
       method: 'notifications/claude/channel/permission',
       params: {
