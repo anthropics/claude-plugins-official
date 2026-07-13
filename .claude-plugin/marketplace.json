@@ -2808,7 +2808,7 @@
         "url": "https://github.com/spotify/save-to-spotify.git",
         "path": "plugin",
         "ref": "main",
-        "sha": "6e9b7e8093731c036ee23ce17ab2e0c89943f5b7"
+        "sha": "527321ef64fe04273629f26cee1e9f18805b81ff"
       },
       "homepage": "https://github.com/spotify/save-to-spotify"
     },
