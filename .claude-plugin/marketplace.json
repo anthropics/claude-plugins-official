@@ -2547,7 +2547,7 @@
         "source": "url",
         "url": "https://github.com/RevenueCat/rc-claude-code-plugin.git",
         "path": "revenuecat",
-        "sha": "c7e5d469ab70805f6563070e970c6f8b67d51c00"
+        "sha": "bcce7a3261b17fcd3a79a2b45b03cdbedab5ea1a"
       },
       "homepage": "https://www.revenuecat.com"
     },
