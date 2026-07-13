@@ -12,14 +12,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from .adapters.mevzuat_adapter import MevzuatBilgiSistemiAdapter
-from .adapters.resmi_gazete_adapter import ResmiGazeteAdapter
-from .adapters.yargitay_adapter import YargitayKararAramaAdapter
 from .config.country_config import TurkeyCountryConfig, load_country_config
 from .manifest import PLUGIN_MANIFEST, TurkeyPluginManifest
 from .prompts.overtime_prompt_assembler import OvertimePromptAssembler
 from .providers.citation_provider import TurkishCitationProvider
 from .providers.document_provider import TurkishDocumentProvider
+from .providers.legal_sources.registry import discover_legal_source_providers
 from .providers.search_provider import TurkishSearchProvider
 from .rag.keyword_retriever import KeywordKnowledgeRetriever
 from .tools.business_day_calculator_tool import BusinessDayCalculatorTool
@@ -50,13 +48,7 @@ class TurkeyPluginRegistrar:
         self.country_config = country_config or load_country_config()
 
         self.citation_provider = TurkishCitationProvider()
-        self.search_provider = TurkishSearchProvider(
-            adapters=[
-                YargitayKararAramaAdapter(),
-                ResmiGazeteAdapter(),
-                MevzuatBilgiSistemiAdapter(),
-            ]
-        )
+        self.search_provider = TurkishSearchProvider(adapters=discover_legal_source_providers())
         self.document_provider = TurkishDocumentProvider()
 
         self.retriever = KeywordKnowledgeRetriever()

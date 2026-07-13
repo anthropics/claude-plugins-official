@@ -1,7 +1,25 @@
-"""Local retrieval layer over the knowledge/*.md corpus.
+"""Retrieval layer for local knowledge and provider-independent legal documents."""
 
-Deliberately NOT embedding/vector-based -- consistent with this repo's
-retrieval model, where authoritative retrieval happens live via a Search
-Provider/MCP connector; this layer only ranks the small, local,
-pre-committed knowledge markdown files bundled with the country plugin.
-"""
+from .embeddings import EmbeddingProvider, HashEmbeddingProvider
+from .legal_rag import LegalRag, LegalRetrievedChunk
+from .vector_store import (
+    FaissVectorStore,
+    InMemoryVectorStore,
+    MilvusVectorStore,
+    PgvectorVectorStore,
+    QdrantVectorStore,
+    VectorStore,
+)
+
+__all__ = [
+    "EmbeddingProvider",
+    "FaissVectorStore",
+    "HashEmbeddingProvider",
+    "InMemoryVectorStore",
+    "LegalRag",
+    "LegalRetrievedChunk",
+    "MilvusVectorStore",
+    "PgvectorVectorStore",
+    "QdrantVectorStore",
+    "VectorStore",
+]

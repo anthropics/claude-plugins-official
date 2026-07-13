@@ -1,57 +1,83 @@
-# `plugins/turkey/` — Executable Turkey Country Plugin
+# Turkey Plugin
 
-Bu, `countries/tr/`'nin (markdown/YAML **spesifikasyonu**) gerçek, çalıştırılabilir Python koduyla **implementasyonudur**. İkisi farklı roller oynar:
+`plugins/turkey/`, `countries/tr/` spesifikasyonunu çalıştırılabilir Python bileşenlerine dönüştüren Türkiye hukuk pluginidir. Hukuki araştırma sonuçları ve analizleri taslaktır; kaynaklar doğrulanmadan hukuki görüş veya işlem dayanağı olarak kullanılmamalıdır.
 
-| | Rol | Örnek |
+## Kapsam
+
+- Türkiye ülke yapılandırması, kaynak kataloğu, atıf biçimlendirme ve iş günü hesabı
+- UYAP, Resmî Gazete, Mevzuat Bilgi Sistemi, Yargıtay, Danıştay, AYM ve KVKK için genişletilebilir provider katmanı
+- PDF, DOCX, HTML ve TXT belgeleri için provider bağımsız RAG altyapısı
+- Değiştirilebilir embedding sağlayıcısı ve Qdrant, FAISS, pgvector, Milvus uyumlu vector-store sözleşmesi
+- Dokuz bağımsız MCP tool: kaynak arama, kanun karşılaştırma, atıf üretimi, karar/risk analizi, madde arama ve karar özeti
+
+## Mimari
+
+| Katman | Sorumluluk | Ana giriş noktası |
 |---|---|---|
-| `countries/tr/` | **Veri/spec** — hukuki içerik, tek doğruluk kaynağı | `country.config.yaml`, `knowledge/employment-legal/overtime-framework.md` |
-| `core/engine/plugin_engine/contracts.py` | **Soyut sözleşme** — ülkeden bağımsız arayüzler | `CitationProvider`, `SearchProvider` Protocol'leri |
-| `plugins/turkey/` (bu dizin) | **Davranış** — sözleşmeleri `countries/tr/` verisiyle dolduran çalışan kod | `TurkishCitationProvider`, `OvertimeQaWorkflow` |
+| `config/`, `sources/` | `countries/tr/` YAML verisini tipli nesnelere çevirir | `load_country_config()` |
+| `citations/` | Kanun/karar atıf biçimi ve risk sınıflaması | `TurkishCitationProvider` |
+| `providers/` | Core provider sözleşmelerini uygular | `TurkeyPluginRegistrar` |
+| `providers/legal_sources/` | Her hukuk kaynağı için tek modüllü provider | `discover_legal_source_providers()` |
+| `parser/` | Yerel belge ayrıştırma; ağ/provider bağımlılığı yoktur | `LegalDocumentParserRegistry` |
+| `rag/` | Chunking, embedding ve vector-store ile belge retrieval | `LegalRag` |
+| `mcp/tools/` | Bağımsız MCP tool tanımları | `TurkeyMcpToolServer` |
+| `workflow/`, `prompts/` | Provider’ları kullanıcıya dönük iş akışlarında birleştirir | `OvertimeQaWorkflow` |
 
-Bu ayrım Dependency Inversion Principle'ın doğrudan uygulamasıdır: `plugins/turkey/` hem `core`'un soyut sözleşmelerine (yukarı akış) hem `countries/tr/`'nin verisine (aşağı akış) bağımlıdır; ne `core` ne de `countries/tr` bu paketi bilir.
+## Kurulum ve doğrulama
 
-## Çalıştırma / Doğrulama
+Bu paket Python 3.11+ ve YAML yapılandırması için `PyYAML` kullanır. Core engine’i yükleyen üretim akışları ayrıca `jsonschema` gerektirir.
 
 ```bash
-# Repo kökünden — motora gerçek Provider nesnelerini bağlar ve bir workflow çalıştırır:
-python -c "
-from pathlib import Path
-from core.engine.plugin_engine import PluginEngine
-from plugins.turkey.registration import TurkeyPluginRegistrar
-
-engine = PluginEngine(Path('.'))
-engine.load_all()
-registrar = TurkeyPluginRegistrar()
-registrar.register(engine)
-print(registrar.overtime_workflow.execute('fazla mesai zamanaşımı').body)
-"
+python3 -m unittest discover -s plugins/turkey/tests -t . -v
 ```
 
-## Katmanlar ve SOLID Eşlemesi
+Mevcut test paketi unit, provider, RAG, tool, prompt, plugin ve entegrasyon seviyelerini kapsar.
 
-| Katman | Dosyalar | Sorumluluk (SRP) | Öne çıkan SOLID notu |
-|---|---|---|---|
-| **`paths.py`** | 1 | Bu paketin verisini nerede bulacağını bilir | Tek kaynak — yol hesaplama başka hiçbir yerde tekrarlanmaz |
-| **`manifest.py`** | 1 | Plugin Manifest — bu kod paketinin kimliği | — |
-| **`config/`** | Country Config | `country.config.yaml`'ı tipli nesneye çevirir | `load_country_config(parser=...)` — parser enjekte edilebilir (DIP) |
-| **`parser/`** | YAML/markdown ayrıştırma | Sadece ayrıştırır, yorumlamaz | `FileParser` Protocol'ü ile ISP — dar arayüz |
-| **`sources/`** | Legal Source Registry | Hukuki otorite kataloğu | — |
-| **`citations/`** | Atıf mantığı | 4 ayrı sınıf: statute/case format, risk, provenance | Her sınıf tek metod ailesi — birleşik bir "God Citation" sınıfı yok |
-| **`adapters/`** | Dış sistem sınırları | Yargıtay/Resmi Gazete/Mevzuat — her biri kendi dosyasında | Liskov: `is_available()`/`search()` her adapter'da aynı davranır (dürüstçe `False`/`NotImplementedError`) |
-| **`mcp/`** | MCP bağlama config'i + client seam'i | `UnavailableMcpClient` bir Null Object — gerçek client Liskov ile yer değiştirebilir | Open/Closed: gerçek transport eklendiğinde çağıran kod değişmez |
-| **`providers/`** | Citation/Search/Document Provider implementasyonları | `citations/`+`sources/`+`adapters/`'ı **composition** ile birleştirir | Inheritance değil composition — DIP + SRP |
-| **`tools/`** | Provider'ları adlandırılmış callable'lara çevirir | Tool Registry capability_id karşılığı | — |
-| **`rag/`** | Yerel `knowledge/*.md` üzerinde anahtar-kelime tabanlı retrieval | Embedding/vector DB YOK — dürüstçe belirtilmiş | — |
-| **`prompts/`** | Retrieval + atıf + guardrail notunu birleştirir | Her konu kendi assembler sınıfı | Open/Closed: yeni konu = yeni sınıf, mevcut sınıf değişmez |
-| **`workflow/`** | Üst düzey orkestrasyon (`OvertimeQaWorkflow`) | Yalnızca `core.contracts` soyutlamalarına bağımlı | DIP'in en net örneği — constructor injection, `new` çağrısı yok |
-| **`registration.py`** | Plugin Registration | Her şeyi inşa eder (composition root) + `engine.providers.attach_instance(...)` ile motora bağlar | Open/Closed: `plugins/germany/registration.py` eklemek bu dosyayı değiştirmez |
+## Provider’lar
 
-## Dürüstlük İlkesi (bu paket boyunca tutarlı)
+Provider’lar `LegalSourceProvider` sözleşmesini uygular: `source_id`, `source_name`, `source_type`, `is_available()` ve `search(query)`. Yeni bir kaynak eklemek için `providers/legal_sources/` altında `BaseLegalSourceProvider` alt sınıfı içeren bir Python modülü ekleyin. Registry modülü bunu otomatik keşfeder; kayıt dosyasını değiştirmeniz gerekmez.
 
-`adapters/`, `mcp/`, ve `providers/document_provider.py`'deki her "bağlı değil" durumu **gerçek**tir — `countries/tr/capabilities.yaml`'daki `partial`/`not_supported` beyanlarıyla birebir örtüşür. Hiçbir yerde sahte bir "başarılı" sonuç üretilmez; bağlantısızlık `False`/`NotImplementedError`/`available=False` olarak açıkça yüzeye çıkar.
+Mevcut provider’lar canlı HTTP/MCP bağlantısı yapılandırılmadığında erişilemez durum döndürür veya açık hata verir; sahte arama sonucu üretmezler.
 
-## Bilinçli sınırlar
+## RAG kullanımı
 
-- Gerçek ağ çağrısı (Yargıtay/Resmi Gazete/Mevzuat'a canlı bağlantı) bu pakette **yoktur** — `adapters/` ve `mcp/client.py` bunun için hazır bir sızdırmaz sınır (seam) sağlar, ama gerçek HTTP/MCP istemcisi ayrı bir iştir.
-- `rag/` klasik (embedding tabanlı) bir RAG değildir — bkz. `rag/__init__.py` docstring'i.
-- Test altyapısı (pytest) yok; bu paket gerçek `countries/tr/` verisine karşı canlı çalıştırılarak doğrulanmıştır (bkz. bu paketin commit mesajı).
+```python
+from pathlib import Path
+from plugins.turkey.parser.legal_document import LegalDocumentType
+from plugins.turkey.rag import LegalRag
+
+rag = LegalRag()
+rag.ingest(Path("karar.txt"), LegalDocumentType.COURT_DECISION)
+hits = rag.retrieve("kişisel veri", top_k=3)
+```
+
+Varsayılanlar `HashEmbeddingProvider` ve `InMemoryVectorStore`dur. Üretimde model-backed bir embedding sağlayıcısını ve seçilen veritabanı adaptörünü constructor injection ile verin. PDF ayrıştırma için `pypdf`, DOCX ayrıştırma için `python-docx` isteğe bağlı bağımlılıktır.
+
+## MCP tool kullanımı
+
+```python
+from plugins.turkey.mcp import TurkeyMcpToolServer
+
+server = TurkeyMcpToolServer()
+tools = server.list_tools()
+result = server.call_tool(
+    "turkey_citation_generator",
+    {"kind": "statute", "instrument": "4857 sayılı İş Kanunu", "section": "41"},
+)
+```
+
+Her tool MCP tool metadata’sı (`name`, `description`, `inputSchema`) ve `content` / `structuredContent` sonuç yapısı yayınlar. Canlı kaynak arama tool’ları enjekte edilmiş bir `McpClient` gerektirir.
+
+## Sınırlar
+
+- Canlı UYAP, mahkeme, Resmî Gazete veya Mevzuat bağlantıları bu repoda yapılandırılmış değildir.
+- Qdrant, FAISS, pgvector ve Milvus için ortak arayüz vardır; üretim sürücüleri ve bağlantı yönetimi ayrıca uygulanmalıdır.
+- Karar özeti ve risk/karar analiz tool’ları ilk geçiş sinyal üretir; avukat incelemesi gerektirir.
+
+## Belgeler
+
+- [Plugin geliştirme rehberi](docs/PLUGIN_DEVELOPMENT_GUIDE.md)
+- [Yeni ülke ekleme rehberi](docs/ADDING_COUNTRY_GUIDE.md)
+- [MCP entegrasyon rehberi](docs/MCP_INTEGRATION_GUIDE.md)
+- [Kod kalite raporu](docs/CODE_QUALITY_REPORT.md)
+- [Production release değerlendirmesi](docs/PRODUCTION_RELEASE_ASSESSMENT.md)
