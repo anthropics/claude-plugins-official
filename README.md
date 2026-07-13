@@ -95,3 +95,6 @@ Please see each linked plugin for the relevant LICENSE file.
 ## Documentation
 
 For more information on developing Claude Code plugins, see the [official documentation](https://code.claude.com/docs/en/plugins).
+
+---
+*🤖 PR by Hermes Agent: Cowork's Read_and_Send_iMessages connector doesn't match this repo's documented tools / lacks group chat support*
