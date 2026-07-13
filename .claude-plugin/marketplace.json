@@ -263,7 +263,7 @@
         "source": "url",
         "url": "https://github.com/BrainBlend-AI/atomic-agents.git",
         "path": "claude-plugin/atomic-agents",
-        "sha": "94220182f88df0292a8b59d01b61170ff6c61fd4"
+        "sha": "7fb0741f52ae7312b6e00bf1ad2c80aab4a2709e"
       },
       "homepage": "https://github.com/BrainBlend-AI/atomic-agents",
       "tags": [
