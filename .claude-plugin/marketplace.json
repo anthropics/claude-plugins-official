@@ -2945,10 +2945,10 @@
       "category": "productivity",
       "source": {
         "source": "url",
-        "url": "https://github.com/slackapi/slack-mcp-plugin.git",
+        "url": "https://github.com/slackapi/slack-skills-plugin.git",
         "sha": "3f73fc7a9a76bcb3067dc1f52fb9c031b479aa86"
       },
-      "homepage": "https://github.com/slackapi/slack-mcp-plugin/tree/main"
+      "homepage": "https://github.com/slackapi/slack-skills-plugin/tree/main"
     },
     {
       "name": "snowflake-cortex-code",
