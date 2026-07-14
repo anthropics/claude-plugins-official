@@ -2792,7 +2792,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/SAP/mdk-mcp-server.git",
-        "sha": "653859324156770cc758889faaa5643a3fd01ad4"
+        "sha": "20f6b5714e9cbd9919622e2bd1211ec956e48e59"
       },
       "homepage": "https://help.sap.com/docs/MDK"
     },
