@@ -351,6 +351,19 @@ function checkApprovals(): void {
 
 if (!STATIC) setInterval(checkApprovals, 5000).unref()
 
+// Opt-in idle keepalive: some hosts drop an idle MCP stdio connection after a
+// long quiet period (issue #1478 -- Linux, long idle). A lightweight one-way
+// notification on a timer keeps it warm WITHOUT waking the model (a notification
+// is not a tool call). Off by default; enable with TELEGRAM_MCP_KEEPALIVE_MS
+// (e.g. 600000 = 10 min).
+const KEEPALIVE_MS = Number(process.env.TELEGRAM_MCP_KEEPALIVE_MS ?? 0)
+if (Number.isFinite(KEEPALIVE_MS) && KEEPALIVE_MS > 0) {
+  setInterval(() => {
+    void mcp.notification({ method: 'notifications/claude/channel/keepalive', params: {} })
+      .catch(() => { /* best effort; a failed ping must never crash the poller */ })
+  }, KEEPALIVE_MS).unref()
+}
+
 // Telegram caps messages at 4096 chars. Split long replies, preferring
 // paragraph boundaries when chunkMode is 'newline'.
 
