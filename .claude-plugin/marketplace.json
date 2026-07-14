@@ -769,7 +769,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/gemini-cli-extensions/cloud-sql-postgresql.git",
-        "sha": "b05b8f92d722333f00bf09788a3074e9b88a2633"
+        "sha": "201bb7d7110aed05bd0367c0ec0fe7fb7d57aa4d"
       },
       "homepage": "https://cloud.google.com/sql"
     },
