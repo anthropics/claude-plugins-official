@@ -53,6 +53,16 @@ def run_single_query(
     project_commands_dir = Path(project_root) / ".claude" / "commands"
     command_file = project_commands_dir / f"{clean_name}.md"
 
+    def _matches_skill(value: str) -> bool:
+        # Accept either the real registered skill name or the temp command
+        # name. When the skill is also installed (e.g. ~/.claude/skills/),
+        # the model calls it by its real name rather than the temp command
+        # name, so requiring clean_name alone records every correct trigger
+        # as a miss.
+        if not isinstance(value, str) or not value:
+            return False
+        return value == skill_name or value == clean_name
+
     try:
         project_commands_dir.mkdir(parents=True, exist_ok=True)
         # Use YAML block scalar to avoid breaking on quotes in description
@@ -144,11 +154,22 @@ def run_single_query(
                             delta = se.get("delta", {})
                             if delta.get("type") == "input_json_delta":
                                 accumulated_json += delta.get("partial_json", "")
-                                if clean_name in accumulated_json:
-                                    return True
+                                try:
+                                    parsed = json.loads(accumulated_json)
+                                    if _matches_skill(parsed.get("skill")):
+                                        return True
+                                except json.JSONDecodeError:
+                                    if clean_name in accumulated_json:
+                                        return True
 
                         elif se_type in ("content_block_stop", "message_stop"):
                             if pending_tool_name:
+                                try:
+                                    parsed = json.loads(accumulated_json)
+                                    if _matches_skill(parsed.get("skill")):
+                                        return True
+                                except json.JSONDecodeError:
+                                    pass
                                 return clean_name in accumulated_json
                             if se_type == "message_stop":
                                 return False
@@ -161,7 +182,7 @@ def run_single_query(
                                 continue
                             tool_name = content_item.get("name", "")
                             tool_input = content_item.get("input", {})
-                            if tool_name == "Skill" and clean_name in tool_input.get("skill", ""):
+                            if tool_name == "Skill" and _matches_skill(tool_input.get("skill")):
                                 triggered = True
                             elif tool_name == "Read" and clean_name in tool_input.get("file_path", ""):
                                 triggered = True
@@ -262,7 +283,7 @@ def main():
     parser.add_argument("--skill-path", required=True, help="Path to skill directory")
     parser.add_argument("--description", default=None, help="Override description to test")
     parser.add_argument("--num-workers", type=int, default=10, help="Number of parallel workers")
-    parser.add_argument("--timeout", type=int, default=30, help="Timeout per query in seconds")
+    parser.add_argument("--timeout", type=int, default=90, help="Timeout per query in seconds")
     parser.add_argument("--runs-per-query", type=int, default=3, help="Number of runs per query")
     parser.add_argument("--trigger-threshold", type=float, default=0.5, help="Trigger rate threshold")
     parser.add_argument("--model", default=None, help="Model to use for claude -p (default: user's configured model)")
