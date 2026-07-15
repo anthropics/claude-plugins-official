@@ -958,7 +958,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/CrowdStrike/foundry-skills.git",
-        "sha": "ae1f81f8e856f9d3c8d1083cf65ae5c057706be5"
+        "sha": "82740a4fcb55d46de6d1ce321bb8c403cab28f81"
       },
       "homepage": "https://github.com/CrowdStrike/foundry-skills"
     },
