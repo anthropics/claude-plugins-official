@@ -11,7 +11,8 @@
     "airwallex": "airwallex-agentos",
     "convex-backend": "convex",
     "vals": "valtown",
-    "wordpress.com": "build-with-wordpress"
+    "wordpress.com": "build-with-wordpress",
+    "qodo-skills": "qodo"
   },
   "plugins": [
     {
@@ -2478,7 +2479,8 @@
       "homepage": "https://skills.qdrant.tech"
     },
     {
-      "name": "qodo-skills",
+      "name": "qodo",
+      "displayName": "Qodo",
       "description": "Qodo Skills provides a curated library of reusable AI agent capabilities that extend Claude's functionality for software development workflows. Each skill is designed to integrate seamlessly into your development process, enabling tasks like code quality checks, automated testing, security scanning, and compliance validation. Skills operate across your entire SDLC—from IDE to CI/CD—ensuring consistent standards and catching issues early.",
       "category": "development",
       "source": {
