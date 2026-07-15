@@ -37,6 +37,8 @@ def main():
         event = None
         if tool_name == 'Bash':
             event = 'bash'
+        elif tool_name == 'PowerShell':
+            event = 'powershell'
         elif tool_name in ['Edit', 'Write', 'MultiEdit']:
             event = 'file'
 
