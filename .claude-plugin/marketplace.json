@@ -3408,7 +3408,7 @@
         "url": "https://github.com/zapier/zapier-mcp.git",
         "path": "plugins/zapier",
         "ref": "main",
-        "sha": "11bfb606bd1984beef15f6e16257f99ee47c7f29"
+        "sha": "217d65a980f9b75536babf89ba64bf03ad95beea"
       },
       "homepage": "https://github.com/zapier/zapier-mcp/tree/main/plugins/zapier"
     },
