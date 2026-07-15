@@ -1142,6 +1142,21 @@
       "homepage": "https://github.com/microsoft/Dataverse-skills"
     },
     {
+      "name": "deepeval",
+      "description": "Skills for adding DeepEval evaluations, tracing, datasets, Confident AI reports, and iterative improvement loops to AI applications.",
+      "author": {
+        "name": "Confident AI",
+        "email": "open-source@confident-ai.com"
+      },
+      "category": "development",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/confident-ai/deepeval.git",
+        "sha": "11375f81ea2ed8d39478f7c4cbaa7871d69ff698"
+      },
+      "homepage": "https://github.com/confident-ai/deepeval"
+    },
+    {
       "name": "deploy-on-aws",
       "description": "Deploy applications to AWS with architecture recommendations, cost estimates, and IaC deployment.",
       "category": "deployment",
