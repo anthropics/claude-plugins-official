@@ -2303,7 +2303,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/pinecone-io/pinecone-claude-code-plugin.git",
-        "sha": "e29f1843f7b0b14676c99f6e9e61446bb01d230b"
+        "sha": "f36dec67e90669009af79dfafc25f79a2b2b7a17"
       },
       "homepage": "https://github.com/pinecone-io/pinecone-claude-code-plugin"
     },
