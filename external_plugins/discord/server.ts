@@ -455,7 +455,7 @@ const mcp = new Server(
     instructions: [
       'The sender reads Discord, not this session. Anything you want them to see must go through the reply tool — your transcript output never reaches their chat.',
       '',
-      'Messages from Discord arrive as <channel source="discord" chat_id="..." message_id="..." user="..." ts="...">. If the tag has attachment_count, the attachments attribute lists name/type/size — call download_attachment(chat_id, message_id) to fetch them. Reply with the reply tool — pass chat_id back. Use reply_to (set to a message_id) only when replying to an earlier message; the latest message doesn\'t need a quote-reply, omit reply_to for normal responses.',
+      'Messages from Discord arrive as <channel source="discord" chat_id="..." message_id="..." user="..." ts="...">. If the message is a reply, reply_to contains a nested object with {message_id, user, content} for up to 2 levels of parent context, plus a message_id breadcrumb for the 3rd level if it exists — use fetch_messages to go deeper. If the tag has attachment_count, the attachments attribute lists name/type/size — call download_attachment(chat_id, message_id) to fetch them. Reply with the reply tool — pass chat_id back. Use reply_to (set to a message_id) only when replying to an earlier message; the latest message doesn\'t need a quote-reply, omit reply_to for normal responses.',
       '',
       'reply accepts file paths (files: ["/abs/path.png"]) for attachments. Use react to add emoji reactions, and edit_message for interim progress updates. Edits don\'t trigger push notifications — when a long task completes, send a new reply so the user\'s device pings.',
       '',
@@ -667,12 +667,13 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
                 .map(m => {
                   const who = m.author.id === me ? 'me' : m.author.username
                   const atts = m.attachments.size > 0 ? ` +${m.attachments.size}att` : ''
+                  const replyTo = m.reference?.messageId ? `, reply_to: ${m.reference.messageId}` : ''
                   // Tool result is newline-joined; multi-line content forges
                   // adjacent rows. History includes ungated senders (no-@mention
                   // messages in an opted-in channel never hit the gate but
                   // still live in channel history).
                   const text = m.content.replace(/[\r\n]+/g, ' ⏎ ')
-                  return `[${m.createdAt.toISOString()}] ${who}: ${text}  (id: ${m.id}${atts})`
+                  return `[${m.createdAt.toISOString()}] ${who}: ${text}  (id: ${m.id}${atts}${replyTo})`
                 })
                 .join('\n')
         return { content: [{ type: 'text', text: out }] }
@@ -868,6 +869,36 @@ async function handleInbound(msg: Message): Promise<void> {
     atts.push(`${safeAttName(att)} (${att.contentType ?? 'unknown'}, ${kb}KB)`)
   }
 
+  // Build reply thread context — 2 levels deep with content, 3rd level just ID.
+  // Lets Claude see immediate context without fetching, with a breadcrumb for deeper exploration.
+  let replyContext: Record<string, unknown> | undefined
+  if (msg.reference?.messageId) {
+    try {
+      const parent = await msg.fetchReference()
+      replyContext = {
+        message_id: parent.id,
+        user: parent.author.username,
+        content: parent.content,
+      }
+      // Second level
+      if (parent.reference?.messageId) {
+        try {
+          const grandparent = await parent.fetchReference()
+          const level2: Record<string, unknown> = {
+            message_id: grandparent.id,
+            user: grandparent.author.username,
+            content: grandparent.content,
+          }
+          // Third level — just the ID as a breadcrumb
+          if (grandparent.reference?.messageId) {
+            level2.reply_to = { message_id: grandparent.reference.messageId }
+          }
+          replyContext.reply_to = level2
+        } catch {}
+      }
+    } catch {}
+  }
+
   // Attachment listing goes in meta only — an in-content annotation is
   // forgeable by any allowlisted sender typing that string.
   const content = msg.content || (atts.length > 0 ? '(attachment)' : '')
@@ -882,6 +913,7 @@ async function handleInbound(msg: Message): Promise<void> {
         user: msg.author.username,
         user_id: msg.author.id,
         ts: msg.createdAt.toISOString(),
+        ...(replyContext ? { reply_to: replyContext } : {}),
         ...(atts.length > 0 ? { attachment_count: String(atts.length), attachments: atts.join('; ') } : {}),
       },
     },
