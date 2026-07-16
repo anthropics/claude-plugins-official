@@ -2948,7 +2948,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/slackapi/slack-mcp-plugin.git",
-        "sha": "46f5c53bf3d37a4b4a3e307edc056bb3572f563e"
+        "sha": "e75b0cf18f1a19f3fd629e3af9565ee84b8c2ce0"
       },
       "homepage": "https://github.com/slackapi/slack-mcp-plugin/tree/main"
     },
