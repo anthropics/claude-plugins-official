@@ -1152,7 +1152,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/confident-ai/deepeval.git",
-        "sha": "b11bd0e116973b9cf67845bd9f28a1969586f2c7"
+        "sha": "58c9ef78a4634ba119c7d2cc145f5cf9aeb24524"
       },
       "homepage": "https://github.com/confident-ai/deepeval"
     },
