@@ -64,7 +64,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/SalesforceAIResearch/agentforce-adlc.git",
-        "sha": "f7630726ddce5c2c171cfb9d18ce435fab862ae7"
+        "sha": "1df4ca2fe3c43ef3eae3d6f5e0129c016a5cd72c"
       },
       "homepage": "https://github.com/SalesforceAIResearch/agentforce-adlc"
     },
