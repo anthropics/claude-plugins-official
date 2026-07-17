@@ -8,46 +8,60 @@ You need to execute the following bash commands to clean up stale local branches
 
 ## Commands to Execute
 
-1. **First, list branches to identify any with [gone] status**
+1. **First, prune deleted remote branches so [gone] status is current**
    Execute this command:
    ```bash
-   git branch -v
+   git fetch --prune
    ```
-   
-   Note: Branches with a '+' prefix have associated worktrees and must have their worktrees removed before deletion.
 
-2. **Next, identify worktrees that need to be removed for [gone] branches**
+2. **Next, list branches with tracking status to identify any marked [gone]**
+   Execute this command:
+   ```bash
+   git branch -vv
+   ```
+
+   Note: `-vv` is required — plain `-v` does not print upstream tracking status. Branches with a '+' prefix have associated worktrees and must have their worktrees removed before deletion. The gone marker appears as `[origin/<branch>: gone]`.
+
+3. **Next, identify worktrees that may need to be removed for [gone] branches**
    Execute this command:
    ```bash
    git worktree list
    ```
 
-3. **Finally, remove worktrees and delete [gone] branches (handles both regular and worktree branches)**
+4. **Finally, remove worktrees and delete [gone] branches (handles both regular and worktree branches)**
    Execute this command:
    ```bash
-   # Process all [gone] branches, removing '+' prefix if present
-   git branch -v | grep '\[gone\]' | sed 's/^[+* ]//' | awk '{print $1}' | while read branch; do
+   # for-each-ref emits exactly "[gone]" for a deleted upstream — no fragile
+   # parsing of `git branch` porcelain output.
+   git for-each-ref --format='%(refname:short)%09%(upstream:track)' refs/heads |
+   awk -F'\t' '$2=="[gone]"{print $1}' | while read -r branch; do
      echo "Processing branch: $branch"
-     # Find and remove worktree if it exists
-     worktree=$(git worktree list | grep "\\[$branch\\]" | awk '{print $1}')
-     if [ ! -z "$worktree" ] && [ "$worktree" != "$(git rev-parse --show-toplevel)" ]; then
+     # Find the worktree checked out on this branch, if any (porcelain format
+     # is stable and handles paths with spaces).
+     worktree=$(git worktree list --porcelain | awk -v b="refs/heads/$branch" '
+       /^worktree /{w=substr($0,10)} $0=="branch "b{print w}')
+     if [ -n "$worktree" ] && [ "$worktree" != "$(git rev-parse --show-toplevel)" ]; then
+       if [ -n "$(git -C "$worktree" status --porcelain 2>/dev/null)" ]; then
+         echo "  SKIPPING $branch: worktree $worktree has uncommitted or untracked changes"
+         continue
+       fi
        echo "  Removing worktree: $worktree"
-       git worktree remove --force "$worktree"
+       git worktree remove "$worktree" || { echo "  worktree removal failed; skipping branch"; continue; }
      fi
-     # Delete the branch
      echo "  Deleting branch: $branch"
      git branch -D "$branch"
    done
+   git worktree prune
    ```
 
 ## Expected Behavior
 
 After executing these commands, you will:
 
-- See a list of all local branches with their status
-- Identify and remove any worktrees associated with [gone] branches
-- Delete all branches marked as [gone]
+- See a list of all local branches with their tracking status
+- Identify and remove any clean worktrees associated with [gone] branches
+- Delete all branches marked as [gone] whose worktrees (if any) were clean
+- Report any branches skipped because their worktree held uncommitted or untracked changes — surface these to the user instead of force-deleting their work
 - Provide feedback on which worktrees and branches were removed
 
 If no branches are marked as [gone], report that no cleanup was needed.
-
