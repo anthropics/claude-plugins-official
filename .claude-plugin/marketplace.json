@@ -367,7 +367,7 @@
         "url": "https://github.com/aws/agent-toolkit-for-aws.git",
         "path": "plugins/aws-core",
         "ref": "main",
-        "sha": "7b94d0075db9e89db624e4e3be446ab8cde4a076"
+        "sha": "77dc9d04f7ca56c14514eabcf8773644681f378a"
       },
       "homepage": "https://github.com/aws/agent-toolkit-for-aws"
     },
