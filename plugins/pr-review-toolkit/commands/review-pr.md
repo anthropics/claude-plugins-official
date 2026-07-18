@@ -62,7 +62,24 @@ Run a comprehensive pull request review using multiple specialized agents, each 
    - **Suggestions** (nice to have)
    - **Positive Observations** (what's good)
 
-7. **Provide Action Plan**
+7. **Post Actionable Findings to the PR**
+
+   Before delivering the local summary, publish every new actionable finding as an
+   inline GitHub PR comment on the most specific changed line. Use one review for
+   the set of findings:
+
+   - Use `REQUEST_CHANGES` when the reviewer is permitted and there are critical
+     or important findings; otherwise use `COMMENT` (for example, GitHub does not
+     allow an author to request changes on their own PR).
+   - Use `COMMENT` for suggestion-only reviews.
+   - Inspect existing review threads first. Do not duplicate an equivalent open,
+     current comment; cite that existing thread in the review summary instead.
+   - Include severity, concrete failure mode, and the expected fix or regression
+     test in each inline comment.
+   - Verify the review/comment was created successfully and include its URL or ID
+     in the final report.
+
+8. **Provide Action Plan**
 
    Organize findings:
    ```markdown
