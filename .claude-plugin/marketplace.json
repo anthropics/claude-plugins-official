@@ -512,6 +512,20 @@
       "homepage": "https://github.com/gemini-cli-extensions/bigquery-data-analytics"
     },
     {
+      "name": "bitmovin-player-web",
+      "description": "Teach Claude how to integrate the Bitmovin Web Player SDK (v8 and Player Web X). Covers installation, DRM, ads, analytics, subtitles, React/Next.js/Vue patterns, and common pitfalls.",
+      "author": {
+        "name": "Bitmovin"
+      },
+      "category": "development",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/bitmovin/skills.git",
+        "sha": "747997bdb7b7876607e146fe26e730be7a70297b"
+      },
+      "homepage": "https://bitmovin.com"
+    },
+    {
       "name": "boltz",
       "description": "Predict structures, screen molecules and proteins, and design binders with Boltz from Claude Code.",
       "author": {
