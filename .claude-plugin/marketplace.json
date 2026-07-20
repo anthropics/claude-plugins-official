@@ -207,7 +207,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/apolloio/apollo-mcp-plugin.git",
-        "sha": "d0676ea9bba52b0f97d810dade775de059ccd2bd"
+        "sha": "1fa5c26b6c99283883db5858804234fbe1c10818"
       },
       "homepage": "https://www.apollo.io/"
     },
