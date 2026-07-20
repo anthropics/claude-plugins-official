@@ -556,6 +556,22 @@
       "homepage": "https://docs.brightdata.com"
     },
     {
+      "name": "browser-use",
+      "description": "Give Claude a real browser — your Chrome or a Browser Use Cloud browser. Use it whenever a task involves a website or web app: browsing, scraping and data extraction, filling forms, testing sites, taking screenshots, automating web workflows.",
+      "author": {
+        "name": "Browser Use"
+      },
+      "category": "automation",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/browser-use/plugins.git",
+        "path": "browser-use",
+        "ref": "main",
+        "sha": "a25f0a262928bcbb62071432636d943ed9f2b6aa"
+      },
+      "homepage": "https://browser-use.com"
+    },
+    {
       "name": "buildkite",
       "description": "Official Buildkite skills for Claude Code, Cursor, and other AI coding agents — pipelines, migration, preflight, agent runtime, CLI, and API",
       "author": {
