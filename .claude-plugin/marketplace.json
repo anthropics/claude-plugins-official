@@ -3095,7 +3095,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/supabase-community/supabase-plugin.git",
-        "sha": "3b3184501844df3d2e0accac129fdcae73f4bf95"
+        "sha": "5d74232687a0a82184ecd4266ea07372edb43f4b"
       },
       "homepage": "https://github.com/supabase-community/supabase-plugin"
     },
