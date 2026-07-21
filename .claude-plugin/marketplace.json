@@ -2201,6 +2201,20 @@
       "homepage": "https://miro.com"
     },
     {
+      "name": "modern-web-guidance",
+      "description": "Keep your coding agent up to date with the latest web best practices",
+      "author": {
+        "name": "Google Chrome"
+      },
+      "category": "development",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/GoogleChrome/modern-web-guidance.git",
+        "sha": "2354c8c5856602e0730d7c65d91f1c29ffc479ee"
+      },
+      "homepage": "https://goo.gle/modern-web-guidance"
+    },
+    {
       "name": "mlflow",
       "description": "Skills for tracing, evaluating, and improving AI agents with MLflow. Supports the full agent improvement loop: instrument → trace → evaluate → iterate → validate.",
       "author": {
@@ -2235,9 +2249,11 @@
       "description": "Official Claude plugin for MongoDB (MCP Server + Skills). Connect to databases, explore data, manage collections, optimize queries, generate reliable code, implement best practices, develop advanced features, and more.",
       "category": "database",
       "source": {
-        "source": "url",
+        "source": "git-subdir",
         "url": "https://github.com/mongodb/agent-skills.git",
-        "sha": "be846b4deb482c22a5fb4d133d6c1e6c4a32eb08"
+        "path": "plugins/mongodb",
+        "ref": "main",
+        "sha": "b4ea8150a020b9babaddc6c271c6dc177c06a83f"
       },
       "homepage": "https://www.mongodb.com/docs/mcp-server/overview/"
     },
@@ -3222,6 +3238,22 @@
         "sha": "9407475a5cd2a3986c48a58020fd47e23f9735e5"
       },
       "homepage": "https://github.com/spotify/ads-claude-plugin"
+    },
+    {
+      "name": "stackhawk-hawkscan",
+      "description": "Configure, run, and interpret HawkScan DAST results inside Claude Code. Generates stackhawk.yml configs, runs scans via CLI or Docker, and transforms security findings into prioritized fix tasks for your coding agent.",
+      "author": {
+        "name": "StackHawk"
+      },
+      "category": "security",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/stackhawk/agent-skills.git",
+        "path": "plugins/hawkscan",
+        "ref": "main",
+        "sha": "248e3fedba8ff80fadfd17f72a0454aa02b66a0b"
+      },
+      "homepage": "https://docs.stackhawk.com/ai-security/"
     },
     {
       "name": "stackhawk-api",
