@@ -688,6 +688,20 @@
       "homepage": "https://github.com/circlebackai/claude-code-plugin.git"
     },
     {
+      "name": "ckeditor",
+      "description": "Install, configure, and integrate CKEditor 5 (free and premium) in any JavaScript project.",
+      "author": {
+        "name": "CKEditor (CKSource)"
+      },
+      "category": "development",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/ckeditor/skills.git",
+        "sha": "4035bf6ccd0555ec06ff0e64681ad248ad45d265"
+      },
+      "homepage": "https://ckeditor.com"
+    },
+    {
       "name": "clangd-lsp",
       "description": "C/C++ language server (clangd) for code intelligence",
       "version": "1.0.0",
