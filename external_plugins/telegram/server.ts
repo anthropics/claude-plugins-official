@@ -19,6 +19,7 @@ import { z } from 'zod'
 import { Bot, GrammyError, InlineKeyboard, InputFile, type Context } from 'grammy'
 import type { ReactionTypeEmoji } from 'grammy/types'
 import { randomBytes } from 'crypto'
+import { execFileSync } from 'child_process'
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, statSync, renameSync, realpathSync, chmodSync } from 'fs'
 import { homedir } from 'os'
 import { join, extname, sep } from 'path'
@@ -664,16 +665,42 @@ process.on('SIGTERM', shutdown)
 process.on('SIGINT', shutdown)
 process.on('SIGHUP', shutdown)
 
+// Bun does not reliably surface a closed stdin pipe as destroyed/readableEnded
+// or an 'end' event, but it can raise a stream error — treat that as terminal
+// too, before the transport starts spinning on the dead pipe (#1396).
+process.stdin.on('error', shutdown)
+
 // Orphan watchdog: stdin events above don't reliably fire when the parent
-// chain (`bun run` wrapper → shell → us) is severed by a crash. Poll for
-// reparenting (POSIX) or a dead stdin pipe and self-terminate.
-const bootPpid = process.ppid
+// chain (`bun run` wrapper → shell → us) is severed by a crash, and comparing
+// our own ppid is blind to it: the wrapper outlives the CLI (the *wrapper*
+// reparents to init while our ppid still points at the wrapper), so orphans
+// spin forever (#1396). The durable POSIX signal is one level up — when the
+// wrapper is gone, or the wrapper's own parent is init, the session is dead.
+// Requires two consecutive dead readings so transient fork/exec churn at
+// startup can never false-fire (the #1467 failure mode).
+function wrapperDead(): boolean {
+  try {
+    const out = execFileSync('ps', ['-o', 'ppid=', '-p', String(process.ppid)], {
+      timeout: 2000,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
+      .toString()
+      .trim()
+    return out !== '' && parseInt(out, 10) === 1
+  } catch (e) {
+    // ps exits 1 when the pid no longer exists → wrapper is gone. Any other
+    // failure (timeout, ENOMEM) is not evidence of death — stay alive.
+    return (e as { status?: number | null }).status === 1
+  }
+}
+let deadTicks = 0
 setInterval(() => {
-  const orphaned =
-    (process.platform !== 'win32' && process.ppid !== bootPpid) ||
+  const dead =
+    (process.platform !== 'win32' && (process.ppid === 1 || wrapperDead())) ||
     process.stdin.destroyed ||
     process.stdin.readableEnded
-  if (orphaned) shutdown()
+  deadTicks = dead ? deadTicks + 1 : 0
+  if (deadTicks >= 2) shutdown()
 }, 5000).unref()
 
 // Commands are DM-only. Responding in groups would: (1) leak pairing codes via
