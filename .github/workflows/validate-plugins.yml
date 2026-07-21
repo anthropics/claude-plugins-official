@@ -19,6 +19,15 @@ on:
       # pull_request and the required check would sit "Expected" forever (a dispatch
       # check run isn't associated with the PR, so it can't satisfy the gate either).
       - '.github/policy/**'
+      # And once more for a plugin's own docs: a PR that only edits a README or
+      # adds a screenshot matches nothing above, so the required check never
+      # reports and the PR can't be merged. Spelled out per level because `*`
+      # doesn't cross a `/` — plugins live at plugins/<name>/, so `*/README.md`
+      # would not match one.
+      - 'plugins/*/README.md'
+      - 'plugins/*/assets/**'
+      - 'external_plugins/*/README.md'
+      - 'external_plugins/*/assets/**'
   push:
     branches: [main]
     paths:
