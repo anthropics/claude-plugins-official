@@ -11,7 +11,8 @@
     "airwallex": "airwallex-agentos",
     "convex-backend": "convex",
     "vals": "valtown",
-    "wordpress.com": "build-with-wordpress"
+    "wordpress.com": "build-with-wordpress",
+    "qodo-skills": "qodo"
   },
   "plugins": [
     {
@@ -147,6 +148,22 @@
         "sha": "66a264765956d2b400c79044b8b92aed34688bf8"
       },
       "homepage": "https://github.com/gemini-cli-extensions/alloydb-omni"
+    },
+    {
+      "name": "altimate-code",
+      "description": "Delegates dbt and warehouse work to altimate-code, a specialized CLI agent with 100+ purpose-built data tools (SQL analysis, column-level lineage, dbt build/test/run, warehouse profiling, FinOps, connectivity to Snowflake, BigQuery, Redshift, Databricks, Postgres, MySQL, DuckDB).",
+      "author": {
+        "name": "AltimateAI"
+      },
+      "category": "database",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/AltimateAI/altimate-claude-plugin.git",
+        "path": "plugins/altimate-code",
+        "ref": "main",
+        "sha": "877827476f27a694d80ead36b5f71f34c72d6802"
+      },
+      "homepage": "https://www.altimate.ai"
     },
     {
       "name": "amazon-location-service",
@@ -471,6 +488,20 @@
       "homepage": "https://github.com/AzureCosmosDB/cosmosdb-claude-code-plugin"
     },
     {
+      "name": "azure-sql-developer",
+      "description": "Agent skills for Azure SQL Developer, the Azure SQL Database engine running locally in a container. Teaches your agent to run the engine, connect, migrate, scaffold, build RAG, wire CI, and go local-to-cloud, using the real Private Preview image instead of the SQL Server image.",
+      "author": {
+        "name": "Microsoft"
+      },
+      "category": "database",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/microsoft/azure-sql-database-container.git",
+        "sha": "c64639ce9d03731180560ccca214695892a72fe4"
+      },
+      "homepage": "https://github.com/microsoft/azure-sql-database-container"
+    },
+    {
       "name": "base44",
       "description": "Build and deploy Base44 full-stack apps with CLI project management and JavaScript/TypeScript SDK development skills",
       "category": "development",
@@ -570,6 +601,22 @@
       "homepage": "https://docs.brightdata.com"
     },
     {
+      "name": "browser-use",
+      "description": "Give Claude a real browser — your Chrome or a Browser Use Cloud browser. Use it whenever a task involves a website or web app: browsing, scraping and data extraction, filling forms, testing sites, taking screenshots, automating web workflows.",
+      "author": {
+        "name": "Browser Use"
+      },
+      "category": "automation",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/browser-use/plugins.git",
+        "path": "browser-use",
+        "ref": "main",
+        "sha": "a25f0a262928bcbb62071432636d943ed9f2b6aa"
+      },
+      "homepage": "https://browser-use.com"
+    },
+    {
       "name": "buildkite",
       "description": "Official Buildkite skills for Claude Code, Cursor, and other AI coding agents — pipelines, migration, preflight, agent runtime, CLI, and API",
       "author": {
@@ -600,6 +647,20 @@
       "homepage": "https://www.canva.com"
     },
     {
+      "name": "carbone-skill",
+      "description": "Official Carbone skill — complete templating language reference covering tags, loops, conditions, formatters, aggregators, and all output formats (DOCX, XLSX, PPTX, ODT, HTML, Markdown, PDF)",
+      "author": {
+        "name": "Carbone"
+      },
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/carboneio/carbone-skill.git",
+        "sha": "52cd97e4ff35490440c066822739e466fab47901"
+      },
+      "homepage": "https://carbone.io"
+    },
+    {
       "name": "carta-cap-table",
       "description": "Carta Cap Table plugin — skills and hooks for querying cap tables, grants, SAFEs, 409A valuations, waterfall scenarios, and more",
       "author": {
@@ -611,7 +672,7 @@
         "url": "https://github.com/carta/plugins.git",
         "path": "plugins/carta-cap-table",
         "ref": "main",
-        "sha": "a007723c7149acab9f9357eaa74b98635bb63934"
+        "sha": "80da56af79af8779f0dd1a08b8eaaf372fa48c9c"
       },
       "homepage": "https://carta.com"
     },
@@ -700,6 +761,20 @@
         "sha": "a610634c95ab310accf20a0cabdf0fa7ab784fa3"
       },
       "homepage": "https://github.com/circlebackai/claude-code-plugin.git"
+    },
+    {
+      "name": "ckeditor",
+      "description": "Install, configure, and integrate CKEditor 5 (free and premium) in any JavaScript project.",
+      "author": {
+        "name": "CKEditor (CKSource)"
+      },
+      "category": "development",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/ckeditor/skills.git",
+        "sha": "4035bf6ccd0555ec06ff0e64681ad248ad45d265"
+      },
+      "homepage": "https://ckeditor.com"
     },
     {
       "name": "clangd-lsp",
@@ -984,6 +1059,20 @@
         "typescript",
         "mcp"
       ]
+    },
+    {
+      "name": "crowdsec",
+      "description": "Operational skill for installing, configuring, operating, and debugging CrowdSec (cscli, LAPI/CAPI, hub, bouncers, WAF/AppSec) across bare-metal, Docker, and Kubernetes.",
+      "author": {
+        "name": "CrowdSec"
+      },
+      "category": "security",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/crowdsecurity/crowdsec-skill.git",
+        "sha": "8238c7991edf22592d1c5acb9170fb3f6c400323"
+      },
+      "homepage": "https://www.crowdsec.net"
     },
     {
       "name": "crowdstrike-falcon-foundry",
@@ -1357,7 +1446,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/voxel51/fiftyone-skills.git",
-        "sha": "8d0ddac468a77314f4f2507c266abcd6bd48c8db"
+        "sha": "4fedd6ee7aa88e6e540e31bf54602528c9ca529d"
       },
       "homepage": "https://docs.voxel51.com/"
     },
@@ -1452,6 +1541,20 @@
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/github"
     },
     {
+      "name": "gitkraken",
+      "description": "Gives Claude access to your real Git and project context: commits, branches, pull requests, and issues across every repo you work in. Works with GitHub, GitLab, Azure DevOps, Bitbucket, and Jira.",
+      "author": {
+        "name": "GitKraken"
+      },
+      "category": "development",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/gitkraken/claude-plugin.git",
+        "sha": "cd0c2976c9b47a56e2b7d4cce1cd77fc058bee39"
+      },
+      "homepage": "https://www.gitkraken.com"
+    },
+    {
       "name": "gitlab",
       "description": "GitLab DevOps platform integration. Manage repositories, merge requests, CI/CD pipelines, issues, and wikis. Full access to GitLab's comprehensive DevOps lifecycle tools.",
       "category": "productivity",
@@ -1532,6 +1635,20 @@
       "category": "development",
       "source": "./external_plugins/greptile",
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/greptile"
+    },
+    {
+      "name": "growthbook",
+      "description": "A suite of agent skills for the full GrowthBook feature flag and experimentation lifecycle.",
+      "author": {
+        "name": "GrowthBook"
+      },
+      "category": "testing",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/growthbook/skills.git",
+        "sha": "2ba1f3608d15394b2881125fc4babdc761454cb5"
+      },
+      "homepage": "https://growthbook.io"
     },
     {
       "name": "honeycomb",
@@ -2558,7 +2675,8 @@
       "homepage": "https://skills.qdrant.tech"
     },
     {
-      "name": "qodo-skills",
+      "name": "qodo",
+      "displayName": "Qodo",
       "description": "Qodo Skills provides a curated library of reusable AI agent capabilities that extend Claude's functionality for software development workflows. Each skill is designed to integrate seamlessly into your development process, enabling tasks like code quality checks, automated testing, security scanning, and compliance validation. Skills operate across your entire SDLC—from IDE to CI/CD—ensuring consistent standards and catching issues early.",
       "category": "development",
       "source": {
@@ -3106,6 +3224,22 @@
       "homepage": "https://github.com/spotify/ads-claude-plugin"
     },
     {
+      "name": "stackhawk-api",
+      "description": "Query the StackHawk platform API for security posture reporting, findings analysis, and app management. Guides agents through authentication, data retrieval, and result presentation.",
+      "author": {
+        "name": "StackHawk"
+      },
+      "category": "security",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/stackhawk/agent-skills.git",
+        "path": "plugins/api",
+        "ref": "main",
+        "sha": "248e3fedba8ff80fadfd17f72a0454aa02b66a0b"
+      },
+      "homepage": "https://docs.stackhawk.com/ai-security/"
+    },
+    {
       "name": "stripe",
       "description": "Stripe development plugin for Claude",
       "category": "development",
@@ -3274,6 +3408,22 @@
           }
         }
       }
+    },
+    {
+      "name": "ui-theme-designer",
+      "description": "Plugin for coding agents working with UI theme designer. Bundles two skills: how-to and conceptual answers about UI theme designer on BTP, and questions about the SAP Design System and SAP Fiori design tokens — theme parameters and component-level parameter usage in UI5, UI5 Web Components, and Fundamental Styles.",
+      "author": {
+        "name": "SAP SE"
+      },
+      "category": "design",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/SAP/ui-theme-designer-plugins-for-coding-agents.git",
+        "path": "plugins/ui-theme-designer",
+        "ref": "main",
+        "sha": "c6ac4390403fa4ab2fa65f8b4001a03a19ee727c"
+      },
+      "homepage": "https://github.com/SAP/ui-theme-designer-plugins-for-coding-agents"
     },
     {
       "name": "ui5",
