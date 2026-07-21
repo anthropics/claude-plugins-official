@@ -173,7 +173,7 @@
         "url": "https://github.com/amd/skills.git",
         "path": "skills",
         "ref": "main",
-        "sha": "7ef8dd99ffd6d82208f1a0ae211a782ec2edee82"
+        "sha": "228980933abd97a8aa4a2656c8ea3ae9e8b590c7"
       },
       "strict": false,
       "skills": [
@@ -207,7 +207,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/apolloio/apollo-mcp-plugin.git",
-        "sha": "1fa5c26b6c99283883db5858804234fbe1c10818"
+        "sha": "2adde980e45f421b7e9383d92870455627936bce"
       },
       "homepage": "https://www.apollo.io/"
     },
@@ -253,7 +253,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/astronomer/agents.git",
-        "sha": "5432198caa8ef9ec33218124bcd44016db2d31bf"
+        "sha": "87d780cd5dc85a25c7ceb1f1720031fa4e48f781"
       },
       "homepage": "https://github.com/astronomer/agents"
     },
@@ -643,7 +643,7 @@
         "url": "https://github.com/carta/plugins.git",
         "path": "plugins/carta-investors",
         "ref": "main",
-        "sha": "a007723c7149acab9f9357eaa74b98635bb63934"
+        "sha": "f2c2cbb11ed4dfabf88c59d61827b4b1aefb0611"
       },
       "homepage": "https://carta.com"
     },
@@ -899,7 +899,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/coderabbitai/skills.git",
-        "sha": "2fd091d9582deccf19929e21f934921d0e8f686e"
+        "sha": "c61c4908d36dda6fb08a343cc8b19c59fbb47de3"
       },
       "homepage": "https://github.com/coderabbitai/skills"
     },
@@ -1052,7 +1052,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/astronomer/agents.git",
-        "sha": "5432198caa8ef9ec33218124bcd44016db2d31bf"
+        "sha": "87d780cd5dc85a25c7ceb1f1720031fa4e48f781"
       },
       "homepage": "https://github.com/astronomer/agents"
     },
@@ -1076,7 +1076,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/astronomer/agents.git",
-        "sha": "5432198caa8ef9ec33218124bcd44016db2d31bf"
+        "sha": "87d780cd5dc85a25c7ceb1f1720031fa4e48f781"
       },
       "homepage": "https://github.com/astronomer/agents"
     },
@@ -1189,7 +1189,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/confident-ai/deepeval.git",
-        "sha": "ae2cb499653628ef7b1f44337715456b680aee5f"
+        "sha": "6bb1881c8caaae3a0348ad9040d506df7332be80"
       },
       "homepage": "https://github.com/confident-ai/deepeval"
     },
@@ -1506,7 +1506,7 @@
         "url": "https://github.com/grafana/ai-marketplace.git",
         "path": "plugins/grafana-cloud-mcp",
         "ref": "main",
-        "sha": "a5c72f2d74c640e9675eb0249526447968535015"
+        "sha": "12be5634a492f73c189d466c5449d09b853ad7a4"
       },
       "homepage": "https://grafana.com"
     },
@@ -1610,7 +1610,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/heygen-com/hyperframes.git",
-        "sha": "ff3627d5d97c32b88d9faf79ad8d6126ab673074"
+        "sha": "911b332bb2131f1b3fc4abbea563bf0c70d165c4"
       },
       "homepage": "https://hyperframes.heygen.com"
     },
@@ -2620,7 +2620,7 @@
     },
     {
       "name": "receipts",
-      "description": "Generate a personal Claude Code impact report from your local ~/.claude/projects transcripts, cross-referenced against your local git history — what you shipped, which projects it went to, and each project's share of your usage — for justifying usage to a manager or a self-review. Reads your session transcripts and runs read-only git commands in the projects they mention; mining is local and only a small aggregate summary (counts and project names) is sent to write the report, which is saved to your home directory and published nowhere.",
+      "description": "A personal Claude Code impact report for justifying your usage to a manager or a self-review: what you shipped, which projects it went to, and each project's share of your usage. Reads your ~/.claude/projects transcripts and runs read-only git locally; only counts and project names are sent to write it up, and the report stays on your machine.",
       "author": {
         "name": "Anthropic",
         "email": "support@anthropic.com"
@@ -2910,7 +2910,7 @@
         "source": "git-subdir",
         "url": "https://github.com/semgrep/mcp-marketplace.git",
         "path": "plugin",
-        "sha": "63fac121296f3f102651de6beb7c15649c8b11d3"
+        "sha": "7ae38e4bec51877cec71fcacc5857d746fb8b468"
       },
       "homepage": "https://github.com/semgrep/mcp-marketplace.git"
     },
@@ -3087,7 +3087,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/spotify/ads-claude-plugin.git",
-        "sha": "aedf7ed87312891ef2e357c02b9c22fcca8907b4"
+        "sha": "6f0b741c8dabb92492a74e6e6893f81e1b94b038"
       },
       "homepage": "https://github.com/spotify/ads-claude-plugin"
     },
@@ -3554,7 +3554,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/langfuse/skills.git",
-        "sha": "b6253b2c659c93a4033bb9a6e7c04d7e2ebc0de6"
+        "sha": "abe69fac6b0e0df94605dc5ae162da4726d0fb78"
       },
       "homepage": "https://langfuse.com"
     },
