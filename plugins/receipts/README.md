@@ -4,6 +4,12 @@ Generate a personal Claude Code impact report — "receipts" — from your own
 session transcripts, for the conversation where someone asks what all this
 Claude Code usage is actually buying.
 
+<img src="assets/sample-receipt.png" width="400"
+  alt="A printed-receipt-styled report headed 'Claude Code — usage receipt, Morgan Lunt', covering 2026-06-21 to 2026-07-20, active on 28 of 30 days. It lists 40 sessions, 64 prompts, 14 files touched, 3,120 lines touched, 12 commits carrying that work and 7 PRs opened, headlined as 19 commits and PRs shipped. A by-project table gives 'Research and investigation (no project)' 53% of spend with no files touched, then acme-api 29%, acme-web 10%, billing-service 5%, infra-terraform 3%, and a plain ~/notes directory 1%. Footnotes explain which columns do not sum, and an Export CSV button sits above a barcode.">
+
+*Sample output — the projects and numbers are invented. It's rendered from a
+synthetic corpus, not from anyone's real usage.*
+
 ## Install
 
 ```
