@@ -3604,7 +3604,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/windsor-ai/claude-windsor-ai-plugin.git",
-        "sha": "248a6994b15b410cc025b105bb4ed5558e9b1af9"
+        "sha": "8a4fed5425bd43f6f57f4543d7acfc0593616846"
       },
       "homepage": "https://windsor.ai"
     },
