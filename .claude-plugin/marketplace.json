@@ -1685,7 +1685,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/hostinger/claude-plugin.git",
-        "sha": "6fe8f03f9b1f6d71cf60f05f01f9e228e772cbb0"
+        "sha": "10259650b82ceee43741ce2f8a7fa564a8c286c7"
       },
       "homepage": "https://www.hostinger.com"
     },
