@@ -3439,7 +3439,7 @@
         "url": "https://github.com/SAP/ui-theme-designer-plugins-for-coding-agents.git",
         "path": "plugins/ui-theme-designer",
         "ref": "main",
-        "sha": "6c0910f8b5ef0689090752ed242a713e4f5877f9"
+        "sha": "9dc9e34bb8ac45ab597e8c1e4b54dc42dc0ecf26"
       },
       "homepage": "https://github.com/SAP/ui-theme-designer-plugins-for-coding-agents"
     },
