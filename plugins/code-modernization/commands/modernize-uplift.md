@@ -48,7 +48,20 @@ Optional 4th arg `$4` scopes to projects/modules matching a pattern.
    recorded/expected outputs (as in `/modernize-transform`). Note this in the
    plan and UPLIFT_NOTES — reviewers must know whether the proof was a true
    dual-run or target-only.
-4. **Detect the ecosystem migration tool** — and distinguish **present /
+4. **Test framework on the target — the one question that reshapes the plan.**
+   Answer, before any planning: *can the existing test suite execute on $3
+   as-is?* The test framework is a dependency like any other, and one whose
+   runner/adapter does not support the target runtime is the single most
+   common reason an uplift's phase order comes out wrong: the test migration
+   is then a **prerequisite, not a leaf**, because nothing you migrate can be
+   validated until the tests that validate it run on $3. Read the framework
+   and version out of the test manifests and check it against $3 — NUnit 2 or
+   MSTest v1 cannot execute on modern .NET, JUnit 4 needs the vintage engine
+   on newer platforms, `nose`/`unittest2` do not run on Python 3, and so on
+   for whatever this stack's test manifests declare. If the answer is no, say
+   so now: it becomes an explicit *early* phase in the plan (Step 2) and in
+   `/modernize-brief`, never a trailing one.
+5. **Detect the ecosystem migration tool** — and distinguish **present /
    runnable-here / actually-ran**. Most of these tools need a working
    restore + build (and often network), which a read-only sandbox does not
    have, so "installed" ≠ "produced findings". Report all three states and
@@ -69,6 +82,18 @@ Optional 4th arg `$4` scopes to projects/modules matching a pattern.
 Run `/modernize-preflight $1 $3` for the full readiness report.
 
 ## Step 1 — Working copy, project graph & ordering
+
+**The brief is binding — read it first.** If `analysis/$1/MODERNIZATION_BRIEF.md`
+exists, this invocation is executing one of its phases: read it before
+deciding anything below. Find the phase that names this command with a scope
+matching `$1`/`$4`, and treat that phase's **scope, entry criteria, exit
+criteria, and any edits the user made to it** as binding on the plan you
+present in Step 2. Entry criteria are *gates*, not context: if one is not met
+("baseline recorded", "pilot playbook approved"), meeting it **is** the next
+step — do not proceed past it and do not silently re-plan around it. If the
+brief exists but no phase matches, stop and ask which phase this is. The user
+steers execution by editing the brief; a brief the execution command never
+reads cannot steer anything.
 
 **Working copy (do this first).** An uplift edits an existing solution *in
 place* — it bumps target frameworks and fixes APIs while keeping the `.sln`,
@@ -100,6 +125,18 @@ leaf-first — call them out in the plan:
   libs so old and new consumers can both reference them while the migration is
   in flight (the standard .NET technique). Note cycles in the project graph
   need a manual cut point.
+- **Shared nodes with consumers OUTSIDE this scope need a recorded decision
+  before an in-place edit.** Read `analysis/$1/PREFLIGHT.md` if it exists:
+  its Check 6 lists the nodes under `$1` that source *outside* `$1` depends
+  on. Uplifting such a node in place breaks every external consumer nobody
+  is looking at — the one kind of damage this command can do beyond its own
+  scope. Do not migrate one without a recorded transition decision (the
+  brief's §3 owns it): keep the node buildable for both old and new
+  consumers through the transition — for many stacks that is exactly the
+  multi-targeting technique above — or expand the scope to include the
+  consumers, or accept and schedule the break. If a shared node has no
+  recorded decision, getting one from the user **is** that node's entry
+  criterion: stop and ask.
 
 Scope to `$4` if given. Present the working-copy plan and the order.
 
@@ -124,6 +161,12 @@ if available):
 This replaces `/modernize-transform`'s business-rule extraction. Build
 `analysis/$1/DELTA_CATALOG.md`: the breaking/behavioral changes between $2 and
 $3 **that this code actually hits**.
+
+**Reuse it if it already exists and is fresh.** `/modernize-brief` requires
+this catalog for an uplift and may have just produced it by running this
+very step. If `analysis/$1/DELTA_CATALOG.md` exists and is newer than the
+source under `legacy/$1`, read it and move on — do not re-run the fan-out to
+re-derive the identical artifact. Regenerate only if it is missing or stale.
 
 **Preferred — Workflow orchestration.** If the **Workflow tool** is available
 (this invocation authorizes it):
@@ -170,10 +213,13 @@ this order so you de-risk the oracle before depending on it:
    fix the harness now — not mid-migration. (This is the structure
    `test-engineer` then fills.) If the $2 leg can't run here (Step 0.3), prove
    the $3 leg only and mark the proof target-only.
-2. **Baseline = the oracle.** Run the existing suite on the **$2** target and
-   record pass/fail per test. This is the equivalence target — including any
-   tests that legacy fails. You are proving *no behavior changed*, not *all
-   tests pass*.
+2. **Baseline = the oracle. Record it in a file, not in your head.** Run the
+   existing suite on the **$2** target and write the per-test pass/fail table
+   to **`analysis/$1/BASELINE.md`**. This is the equivalence target —
+   including any tests that legacy fails. You are proving *no behavior
+   changed*, not *all tests pass*. The file is the point: Step 5 refuses to
+   start until it exists, so a migration can neither begin without an oracle
+   nor quietly skip this step under the pressure of many units.
 3. **Gap-fill at delta sites.** Using `DELTA_CATALOG.md`, spawn `test-engineer`
    to add characterization tests specifically where **Behavioral-silent**
    deltas touch under-tested code (culture, encoding, serialization, dates).
@@ -182,8 +228,25 @@ this order so you de-risk the oracle before depending on it:
 
 If only the target runtime is available (Step 0.3), there is no $2 run: pin the
 gap-fill tests to expected/recorded outputs and label the proof target-only.
+`analysis/$1/BASELINE.md` still gets written — as the one-line honest record
+`target-only: <why the $2 runtime is unavailable here>` rather than a table —
+because Step 5 gates on the file existing either way.
 
-## Step 5 — Migrate, leaf-first, minimal-diff
+## Step 5 — Migrate: pilot ONE unit, then fan out in batches
+
+**Gate — do not start until `analysis/$1/BASELINE.md` exists** (Step 4.2):
+either the per-test $2 pass/fail table, or the one-line
+`target-only: <why the $2 runtime is unavailable here>` record. If it does
+not exist, writing it **is** the next step — not something to come back to.
+A migration without a baseline has no oracle: "the tests pass on $3" means
+nothing if you never learned what they did on $2.
+
+**Never migrate everything at once.** The delta catalog is a hypothesis built
+by *reading*; the **build system** is where a legacy codebase hides its
+surprises — a bespoke dependency-resolution scheme, a pinned toolchain, a
+shared props file, a code-generation step — and none of that enters the
+catalog until a real migration hits it. The cheapest place to hit it is one
+unit, not N.
 
 All editing happens **in place inside the working copy `modernized/$1-uplifted/`** from
 Step 1 (so relative project references resolve and the result is a clean
@@ -191,7 +254,8 @@ Step 1 (so relative project references resolve and the result is a clean
 tools (`upgrade-assistant`, `ng update`) mutate the tree in place — that is
 fine *here* because they run against the `modernized/$1-uplifted/` copy, not `legacy/`.
 
-For each project in dependency order (respecting the Step 1 overrides):
+Per **unit** (a project / module / package — one node in the Step 1 graph),
+the recipe is always the same:
 1. **Run the ecosystem codemod** for the Mechanical deltas (`upgrade-assistant`
    apply / OpenRewrite recipe / `pyupgrade` / `ng update`) against the copy.
 2. **Apply the Judgment deltas** by hand from the catalog.
@@ -203,12 +267,127 @@ For each project in dependency order (respecting the Step 1 overrides):
    here (the inverse of its usual job): any change beyond the minimal uplift is
    a finding.
 
-Keep going until the project **builds on $3**.
+Keep going until the unit **builds on $3**.
+
+### 5a — Pilot (mandatory; do it yourself, in-session, never in a workflow)
+
+Take **one representative unit** all the way through the recipe above until
+it builds on $3 and reproduces its `BASELINE.md` result. *Representative*
+means it exercises the highest-blast-radius deltas from the catalog — a
+mid-complexity unit, **not the easiest one**. An easy pilot teaches you
+nothing you can reuse.
+
+Two outputs, both mandatory before any other unit is touched:
+
+- **Feed the catalog.** Every surprise the pilot hits that `DELTA_CATALOG.md`
+  did not predict — a build error, a step the ecosystem tool got wrong, an
+  environment fact you had to discover — is a delta the catalog missed. Add
+  it now, while you still know why.
+- **Write `analysis/$1/PLAYBOOK.md`** — the proven recipe, and the single
+  most valuable artifact of the whole migration. Concretely: the ordered
+  sequence of edits for one unit; every error hit and what resolved it;
+  every environment fact you had to *discover* rather than already knew
+  (which toolchain version is really in use, how dependency binaries
+  actually resolve, which shared config file governs the build); and the
+  exact build command that proves a unit is done. **Write it as instructions
+  to an engineer who has not read this conversation** — the fan-out agents
+  in 5b are exactly that. Never a credential value in it.
+
+Then **stop and show the user** the pilot's diff, what it added to the
+catalog, and the playbook — *before* any fan-out. The pilot is where a
+human catches the surprise that would otherwise be replicated N times over.
+If the pilot changed the picture materially (a prerequisite you missed, a
+phase in the wrong order), that is a finding about the **brief**, not just
+about this step — say so and update `MODERNIZATION_BRIEF.md` before
+continuing.
+
+### 5b — Fan out in dependency-aware escalating batches
+
+Only after the user has seen the pilot. If only a handful of units remain,
+skip the machinery: repeat the recipe per unit, in dependency order,
+in-session.
+
+For many units, **the playbook is the prompt.** Do not brief fan-out agents
+from your general knowledge of the stack; brief them from what the pilot
+*proved about this codebase*. If the **Workflow tool** is available (this
+invocation authorizes it):
+
+```
+Workflow({
+  scriptPath: "${CLAUDE_PLUGIN_ROOT}/workflows/uplift-migrate.js",
+  args: { system: "$1", source: "$2", target: "$3",
+          units: [ { name: "<unit>", path: "<dir relative to modernized/$1-uplifted/>",
+                     deps: ["<name of a sibling unit this one depends on>", ...] },
+                   ... ] }
+})
+```
+
+Enumerate `units` from the Step 1 graph, **excluding the pilot** and
+excluding any unit in a Step 1 *coordinated cut* (those change together and
+belong in-session, not in a per-unit fan-out). **`deps` is how the fan-out
+honors the dependency order** — for each unit, list the *other units in this
+list* it depends on, straight from the Step 1 graph. The workflow only
+migrates a unit once every dep it lists has **built**, so a unit and the
+unit it depends on never build concurrently against each other in the same
+working copy; and a unit whose dependency *failed to build* is never
+attempted at all — its build would fail for the dependency's reason, not the
+playbook's, which is exactly the noise that would falsely trip the circuit
+breaker. Naming the pilot (or a unit migrated in-session) as a dep is fine —
+it counts as already satisfied. Omitting `deps` opts that unit out of the
+ordering, so do not leave them off to save typing.
+
+Tell the user how many units before launching, and how they will run: in
+dependency-aware escalating batches (~4, then larger — never all N in one
+shot), one agent per **unit** (never per file — a per-file agent cannot see
+the unit's manifest or run its build), each agent editing only inside its
+own unit's directory and running that unit's real build before reporting,
+and a **circuit breaker** that stops — instead of spending the rest of the
+budget — the moment a batch's build rate drops below two-thirds. The correct
+response to a failing batch is a better playbook, not more agents.
+
+One operational note to give the user before launching: the fan-out agents
+change files and run builds, largely unattended once approved. The README's
+recommended workspace settings only guard the **file tools** (they deny
+`Edit`/`Write` on `legacy/`); a shell command that writes a file goes
+through **Bash permissions instead**, and that prompt is the control that
+keeps a prompt-injected agent inside its scope. Keep Bash on a *prompted*
+permission mode for this step rather than blanket-allowing it to make the
+fan-out faster — and if the session's permission mode auto-approves Bash,
+say so and treat the fan-out's resulting diff as untrusted until reviewed.
+
+When the workflow returns:
+- **Cross-cutting edits are yours.** Apply the returned `sharedFileNeeds`
+  (the solution/workspace manifest, shared build config) yourself — the
+  agents correctly refused to touch files they would race each other on.
+- **Fold `playbookGaps` back into `PLAYBOOK.md`** before doing anything else
+  with the un-migrated units. This is the loop that makes each batch cheaper
+  than the last.
+- The result carries **three re-passable unit lists**, each already in the
+  `{name, path, deps}` shape that `units` takes — so continuing never means
+  re-deriving anything: `remainingUnits` (never attempted), `failedUnits`
+  (attempted; the build failed), and `blockedUnits` (never attempted because
+  a unit they depend on did not build). **A unit in `failedUnits` or
+  `blockedUnits` is NOT migrated** — an empty `remainingUnits` alone does
+  not mean you are done.
+- If it **aborted early**, that is the circuit breaker doing its job, not a
+  failure to route around: revise the playbook from the gaps and the build
+  errors, re-verify the revision on one of the *failed* units in-session,
+  and only then re-invoke with
+  `units: <failedUnits + blockedUnits + remainingUnits>`.
+- Repeat until all three lists are empty, then verify it yourself: each
+  agent's `built` flag is self-reported, so re-run the full build across the
+  whole working copy before moving to Step 6.
+
+**Fallback** (no Workflow tool): the same discipline by hand. Spawn the
+**uplift-migrator** agent per unit in batches of ~4, wait for the batch,
+fold its playbook gaps back in, check the build rate, and only then launch
+the next batch. Never launch all N in one shot.
 
 ## Step 6 — Dual-run diff (the proof)
 
 Run the **same suite** on both targets (or target-only per Step 0.3):
-- Every test must reproduce the **$2 baseline** result. A test that passed on
+- Every test must reproduce its result recorded in
+  **`analysis/$1/BASELINE.md`** (Step 4.2). A test that passed on
   $2 and fails on $3 is a regression; one that failed on $2 and now passes is a
   behavior change to adjudicate (intended fix vs accidental).
 - Triage **every** result delta: intended fix vs regression. Unexplained
@@ -222,7 +401,9 @@ Write `modernized/$1-uplifted/UPLIFT_NOTES.md`:
 - Dual-run diff table (or "target-only — source runtime unavailable here")
 - **Residual manual deltas** the tooling/this pass could not handle
 - **Deferred modernization** explicitly NOT done (kept the diff minimal)
-- Per-project: builds on $3 (y/n), baseline reproduced (y/n)
+- Per-unit: builds on $3 (y/n), baseline reproduced (y/n)
+- A pointer to `analysis/$1/PLAYBOOK.md` with its final gap list — the proven
+  recipe is worth more than this diff to whoever uplifts the next system
 
 ## Secrets discipline
 

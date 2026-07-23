@@ -7,8 +7,14 @@ export const meta = {
   phases: [{ title: 'Survey', detail: 'one metrics agent per system, all independent' }],
 }
 
-const parentDir = args && args.parentDir
-const systems = args && args.systems
+// `args` may arrive as the caller's raw JSON string rather than the parsed
+// object, depending on the invoking runtime; normalize so both work. A string
+// that is not valid JSON falls through and the requires-args check reports it.
+const ARGS = typeof args === 'string' ? (() => { try { return JSON.parse(args) } catch (e) { return args } })() : args
+
+
+const parentDir = ARGS && ARGS.parentDir
+const systems = ARGS && ARGS.systems
 if (!parentDir || !Array.isArray(systems) || systems.length === 0) {
   throw new Error(
     'modernize-portfolio-assess workflow requires args: {parentDir: "<path>", systems: ["subdir", ...]} — enumerate the subdirectories before invoking',

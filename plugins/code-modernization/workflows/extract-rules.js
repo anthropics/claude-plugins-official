@@ -12,9 +12,15 @@ export const meta = {
   ],
 }
 
+// `args` may arrive as the caller's raw JSON string rather than the parsed
+// object, depending on the invoking runtime; normalize so both work. A string
+// that is not valid JSON falls through and the requires-args check reports it.
+const ARGS = typeof args === 'string' ? (() => { try { return JSON.parse(args) } catch (e) { return args } })() : args
+
+
 // ---- args -----------------------------------------------------------------
 // The slash command passes these; the script never touches the filesystem.
-const system = args && args.system
+const system = ARGS && ARGS.system
 if (!system) {
   throw new Error(
     'modernize-extract-rules workflow requires args: {system: "<system-dir>", modulePattern?: "<glob>", maxRounds?: number}',
@@ -23,8 +29,8 @@ if (!system) {
 if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(system)) {
   throw new Error(`Unsafe system name ${JSON.stringify(system)} — must be a plain directory name under legacy/`)
 }
-const modulePattern = (args && args.modulePattern) || ''
-const maxRounds = Math.max(1, Math.min((args && args.maxRounds) || 4, 8))
+const modulePattern = (ARGS && ARGS.modulePattern) || ''
+const maxRounds = Math.max(1, Math.min((ARGS && ARGS.maxRounds) || 4, 8))
 const legacyDir = `legacy/${system}`
 
 // ---- shared prompt fragments ----------------------------------------------

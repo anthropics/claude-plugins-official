@@ -48,7 +48,7 @@ Then the full path:
 
 Run in order, but each is standalone — stop, review, resume.
 
-- **`/modernize-preflight <system-dir> [target-stack]`** — Environment readiness check. Detects the legacy stack, checks analysis tooling, smoke-compiles a real source file with the legacy toolchain, and inventories missing includes / deployment descriptors. Produces `PREFLIGHT.md` with a per-command Ready / Ready-with-gaps / Not-ready verdict.
+- **`/modernize-preflight <system-dir> [target-stack]`** — Environment readiness check. Asks you the five questions the source can't answer (scope, whether you can build and test locally, bespoke build infrastructure, prior attempts, what's off limits), then detects the legacy stack, checks analysis tooling, reads the CI/build definition for how the system builds, smoke-tests the toolchain against the real code, inventories missing includes / deployment descriptors, and checks the **scope boundary** — whether `<system-dir>` is a slice of a larger repo and what outside it depends on it. Produces `PREFLIGHT.md` with a per-command Ready / Ready-with-gaps / Not-ready verdict.
 
 - **`/modernize-assess <system-dir>`** *(or `--portfolio <parent-dir>`)* — Inventory: languages, complexity, tech debt, security posture, and a COCOMO complexity index ([see note](#a-note-on-cocomo)). Produces `ASSESSMENT.md` + `ARCHITECTURE.mmd`. With `--portfolio`, sweeps every subdirectory and writes a sequencing heat-map (`portfolio.html`).
 
@@ -56,13 +56,13 @@ Run in order, but each is standalone — stop, review, resume.
 
 - **`/modernize-extract-rules <system-dir> [module-pattern]`** — Mine the business rules — calculations, validations, eligibility, state transitions — into Given/When/Then "Rule Cards" with `file:line` citations and confidence ratings. Produces `BUSINESS_RULES.md` + `DATA_OBJECTS.md`.
 
-- **`/modernize-brief <system-dir> [target-stack]`** — Synthesize discovery into a phased **Modernization Brief**: target architecture, phase plan, persona walkthroughs, behavior contract, and an approval block. Reads the discovery artifacts and **stops if any are missing**. Enters plan mode as a human-in-the-loop approval gate.
+- **`/modernize-brief <system-dir> [target-stack]`** — Synthesize discovery into a phased **Modernization Brief**: target architecture, phase plan, persona walkthroughs, behavior contract, and an approval block. Reads the discovery artifacts and **stops if any are missing**. Enters plan mode as a human-in-the-loop approval gate. For a same-stack uplift it also requires the **delta catalog**, since an uplift's phase order is decided by its version deltas. The execution commands read the brief and treat each phase's entry criteria as gates, so editing the brief steers execution.
 
 - **`/modernize-reimagine <system-dir> <target-vision>`** — Greenfield rebuild from extracted intent. Mines a spec, designs and adversarially reviews a target architecture, then scaffolds services with executable acceptance tests under `modernized/<system>-reimagined/`. Two human checkpoints.
 
 - **`/modernize-transform <system-dir> <module> <target-stack>`** — Surgical single-module rewrite (strangler-fig: replace one piece while the legacy system keeps running). Plans first (approval gate), writes characterization tests, then an idiomatic implementation, and proves equivalence by running the tests. Produces `TRANSFORMATION_NOTES.md`.
 
-- **`/modernize-uplift <system-dir> <source-version> <target-version> [project-pattern]`** — Same-stack version bump (e.g. `.NET Framework 4.8` → `.NET 8`, Spring Boot 2 → 3) — the common case `transform` gets wrong by rewriting. Preserves the code and makes the smallest diffs that compile and behave identically, driven by a **delta catalog** (the known breaking changes that *this* code actually hits) and the ecosystem's migration tooling. Equivalence is proven by running the test suite on both the old and new runtime where both can run here (otherwise it falls back to characterization tests, like `transform`). Produces `DELTA_CATALOG.md` + `UPLIFT_NOTES.md`. If the catalog shows most of the code is forced to change, it tells you to use `transform` instead.
+- **`/modernize-uplift <system-dir> <source-version> <target-version> [project-pattern]`** — Same-stack version bump (e.g. `.NET Framework 4.8` → `.NET 8`, Spring Boot 2 → 3) — the common case `transform` gets wrong by rewriting. Preserves the code and makes the smallest diffs that compile and behave identically, driven by a **delta catalog** (the known breaking changes that *this* code actually hits) and the ecosystem's migration tooling. Equivalence is proven by running the test suite on both the old and new runtime where both can run here (otherwise it falls back to characterization tests, like `transform`). Migration is **pilot-first**: one representative project is migrated end-to-end in-session and its lessons written to a `PLAYBOOK.md` before anything else is touched; the rest then fan out, one agent per project, in **dependency-aware escalating batches behind a circuit breaker**. Produces `DELTA_CATALOG.md`, `BASELINE.md`, `PLAYBOOK.md` + `UPLIFT_NOTES.md`. If the catalog shows most of the code is forced to change, it tells you to use `transform` instead.
 
 - **`/modernize-harden <system-dir>`** — Security pass on the **legacy** system: OWASP/CWE, dependency CVEs, secrets, injection. Produces `SECURITY_FINDINGS.md` (ranked) and a reviewed `security_remediation.patch`. **Never edits `legacy/`** — you review and apply the patch yourself. Useful while the legacy system keeps running in production during migration.
 
@@ -78,6 +78,7 @@ Specialist subagents invoked by the commands (or directly):
 - **`security-auditor`** — Auth, input validation, secrets, dependency CVEs. *(assess, harden)*
 - **`test-engineer`** — Characterization and equivalence tests that pin legacy behavior. *(transform, uplift)*
 - **`version-delta-analyst`** — Finds the breaking changes between two versions of one stack that bite *this* codebase, and drives the ecosystem migration tool. *(uplift)*
+- **`uplift-migrator`** — Migrates one project/module of an in-flight uplift by following the pilot's playbook, then runs that unit's real build to prove it; refuses to migrate anything if no playbook exists yet. Writes only inside its own unit's directory. *(uplift)*
 - **`scaffolder`** — Builds one service of a reimagined system; writes only within its own `modernized/.../<service>/` directory. *(reimagine)*
 
 ## Recommended workspace setup
@@ -93,7 +94,7 @@ A `.claude/settings.json` in the project you're modernizing enforces the core in
 }
 ```
 
-This guards the file tools; shell commands that mutate files (`sed -i`, `git apply`) still go through the normal Bash prompt, so review those with the same invariant in mind.
+This guards the file tools; shell commands that mutate files (`sed -i`, `git apply`) still go through the normal Bash prompt, so review those with the same invariant in mind. That prompt is the containment for the two steps that fan out many write-capable agents at once — `/modernize-uplift` Step 5b and `/modernize-reimagine` Phase E — so keep Bash on a *prompted* permission mode for those.
 
 ## Prerequisites
 
@@ -115,7 +116,7 @@ Commands degrade gracefully, but these improve the output (run `/modernize-prefl
 
 ## Dynamic workflow orchestration
 
-On Claude Code builds with the Workflow tool, five commands (`extract-rules`, `harden`, `assess --portfolio`, `reimagine`, `uplift`) run as scripted multi-agent orchestrations that fan out more agents for deeper coverage — looping until findings stabilize, and adversarially verifying each finding before it's written. They fall back to direct subagent fan-out on older builds automatically; no configuration needed. Invoking the slash command is the opt-in.
+On Claude Code builds with the Workflow tool, five commands (`extract-rules`, `harden`, `assess --portfolio`, `reimagine`, `uplift`) run as scripted multi-agent orchestrations that fan out more agents for deeper coverage — looping until findings stabilize, and adversarially verifying each finding before it's written. `uplift`'s migration fan-out runs in dependency-aware escalating batches behind a per-batch **circuit breaker**, so a playbook that stops working is caught within a handful of agents and the spend stops until it is revised. They fall back to direct subagent fan-out on older builds automatically; no configuration needed. Invoking the slash command is the opt-in.
 
 ## License
 

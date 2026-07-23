@@ -37,6 +37,18 @@ first run:
 
 ## Step 0b — Plan (HITL gate)
 
+**The brief is binding — read it first.** If `analysis/$1/MODERNIZATION_BRIEF.md`
+exists, this transform is one phase (or one module of a phase) of that plan:
+read it before deciding anything below. Find the phase that names this
+command with `$2` in scope, and treat that phase's **scope, entry criteria,
+exit criteria, and any edits the user made to it** as binding on the plan
+you present below. Entry criteria are *gates*, not context: if one is not
+met (a prior phase's exit criteria, an SME sign-off the brief requires),
+meeting it **is** the next step — do not proceed past it and do not silently
+re-plan around it. If the brief exists but no phase covers `$2`, stop and
+ask which phase this is. The user steers execution by editing the brief; a
+brief the execution command never reads cannot steer anything.
+
 Read the source module and any business rules in `analysis/$1/BUSINESS_RULES.md`
 that reference it. Then present the plan and **stop — write no code until
 the user explicitly approves** (use plan mode if the session supports it):

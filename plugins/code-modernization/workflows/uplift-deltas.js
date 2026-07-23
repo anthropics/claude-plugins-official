@@ -10,9 +10,15 @@ export const meta = {
   ],
 }
 
-const system = args && args.system
-const source = args && args.source
-const target = args && args.target
+// `args` may arrive as the caller's raw JSON string rather than the parsed
+// object, depending on the invoking runtime; normalize so both work. A string
+// that is not valid JSON falls through and the requires-args check reports it.
+const ARGS = typeof args === 'string' ? (() => { try { return JSON.parse(args) } catch (e) { return args } })() : args
+
+
+const system = ARGS && ARGS.system
+const source = ARGS && ARGS.source
+const target = ARGS && ARGS.target
 if (!system || !source || !target) {
   throw new Error(
     'modernize-uplift-deltas requires args: {system, source, target, projectPattern?} — e.g. {system:"app", source:".NET Framework 4.8", target:".NET 8"}',
@@ -22,7 +28,7 @@ if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(system)) {
   throw new Error(`Unsafe system name ${JSON.stringify(system)} — must be a plain directory name under legacy/`)
 }
 const legacyDir = `legacy/${system}`
-const projectPattern = (args && args.projectPattern) || ''
+const projectPattern = (ARGS && ARGS.projectPattern) || ''
 
 const fence = s =>
   `<<<UNTRUSTED\n${String(s == null ? '' : s).replace(/<<<UNTRUSTED|UNTRUSTED>>>/g, '[fence marker stripped]')}\nUNTRUSTED>>>`
@@ -102,7 +108,7 @@ const CATEGORIES = [
   {
     key: 'dependency',
     label: 'Dependency',
-    brief: `Third-party dependencies that block or complicate the move to ${target}: packages with no ${target} support, packages needing a major bump that carries its own breaking changes (e.g. EF6→EF Core), or packages with no ${target} equivalent. Read the manifests (packages.config / *.csproj PackageReference / pom.xml / requirements). DO NOT under-report — dependency deltas are where same-stack uplifts most often stall.`,
+    brief: `Third-party dependencies that block or complicate the move to ${target}: packages with no ${target} support, packages needing a major bump that carries its own breaking changes (e.g. EF6→EF Core), or packages with no ${target} equivalent. Read the manifests (packages.config / *.csproj PackageReference / pom.xml / requirements). ALWAYS scan the TEST project manifests too and report the TEST FRAMEWORK/RUNNER as its own delta: a test framework whose runner cannot execute on ${target} (NUnit 2 or MSTest v1 on modern .NET, JUnit 4 without the vintage engine on newer platforms, nose/unittest2 on Python 3) is the highest-blast-radius dependency delta there is — nothing migrated can be validated until it moves, so it forces an EARLY phase, never a trailing one. DO NOT under-report — dependency deltas are where same-stack uplifts most often stall.`,
   },
 ]
 

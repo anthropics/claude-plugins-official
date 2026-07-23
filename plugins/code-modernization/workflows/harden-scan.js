@@ -10,7 +10,13 @@ export const meta = {
   ],
 }
 
-const system = args && args.system
+// `args` may arrive as the caller's raw JSON string rather than the parsed
+// object, depending on the invoking runtime; normalize so both work. A string
+// that is not valid JSON falls through and the requires-args check reports it.
+const ARGS = typeof args === 'string' ? (() => { try { return JSON.parse(args) } catch (e) { return args } })() : args
+
+
+const system = ARGS && ARGS.system
 if (!system) {
   throw new Error('modernize-harden-scan workflow requires args: {system: "<system-dir>"}')
 }

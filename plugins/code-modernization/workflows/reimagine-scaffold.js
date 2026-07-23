@@ -7,8 +7,14 @@ export const meta = {
   phases: [{ title: 'Scaffold', detail: 'one agent per approved service' }],
 }
 
-const system = args && args.system
-const services = args && args.services
+// `args` may arrive as the caller's raw JSON string rather than the parsed
+// object, depending on the invoking runtime; normalize so both work. A string
+// that is not valid JSON falls through and the requires-args check reports it.
+const ARGS = typeof args === 'string' ? (() => { try { return JSON.parse(args) } catch (e) { return args } })() : args
+
+
+const system = ARGS && ARGS.system
+const services = ARGS && ARGS.services
 if (!system || !Array.isArray(services) || services.length === 0) {
   throw new Error(
     'modernize-reimagine-scaffold requires args: {system: "<system-dir>", services: [{name: "...", responsibilities: "..."}]} — run it only after the architecture is approved',
