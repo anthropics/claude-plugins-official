@@ -318,6 +318,46 @@ def _probe_has_pip() -> bool:
         return False
 
 
+def _probe_alt_python() -> int:
+    """When the hook interpreter is <3.10 (HOOK_PY_INCOMPATIBLE), look for a
+    3.10+ interpreter at well-known install locations that aren't necessarily
+    on the hook's PATH — Homebrew (/opt/homebrew, /usr/local), python.org
+    framework builds, and the `py`/distro layouts. Returns the HIGHEST version
+    found encoded as major*100+minor (e.g. 312), or 0 if none.
+
+    Purpose (telemetry only, for now): size how many of the macOS Python-3.9
+    cohort actually HAVE a newer interpreter that sg-python.sh's PATH probe
+    missed — i.e. how many are RECOVERABLE by an explicit-path search vs.
+    genuinely 3.9-only. Emitted as sdk_alt_py. Existence-checks the versioned
+    binaries (cheap); a later explicit-path search would version-verify before
+    exec'ing. Probed only on the incompatible path, so healthy sessions never
+    pay for it."""
+    candidates = []
+    for minor in (14, 13, 12, 11, 10):
+        candidates += [
+            f"/opt/homebrew/bin/python3.{minor}",        # Apple-Silicon Homebrew
+            f"/usr/local/bin/python3.{minor}",           # Intel Homebrew / python.org shim
+            f"/Library/Frameworks/Python.framework/Versions/3.{minor}/bin/python3",  # python.org
+            f"/usr/bin/python3.{minor}",                 # distro-managed (Linux)
+        ]
+    best = 0
+    for path in candidates:
+        try:
+            if os.access(path, os.X_OK):
+                # path name encodes the minor; parse it back to a code
+                base = os.path.basename(path)
+                minor = None
+                if base.startswith("python3."):
+                    minor = int(base.split(".")[1])
+                elif "/Versions/3." in path:
+                    minor = int(path.split("/Versions/3.")[1].split("/")[0])
+                if minor is not None:
+                    best = max(best, 300 + minor)
+        except (OSError, ValueError, IndexError):
+            continue
+    return best
+
+
 def _pip_err_from_stderr(stderr_b):
     """Categorize a pip-install stderr into a known err_kind (the pip subset
     of SDK_BOOTSTRAP_ERR_CODES). Used by the --target fallback; mirrors the
@@ -788,6 +828,14 @@ if __name__ == "__main__":
         # per healthy session.
         if _encode_err_kind(err_kind) == 11:
             metrics["sdk_has_pip"] = _probe_has_pip()
+    # When the hook interpreter is <3.10 (HOOK_PY_INCOMPATIBLE), probe for a
+    # 3.10+ interpreter at known non-PATH locations. Non-zero sdk_alt_py =
+    # this user is RECOVERABLE by an explicit-path search in sg-python.sh; 0 =
+    # genuinely 3.9-only (needs a user install). Sizes the macOS Py-3.9 cohort
+    # (~13.6% of macOS sessions) before we build the search. Incompatible path
+    # only — healthy sessions never run it.
+    if outcome == HOOK_PY_INCOMPATIBLE:
+        metrics["sdk_alt_py"] = _probe_alt_python()
     # Interpreter version (major*100 + minor, e.g. 309 / 312), emitted on
     # every bootstrap. Disambiguates the macOS cohort (Apple 3.9 vs a 3.10+
     # with broken ensurepip) for both venv_ensurepip_fail AND
