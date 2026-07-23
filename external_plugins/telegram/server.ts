@@ -666,11 +666,46 @@ process.on('SIGHUP', shutdown)
 
 // Orphan watchdog: stdin events above don't reliably fire when the parent
 // chain (`bun run` wrapper → shell → us) is severed by a crash. Poll for
-// reparenting (POSIX) or a dead stdin pipe and self-terminate.
+// reparenting (POSIX), a dead session, or a dead stdin pipe and self-terminate.
+//
+// process.ppid alone is not enough. The tree is:
+//   claude → `bun run` wrapper → this process
+// When claude exits it is the *wrapper* that gets reparented; our own parent is
+// still the wrapper, still alive, so process.ppid never changes and the wrapper
+// holds our stdin pipe open. That defeats every trigger below, so the poller
+// survives its session and keeps holding the bot token. Capture the grandparent
+// (the session) at boot and probe it for liveness instead.
 const bootPpid = process.ppid
+const sessionPid = readSessionPid(bootPpid)
+
+/** PID of the process that owns our wrapper, or 0 when it cannot be determined. */
+function readSessionPid(wrapperPid: number): number {
+  // /proc is Linux-only. On macOS and Windows we fall back to the other checks.
+  try {
+    const stat = readFileSync(`/proc/${wrapperPid}/stat`, 'utf8')
+    // Field 2 (comm) is parenthesized and may itself contain spaces or ')',
+    // so index from the last ')' rather than splitting the whole line.
+    const fields = stat.slice(stat.lastIndexOf(')') + 2).split(' ')
+    return parseInt(fields[1], 10) || 0
+  } catch {
+    return 0
+  }
+}
+
+function sessionAlive(): boolean {
+  if (!sessionPid) return true // unknown — defer to the other checks
+  try {
+    process.kill(sessionPid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
 setInterval(() => {
   const orphaned =
     (process.platform !== 'win32' && process.ppid !== bootPpid) ||
+    !sessionAlive() ||
     process.stdin.destroyed ||
     process.stdin.readableEnded
   if (orphaned) shutdown()
@@ -997,11 +1032,21 @@ bot.catch(err => {
 // (MCP stdin keeps it running). Outbound tools kept working but the bot was
 // deaf to inbound messages until a full restart.
 void (async () => {
+  // When the current run started polling, or 0 while it is not healthy. Used to
+  // decide whether a run lasted long enough to justify clearing the backoff.
+  let healthySince = 0
   for (let attempt = 1; ; attempt++) {
     try {
       await bot.start({
         onStart: info => {
-          attempt = 0
+          // Deliberately not resetting `attempt` here. onStart fires the moment
+          // polling begins, which is before a 409 from a competing consumer can
+          // surface. Resetting made the catch below compute a delay of
+          // 1000 * 0 === 0, so a token conflict retried with no delay at all and
+          // pinned a CPU core. That also starves the event loop, which stops the
+          // SIGTERM handler and the orphan watchdog above from ever running, so
+          // the process could then only be killed with SIGKILL.
+          healthySince = Date.now()
           botUsername = info.username
           process.stderr.write(`telegram channel: polling as @${info.username}\n`)
           void bot.api.setMyCommands(
@@ -1019,6 +1064,11 @@ void (async () => {
       if (shuttingDown) return
       // bot.stop() mid-setup rejects with grammy's "Aborted delay" — expected, not an error.
       if (err instanceof Error && err.message === 'Aborted delay') return
+      // Only a run that actually stayed up clears the backoff. A poller that
+      // flaps between onStart and a 409 would otherwise look fresh on every
+      // iteration and never back off, and never reach the give-up threshold.
+      if (healthySince && Date.now() - healthySince > 60_000) attempt = 1
+      healthySince = 0
       const is409 = err instanceof GrammyError && err.error_code === 409
       if (is409 && attempt >= 8) {
         process.stderr.write(
@@ -1027,7 +1077,8 @@ void (async () => {
         )
         return
       }
-      const delay = Math.min(1000 * attempt, 15000)
+      // Floor the multiplier: `attempt` is 0 on the first pass through the loop.
+      const delay = Math.min(1000 * Math.max(attempt, 1), 15000)
       const detail = is409
         ? `409 Conflict${attempt === 1 ? ' — another instance is polling (zombie session, or a second Claude Code running?)' : ''}`
         : `polling error: ${err}`
