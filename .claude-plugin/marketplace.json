@@ -918,6 +918,20 @@
       "homepage": "https://cloudinary.com/documentation"
     },
     {
+      "name": "clover",
+      "description": "Protect your coding agent experience — Clover silently threat-models every plan, surfaces missing security requirements, and folds them in before code is written.",
+      "author": {
+        "name": "Clover Security"
+      },
+      "category": "security",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/clover-security-public/clover-claude-plugin.git",
+        "sha": "b19904c5aea64621513a36d8edd36827f0fa6c42"
+      },
+      "homepage": "https://clover.security"
+    },
+    {
       "name": "cockroachdb",
       "description": "Connect Claude Code directly to your CockroachDB clusters for hands-on database work — explore schemas, write optimized SQL, debug queries, and manage distributed database clusters. This plugin provides 14 tools across two active MCP backends (self-hosted MCP Toolbox and managed CockroachDB Cloud MCP Server), three specialized agents (DBA, Developer, Operator), 32 skills across 6 operational domains, and built-in safety hooks.",
       "author": {
