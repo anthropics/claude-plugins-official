@@ -2810,7 +2810,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/render-oss/render-plugin-claude-code.git",
-        "sha": "9ed7e5f44a711ebd3f0b159367bbb2b48abc22fc"
+        "sha": "b4139c813d7b931a2d8ac6c8e0c3787166f5d1fb"
       },
       "homepage": "https://render.com"
     },
