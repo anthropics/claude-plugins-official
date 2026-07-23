@@ -2198,6 +2198,23 @@
       "homepage": "https://miro.com"
     },
     {
+      "name": "mission",
+      "description": "Mission is the Trust Graduation gate for agentic work. Claude prepares real work; Mission decides what Claude is allowed to do by action class, evidence, approval, and receipt. Adds /mission today, /mission week, /mission month execution prompts, a mission-executor agent for dispatch, and the Mission MCP server (read-only remote by default; opt into local enforcement with /mission install).",
+      "author": {
+        "name": "Mission",
+        "email": "support@gomission.io"
+      },
+      "category": "productivity",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/gomission/plugin.git",
+        "path": "plugins/mission",
+        "ref": "v0.1.3",
+        "sha": "658ec3552f2ccf519326acd12811dcb5fd4c2050"
+      },
+      "homepage": "https://claude.gomission.io/"
+    },
+    {
       "name": "modern-web-guidance",
       "description": "Keep your coding agent up to date with the latest web best practices",
       "author": {
