@@ -2695,7 +2695,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/qodo-ai/qodo-skills.git",
-        "sha": "5c31f3275199c6ccf07fa84c3a34d6d338f97aee"
+        "sha": "ad848afd32eff172ce9073d9b1b1efe462ea0af2"
       },
       "homepage": "https://github.com/qodo-ai/qodo-skills.git"
     },
