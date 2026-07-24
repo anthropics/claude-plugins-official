@@ -161,7 +161,7 @@
         "url": "https://github.com/AltimateAI/altimate-claude-plugin.git",
         "path": "plugins/altimate-code",
         "ref": "main",
-        "sha": "f81c9b2125d69b1eb1e966c21bf80425ac569cd2"
+        "sha": "b7c8f68b3dfd303ab3ccf2f43934098811dfe2aa"
       },
       "homepage": "https://www.altimate.ai"
     },
