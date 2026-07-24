@@ -1274,7 +1274,7 @@
         "url": "https://github.com/microsoft/Dataverse-skills.git",
         "path": ".github/plugins/dataverse",
         "ref": "main",
-        "sha": "a521f78a822c6525fe913c57d7e9946f1a568fca"
+        "sha": "a6e497123a1a8a618d9a0dd5764c660861bb9f8b"
       },
       "homepage": "https://github.com/microsoft/Dataverse-skills"
     },
