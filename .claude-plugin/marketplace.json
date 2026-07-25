@@ -2235,7 +2235,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/mlflow/skills.git",
-        "sha": "c33bb3d303a2c6113bbaed6dbfe756e88e80f1df"
+        "sha": "c8228eef0da8d18ac34aa632e1276ce7da985363"
       },
       "homepage": "https://mlflow.org/"
     },
