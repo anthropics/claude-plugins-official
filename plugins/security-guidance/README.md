@@ -3,7 +3,7 @@
 Security review for Claude-generated code. Three layers:
 
 1. **Pattern warnings** — instant regex-based reminders on `Edit`/`Write` for ~25 known-dangerous patterns (`yaml.load`, `torch.load(weights_only=False)`, `pickle.load` on untrusted data, raw `innerHTML`, hardcoded secrets, etc.).
-2. **LLM diff review** — when Claude finishes a turn, the plugin sends the diff to a fast LLM call (Opus 4.7 by default) and feeds high-severity findings back to Claude so it can fix them before you see the response.
+2. **LLM diff review** — when Claude finishes a turn, the plugin sends the diff to a fast LLM call (Opus 5 by default) and feeds high-severity findings back to Claude so it can fix them before you see the response.
 3. **Agentic commit review** — on `git commit`, an SDK-driven reviewer reads related files (`Read`/`Grep`/`Glob`) to trace data flow across the codebase, catching multi-file vulnerabilities pattern matching misses (IDOR, auth bypass, cross-file SSRF).
 
 Findings cover common web-vulnerability classes — injection, XSS, SSRF, hardcoded secrets, IDOR, auth bypass, unsafe deserialization, and path traversal among others.
@@ -30,13 +30,13 @@ All configuration is via environment variables. None are required for default be
 
 ```bash
 # 1P / gateway: a canonical model id
-SECURITY_REVIEW_MODEL=claude-opus-4-7   # default
+SECURITY_REVIEW_MODEL=claude-opus-5   # default
 
 # Bedrock: use the inference-profile id
-SECURITY_REVIEW_MODEL=us.anthropic.claude-opus-4-7
+SECURITY_REVIEW_MODEL=us.anthropic.claude-opus-5
 
 # Vertex: use the Vertex date-tag form
-SECURITY_REVIEW_MODEL=claude-opus-4-7@20260218
+SECURITY_REVIEW_MODEL=claude-opus-5@20260218
 ```
 
 `SECURITY_REVIEW_MODEL` controls the LLM diff review. `SG_AGENTIC_MODEL` (same syntax) controls the agentic commit reviewer; defaults to the same model.
@@ -101,9 +101,9 @@ This is a best-effort assistive tool, not a guarantee. Treat findings as suggest
 
 **Plugin doesn't seem to fire** — check that `~/.claude/claude-security-guidance.md` (or hook activity) shows in debug logs. Run Claude Code with `--debug-file /tmp/claude/debug.txt` and grep for `security_reminder_hook`. The plugin also writes its own log to `~/.claude/security/log.txt`.
 
-**Review never finds anything** — verify your API path works. On 3P providers, check `SECURITY_REVIEW_MODEL` is set to a provider-specific id (not a bare `claude-opus-4-7`). On LLM gateways, check the gateway's logs for `POST /v1/messages` traffic from the plugin.
+**Review never finds anything** — verify your API path works. On 3P providers, check `SECURITY_REVIEW_MODEL` is set to a provider-specific id (not a bare `claude-opus-5`). On LLM gateways, check the gateway's logs for `POST /v1/messages` traffic from the plugin. Also check the debug log for `API refusal` lines — Opus 5's cyber-safety classifiers can decline a review outright on code that reads as security-sensitive, which looks identical to "no findings" unless you check the log.
 
-**Too many false positives** — drop `SECURITY_REVIEW_MODEL` to a cheaper model (`claude-sonnet-4-6`) and re-evaluate; if precision is the priority, stay on Opus 4.7.
+**Too many false positives** — the default (`claude-opus-5`) is already the highest-precision option; false positives at this tier are more likely a prompt/policy issue than a model-choice one (see `claude-security-guidance.md` below). If cost/latency is the priority instead, `SECURITY_REVIEW_MODEL=claude-sonnet-5` or `claude-haiku-4-5` trade some precision for speed and price.
 
 **Want to silence a specific finding** — add a comment to the line explaining why it's safe; the LLM reviewer treats inline justifications as exclusions. For systemic exclusions, document them in your `claude-security-guidance.md`.
 

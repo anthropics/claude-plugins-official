@@ -124,11 +124,11 @@ HAS_API_CREDENTIALS = bool(
     ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN or _HAS_3P_PROVIDER_AT_LOAD
 )
 
-# Model for security review. Default chosen for its precision profile on
-# interruptive review surfaces — false positives are the dominant uninstall
-# driver, so the default favors precision over recall and over latency.
+# Model for security review. Migrated to Claude Opus 5 — chosen for its
+# precision profile on this interruptive review surface (false positives are
+# the dominant uninstall driver).
 # Override via the SECURITY_REVIEW_MODEL env var (see README).
-SECURITY_REVIEW_MODEL = os.environ.get("SECURITY_REVIEW_MODEL", "").strip() or "claude-opus-4-7"
+SECURITY_REVIEW_MODEL = os.environ.get("SECURITY_REVIEW_MODEL", "").strip() or "claude-opus-5"
 
 # OAuth subscriber tokens (ANTHROPIC_AUTH_TOKEN) require this exact system prompt
 # for api.anthropic.com/v1/messages — the API checks for one of the known Claude
@@ -278,6 +278,8 @@ _ADAPTIVE_THINKING_MODELS = (
     "claude-opus-4-6",
     "claude-opus-4-7",
     "claude-sonnet-4-6",
+    "claude-sonnet-5",
+    "claude-opus-5",
 )
 _LEGACY_THINKING_MODELS = (
     "claude-3-",
@@ -449,7 +451,7 @@ def _call_claude(prompt, output_schema, thinking_budget=10000, max_tokens=16000,
                  retry_5xx=True):
     """
     Call the configured LLM model with extended thinking and structured outputs.
-    Model defaults to Sonnet 4.6 but can be overridden via SECURITY_REVIEW_MODEL env var.
+    Model defaults to Opus 5 but can be overridden via SECURITY_REVIEW_MODEL env var.
     Returns parsed JSON response or None on failure.
     On failure, sets module-level _last_call_claude_http_error to the HTTP status
     (or -1 for network/timeout) so callers can distinguish API failure from an
@@ -573,6 +575,19 @@ def _call_claude(prompt, output_schema, thinking_budget=10000, max_tokens=16000,
             _record_http_error(401)
         return None
 
+    if response_data.get("stop_reason") == "refusal":
+        # Opus 5's cyber-safety classifiers can decline a request outright
+        # (HTTP 200, empty/partial `content`) — a security-diff reviewer is
+        # adjacent enough to cyber content that this is a real, not
+        # theoretical, risk. Without this check a refusal is indistinguishable
+        # from "the model reviewed the diff and found nothing" (the exact
+        # invisible-failure shape #2098 already burned this plugin on for
+        # HTTP 400s — see _record_http_error's docstring). Surface it in the
+        # debug log distinctly rather than let it fall through silently.
+        category = (response_data.get("stop_details") or {}).get("category")
+        debug_log(f"API refusal (stop_reason=refusal, category={category})")
+        return None
+
     # Find the text block (skip thinking blocks)
     for block in response_data.get("content", []):
         if block.get("type") == "text":
@@ -631,7 +646,7 @@ def _call_claude_dual_or(prompt, output_schema, *, bool_key: str, list_key: str,
         if r is None and not explicit:
             debug_log(f"single: {primary} failed, falling back to sonnet")
             r = _call_claude(prompt, output_schema, thinking_budget=thinking_budget,
-                             max_tokens=max_tokens, model="claude-sonnet-4-6",
+                             max_tokens=max_tokens, model="claude-sonnet-5",
                              retry_5xx=True)
         return r
 
@@ -641,7 +656,7 @@ def _call_claude_dual_or(prompt, output_schema, *, bool_key: str, list_key: str,
         if r is None and not explicit:
             debug_log(f"dual_or: {primary} leg failed, falling back to sonnet")
             r = _call_claude(prompt, output_schema, thinking_budget=thinking_budget,
-                             max_tokens=max_tokens, model="claude-sonnet-4-6",
+                             max_tokens=max_tokens, model="claude-sonnet-5",
                              retry_5xx=True)
         return r
 
@@ -1186,8 +1201,9 @@ def agentic_review(
             return None, [], {"agentic_fallback": f"import:{type(e).__name__}"}
 
     # Default to the documented public model. Overridable via SG_AGENTIC_MODEL.
-    # The bundled SDK CLI only knows public model names.
-    _DEFAULT_PUBLIC_MODEL = "claude-opus-4-7"
+    # The bundled SDK CLI only knows public model names. Migrated to Claude
+    # Opus 5 alongside SECURITY_REVIEW_MODEL above.
+    _DEFAULT_PUBLIC_MODEL = "claude-opus-5"
     model = os.environ.get("SG_AGENTIC_MODEL") or _DEFAULT_PUBLIC_MODEL
     max_turns = int(os.environ.get("SG_AGENTIC_MAX_TURNS", "18"))
     # In production repo_dir is the user's working tree (full repo). Under the
