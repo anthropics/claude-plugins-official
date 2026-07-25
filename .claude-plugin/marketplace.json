@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
-  "name": "claude-plugins-official",
-  "description": "Directory of popular Claude Code extensions including development tools, productivity plugins, and MCP integrations",
+  "name": "centralhardware-plugins",
+  "description": "Personal fork of claude-plugins-official — carries local patches to the telegram plugin",
   "owner": {
     "name": "Anthropic",
     "email": "support@anthropic.com"
