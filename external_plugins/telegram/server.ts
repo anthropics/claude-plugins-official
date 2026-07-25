@@ -516,6 +516,61 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
   ],
 }))
 
+// Keep the "typing…" indicator alive for a chat while Claude is thinking.
+// Telegram's chat action auto-expires after ~5s, so a single sendChatAction
+// call flickers off well before a long reply lands. We re-send on an interval
+// until reply() clears it (or a safety cap elapses so a chat that never gets a
+// reply doesn't loop forever).
+const TYPING_REFRESH_MS = 4000
+const TYPING_MAX_MS = 10 * 60_000
+const typingTimers = new Map<string, { timer: ReturnType<typeof setInterval>; until: number; startedAt: number }>()
+
+// Turn-done sentinel: the Stop hook and the /clr + mail quick-action blocking
+// hooks write an epoch-ms timestamp here when a turn ends without going through
+// reply() (a blocking hook short-circuits the turn, or the model finishes
+// without replying). The typing keep-alive polls it so "typing…" doesn't dangle
+// for the full TYPING_MAX_MS safety cap in those cases.
+const TURN_DONE_FILE = join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude'), 'telegram-turn-done')
+
+function turnDoneAt(): number {
+  try {
+    return parseInt(readFileSync(TURN_DONE_FILE, 'utf8').trim(), 10) || 0
+  } catch {
+    return 0
+  }
+}
+
+function startTyping(chat_id: string): void {
+  const now = Date.now()
+  const existing = typingTimers.get(chat_id)
+  if (existing) {
+    existing.until = now + TYPING_MAX_MS
+    existing.startedAt = now
+    return
+  }
+  const send = () => void bot.api.sendChatAction(chat_id, 'typing').catch(() => {})
+  send()
+  const timer = setInterval(() => {
+    const entry = typingTimers.get(chat_id)
+    // Stop on: missing entry, safety cap elapsed, or a hook signalling the turn
+    // ended at/after this typing run began (covers turns with no reply() call).
+    if (!entry || Date.now() > entry.until || turnDoneAt() >= entry.startedAt) {
+      stopTyping(chat_id)
+      return
+    }
+    send()
+  }, TYPING_REFRESH_MS)
+  typingTimers.set(chat_id, { timer, until: now + TYPING_MAX_MS, startedAt: now })
+}
+
+function stopTyping(chat_id: string): void {
+  const entry = typingTimers.get(chat_id)
+  if (entry) {
+    clearInterval(entry.timer)
+    typingTimers.delete(chat_id)
+  }
+}
+
 mcp.setRequestHandler(CallToolRequestSchema, async req => {
   const args = (req.params.arguments ?? {}) as Record<string, unknown>
   try {
@@ -529,6 +584,8 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         const parseMode = format === 'markdownv2' ? 'MarkdownV2' as const : undefined
 
         assertAllowedChat(chat_id)
+        // Claude is answering — drop the "typing…" keep-alive for this chat.
+        stopTyping(chat_id)
 
         for (const f of files) {
           assertSendable(f)
@@ -942,8 +999,9 @@ async function handleInbound(
     return
   }
 
-  // Typing indicator — signals "processing" until we reply (or ~5s elapses).
-  void bot.api.sendChatAction(chat_id, 'typing').catch(() => {})
+  // Typing indicator — kept alive on an interval until reply() clears it, so it
+  // doesn't flicker off after Telegram's ~5s auto-expiry mid-thinking.
+  startTyping(chat_id)
 
   // Ack reaction — lets the user know we're processing. Fire-and-forget.
   // Telegram only accepts a fixed emoji whitelist — if the user configures
