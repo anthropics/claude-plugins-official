@@ -3319,6 +3319,25 @@
         "sha": "6b6c44cfe3c4e00860401a697d401dcb3b6e3737"
       },
       "homepage": "https://langfuse.com"
+    },
+    {
+      "name": "ruview",
+      "description": "WiFi sensing toolkit for Claude Code: onboard ESP32 hardware, run presence/vitals/pose/sleep applications, train custom models, and manage multi-node sensing deployments — no cameras, no wearables, just physics.",
+      "author": {
+        "name": "ruvnet",
+        "url": "https://github.com/ruvnet/RuView"
+      },
+      "category": "development",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/ruvnet/RuView.git",
+        "path": "plugins/ruview",
+        "ref": "main",
+        "sha": "f783df234eec22929b88e256422cbfc50579196b"
+      },
+      "homepage": "https://github.com/ruvnet/RuView",
+      "license": "MIT",
+      "keywords": ["ruview", "wifi-sensing", "csi", "esp32", "pose-estimation", "vital-signs", "edge-ai", "iot"]
     }
   ]
 }
