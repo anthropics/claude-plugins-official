@@ -3,8 +3,8 @@
   "name": "centralhardware-plugins",
   "description": "Personal fork of claude-plugins-official — carries local patches to the telegram plugin",
   "owner": {
-    "name": "Anthropic",
-    "email": "support@anthropic.com"
+    "name": "centralhardware",
+    "email": "alex@centralhardware.me"
   },
   "plugins": [
     {
