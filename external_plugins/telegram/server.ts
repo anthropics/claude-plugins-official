@@ -64,6 +64,20 @@ try {
     process.kill(stale, 0)
     process.stderr.write(`telegram channel: replacing stale poller pid=${stale}\n`)
     process.kill(stale, 'SIGTERM')
+    // A wedged orphan (event loop pinned at ~100% CPU) can't run its JS SIGTERM
+    // handler, so SIGTERM alone is a no-op: the orphan keeps the getUpdates slot
+    // and the new poller loses to it with a persistent 409. Give it a brief grace
+    // period to exit cleanly, then escalate to SIGKILL, which the kernel delivers
+    // regardless of loop state.
+    let alive = true
+    for (let i = 0; i < 20 && alive; i++) {
+      Bun.sleepSync(50)
+      try { process.kill(stale, 0) } catch { alive = false }
+    }
+    if (alive) {
+      process.stderr.write(`telegram channel: stale poller pid=${stale} ignored SIGTERM, sending SIGKILL\n`)
+      try { process.kill(stale, 'SIGKILL') } catch {}
+    }
   }
 } catch {}
 writeFileSync(PID_FILE, String(process.pid))
@@ -675,6 +689,39 @@ setInterval(() => {
     process.stdin.readableEnded
   if (orphaned) shutdown()
 }, 5000).unref()
+
+// Last-resort reaper on a separate thread. The graceful paths above (stdin
+// events, signal handlers, and the watchdog interval) all run on the main
+// event loop. The observed failure mode is that loop wedging at ~100% CPU after
+// the parent dies (a hung getUpdates/pipe read), which starves every one of
+// them: the orphan then spins a full core indefinitely and only SIGKILL clears
+// it. A Worker has its own thread and event loop, so its timer keeps firing even
+// while the main thread is pinned. It watches the same parent and, once the
+// process is orphaned, force-kills via SIGKILL (delivered regardless of the
+// wedged main thread). A short grace lets the graceful main-thread shutdown win
+// first whenever the loop is actually healthy.
+try {
+  const reaperSrc = `
+    const bootPpid = ${bootPpid}
+    const orphaned = () => {
+      if (process.ppid !== bootPpid) return true
+      try { process.kill(bootPpid, 0); return false } catch { return true }
+    }
+    const timer = setInterval(() => {
+      if (!orphaned()) return
+      clearInterval(timer)
+      process.stderr.write('telegram channel: reaper detected orphan (parent ' + bootPpid + ' gone), force-killing pid=' + process.pid + '\\n')
+      setTimeout(() => { try { process.kill(process.pid, 'SIGKILL') } catch {} }, 2000)
+    }, 3000)
+  `
+  const reaper = new Worker('data:text/javascript,' + encodeURIComponent(reaperSrc))
+  // Don't let the reaper thread keep the process alive on its own; a clean exit
+  // should still exit. If the main loop wedges, the process stays up regardless
+  // and the reaper does its job.
+  reaper.unref?.()
+} catch (err) {
+  process.stderr.write(`telegram channel: reaper worker unavailable: ${err}\n`)
+}
 
 // Commands are DM-only. Responding in groups would: (1) leak pairing codes via
 // /status to other group members, (2) confirm bot presence in non-allowlisted
