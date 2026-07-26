@@ -11,6 +11,7 @@ plugin only. Everything that remains is upstream except the commits below.
 | `telegram: drop built-in start/help/status from the bot command menu` | the menu now lists only the local commands above; the upstream `/start`, `/help` and `/status` handlers still respond if typed |
 | `telegram: keep "typing…" alive until the turn ends` | re-sends `sendChatAction` on an interval (upstream sends it once, so it expires after ~5s), stopping on `reply()`, a 10-minute cap, or the `$CLAUDE_CONFIG_DIR/telegram-turn-done` sentinel written by the local `/clr` and mail quick-action hooks |
 | `telegram: fix poller lock, 409 bail-out and delivery; add topics + formats` | see below |
+| `telegram: let a topic be marked send-only via ignore` | a topic listed in `telegram-topics.json` with `"ignore": true` (the day-review briefing topic) never starts a turn from inbound messages |
 
 ## `telegram: fix poller lock, 409 bail-out and delivery; add topics + formats`
 
