@@ -540,8 +540,7 @@ function turnDoneAt(): number {
   }
 }
 
-// Extra entries for the bot's command menu, on top of the built-in
-// start/help/status. Local hooks (not this server) implement commands like
+// The bot's command menu. Local hooks (not this server) implement commands like
 // /clr, so the list lives outside the plugin: a JSON array of
 // { command, description } at $CLAUDE_CONFIG_DIR/telegram-commands.json.
 // Missing/invalid file → no extras, same as upstream.
@@ -1099,13 +1098,11 @@ void (async () => {
           attempt = 0
           botUsername = info.username
           process.stderr.write(`telegram channel: polling as @${info.username}\n`)
+          // Only the locally-defined commands are listed: the upstream
+          // start/help/status entries are dropped from the menu (the handlers
+          // still work if typed).
           void bot.api.setMyCommands(
-            [
-              { command: 'start', description: 'Welcome and setup guide' },
-              { command: 'help', description: 'What this bot can do' },
-              { command: 'status', description: 'Check your pairing status' },
-              ...extraCommands(),
-            ],
+            extraCommands(),
             { scope: { type: 'all_private_chats' } },
           ).catch(() => {})
         },
