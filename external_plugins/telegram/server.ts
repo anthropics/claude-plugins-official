@@ -540,6 +540,28 @@ function turnDoneAt(): number {
   }
 }
 
+// Extra entries for the bot's command menu, on top of the built-in
+// start/help/status. Local hooks (not this server) implement commands like
+// /clr, so the list lives outside the plugin: a JSON array of
+// { command, description } at $CLAUDE_CONFIG_DIR/telegram-commands.json.
+// Missing/invalid file → no extras, same as upstream.
+const EXTRA_COMMANDS_FILE = join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude'), 'telegram-commands.json')
+
+function extraCommands(): { command: string; description: string }[] {
+  try {
+    const parsed = JSON.parse(readFileSync(EXTRA_COMMANDS_FILE, 'utf8'))
+    if (!Array.isArray(parsed)) return []
+    return parsed
+      .filter(c => c && typeof c.command === 'string' && typeof c.description === 'string')
+      // Telegram rejects the whole call on a malformed entry: lowercase
+      // a-z/0-9/_ , 1-32 chars, description 1-256.
+      .filter(c => /^[a-z0-9_]{1,32}$/.test(c.command) && c.description.length >= 1 && c.description.length <= 256)
+      .map(c => ({ command: c.command, description: c.description }))
+  } catch {
+    return []
+  }
+}
+
 function startTyping(chat_id: string): void {
   const now = Date.now()
   const existing = typingTimers.get(chat_id)
@@ -1082,6 +1104,7 @@ void (async () => {
               { command: 'start', description: 'Welcome and setup guide' },
               { command: 'help', description: 'What this bot can do' },
               { command: 'status', description: 'Check your pairing status' },
+              ...extraCommands(),
             ],
             { scope: { type: 'all_private_chats' } },
           ).catch(() => {})

@@ -7,6 +7,7 @@ upstream except the commits below and the marketplace rename.
 | --- | --- |
 | `marketplace: rename to centralhardware-plugins` | lets this fork be added alongside the upstream marketplace without an id collision |
 | `telegram: surface quote-reply context in inbound channel meta` | adds `reply_to_message_id` / `reply_to_user` / `reply_to_text` to the `<channel>` tag so the model knows which message a quote-reply answers |
+| `telegram: register extra bot-menu commands from local config` | appends `{command, description}` entries from `$CLAUDE_CONFIG_DIR/telegram-commands.json` to `setMyCommands`, so hook-implemented commands (`/clr`, `/clr_status`, `/clear`) show up in the Telegram menu next to upstream's start/help/status |
 | `telegram: keep "typing…" alive until the turn ends` | re-sends `sendChatAction` on an interval (upstream sends it once, so it expires after ~5s), stopping on `reply()`, a 10-minute cap, or the `$CLAUDE_CONFIG_DIR/telegram-turn-done` sentinel written by the local `/clr` and mail quick-action hooks |
 
 ## Syncing with upstream
