@@ -86,6 +86,37 @@ const PERMISSION_REPLY_RE = /^\s*(y|yes|n|no)\s+([a-km-z]{5})\s*$/i
 const bot = new Bot(TOKEN)
 let botUsername = ''
 
+// grammy's long-poller awaits a single in-flight getUpdates HTTP request at a
+// time. If that request's TCP connection goes half-open (server stops
+// responding without closing the socket — observed in the wild after long
+// idle periods), the underlying fetch() never resolves *and* never rejects:
+// no error reaches bot.catch() or the retry loop below, so the process sits
+// forever holding an ESTABLISHED-looking socket while silently dropping every
+// inbound message. There's no built-in inactivity timeout for this — grammy
+// only times out cleanly-erroring requests. We track our own "last update
+// seen" timestamp and force a fresh bot.stop()/bot.start() cycle if too much
+// time passes without any update, even though no error was ever thrown.
+let lastUpdateAt = Date.now()
+const STALL_TIMEOUT_MS = Number(process.env.TELEGRAM_POLL_STALL_TIMEOUT_MS) || 10 * 60 * 1000
+let watchdogRestartRequested = false
+
+bot.use(async (ctx, next) => {
+  lastUpdateAt = Date.now()
+  await next()
+})
+
+const stallWatchdog = setInterval(() => {
+  if (shuttingDown) return
+  if (Date.now() - lastUpdateAt < STALL_TIMEOUT_MS) return
+  process.stderr.write(
+    `telegram channel: no updates for ${Math.round(STALL_TIMEOUT_MS / 1000)}s — ` +
+    `polling looks stalled, forcing restart\n`,
+  )
+  watchdogRestartRequested = true
+  void bot.stop()
+}, 60_000)
+stallWatchdog.unref?.()
+
 type PendingEntry = {
   senderId: string
   chatId: string
@@ -1002,6 +1033,7 @@ void (async () => {
       await bot.start({
         onStart: info => {
           attempt = 0
+          lastUpdateAt = Date.now()
           botUsername = info.username
           process.stderr.write(`telegram channel: polling as @${info.username}\n`)
           void bot.api.setMyCommands(
@@ -1014,11 +1046,30 @@ void (async () => {
           ).catch(() => {})
         },
       })
+      // bot.start() resolves cleanly both on a deliberate shutdown (shutdown()
+      // calling bot.stop()) and on our own stall-watchdog calling bot.stop().
+      // Only the former should end this loop.
+      if (watchdogRestartRequested) {
+        watchdogRestartRequested = false
+        lastUpdateAt = Date.now()
+        process.stderr.write('telegram channel: restarting poller after stall\n')
+        continue
+      }
       return // bot.stop() was called — clean exit from the loop
     } catch (err) {
       if (shuttingDown) return
       // bot.stop() mid-setup rejects with grammy's "Aborted delay" — expected, not an error.
-      if (err instanceof Error && err.message === 'Aborted delay') return
+      // Our stall watchdog can also trigger this path (bot.stop() called while grammy was
+      // mid-retry-backoff rather than mid-poll) — restart instead of exiting in that case.
+      if (err instanceof Error && err.message === 'Aborted delay') {
+        if (watchdogRestartRequested) {
+          watchdogRestartRequested = false
+          lastUpdateAt = Date.now()
+          process.stderr.write('telegram channel: restarting poller after stall\n')
+          continue
+        }
+        return
+      }
       const is409 = err instanceof GrammyError && err.error_code === 409
       if (is409 && attempt >= 8) {
         process.stderr.write(
