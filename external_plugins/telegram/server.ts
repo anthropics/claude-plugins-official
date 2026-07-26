@@ -19,6 +19,7 @@ import { z } from 'zod'
 import { Bot, GrammyError, InlineKeyboard, InputFile, type Context } from 'grammy'
 import type { ReactionTypeEmoji } from 'grammy/types'
 import { randomBytes } from 'crypto'
+import { execFileSync } from 'child_process'
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, statSync, renameSync, realpathSync, chmodSync } from 'fs'
 import { homedir } from 'os'
 import { join, extname, sep } from 'path'
@@ -53,20 +54,10 @@ if (!TOKEN) {
 const INBOX_DIR = join(STATE_DIR, 'inbox')
 const PID_FILE = join(STATE_DIR, 'bot.pid')
 
-// Telegram allows exactly one getUpdates consumer per token. If a previous
-// session crashed (SIGKILL, terminal closed) its server.ts grandchild can
-// survive as an orphan and hold the slot forever, so every new session sees
-// 409 Conflict. Kill any stale holder before we start polling.
+// Telegram allows exactly one getUpdates consumer per token, so bot.pid names
+// the holder. Acquiring it happens at the bottom of this file (see "Poller
+// lock") — a healthy holder is left alone and we stand by instead.
 mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 })
-try {
-  const stale = parseInt(readFileSync(PID_FILE, 'utf8'), 10)
-  if (stale > 1 && stale !== process.pid) {
-    process.kill(stale, 0)
-    process.stderr.write(`telegram channel: replacing stale poller pid=${stale}\n`)
-    process.kill(stale, 'SIGTERM')
-  }
-} catch {}
-writeFileSync(PID_FILE, String(process.pid))
 
 // Last-resort safety net — without these the process dies silently on any
 // unhandled promise rejection. With them it logs and keeps serving tools.
@@ -379,6 +370,91 @@ function chunk(text: string, limit: number, mode: 'length' | 'newline'): string[
 // everything else goes as documents (raw file, no compression).
 const PHOTO_EXTS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp'])
 
+// ── Formatting ───────────────────────────────────────────────────────────────
+// 'markdownv2' is unforgiving: one unescaped '.', '-' or '(' anywhere in the
+// text makes Telegram reject the whole message with 400. 'markdown' (legacy)
+// and 'html' are far easier to emit correctly, and any parse failure falls back
+// to plain text below rather than losing the message.
+type OutboundFormat = 'text' | 'markdown' | 'markdownv2' | 'html'
+const FORMATS: OutboundFormat[] = ['text', 'markdown', 'markdownv2', 'html']
+const FORMAT_DESC =
+  "Rendering mode. 'html' (recommended for formatting: <b>, <i>, <code>, <pre>, <a href>) — only &, < and > need escaping. " +
+  "'markdown' is legacy Markdown (*bold*, _italic_, `code`). 'markdownv2' is strict and requires escaping every reserved char. " +
+  "Default: 'text' (plain, no escaping needed). If the text fails to parse, it is re-sent as plain text rather than dropped."
+
+function parseModeOf(format: unknown): 'Markdown' | 'MarkdownV2' | 'HTML' | undefined {
+  switch (format) {
+    case 'markdown': return 'Markdown'
+    case 'markdownv2': return 'MarkdownV2'
+    case 'html': return 'HTML'
+    default: return undefined
+  }
+}
+
+// Telegram reports malformed markup as a 400 with a descriptive message. Only
+// those are worth retrying unformatted — a 403 or a bad chat_id would repeat.
+function isParseError(err: unknown): boolean {
+  return (
+    err instanceof GrammyError &&
+    err.error_code === 400 &&
+    /can't parse|can't find end|unsupported start tag|unclosed|reserved|entities/i.test(err.description)
+  )
+}
+
+async function sendText(
+  chat_id: string,
+  text: string,
+  opts: Record<string, unknown>,
+  parseMode: ReturnType<typeof parseModeOf>,
+): Promise<number> {
+  try {
+    const sent = await bot.api.sendMessage(chat_id, text, {
+      ...opts,
+      ...(parseMode ? { parse_mode: parseMode } : {}),
+    })
+    return sent.message_id
+  } catch (err) {
+    if (!parseMode || !isParseError(err)) throw err
+    process.stderr.write(
+      `telegram channel: ${parseMode} rejected (${(err as GrammyError).description}) — resending as plain text\n`,
+    )
+    const sent = await bot.api.sendMessage(chat_id, text, opts)
+    return sent.message_id
+  }
+}
+
+// ── Forum topics ─────────────────────────────────────────────────────────────
+// Messages in a forum supergroup carry a message_thread_id. Replies, typing
+// indicators and attachments must carry it back or they land in "General".
+// Optional per-topic context lives in $CLAUDE_CONFIG_DIR/telegram-topics.json:
+//   { "<chat_id>:<thread_id>": { "name": "coffee", "instructions": "..." },
+//     "<chat_id>:*":           { "instructions": "fallback for the group" },
+//     "<chat_id>":             { "instructions": "fallback for a DM" } }
+// instructions are prepended to the inbound message so the model starts the
+// turn with the rules for that topic. Re-read per message — edits apply without
+// restarting the plugin.
+const TOPICS_FILE = join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude'), 'telegram-topics.json')
+
+type TopicConfig = { name?: string; instructions?: string }
+
+function topicConfig(chat_id: string, thread_id?: number): TopicConfig | undefined {
+  try {
+    const parsed = JSON.parse(readFileSync(TOPICS_FILE, 'utf8')) as Record<string, TopicConfig>
+    if (!parsed || typeof parsed !== 'object') return undefined
+    const hit =
+      (thread_id != null ? parsed[`${chat_id}:${thread_id}`] : undefined) ??
+      (thread_id != null ? parsed[`${chat_id}:*`] : undefined) ??
+      parsed[chat_id]
+    return hit && typeof hit === 'object' ? hit : undefined
+  } catch {
+    return undefined
+  }
+}
+
+// Last topic seen per chat, so reply() threads correctly without the model
+// having to pass thread_id back explicitly.
+const lastThread = new Map<string, number>()
+
 const mcp = new Server(
   { name: 'telegram', version: '1.0.0' },
   {
@@ -398,6 +474,10 @@ const mcp = new Server(
       'The sender reads Telegram, not this session. Anything you want them to see must go through the reply tool — your transcript output never reaches their chat.',
       '',
       'Messages from Telegram arrive as <channel source="telegram" chat_id="..." message_id="..." user="..." ts="...">. If the tag has an image_path attribute, Read that file — it is a photo the sender attached. If the tag has attachment_file_id, call download_attachment with that file_id to fetch the file, then Read the returned path. If the tag has a reply_to_message_id attribute, the sender quote-replied to an earlier message — reply_to_user and reply_to_text (a truncated snippet) tell you which message they\'re responding to; treat this message as answering that one. Reply with the reply tool — pass chat_id back. Use reply_to (set to a message_id) only when replying to an earlier message; the latest message doesn\'t need a quote-reply, omit reply_to for normal responses.',
+      '',
+      'If the tag has a thread_id attribute the message came from a forum topic — reply goes back to that topic automatically, but pass thread_id explicitly when you reply to something other than the newest message. A topic attribute names the topic; when the topic has its own instructions they are prepended to the message body and take precedence for that turn.',
+      '',
+      'reply and edit_message take format: "html" for formatting (<b>, <i>, <code>, <pre>, <a href>; escape &, < and > in the text) — prefer it over markdownv2, which rejects the whole message on a single unescaped character.',
       '',
       'reply accepts file paths (files: ["/abs/path.png"]) for attachments. Use react to add emoji reactions, and edit_message for interim progress updates. Edits don\'t trigger push notifications — when a long task completes, send a new reply so the user\'s device pings.',
       '',
@@ -457,6 +537,10 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
             type: 'string',
             description: 'Message ID to thread under. Use message_id from the inbound <channel> block.',
           },
+          thread_id: {
+            type: 'string',
+            description: 'Forum topic to post into. Use thread_id from the inbound <channel> block. Omitted → the topic the last inbound message from this chat came from.',
+          },
           files: {
             type: 'array',
             items: { type: 'string' },
@@ -464,8 +548,8 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
           },
           format: {
             type: 'string',
-            enum: ['text', 'markdownv2'],
-            description: "Rendering mode. 'markdownv2' enables Telegram formatting (bold, italic, code, links). Caller must escape special chars per MarkdownV2 rules. Default: 'text' (plain, no escaping needed).",
+            enum: FORMATS,
+            description: FORMAT_DESC,
           },
         },
         required: ['chat_id', 'text'],
@@ -506,8 +590,8 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
           text: { type: 'string' },
           format: {
             type: 'string',
-            enum: ['text', 'markdownv2'],
-            description: "Rendering mode. 'markdownv2' enables Telegram formatting (bold, italic, code, links). Caller must escape special chars per MarkdownV2 rules. Default: 'text' (plain, no escaping needed).",
+            enum: FORMATS,
+            description: FORMAT_DESC,
           },
         },
         required: ['chat_id', 'message_id', 'text'],
@@ -561,7 +645,7 @@ function extraCommands(): { command: string; description: string }[] {
   }
 }
 
-function startTyping(chat_id: string): void {
+function startTyping(chat_id: string, thread_id?: number): void {
   const now = Date.now()
   const existing = typingTimers.get(chat_id)
   if (existing) {
@@ -569,7 +653,11 @@ function startTyping(chat_id: string): void {
     existing.startedAt = now
     return
   }
-  const send = () => void bot.api.sendChatAction(chat_id, 'typing').catch(() => {})
+  // In a forum, an action without the thread id shows "typing…" in General.
+  const send = () =>
+    void bot.api
+      .sendChatAction(chat_id, 'typing', thread_id != null ? { message_thread_id: thread_id } : {})
+      .catch(() => {})
   send()
   const timer = setInterval(() => {
     const entry = typingTimers.get(chat_id)
@@ -601,8 +689,13 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         const text = args.text as string
         const reply_to = args.reply_to != null ? Number(args.reply_to) : undefined
         const files = (args.files as string[] | undefined) ?? []
-        const format = (args.format as string | undefined) ?? 'text'
-        const parseMode = format === 'markdownv2' ? 'MarkdownV2' as const : undefined
+        const parseMode = parseModeOf(args.format)
+        // Explicit thread wins; otherwise answer in the topic the last inbound
+        // message came from. Without this, chunks 2+ and attachments land in
+        // the forum's General topic.
+        const threadArg = args.thread_id != null ? Number(args.thread_id) : undefined
+        const thread_id = Number.isFinite(threadArg) ? threadArg : lastThread.get(chat_id)
+        const threadOpt = thread_id != null ? { message_thread_id: thread_id } : {}
 
         assertAllowedChat(chat_id)
         // Claude is answering — drop the "typing…" keep-alive for this chat.
@@ -629,11 +722,16 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
               reply_to != null &&
               replyMode !== 'off' &&
               (replyMode === 'all' || i === 0)
-            const sent = await bot.api.sendMessage(chat_id, chunks[i], {
-              ...(shouldReplyTo ? { reply_parameters: { message_id: reply_to } } : {}),
-              ...(parseMode ? { parse_mode: parseMode } : {}),
-            })
-            sentIds.push(sent.message_id)
+            const id = await sendText(
+              chat_id,
+              chunks[i],
+              {
+                ...threadOpt,
+                ...(shouldReplyTo ? { reply_parameters: { message_id: reply_to } } : {}),
+              },
+              parseMode,
+            )
+            sentIds.push(id)
           }
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err)
@@ -647,9 +745,12 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         for (const f of files) {
           const ext = extname(f).toLowerCase()
           const input = new InputFile(f)
-          const opts = reply_to != null && replyMode !== 'off'
-            ? { reply_parameters: { message_id: reply_to } }
-            : undefined
+          const opts = {
+            ...threadOpt,
+            ...(reply_to != null && replyMode !== 'off'
+              ? { reply_parameters: { message_id: reply_to } }
+              : {}),
+          }
           if (PHOTO_EXTS.has(ext)) {
             const sent = await bot.api.sendPhoto(chat_id, input, opts)
             sentIds.push(sent.message_id)
@@ -692,14 +793,23 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
       }
       case 'edit_message': {
         assertAllowedChat(args.chat_id as string)
-        const editFormat = (args.format as string | undefined) ?? 'text'
-        const editParseMode = editFormat === 'markdownv2' ? 'MarkdownV2' as const : undefined
-        const edited = await bot.api.editMessageText(
-          args.chat_id as string,
-          Number(args.message_id),
-          args.text as string,
-          ...(editParseMode ? [{ parse_mode: editParseMode }] : []),
-        )
+        const editParseMode = parseModeOf(args.format)
+        const editMessage = (mode: ReturnType<typeof parseModeOf>) =>
+          bot.api.editMessageText(
+            args.chat_id as string,
+            Number(args.message_id),
+            args.text as string,
+            ...(mode ? [{ parse_mode: mode }] : []),
+          )
+        // Same plain-text fallback as reply(): losing a progress update to a
+        // stray '*' would be worse than losing the formatting.
+        const edited = await editMessage(editParseMode).catch(err => {
+          if (!editParseMode || !isParseError(err)) throw err
+          process.stderr.write(
+            `telegram channel: ${editParseMode} rejected on edit (${(err as GrammyError).description}) — retrying as plain text\n`,
+          )
+          return editMessage(undefined)
+        })
         const id = typeof edited === 'object' ? edited.message_id : args.message_id
         return { content: [{ type: 'text', text: `edited (id: ${id})` }] }
       }
@@ -724,7 +834,7 @@ await mcp.connect(new StdioServerTransport())
 // the bot keeps polling forever as a zombie, holding the token and blocking
 // the next session with 409 Conflict.
 let shuttingDown = false
-function shutdown(): void {
+function shutdown(code = 0): void {
   if (shuttingDown) return
   shuttingDown = true
   process.stderr.write('telegram channel: shutting down\n')
@@ -733,14 +843,15 @@ function shutdown(): void {
   } catch {}
   // bot.stop() signals the poll loop to end; the current getUpdates request
   // may take up to its long-poll timeout to return. Force-exit after 2s.
-  setTimeout(() => process.exit(0), 2000)
-  void Promise.resolve(bot.stop()).finally(() => process.exit(0))
+  setTimeout(() => process.exit(code), 2000)
+  void Promise.resolve(bot.stop()).finally(() => process.exit(code))
 }
-process.stdin.on('end', shutdown)
-process.stdin.on('close', shutdown)
-process.on('SIGTERM', shutdown)
-process.on('SIGINT', shutdown)
-process.on('SIGHUP', shutdown)
+// Wrapped: signal handlers pass the signal name, which must not become the exit code.
+process.stdin.on('end', () => shutdown())
+process.stdin.on('close', () => shutdown())
+process.on('SIGTERM', () => shutdown())
+process.on('SIGINT', () => shutdown())
+process.on('SIGHUP', () => shutdown())
 
 // Orphan watchdog: stdin events above don't reliably fire when the parent
 // chain (`bun run` wrapper → shell → us) is severed by a crash. Poll for
@@ -753,6 +864,97 @@ setInterval(() => {
     process.stdin.readableEnded
   if (orphaned) shutdown()
 }, 5000).unref()
+
+// ── Poller lock ──────────────────────────────────────────────────────────────
+// bot.pid records the process currently holding the token's single getUpdates
+// slot; the holder refreshes the file every HEARTBEAT_MS. A newly started
+// instance takes over only when that holder is gone, was replaced by an
+// unrelated process reusing its pid, or has stopped heartbeating. Otherwise it
+// stands by and retries — so a second Claude Code session (a cron run, a
+// terminal session) no longer steals the channel from a healthy one. Standby
+// instances still serve every outbound tool; they just don't poll.
+const HEARTBEAT_MS = 30_000
+const LOCK_STALE_MS = 90_000
+let ownsPollerLock = false
+
+// Guards against pid reuse: the recorded pid may now belong to something else
+// entirely, and SIGTERM-ing that would be someone else's very bad day.
+function isPollerProcess(pid: number): boolean {
+  try {
+    if (process.platform === 'linux') {
+      return readFileSync(`/proc/${pid}/cmdline`, 'utf8').replace(/\0/g, ' ').includes('server.ts')
+    }
+    if (process.platform === 'win32') return true // no cheap cmdline probe here
+    return execFileSync('ps', ['-o', 'args=', '-p', String(pid)], { encoding: 'utf8' }).includes('server.ts')
+  } catch {
+    return false
+  }
+}
+
+function lockHolder(): { pid: number; fresh: boolean } | null {
+  try {
+    const pid = parseInt(readFileSync(PID_FILE, 'utf8'), 10)
+    if (!(pid > 1) || pid === process.pid) return null
+    process.kill(pid, 0) // throws ESRCH when the process is gone
+    if (!isPollerProcess(pid)) return null
+    return { pid, fresh: Date.now() - statSync(PID_FILE).mtimeMs < LOCK_STALE_MS }
+  } catch {
+    return null
+  }
+}
+
+async function evict(pid: number): Promise<void> {
+  process.stderr.write(`telegram channel: evicting stale poller pid=${pid}\n`)
+  try {
+    process.kill(pid, 'SIGTERM')
+  } catch {
+    return
+  }
+  // A wedged poller can sit in a long-poll and never act on SIGTERM. Escalate
+  // rather than leaving it to hold the token forever.
+  for (let i = 0; i < 30; i++) {
+    await new Promise(r => setTimeout(r, 100))
+    try {
+      process.kill(pid, 0)
+    } catch {
+      return
+    }
+  }
+  process.stderr.write(`telegram channel: pid=${pid} ignored SIGTERM — sending SIGKILL\n`)
+  try {
+    process.kill(pid, 'SIGKILL')
+  } catch {}
+  await new Promise(r => setTimeout(r, 200))
+}
+
+async function acquirePollerLock(): Promise<boolean> {
+  let announced = false
+  while (!shuttingDown) {
+    const holder = lockHolder()
+    if (holder?.fresh) {
+      if (!announced) {
+        announced = true
+        process.stderr.write(
+          `telegram channel: pid=${holder.pid} is polling — standing by (outbound tools still work)\n`,
+        )
+      }
+      await new Promise(r => setTimeout(r, HEARTBEAT_MS))
+      continue
+    }
+    if (holder) await evict(holder.pid)
+    writeFileSync(PID_FILE, String(process.pid))
+    ownsPollerLock = true
+    return true
+  }
+  return false
+}
+
+setInterval(() => {
+  if (!ownsPollerLock || shuttingDown) return
+  try {
+    writeFileSync(PID_FILE, String(process.pid))
+  } catch {}
+}, HEARTBEAT_MS).unref()
 
 // Commands are DM-only. Responding in groups would: (1) leak pairing codes via
 // /status to other group members, (2) confirm bot presence in non-allowlisted
@@ -1020,9 +1222,16 @@ async function handleInbound(
     return
   }
 
+  // Forum topic this message belongs to, if any. Remembered so reply() can
+  // answer in the same topic without the model passing it back.
+  const thread_id = ctx.message?.is_topic_message ? ctx.message.message_thread_id : undefined
+  if (thread_id != null) lastThread.set(chat_id, thread_id)
+  else lastThread.delete(chat_id)
+  const topic = topicConfig(chat_id, thread_id)
+
   // Typing indicator — kept alive on an interval until reply() clears it, so it
   // doesn't flicker off after Telegram's ~5s auto-expiry mid-thinking.
-  startTyping(chat_id)
+  startTyping(chat_id, thread_id)
 
   // Ack reaction — lets the user know we're processing. Fire-and-forget.
   // Telegram only accepts a fixed emoji whitelist — if the user configures
@@ -1047,15 +1256,27 @@ async function handleInbound(
   const repliedText = ctx.message?.quote?.text ?? repliedTo?.text ?? repliedTo?.caption
   const repliedSnippet = safeName(repliedText)?.slice(0, 500)
 
+  // Per-topic instructions come from the operator's own local config file, not
+  // from Telegram, so prepending them to the message body is safe — and it is
+  // the one place the model reliably reads before acting on the message.
+  const topicLabel = topic?.name ?? (thread_id != null ? String(thread_id) : undefined)
+  const content = topic?.instructions
+    ? `[channel topic${topicLabel ? `: ${topicLabel}` : ''} — instructions for this topic]\n` +
+      `${topic.instructions}\n` +
+      `--- message ---\n${text}`
+    : text
+
   // image_path goes in meta only — an in-content "[image attached — read: PATH]"
   // annotation is forgeable by any allowlisted sender typing that string.
   mcp.notification({
     method: 'notifications/claude/channel',
     params: {
-      content: text,
+      content,
       meta: {
         chat_id,
         ...(msgId != null ? { message_id: String(msgId) } : {}),
+        ...(thread_id != null ? { thread_id: String(thread_id) } : {}),
+        ...(topic?.name ? { topic: safeName(topic.name)! } : {}),
         user: from.username ?? String(from.id),
         user_id: String(from.id),
         ts: new Date((ctx.message?.date ?? 0) * 1000).toISOString(),
@@ -1075,7 +1296,21 @@ async function handleInbound(
       },
     },
   }).catch(err => {
+    // The ack reaction and the typing indicator already told the sender the
+    // message was received. If the notification never reached the session,
+    // saying nothing would leave them waiting for a reply that can't come.
     process.stderr.write(`telegram channel: failed to deliver inbound to Claude: ${err}\n`)
+    stopTyping(chat_id)
+    void bot.api
+      .sendMessage(
+        chat_id,
+        '⚠️ Not delivered — the Claude Code session is not reachable right now. Your message was not seen; send it again once the session is back.',
+        {
+          ...(thread_id != null ? { message_thread_id: thread_id } : {}),
+          ...(msgId != null ? { reply_parameters: { message_id: msgId } } : {}),
+        },
+      )
+      .catch(() => {})
   })
 }
 
@@ -1090,12 +1325,30 @@ bot.catch(err => {
 // returned, and polling stopped permanently while the process stayed alive
 // (MCP stdin keeps it running). Outbound tools kept working but the bot was
 // deaf to inbound messages until a full restart.
+// How long a start must keep running before its failure counts as a fresh
+// problem rather than a continuation of the current streak.
+const POLL_STABLE_MS = 60_000
+
+async function notifyOwners(text: string): Promise<void> {
+  for (const chat_id of loadAccess().allowFrom) {
+    await bot.api.sendMessage(chat_id, text).catch(() => {})
+  }
+}
+
 void (async () => {
-  for (let attempt = 1; ; attempt++) {
+  if (!(await acquirePollerLock())) return
+  let failures = 0
+  let startedAt = 0
+  for (;;) {
     try {
       await bot.start({
         onStart: info => {
-          attempt = 0
+          // Upstream reset the retry counter here. grammy fires onStart after
+          // getMe but before the first getUpdates, so a 409 always arrived with
+          // the counter freshly zeroed: the bail-out below was unreachable and
+          // backoff never grew — the retry loop just spun. Record the time
+          // instead and let uptime decide (see below).
+          startedAt = Date.now()
           botUsername = info.username
           process.stderr.write(`telegram channel: polling as @${info.username}\n`)
           // Only the locally-defined commands are listed: the upstream
@@ -1112,19 +1365,36 @@ void (async () => {
       if (shuttingDown) return
       // bot.stop() mid-setup rejects with grammy's "Aborted delay" — expected, not an error.
       if (err instanceof Error && err.message === 'Aborted delay') return
+      // A start that polled fine for a while and then broke is a new incident,
+      // not part of the current streak.
+      if (startedAt && Date.now() - startedAt > POLL_STABLE_MS) failures = 0
+      startedAt = 0
+      failures++
       const is409 = err instanceof GrammyError && err.error_code === 409
-      if (is409 && attempt >= 8) {
+      if (is409 && failures >= 8) {
         process.stderr.write(
-          `telegram channel: 409 Conflict persists after ${attempt} attempts — ` +
+          `telegram channel: 409 Conflict persists after ${failures} attempts — ` +
           `another poller is holding the bot token (stray 'bun server.ts' process or a second session). Exiting.\n`,
         )
+        await notifyOwners(
+          '⚠️ Telegram channel stopped: another process holds the bot token (409 Conflict). ' +
+          'Inbound messages are not reaching this session — restart it.',
+        )
+        // Exit rather than return: a live-but-deaf server reports healthy while
+        // silently swallowing every message the user sends.
+        shutdown(1)
         return
       }
-      const delay = Math.min(1000 * attempt, 15000)
+      if (failures === 5) {
+        void notifyOwners(
+          `⚠️ Telegram channel: polling has failed ${failures} times in a row — inbound may be delayed. Still retrying.`,
+        )
+      }
+      const delay = Math.min(1000 * failures, 15000)
       const detail = is409
-        ? `409 Conflict${attempt === 1 ? ' — another instance is polling (zombie session, or a second Claude Code running?)' : ''}`
+        ? `409 Conflict${failures === 1 ? ' — another instance is polling (zombie session, or a second Claude Code running?)' : ''}`
         : `polling error: ${err}`
-      process.stderr.write(`telegram channel: ${detail}, retrying in ${delay / 1000}s\n`)
+      process.stderr.write(`telegram channel: ${detail} (streak ${failures}), retrying in ${delay / 1000}s\n`)
       await new Promise(r => setTimeout(r, delay))
     }
   }
