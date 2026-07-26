@@ -429,13 +429,15 @@ async function sendText(
 // Optional per-topic context lives in $CLAUDE_CONFIG_DIR/telegram-topics.json:
 //   { "<chat_id>:<thread_id>": { "name": "coffee", "instructions": "..." },
 //     "<chat_id>:*":           { "instructions": "fallback for the group" },
-//     "<chat_id>":             { "instructions": "fallback for a DM" } }
+//     "<chat_id>":             { "instructions": "fallback for a DM" },
+//     "<chat_id>:<thread_id>": { "name": "Daily review", "ignore": true } }
 // instructions are prepended to the inbound message so the model starts the
-// turn with the rules for that topic. Re-read per message — edits apply without
-// restarting the plugin.
+// turn with the rules for that topic. `ignore` marks a send-only topic: inbound
+// messages from it are dropped without starting a turn. Re-read per message —
+// edits apply without restarting the plugin.
 const TOPICS_FILE = join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude'), 'telegram-topics.json')
 
-type TopicConfig = { name?: string; instructions?: string }
+type TopicConfig = { name?: string; instructions?: string; ignore?: boolean }
 
 function topicConfig(chat_id: string, thread_id?: number): TopicConfig | undefined {
   try {
@@ -1228,6 +1230,10 @@ async function handleInbound(
   if (thread_id != null) lastThread.set(chat_id, thread_id)
   else lastThread.delete(chat_id)
   const topic = topicConfig(chat_id, thread_id)
+
+  // Send-only topics (e.g. the day-review briefing): a routine posts there and
+  // nothing is meant to answer, so an inbound message never starts a turn.
+  if (topic?.ignore) return
 
   // Typing indicator — kept alive on an interval until reply() clears it, so it
   // doesn't flicker off after Telegram's ~5s auto-expiry mid-thinking.
