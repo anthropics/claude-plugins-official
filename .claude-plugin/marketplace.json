@@ -2810,7 +2810,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/Digital-Process-Tools/claude-remember.git",
-        "sha": "1bf231715bb54b8bc5e6d8e3134138b82d9df141"
+        "sha": "d9480ec64ca9311898f970936d0ce4866413f160"
       },
       "homepage": "https://github.com/Digital-Process-Tools/claude-remember"
     },
