@@ -37,6 +37,24 @@ GIT_CMD = [
     # reflog %gs subjects, ls-files, status, etc. — without per-site
     # flag duplication. See #2082, #2099.
     "-c", "core.quotePath=false",
+    # diff.{mnemonicPrefix,noprefix,srcPrefix,dstPrefix}: pin the canonical
+    # `a/` + `b/` header prefixes. Users who set any of these in their git
+    # config get `c/`+`w/` (mnemonic), bare paths (noprefix), or arbitrary
+    # custom prefixes instead — none of which match the `^a/(.+?) b/(.+)$`
+    # header regex in parse_diff_into_files / extract_file_paths_from_diff.
+    # Every file is then silently dropped: the Stop hook logs "no source
+    # code files in diff" and emits skip_reason=7, so the LLM review never
+    # runs and nothing surfaces to the user. mnemonicPrefix only rewrites
+    # index/worktree diffs, so commit-to-commit reviews keep working and
+    # mask the failure; noprefix breaks both. Same shape as core.quotePath
+    # above — normalize once here so every diff feeder inherits it. These
+    # are no-ops for non-diff subcommands, and git ignores config keys it
+    # does not know, so older versions without diff.srcPrefix are safe.
+    # See #4569.
+    "-c", "diff.mnemonicPrefix=false",
+    "-c", "diff.noprefix=false",
+    "-c", "diff.srcPrefix=a/",
+    "-c", "diff.dstPrefix=b/",
 ]
 
 
