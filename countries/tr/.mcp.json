@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "TurkeyLegal": {
+      "type": "http",
+      "url": "http://localhost:3000/mcp",
+      "title": "Turkish Legal Sources",
+      "description": "Search Turkish legal sources: UYAP, Resmi Gazete, Yargitay decisions, legal code sections. Self-hosted MCP server — see plugins/turkey/mcp/ for setup and deployment."
+    }
+  }
+}
