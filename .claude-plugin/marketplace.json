@@ -497,7 +497,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/microsoft/azure-sql-database-container.git",
-        "sha": "c64639ce9d03731180560ccca214695892a72fe4"
+        "sha": "a8c1c3ad3ae9b7a21cbc98c07c4963fbcd4cc18c"
       },
       "homepage": "https://github.com/microsoft/azure-sql-database-container"
     },
