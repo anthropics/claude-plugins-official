@@ -538,7 +538,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/gemini-cli-extensions/bigquery-data-analytics.git",
-        "sha": "7b89e74199b1f1432fa020605d5a6dbedbe8210a"
+        "sha": "b8feae853c8b676cada2b3c33b094763443b1a97"
       },
       "homepage": "https://github.com/gemini-cli-extensions/bigquery-data-analytics"
     },
