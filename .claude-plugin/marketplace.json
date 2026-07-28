@@ -1545,6 +1545,21 @@
       "homepage": "https://www.fullstory.com"
     },
     {
+      "name": "games",
+      "description": "Terminal games for Claude Code wait time — quick multiplayer matches against other waiting devs. /games rotates through the arcade; /play <game> launches a specific one. Includes fragwait (terminal FPS deathmatch), checkwait (blitz chess), boomwait (bomber), snakewait (snake battle), blockwait (block-stacking duel), and tankwait (artillery duel).",
+      "author": {
+        "name": "games contributors"
+      },
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/jeremiahagthe/Claude-Games.git",
+        "path": "plugin",
+        "ref": "main",
+        "sha": "cb572d944f244e7cd9eaa582d600c234e267e3fc"
+      },
+      "homepage": "https://github.com/jeremiahagthe/Claude-Games"
+    },
+    {
       "name": "github",
       "description": "Official GitHub MCP server for repository management. Create issues, manage pull requests, review code, search repositories, and interact with GitHub's full API directly from Claude Code.",
       "category": "productivity",
