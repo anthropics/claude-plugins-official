@@ -1,6 +1,6 @@
 {
   "context7": {
-    "command": "npx",
-    "args": ["-y", "@upstash/context7-mcp"]
+    "command": "node",
+    "args": ["${CLAUDE_PLUGIN_ROOT}/run.js"]
   }
 }
