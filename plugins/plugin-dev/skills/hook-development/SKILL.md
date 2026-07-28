@@ -145,12 +145,18 @@ Execute before any tool runs. Use to approve, deny, or modify tool calls.
 ```json
 {
   "hookSpecificOutput": {
+    "hookEventName": "PreToolUse",
     "permissionDecision": "allow|deny|ask",
+    "permissionDecisionReason": "Why the tool was allowed, denied, or needs confirmation - Claude sees this",
+    "additionalContext": "Extra context added to Claude's context window",
     "updatedInput": {"field": "modified_value"}
   },
-  "systemMessage": "Explanation for Claude"
+  "systemMessage": "Warning shown to the user in the terminal - Claude does not see this"
 }
 ```
+
+When denying a tool, put the explanation in `permissionDecisionReason`. Claude is told the
+tool was blocked either way, but only that field tells it why.
 
 ### PostToolUse
 
@@ -176,7 +182,8 @@ Execute after tool completes. Use to react to results, provide feedback, or log.
 **Output behavior:**
 - Exit 0: stdout shown in transcript
 - Exit 2: stderr fed back to Claude
-- systemMessage included in context
+- `hookSpecificOutput.additionalContext`: added to Claude's context window
+- `systemMessage`: shown to the user only - it does not reach Claude
 
 ### Stop
 
@@ -203,8 +210,8 @@ Execute when main agent considers stopping. Use to validate completeness.
 ```json
 {
   "decision": "approve|block",
-  "reason": "Explanation",
-  "systemMessage": "Additional context"
+  "reason": "Explanation - shown to Claude when blocking",
+  "systemMessage": "Message shown to the user, not to Claude"
 }
 ```
 
@@ -283,13 +290,39 @@ Execute when Claude sends notifications. Use to react to user notifications.
 {
   "continue": true,
   "suppressOutput": false,
-  "systemMessage": "Message for Claude"
+  "systemMessage": "Warning shown to the user in the terminal"
 }
 ```
 
 - `continue`: If false, halt processing (default true)
 - `suppressOutput`: Hide output from transcript (default false)
-- `systemMessage`: Message shown to Claude
+- `systemMessage`: Warning shown to the **user**. It is not added to Claude's context - use
+  `hookSpecificOutput.additionalContext` to send text to Claude
+
+### Reaching Claude vs. reaching the user
+
+These go to different places. Mixing them up produces a hook that looks like it works - a
+message appears on screen - while Claude never receives it and never acts on it.
+
+| Field | Delivered to | Available on |
+|---|---|---|
+| `hookSpecificOutput.additionalContext` | Claude's context window | `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Stop`, `SubagentStop`, and others |
+| `hookSpecificOutput.permissionDecisionReason` | Claude, as the stated reason a tool was blocked | `PreToolUse` |
+| `systemMessage` | The user, in the terminal | All hooks |
+
+A hook whose purpose is to steer Claude's next action must use `additionalContext` (or
+`permissionDecisionReason` when denying). `systemMessage` alone will not reach it.
+
+```json
+{
+  "hookSpecificOutput": {
+    "hookEventName": "PostToolUse",
+    "additionalContext": "This file is generated. Edit src/schema.ts and run `bun generate` instead."
+  }
+}
+```
+
+Reference: https://code.claude.com/docs/en/hooks
 
 ### Exit Codes
 
