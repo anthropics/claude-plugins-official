@@ -1166,7 +1166,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/gemini-cli-extensions/data-agent-kit-starter-pack.git",
-        "sha": "62d2f9c5504297893251a32ca92ec34c5ae2eb67"
+        "sha": "e8fa2b8ca06c4269dd2953f39e8798764f687c34"
       },
       "homepage": "https://github.com/gemini-cli-extensions/data-agent-kit-starter-pack"
     },
