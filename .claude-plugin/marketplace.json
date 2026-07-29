@@ -3805,7 +3805,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/langfuse/skills.git",
-        "sha": "b2ef4908390b047c3e17f5811de3b8415b71be60"
+        "sha": "cf98ef9b6e154b821012f9773ec9ec3238b3b976"
       },
       "homepage": "https://langfuse.com"
     },
