@@ -3124,7 +3124,7 @@
         "url": "https://github.com/getsentry/cli.git",
         "path": "plugins/sentry-cli",
         "ref": "main",
-        "sha": "3e292ee4beb5c8254e0f020d2bfaf64fa16a7132"
+        "sha": "9ce265d2ec2950167381ce559aab832dc4fec3ee"
       },
       "homepage": "https://sentry.io"
     },
