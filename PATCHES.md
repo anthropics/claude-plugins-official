@@ -12,6 +12,7 @@ plugin only. Everything that remains is upstream except the commits below.
 | `telegram: keep "typing…" alive until the turn ends` | re-sends `sendChatAction` on an interval (upstream sends it once, so it expires after ~5s), stopping on `reply()`, a 10-minute cap, or the `$CLAUDE_CONFIG_DIR/telegram-turn-done` sentinel written by the local `/clr` and mail quick-action hooks |
 | `telegram: fix poller lock, 409 bail-out and delivery; add topics + formats` | see below |
 | `telegram: let a topic be marked send-only via ignore` | a topic listed in `telegram-topics.json` with `"ignore": true` (the day-review briefing topic) never starts a turn from inbound messages |
+| `telegram: add rich messages to reply` | see below |
 
 ## `telegram: fix poller lock, 409 bail-out and delivery; add topics + formats`
 
@@ -82,3 +83,22 @@ Conflicts should be limited to `external_plugins/telegram/server.ts` and
 plugin and the rest of the catalog, an upstream sync will also surface newly
 added upstream plugins as additions — delete them again (`git rm`) and keep the
 manifest's `plugins` array at the single telegram entry.
+
+## `telegram: add rich messages to reply`
+
+`reply` gained a `rich` parameter: an array of Bot API 10.1 rich blocks, sent via
+`sendRichMessage` (grammY has no binding, so it goes over plain `fetch`). This is
+what long or structured replies use — headings, real lists, tables, and `details`
+blocks that keep the gist visible and fold the detail behind a tap, instead of a
+wall of text or HTML `<blockquote expandable>`.
+
+`text` is now optional (`required: ['chat_id']`): with `rich` it is used only as
+the plain-text fallback. If Telegram rejects the payload, the blocks are flattened
+(`blocksToPlain`) and sent as text, mirroring the existing markup fallback — a
+schema slip costs formatting, not the message.
+
+The accepted block set is narrower than the public docs suggest (probed against the
+live API): `paragraph`, `heading` (numeric `size`), `list` (items are `{blocks:[…]}`,
+no `type`), `details`, `blockquote`, `table` (`cells`, not `rows`), `pre`, `divider`,
+`footer`. `section_heading`, `block_quotation`, `preformatted` and `thinking` are
+receive-side names only and are rejected on send.

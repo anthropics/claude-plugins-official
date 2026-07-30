@@ -423,6 +423,88 @@ async function sendText(
   }
 }
 
+// ── Rich messages (Bot API 10.1) ─────────────────────────────────────────────
+// sendRichMessage takes a block document instead of a flat string: headings,
+// real lists, tables, and `details` blocks that collapse long passages behind a
+// tap. grammY has no binding for it yet, so it goes out over plain fetch.
+// The block schema the send side actually accepts is narrower than the public
+// docs suggest (probed live): paragraph, heading (numeric `size`), list (items
+// are `{blocks:[…]}`), details (`header` + `blocks`), blockquote (`blocks`),
+// table (`cells`), pre, divider, footer. Rich text is a string, an array, or a
+// tagged object like {type:'bold',text:…}.
+type RichBlock = Record<string, unknown>
+
+function parseRich(value: unknown): RichBlock[] | undefined {
+  let raw = value
+  if (typeof raw === 'string') {
+    try { raw = JSON.parse(raw) } catch { throw new Error('rich must be a JSON array of blocks') }
+  }
+  if (raw == null) return undefined
+  const blocks = Array.isArray(raw) ? raw : (raw as { blocks?: unknown }).blocks
+  if (!Array.isArray(blocks) || blocks.length === 0) {
+    throw new Error('rich must be a non-empty array of blocks')
+  }
+  return blocks as RichBlock[]
+}
+
+// Flatten blocks to bare text, so a rejected rich payload still reaches the
+// user (same principle as the plain-text fallback for markup above).
+function richTextToPlain(node: unknown): string {
+  if (node == null) return ''
+  if (typeof node === 'string') return node
+  if (Array.isArray(node)) return node.map(richTextToPlain).join('')
+  if (typeof node === 'object') {
+    const n = node as Record<string, unknown>
+    const inner = richTextToPlain(n.text)
+    if (n.type === 'url' && typeof n.url === 'string') return inner ? `${inner} (${n.url})` : n.url
+    return inner
+  }
+  return String(node)
+}
+
+function blocksToPlain(blocks: unknown, depth = 0): string {
+  const pad = '  '.repeat(depth)
+  const lines: string[] = []
+  for (const b of (blocks as RichBlock[] | undefined) ?? []) {
+    const type = b.type
+    if (type === 'list') {
+      const items = (b.items as { blocks?: unknown }[] | undefined) ?? []
+      items.forEach((item, i) => {
+        const marker = b.ordered || b.numbered ? `${i + 1}.` : '•'
+        lines.push(`${pad}${marker} ${blocksToPlain(item.blocks, depth + 1).trim()}`)
+      })
+    } else if (type === 'details' || type === 'blockquote') {
+      const header = richTextToPlain(b.header)
+      if (header) lines.push(pad + header)
+      lines.push(blocksToPlain(b.blocks, depth + 1))
+    } else if (type === 'divider') {
+      lines.push(`${pad}—`)
+    } else if (type === 'table') {
+      for (const row of (b.cells as { text?: unknown }[][] | undefined) ?? []) {
+        lines.push(pad + row.map(c => richTextToPlain(c.text)).join(' | '))
+      }
+    } else {
+      lines.push(pad + richTextToPlain(b.text))
+    }
+  }
+  return lines.filter(l => l.trim()).join('\n')
+}
+
+async function sendRich(
+  chat_id: string,
+  blocks: RichBlock[],
+  opts: Record<string, unknown>,
+): Promise<number> {
+  const res = await fetch(`https://api.telegram.org/bot${TOKEN}/sendRichMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chat_id, ...opts, rich_message: { blocks } }),
+  })
+  const body = (await res.json()) as { ok: boolean; result?: { message_id: number }; description?: string }
+  if (body.ok && body.result) return body.result.message_id
+  throw new Error(body.description ?? `sendRichMessage failed (HTTP ${res.status})`)
+}
+
 // ── Forum topics ─────────────────────────────────────────────────────────────
 // Messages in a forum supergroup carry a message_thread_id. Replies, typing
 // indicators and attachments must carry it back or they land in "General".
@@ -480,6 +562,8 @@ const mcp = new Server(
       'If the tag has a thread_id attribute the message came from a forum topic — reply goes back to that topic automatically, but pass thread_id explicitly when you reply to something other than the newest message. A topic attribute names the topic; when the topic has its own instructions they are prepended to the message body and take precedence for that turn.',
       '',
       'reply and edit_message take format: "html" for formatting (<b>, <i>, <code>, <pre>, <a href>; escape &, < and > in the text) — prefer it over markdownv2, which rejects the whole message on a single unescaped character.',
+
+      'For a structured or long reply, pass reply\'s rich parameter (Bot API 10.1 rich blocks) instead of text: headings, real lists, tables, and details blocks that keep the gist visible and fold the detail behind a tap. Never fold alerts, key numbers or a tappable /command menu. See the rich parameter\'s description for the accepted block shapes.',
       '',
       'reply accepts file paths (files: ["/abs/path.png"]) for attachments. Use react to add emoji reactions, and edit_message for interim progress updates. Edits don\'t trigger push notifications — when a long task completes, send a new reply so the user\'s device pings.',
       '',
@@ -529,12 +613,23 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: 'reply',
       description:
-        'Reply on Telegram. Pass chat_id from the inbound message. Optionally pass reply_to (message_id) for threading, and files (absolute paths) to attach images or documents.',
+        'Reply on Telegram. Pass chat_id from the inbound message. Optionally pass reply_to (message_id) for threading, and files (absolute paths) to attach images or documents. For anything structured or long, pass rich (Bot API 10.1 rich blocks) instead of text.',
       inputSchema: {
         type: 'object',
         properties: {
           chat_id: { type: 'string' },
-          text: { type: 'string' },
+          text: { type: 'string', description: 'Message text. Optional when rich is given, where it serves as the plain-text fallback.' },
+          rich: {
+            type: 'array',
+            items: { type: 'object' },
+            description:
+              'Rich message blocks (Bot API 10.1 sendRichMessage) — use for structured or long replies. ' +
+              'Accepted blocks: {type:"paragraph",text}, {type:"heading",size:<number>,text}, ' +
+              '{type:"list",items:[{blocks:[…]}],ordered?}, {type:"details",header,blocks:[…]} (collapsible — fold long passages here), ' +
+              '{type:"blockquote",blocks:[…]}, {type:"table",cells:[[{text}…]…]}, {type:"pre",text}, {type:"divider"}, {type:"footer",text}. ' +
+              'A text value is a string, an array, or a tagged object: {type:"bold"|"italic"|"code"|"spoiler"|"bot_command",text} or {type:"url",text,url}. ' +
+              'If Telegram rejects the payload it is flattened to plain text rather than lost.',
+          },
           reply_to: {
             type: 'string',
             description: 'Message ID to thread under. Use message_id from the inbound <channel> block.',
@@ -554,7 +649,7 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
             description: FORMAT_DESC,
           },
         },
-        required: ['chat_id', 'text'],
+        required: ['chat_id'],
       },
     },
     {
@@ -688,7 +783,10 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
     switch (req.params.name) {
       case 'reply': {
         const chat_id = args.chat_id as string
-        const text = args.text as string
+        const rich = parseRich(args.rich)
+        // rich carries its own text; a plain reply still needs one.
+        const text = (args.text as string | undefined) ?? (rich ? '' : undefined as unknown as string)
+        if (text == null && !rich) throw new Error('reply needs text or rich')
         const reply_to = args.reply_to != null ? Number(args.reply_to) : undefined
         const files = (args.files as string[] | undefined) ?? []
         const parseMode = parseModeOf(args.format)
@@ -715,8 +813,32 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         const limit = Math.max(1, Math.min(access.textChunkLimit ?? MAX_CHUNK_LIMIT, MAX_CHUNK_LIMIT))
         const mode = access.chunkMode ?? 'length'
         const replyMode = access.replyToMode ?? 'first'
-        const chunks = chunk(text, limit, mode)
+        // Rich messages hold ~32k characters and carry their own structure, so
+        // they are never chunked. On rejection the blocks are flattened and sent
+        // as text (or the caller's own `text`, if they supplied one).
+        const chunks = rich ? [] : chunk(text, limit, mode)
         const sentIds: number[] = []
+
+        if (rich) {
+          const richOpts = {
+            ...threadOpt,
+            ...(reply_to != null && replyMode !== 'off'
+              ? { reply_parameters: { message_id: reply_to } }
+              : {}),
+          }
+          try {
+            sentIds.push(await sendRich(chat_id, rich, richOpts))
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err)
+            process.stderr.write(
+              `telegram channel: rich message rejected (${msg}) — resending as plain text\n`,
+            )
+            const fallback = text || blocksToPlain(rich)
+            for (const part of chunk(fallback, limit, mode)) {
+              sentIds.push(await sendText(chat_id, part, richOpts, undefined))
+            }
+          }
+        }
 
         try {
           for (let i = 0; i < chunks.length; i++) {

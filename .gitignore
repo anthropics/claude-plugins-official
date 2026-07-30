@@ -1,2 +1,2 @@
 *.DS_Store
-.claude/
+.claude/node_modules/
