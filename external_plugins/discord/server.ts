@@ -6,8 +6,9 @@
  * guild-channel support with mention-triggering. State lives in
  * ~/.claude/channels/discord/access.json — managed by the /discord:access skill.
  *
- * Discord's search API isn't exposed to bots — fetch_messages is the only
- * lookback, and the instructions tell the model this.
+ * Guild search is available to bots (it needs the MESSAGE_CONTENT intent), so
+ * search_messages complements fetch_messages for lookback. Results are filtered
+ * to allowlisted channels: search must not reach further than reading does.
  */
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
@@ -582,7 +583,7 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: 'fetch_messages',
       description:
-        "Fetch recent messages from a Discord channel. Returns oldest-first with message IDs. Discord's search API isn't exposed to bots, so this is the only way to look back.",
+        'Fetch recent messages from a Discord channel. Returns oldest-first with message IDs. Use search_messages to look for something specific rather than paging back through this.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -595,8 +596,62 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
         required: ['channel'],
       },
     },
+    {
+      name: 'search_messages',
+      description:
+        "Search a guild's messages. Pass any channel in the guild to scope the search; results are filtered to allowlisted channels only. Needs the MESSAGE_CONTENT intent. Returns up to 25 per page.",
+      inputSchema: {
+        type: 'object',
+        properties: {
+          channel: {
+            type: 'string',
+            description: 'Any allowlisted channel in the guild to search.',
+          },
+          content: { type: 'string', description: 'Text to search for (max 1024 chars).' },
+          author_id: { type: 'string' },
+          channel_id: {
+            type: 'string',
+            description: 'Restrict to one channel. Must itself be allowlisted.',
+          },
+          has: {
+            type: 'string',
+            description: 'Filter by what a message carries: image, video, file, embed, link, sound, sticker, poll, snapshot.',
+          },
+          pinned: { type: 'boolean' },
+          sort_by: { type: 'string', description: 'timestamp (default) or relevance.' },
+          limit: { type: 'number', description: 'Max results (default 25, Discord caps at 25).' },
+        },
+        required: ['channel'],
+      },
+    },
   ],
 }))
+
+/**
+ * One history line. Beyond the text this carries what a reader needs to decide
+ * whether to look further: which message is being replied to, and what the
+ * attachments actually are. A bare count meant the only way to find out was to
+ * download them.
+ */
+function formatMessageLine(m: Message): string {
+  const who = m.author.id === client.user?.id ? 'me' : m.author.username
+  const parts: string[] = [`id: ${m.id}`]
+
+  if (m.reference?.messageId) parts.push(`reply to: ${m.reference.messageId}`)
+
+  if (m.attachments.size > 0) {
+    const files = [...m.attachments.values()]
+      .map(a => (a.contentType ? `${a.name} (${a.contentType})` : a.name))
+      .join(', ')
+    parts.push(files)
+  }
+
+  // Tool result is newline-joined; multi-line content forges adjacent rows.
+  // History includes ungated senders (no-@mention messages in an opted-in
+  // channel never hit the gate but still live in channel history).
+  const text = m.content.replace(/[\r\n]+/g, ' ⏎ ')
+  return `[${m.createdAt.toISOString()}] ${who}: ${text}  (${parts.join(' | ')})`
+}
 
 mcp.setRequestHandler(CallToolRequestSchema, async req => {
   const args = (req.params.arguments ?? {}) as Record<string, unknown>
@@ -658,24 +713,72 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         const ch = await fetchAllowedChannel(args.channel as string)
         const limit = Math.min((args.limit as number) ?? 20, 100)
         const msgs = await ch.messages.fetch({ limit })
-        const me = client.user?.id
         const arr = [...msgs.values()].reverse()
+        // A thread's name carries meaning the messages do not: bug trackers put
+        // the report id there and nowhere else, so it is worth one header line.
+        const header = ch.isThread() ? `(thread: ${JSON.stringify(ch.name)})\n` : ''
         const out =
           arr.length === 0
             ? '(no messages)'
-            : arr
-                .map(m => {
-                  const who = m.author.id === me ? 'me' : m.author.username
-                  const atts = m.attachments.size > 0 ? ` +${m.attachments.size}att` : ''
-                  // Tool result is newline-joined; multi-line content forges
-                  // adjacent rows. History includes ungated senders (no-@mention
-                  // messages in an opted-in channel never hit the gate but
-                  // still live in channel history).
-                  const text = m.content.replace(/[\r\n]+/g, ' ⏎ ')
-                  return `[${m.createdAt.toISOString()}] ${who}: ${text}  (id: ${m.id}${atts})`
-                })
-                .join('\n')
+            : header + arr.map(formatMessageLine).join('\n')
         return { content: [{ type: 'text', text: out }] }
+      }
+      case 'search_messages': {
+        const ch = await fetchAllowedChannel(args.channel as string)
+        if (ch.isDMBased()) throw new Error('search needs a guild channel, not a DM')
+        const guildId = ch.guildId
+        // A named channel is searched only when it is allowlisted in its own
+        // right, so narrowing cannot be used to reach somewhere unopened.
+        const only = args.channel_id as string | undefined
+        if (only) await fetchAllowedChannel(only)
+
+        const query: Record<string, string> = {
+          limit: String(Math.min((args.limit as number) ?? 25, 25)),
+        }
+        for (const [key, value] of [
+          ['content', args.content],
+          ['author_id', args.author_id],
+          ['channel_id', only],
+          ['has', args.has],
+          ['sort_by', args.sort_by],
+        ] as const) {
+          if (value !== undefined && value !== null && value !== '') query[key] = String(value)
+        }
+        if (typeof args.pinned === 'boolean') query.pinned = String(args.pinned)
+
+        const res = (await client.rest.get(`/guilds/${guildId}/messages/search` as never, {
+          query: new URLSearchParams(query),
+        })) as { messages?: unknown[][]; documents_indexed?: number }
+
+        // Not yet indexed: Discord answers 202 with an empty body rather than
+        // an error, which otherwise reads as "no such message".
+        if (!res || !Array.isArray(res.messages)) {
+          return {
+            content: [
+              { type: 'text', text: 'search is still indexing this guild — try again shortly' },
+            ],
+          }
+        }
+
+        const access = loadAccess()
+        const hits = res.messages
+          .map(group => (Array.isArray(group) ? group[0] : group))
+          .filter((m): m is Record<string, unknown> => !!m)
+          // Search spans the whole guild, so reading is re-checked per result.
+          // Without this, search would see channels fetch_messages cannot.
+          .filter(m => String(m.channel_id) in access.groups)
+
+        if (hits.length === 0) {
+          return { content: [{ type: 'text', text: '(no matches in allowlisted channels)' }] }
+        }
+        const text = hits
+          .map(m => {
+            const author = (m.author ?? {}) as { username?: string }
+            const body = String(m.content ?? '').replace(/[\r\n]+/g, ' ⏎ ')
+            return `[${m.timestamp}] #${m.channel_id} ${author.username ?? '?'}: ${body}  (id: ${m.id})`
+          })
+          .join('\n')
+        return { content: [{ type: 'text', text }] }
       }
       case 'react': {
         const ch = await fetchAllowedChannel(args.chat_id as string)
