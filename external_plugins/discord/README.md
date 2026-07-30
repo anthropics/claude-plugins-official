@@ -88,6 +88,34 @@ See **[ACCESS.md](./ACCESS.md)** for DM policies, guild channels, mention detect
 
 Quick reference: IDs are Discord **snowflakes** (numeric — enable Developer Mode, right-click → Copy ID). Default policy is `pairing`. Guild channels are opt-in per channel ID.
 
+## Per-session channel routing (opt-in)
+
+By default every Claude Code session shares the bot's DM conversation. With routing enabled, each session gets its own text channel in a private server: rename a session "Library SSR" (`/rename`) and it answers in `#library-ssr`. No matching channel means the session answers in a fallback channel (default `#general`), where it offers to create the missing channel with one click.
+
+Enable it by creating `~/.claude/channels/discord/channels.json`:
+
+```json
+{
+  "guildId": "your-server-id",
+  "fallback": "general",
+  "dmMode": "off",
+  "map": {}
+}
+```
+
+Without this file, nothing changes — the plugin behaves exactly as before.
+
+How a server instance finds its session: a `SessionStart` hook records the session id and transcript path keyed by the Claude process PID; the instance walks its parent-PID chain to that file and reads the session's title from the transcript. Bindings re-resolve every 30 seconds, so renames move the session to its new channel. Binding priority: `DISCORD_CHANNEL` env var, then session title, then a `map` entry for the project directory, then the project folder name, then `fallback`. Bindings are logged to `~/.claude/channels/discord/bind-log.txt`.
+
+With routing active: messages in a session's channel need no @mention and reach only that session; DMs are not delivered as chat (`dmMode: "on"` restores them); permission prompts post in the session's channel with Allow/Deny/See more buttons instead of DMs.
+
+| `channels.json` key | Meaning |
+| --- | --- |
+| `guildId` | The private server's id. Presence of the file enables routing. |
+| `fallback` | Channel for sessions with no matching channel (default `general`). |
+| `dmMode` | `off` (default): DMs are not delivered while routing. `on`: keep DM delivery. |
+| `map` | Optional per-directory overrides: `{ "/path/to/project": "channel-name" }`. |
+
 ## Tools exposed to the assistant
 
 | Tool | Purpose |
@@ -97,6 +125,8 @@ Quick reference: IDs are Discord **snowflakes** (numeric — enable Developer Mo
 | `edit_message` | Edit a message the bot previously sent. Useful for "working…" → result progress updates. Only works on the bot's own messages. |
 | `fetch_messages` | Pull recent history from a channel (oldest-first). Capped at 100 per call. Each line includes the message ID so the model can `reply_to` it; messages with attachments are marked `+Natt`. Discord's search API isn't exposed to bots, so this is the only lookback. |
 | `download_attachment` | Download all attachments from a specific message by ID to `~/.claude/channels/discord/inbox/`. Returns file paths + metadata. Use when `fetch_messages` shows a message has attachments. |
+| `bind_channel` | Routing only. Bind the session to a guild text channel by name or id; `create: true` creates it first (needs the Manage Channels permission). |
+| `ask_user` | Routing only. Ask multiple-choice questions with clickable UI: colored buttons for one simple question, a modal form with dropdowns and a free-text field for multi-question or multi-select. Answers come back as normal inbound messages. |
 
 Inbound messages trigger a typing indicator automatically — Discord shows
 "botname is typing…" while the assistant works on a response.
