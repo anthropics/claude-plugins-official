@@ -2074,7 +2074,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/mapbox/mapbox-agent-skills.git",
-        "sha": "75ac667cae24c7ad7bdbbac55ac0a64d2df1543e"
+        "sha": "f5ae7dee38bafad844d8e15a867273ef75918652"
       },
       "homepage": "https://www.mapbox.com"
     },
