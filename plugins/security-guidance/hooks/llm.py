@@ -1210,7 +1210,11 @@ def agentic_review(
     )
     user_prompt = (
         "Review this change for security vulnerabilities.\n\n"
-        f"Changed files (you may Read these and any other file in the repo):\n"
+        f"Your working directory is {context_dir}. Read a listed file as "
+        f"{context_dir}/<path> — do not guess any other root (it may be a "
+        "git worktree, not the primary checkout). Report filePath in the "
+        "repo-relative form used below.\n\n"
+        f"Changed files (you may Read these and any other file under {context_dir}):\n"
         + "\n".join(f"  - {p}" for p in touched_paths[:50])
         + context_note
         + "\n\nUnified diff (only + lines are new):\n\n"
