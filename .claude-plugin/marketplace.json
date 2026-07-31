@@ -3684,7 +3684,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/wix/skills.git",
-        "sha": "19b49bfb1116c155999eeda366c249e9e0b045da"
+        "sha": "755d65e7616108cf481fc0b681adf270d453f9f4"
       },
       "homepage": "https://dev.wix.com/docs/wix-cli/guides/development/about-wix-skills"
     },
