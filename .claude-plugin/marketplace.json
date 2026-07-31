@@ -1777,6 +1777,20 @@
       "homepage": "https://github.com/intercom/claude-plugin-external"
     },
     {
+      "name": "iterate",
+      "description": "Builder/critic iterative improvement loop for any reviewable deliverable — code, documents, designs, research. A fresh independent critic agent reviews each round against a frozen goal contract until approval or the round cap.",
+      "author": {
+        "name": "Alex Gao"
+      },
+      "category": "development",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/alexgaoth/claude-iterate.git",
+        "sha": "449d072cf7e862e4f3134f976823c7a3b286a863"
+      },
+      "homepage": "https://github.com/alexgaoth/claude-iterate"
+    },
+    {
       "name": "jdtls-lsp",
       "description": "Java language server (Eclipse JDT.LS) for code intelligence",
       "version": "1.0.0",
