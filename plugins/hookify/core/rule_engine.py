@@ -70,10 +70,14 @@ class RuleEngine:
                     "systemMessage": combined_message
                 }
             elif hook_event in ['PreToolUse', 'PostToolUse']:
+                # permissionDecisionReason is the field forwarded to the model on a
+                # deny; systemMessage is user-facing only. Set both so the agent
+                # receives the rule's guidance and can self-correct.
                 return {
                     "hookSpecificOutput": {
                         "hookEventName": hook_event,
-                        "permissionDecision": "deny"
+                        "permissionDecision": "deny",
+                        "permissionDecisionReason": combined_message
                     },
                     "systemMessage": combined_message
                 }
