@@ -2291,7 +2291,7 @@
         "url": "https://github.com/neondatabase/agent-skills.git",
         "path": "plugins/neon-postgres",
         "ref": "main",
-        "sha": "f2de1d4d39ed652fec5e4d141ed7a558e0aafcc2"
+        "sha": "173654ff6b7de7686cb56e80524ba41f4b003d23"
       },
       "homepage": "https://github.com/neondatabase/agent-skills/tree/main/plugins/neon-postgres"
     },
