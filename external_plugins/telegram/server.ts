@@ -184,6 +184,12 @@ function loadAccess(): Access {
 // Outbound gate — reply/react/edit can only target chats the inbound gate
 // would deliver from. Telegram DM chat_id == user_id, so allowFrom covers DMs.
 function assertAllowedChat(chat_id: string): void {
+  // Guest turns are addressed by a synthetic id that only exists while the
+  // query is live, and the summoning user passed the allowlist to create it.
+  if (chat_id.startsWith('guest:')) {
+    if (guestFor(chat_id)) return
+    throw new Error(`guest query ${chat_id} is unknown or expired — guest answers must be sent within the hour`)
+  }
   const access = loadAccess()
   if (access.allowFrom.includes(chat_id)) return
   if (chat_id in access.groups) return
@@ -540,6 +546,143 @@ function topicConfig(chat_id: string, thread_id?: number): TopicConfig | undefin
 // having to pass thread_id back explicitly.
 const lastThread = new Map<string, number>()
 
+// ── Guest mode (Bot API 10.0) ────────────────────────────────────────────────
+// A guest bot is summoned by @mention in a chat it is not a member of. Telegram
+// sends a `guest_message` update carrying a guest_query_id, and the bot gets to
+// place exactly one message in that chat via answerGuestQuery — it cannot see
+// the member list, the history, or any other message there.
+//
+// The gate is the ordinary DM allowlist: the summoning user (ctx.from) must be
+// in access.allowFrom, otherwise the query is dropped without a reply. Anything
+// looser would hand a stranger a turn in this session just by typing the bot's
+// @username in a group of their own.
+//
+// The chat the bot was summoned in is NOT allowlisted, and its id may collide
+// with an unrelated chat the bot does know (Telegram warns about exactly that),
+// so a guest turn is addressed by a synthetic `guest:<query id>` chat_id. reply
+// and edit_message route on that prefix; nothing else can target the chat.
+const GUEST_TTL_MS = 60 * 60_000
+const MAX_GUEST_QUERIES = 50
+
+type GuestQuery = {
+  queryId: string
+  expiresAt: number
+  /** inline_message_id of the one answer, once sent. Further edits go through it. */
+  answered?: string
+}
+
+const guestQueries = new Map<string, GuestQuery>()
+
+function guestKey(queryId: string): string {
+  return `guest:${queryId}`
+}
+
+function pruneGuestQueries(): void {
+  const now = Date.now()
+  for (const [key, q] of guestQueries) {
+    if (q.expiresAt <= now) guestQueries.delete(key)
+  }
+  // Belt and braces against a flood of summons in a long-lived session.
+  while (guestQueries.size > MAX_GUEST_QUERIES) {
+    const oldest = guestQueries.keys().next()
+    if (oldest.done) break
+    guestQueries.delete(oldest.value)
+  }
+}
+
+function guestFor(chat_id: string): GuestQuery | undefined {
+  if (!chat_id.startsWith('guest:')) return undefined
+  pruneGuestQueries()
+  return guestQueries.get(chat_id)
+}
+
+// answerGuestQuery takes an InlineQueryResult, not a chat message: the answer is
+// an inline message. `article` with input_message_content is the plain-text
+// shape; Bot API 10.1 rich blocks go in the same slot as rich_message.
+function guestArticle(content: Record<string, unknown>): Record<string, unknown> {
+  return {
+    type: 'article',
+    id: randomBytes(8).toString('hex'),
+    // Never rendered in the chat — the input_message_content is what lands.
+    title: 'Answer',
+    input_message_content: content,
+  }
+}
+
+async function answerGuest(
+  q: GuestQuery,
+  text: string,
+  parseMode: ReturnType<typeof parseModeOf>,
+  rich: RichBlock[] | undefined,
+): Promise<string> {
+  const send = async (result: Record<string, unknown>): Promise<string> => {
+    const sent = await (bot.api as unknown as {
+      answerGuestQuery: (id: string, result: unknown) => Promise<{ inline_message_id: string }>
+    }).answerGuestQuery(q.queryId, result)
+    return sent.inline_message_id
+  }
+
+  if (rich) {
+    try {
+      return await send(guestArticle({ rich_message: { blocks: rich } }))
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      process.stderr.write(
+        `telegram channel: rich guest answer rejected (${msg}) — resending as plain text\n`,
+      )
+      // The query is still unanswered — one retry as plain text, same as reply().
+      return await send(guestArticle({ message_text: text || blocksToPlain(rich) }))
+    }
+  }
+
+  try {
+    return await send(
+      guestArticle({ message_text: text, ...(parseMode ? { parse_mode: parseMode } : {}) }),
+    )
+  } catch (err) {
+    if (!parseMode || !isParseError(err)) throw err
+    process.stderr.write(
+      `telegram channel: ${parseMode} rejected on guest answer (${(err as GrammyError).description}) — retrying as plain text\n`,
+    )
+    return await send(guestArticle({ message_text: text }))
+  }
+}
+
+// Edits target the inline message by id — the bot has no chat_id/message_id
+// handle on a chat it isn't a member of. editMessageText takes rich blocks in
+// the same slot as text, so a rich answer stays rich when revised.
+async function editGuest(
+  inlineId: string,
+  text: string,
+  parseMode: ReturnType<typeof parseModeOf>,
+  rich?: RichBlock[],
+): Promise<void> {
+  const edit = (mode: ReturnType<typeof parseModeOf>) =>
+    bot.api.editMessageTextInline(inlineId, text, ...(mode ? [{ parse_mode: mode }] : []))
+
+  if (rich) {
+    try {
+      await bot.api.editMessageTextInline(inlineId, { blocks: rich } as never)
+      return
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      process.stderr.write(
+        `telegram channel: rich guest edit rejected (${msg}) — retrying as plain text\n`,
+      )
+      await edit(undefined)
+      return
+    }
+  }
+
+  await edit(parseMode).catch(err => {
+    if (!parseMode || !isParseError(err)) throw err
+    process.stderr.write(
+      `telegram channel: ${parseMode} rejected on guest edit (${(err as GrammyError).description}) — retrying as plain text\n`,
+    )
+    return edit(undefined)
+  })
+}
+
 const mcp = new Server(
   { name: 'telegram', version: '1.0.0' },
   {
@@ -565,6 +708,8 @@ const mcp = new Server(
       'reply and edit_message take format: "html" for formatting (<b>, <i>, <code>, <pre>, <a href>; escape &, < and > in the text) — prefer it over markdownv2, which rejects the whole message on a single unescaped character.',
 
       'For a structured or long reply, pass reply\'s rich parameter (Bot API 10.1 rich blocks) instead of text: headings, real lists, tables, and details blocks that keep the gist visible and fold the detail behind a tap. Never fold alerts, key numbers or a tappable /command menu. See the rich parameter\'s description for the accepted block shapes.',
+      '',
+      'A guest="true" attribute means you were summoned by @mention into a chat the bot is not a member of (guest_chat_title names it). You see only that message, never the chat history or its members, and Telegram allows exactly one message back: pass the guest: chat_id to reply once, and use edit_message (or a further reply, which edits) to revise it. Attachments and reactions are unavailable there, and the answer stands in someone else\'s chat — keep it self-contained and say nothing you would not post publicly.',
       '',
       'reply accepts file paths (files: ["/abs/path.png"]) for attachments. Use react to add emoji reactions, and edit_message for interim progress updates. Edits don\'t trigger push notifications — when a long task completes, send a new reply so the user\'s device pings.',
       '',
@@ -791,6 +936,34 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         const reply_to = args.reply_to != null ? Number(args.reply_to) : undefined
         const files = (args.files as string[] | undefined) ?? []
         const parseMode = parseModeOf(args.format)
+
+        // Guest turn: Telegram allows exactly one message per guest query, and
+        // it goes out as an inline message rather than a chat send. Chunking,
+        // threading and attachments have no meaning here — a second reply edits
+        // the message already standing in the chat instead of sending another.
+        const guest = guestFor(chat_id)
+        if (guest) {
+          const flat = (text ?? '').slice(0, MAX_CHUNK_LIMIT)
+          if (guest.answered) {
+            // Plain text doubles as the fallback if the rich edit is rejected.
+            const edited = (flat || blocksToPlain(rich)).slice(0, MAX_CHUNK_LIMIT)
+            if (!edited) throw new Error('nothing to edit: pass text or rich')
+            await editGuest(guest.answered, edited, parseMode, rich)
+            return {
+              content: [{
+                type: 'text',
+                text: 'guest query already answered — edited that message instead (Telegram allows one message per guest query)',
+              }],
+            }
+          }
+          const inlineId = await answerGuest(guest, flat, parseMode, rich)
+          guest.answered = inlineId
+          const skipped = files.length
+            ? ` (${files.length} file(s) omitted — attachments can't be sent in a guest answer)`
+            : ''
+          return { content: [{ type: 'text', text: `sent guest answer${skipped}` }] }
+        }
+
         // Explicit thread wins; otherwise answer in the topic the last inbound
         // message came from. Without this, chunks 2+ and attachments land in
         // the forum's General topic.
@@ -892,6 +1065,9 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         return { content: [{ type: 'text', text: result }] }
       }
       case 'react': {
+        if ((args.chat_id as string).startsWith('guest:')) {
+          throw new Error("reactions aren't available in a guest chat — the bot isn't a member of it")
+        }
         assertAllowedChat(args.chat_id as string)
         await bot.api.setMessageReaction(args.chat_id as string, Number(args.message_id), [
           { type: 'emoji', emoji: args.emoji as ReactionTypeEmoji['emoji'] },
@@ -919,6 +1095,16 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
       case 'edit_message': {
         assertAllowedChat(args.chat_id as string)
         const editParseMode = parseModeOf(args.format)
+        // In a guest chat the bot has no message handle — the one answer it
+        // placed there is an inline message, edited by inline_message_id.
+        const editGuestQuery = guestFor(args.chat_id as string)
+        if (editGuestQuery) {
+          if (!editGuestQuery.answered) {
+            throw new Error('nothing to edit yet — answer the guest query with reply first')
+          }
+          await editGuest(editGuestQuery.answered, args.text as string, editParseMode)
+          return { content: [{ type: 'text', text: 'edited guest answer' }] }
+        }
         const editMessage = (mode: ReturnType<typeof parseModeOf>) =>
           bot.api.editMessageText(
             args.chat_id as string,
@@ -1193,30 +1379,32 @@ bot.on('message:text', async ctx => {
   await handleInbound(ctx, ctx.message.text, undefined)
 })
 
+// Largest size is last in the array. Returns the local path, or undefined if
+// the download failed — a missing photo shouldn't sink the whole message.
+async function downloadPhoto(sizes: { file_id: string; file_unique_id: string }[]): Promise<string | undefined> {
+  const best = sizes[sizes.length - 1]
+  try {
+    const file = await bot.api.getFile(best.file_id)
+    if (!file.file_path) return undefined
+    const url = `https://api.telegram.org/file/bot${TOKEN}/${file.file_path}`
+    const res = await fetch(url)
+    const buf = Buffer.from(await res.arrayBuffer())
+    const ext = file.file_path.split('.').pop() ?? 'jpg'
+    const path = join(INBOX_DIR, `${Date.now()}-${best.file_unique_id}.${ext}`)
+    mkdirSync(INBOX_DIR, { recursive: true })
+    writeFileSync(path, buf)
+    return path
+  } catch (err) {
+    process.stderr.write(`telegram channel: photo download failed: ${err}\n`)
+    return undefined
+  }
+}
+
 bot.on('message:photo', async ctx => {
   const caption = ctx.message.caption ?? '(photo)'
   // Defer download until after the gate approves — any user can send photos,
   // and we don't want to burn API quota or fill the inbox for dropped messages.
-  await handleInbound(ctx, caption, async () => {
-    // Largest size is last in the array.
-    const photos = ctx.message.photo
-    const best = photos[photos.length - 1]
-    try {
-      const file = await ctx.api.getFile(best.file_id)
-      if (!file.file_path) return undefined
-      const url = `https://api.telegram.org/file/bot${TOKEN}/${file.file_path}`
-      const res = await fetch(url)
-      const buf = Buffer.from(await res.arrayBuffer())
-      const ext = file.file_path.split('.').pop() ?? 'jpg'
-      const path = join(INBOX_DIR, `${Date.now()}-${best.file_unique_id}.${ext}`)
-      mkdirSync(INBOX_DIR, { recursive: true })
-      writeFileSync(path, buf)
-      return path
-    } catch (err) {
-      process.stderr.write(`telegram channel: photo download failed: ${err}\n`)
-      return undefined
-    }
-  })
+  await handleInbound(ctx, caption, () => downloadPhoto(ctx.message.photo))
 })
 
 bot.on('message:document', async ctx => {
@@ -1446,6 +1634,96 @@ async function handleInbound(
   })
 }
 
+// ── Guest queries ────────────────────────────────────────────────────────────
+// Summoned by @mention in a chat the bot is not a member of. The gate is the
+// ordinary DM allowlist applied to the summoning user: anyone else is dropped
+// in silence — no pairing code, because whatever we send lands in a public chat
+// and spends the single answer this query is worth.
+async function handleGuest(ctx: Context): Promise<void> {
+  const msg = ctx.update.guest_message
+  const queryId = msg?.guest_query_id
+  if (!msg || !queryId) return
+
+  const from = msg.from
+  const access = loadAccess()
+  if (access.dmPolicy === 'disabled' || !from || !access.allowFrom.includes(String(from.id))) {
+    process.stderr.write(
+      `telegram channel: guest query from ${from ? from.id : 'unknown'} dropped — not in allowFrom\n`,
+    )
+    return
+  }
+
+  const chat_id = guestKey(queryId)
+  pruneGuestQueries()
+  const query: GuestQuery = { queryId, expiresAt: Date.now() + GUEST_TTL_MS }
+  guestQueries.set(chat_id, query)
+  process.stderr.write(
+    `telegram channel: guest query from ${from.id} in chat ${msg.chat.id}\n`,
+  )
+
+  // Photos are the one attachment worth fetching eagerly — everything else
+  // rides as a file_id the model can pull with download_attachment.
+  const imagePath = msg.photo ? await downloadPhoto(msg.photo) : undefined
+  const attachment: AttachmentMeta | undefined =
+    msg.document ? { kind: 'document', file_id: msg.document.file_id, size: msg.document.file_size, mime: msg.document.mime_type, name: safeName(msg.document.file_name) }
+    : msg.voice ? { kind: 'voice', file_id: msg.voice.file_id, size: msg.voice.file_size, mime: msg.voice.mime_type }
+    : msg.audio ? { kind: 'audio', file_id: msg.audio.file_id, size: msg.audio.file_size, mime: msg.audio.mime_type, name: safeName(msg.audio.file_name) }
+    : msg.video ? { kind: 'video', file_id: msg.video.file_id, size: msg.video.file_size, mime: msg.video.mime_type, name: safeName(msg.video.file_name) }
+    : undefined
+
+  const content = msg.text ?? msg.caption ?? (imagePath ? '(photo)' : `(${attachment?.kind ?? 'message'})`)
+
+  const repliedTo = msg.reply_to_message
+  const repliedText = msg.quote?.text ?? repliedTo?.text ?? repliedTo?.caption
+  const repliedSnippet = safeName(repliedText)?.slice(0, 500)
+
+  mcp.notification({
+    method: 'notifications/claude/channel',
+    params: {
+      content,
+      meta: {
+        // Synthetic: the real chat isn't allowlisted and isn't addressable.
+        chat_id,
+        guest: 'true',
+        guest_chat_id: String(msg.chat.id),
+        ...(msg.chat.title ? { guest_chat_title: safeName(msg.chat.title)! } : {}),
+        message_id: String(msg.message_id),
+        user: from.username ?? String(from.id),
+        user_id: String(from.id),
+        ts: new Date((msg.date ?? 0) * 1000).toISOString(),
+        ...(repliedTo ? {
+          reply_to_message_id: String(repliedTo.message_id),
+          ...(repliedTo.from ? { reply_to_user: repliedTo.from.username ?? String(repliedTo.from.id) } : {}),
+          ...(repliedSnippet ? { reply_to_text: repliedSnippet } : {}),
+        } : {}),
+        ...(imagePath ? { image_path: imagePath } : {}),
+        ...(attachment ? {
+          attachment_kind: attachment.kind,
+          attachment_file_id: attachment.file_id,
+          ...(attachment.size != null ? { attachment_size: String(attachment.size) } : {}),
+          ...(attachment.mime ? { attachment_mime: attachment.mime } : {}),
+          ...(attachment.name ? { attachment_name: attachment.name } : {}),
+        } : {}),
+      },
+    },
+  }).catch(err => {
+    // No ack reaction or typing indicator is possible in a chat the bot isn't
+    // in, so an undelivered summons would otherwise look like the bot ignored
+    // the mention. Spend the answer on saying so.
+    process.stderr.write(`telegram channel: failed to deliver guest query to Claude: ${err}\n`)
+    void answerGuest(
+      query,
+      '⚠️ Not delivered — the Claude Code session is not reachable right now.',
+      undefined,
+      undefined,
+    ).catch(() => {})
+  })
+}
+
+bot.on('guest_message', async ctx => {
+  await handleGuest(ctx)
+})
+
 // Without this, any throw in a message handler stops polling permanently
 // (grammy's default error handler calls bot.stop() and rethrows).
 bot.catch(err => {
@@ -1483,6 +1761,13 @@ void (async () => {
           startedAt = Date.now()
           botUsername = info.username
           process.stderr.write(`telegram channel: polling as @${info.username}\n`)
+          // Guest mode is a per-bot switch in BotFather's MiniApp, not a local
+          // setting — without it Telegram never sends a guest_message update.
+          if (!(info as { supports_guest_queries?: boolean }).supports_guest_queries) {
+            process.stderr.write(
+              'telegram channel: guest mode is off for this bot — enable it in BotFather to be summonable from chats the bot is not in\n',
+            )
+          }
           // Only the locally-defined commands are listed: the upstream
           // start/help/status entries are dropped from the menu (the handlers
           // still work if typed).

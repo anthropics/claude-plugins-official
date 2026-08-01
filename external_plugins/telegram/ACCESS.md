@@ -2,6 +2,8 @@
 
 A Telegram bot is publicly addressable. Anyone who finds its username can DM it, and without a gate those messages would flow straight into your assistant session. The access model described here decides who gets through.
 
+The same applies to **guest mode** (Bot API 10.0), where the bot can be summoned by @mention into chats it never joined — those queries are gated on the DM allowlist too. See [Guest mode](#guest-mode).
+
 By default, a DM from an unknown sender triggers **pairing**: the bot replies with a 6-character code and drops the message. You run `/telegram:access pair <code>` from your assistant session to approve them. Once approved, their messages pass through.
 
 All state lives in `~/.claude/channels/telegram/access.json`. The `/telegram:access` skill commands edit this file; the server re-reads it on every inbound message, so changes take effect without a restart. Set `TELEGRAM_ACCESS_MODE=static` to pin config to what was on disk at boot (pairing is unavailable in static mode since it requires runtime writes).
@@ -60,6 +62,25 @@ With the default `requireMention: true`, the bot responds only when @mentioned o
 ```
 
 **Privacy mode.** Telegram bots default to a server-side privacy mode that filters group messages before they reach your code: only @mentions and replies are delivered. This matches the default `requireMention: true`, so it's normally invisible. Using `--no-mention` requires disabling privacy mode as well: message [@BotFather](https://t.me/BotFather), send `/setprivacy`, pick your bot, choose **Disable**. Without that step, Telegram never delivers the messages regardless of local config.
+
+## Guest mode
+
+Bot API 10.0 lets a bot be **summoned into chats it is not a member of**: someone @mentions it, Telegram delivers a `guest_message` update, and the bot may place exactly one message in that chat. It never sees the chat history or the member list — only the message it was tagged in and replies to its own answer.
+
+Enable it per bot in [@BotFather](https://t.me/BotFather)'s MiniApp (bot settings → **Guest Mode**). Without that switch Telegram sends no guest updates at all; the server logs a line at startup when the bot has it off.
+
+**The gate is `allowFrom`.** A guest query is processed only when the user who summoned the bot is on the DM allowlist — the same list that governs DMs, no second list to maintain. Anyone else is dropped silently: a pairing code would land in a public chat and burn the single answer the query is worth. `dmPolicy: disabled` turns guest queries off along with everything else.
+
+Guest turns arrive with `guest="true"` in the `<channel>` meta, plus `guest_chat_id` / `guest_chat_title` naming where the bot was summoned. Their `chat_id` is a synthetic `guest:<query id>`, valid for one hour — the real chat is not allowlisted and stays unaddressable, and Telegram warns that a guest chat's id may collide with an unrelated chat the bot does know.
+
+Inside a guest turn:
+
+| | |
+| --- | --- |
+| `reply` | Sends the one allowed message (text or `rich`). A second `reply` edits it rather than sending another. |
+| `edit_message` | Revises that message. `message_id` is ignored — the answer is an inline message addressed by its own id. |
+| `react`, `files` | Unavailable. The bot is not a member of the chat. |
+| Ack reaction, typing indicator | Not sent, for the same reason. |
 
 ## Mention detection
 

@@ -13,6 +13,7 @@ plugin only. Everything that remains is upstream except the commits below.
 | `telegram: fix poller lock, 409 bail-out and delivery; add topics + formats` | see below |
 | `telegram: let a topic be marked send-only via ignore` | a topic listed in `telegram-topics.json` with `"ignore": true` (the day-review briefing topic) never starts a turn from inbound messages |
 | `telegram: add rich messages to reply` | see below |
+| `telegram: answer guest queries from allowlisted callers` | see below |
 | `telegram: move per-topic instructions into the channel meta` | a topic's standing rules ride in a `topic_instructions` attribute instead of being prepended to the message body, so the model still gets them while the transcript shows only what the sender typed |
 
 ## `telegram: fix poller lock, 409 bail-out and delivery; add topics + formats`
@@ -85,6 +86,40 @@ Conflicts should be limited to `external_plugins/telegram/server.ts` and
 plugin and the rest of the catalog, an upstream sync will also surface newly
 added upstream plugins as additions — delete them again (`git rm`) and keep the
 manifest's `plugins` array at the single telegram entry.
+
+## `telegram: answer guest queries from allowlisted callers`
+
+Bot API 10.0 (2026-05-08) added **guest mode**: with the switch enabled in
+BotFather, a bot can be @mentioned in a chat it never joined, receives a
+`guest_message` update, and may place exactly one message there via
+`answerGuestQuery`. Upstream ignores the update entirely, so a summons is met
+with silence. The plugin now handles it, gated on the existing DM allowlist —
+the summoning user (`allowFrom`) must already be paired, otherwise the query is
+dropped without a reply (a pairing code would land in a public chat and spend
+the one answer). `dmPolicy: disabled` covers guest queries too.
+
+The chat itself is never a send target: it isn't allowlisted, and Telegram
+warns a guest chat's id may collide with an unrelated chat the bot does know. A
+guest turn is addressed by a synthetic `guest:<query id>` (TTL 1h, capped at 50
+live queries), carried in the meta alongside `guest="true"`, `guest_chat_id` and
+`guest_chat_title`. `assertAllowedChat` admits that prefix only while the query
+is live.
+
+`reply` routes on it: the answer goes out as an `InlineQueryResult` article
+whose `input_message_content` is either `message_text` (with the usual
+plain-text fallback on a markup rejection) or, for `rich`, a `rich_message`
+block document — both shapes verified against the live API. Since Telegram
+allows one message per query, a second `reply` edits the first via
+`editMessageTextInline` rather than failing, and `edit_message` does the same
+(its `message_id` is moot — the answer is an inline message). `react` and
+`files` are refused, and neither the ack reaction nor the typing indicator is
+attempted: the bot is not a member of that chat. If the inbound notification
+can't reach the session, the answer is spent telling the caller so — there is no
+other way to speak in that chat.
+
+Requires grammY ≥ 1.45 for the `guest_message` filter query and
+`answerGuestQuery` (the dependency floor moved from `^1.21.0`); startup logs a
+line when `getMe` reports the bot has guest mode switched off.
 
 ## `telegram: add rich messages to reply`
 
