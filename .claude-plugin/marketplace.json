@@ -1396,7 +1396,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/exa-labs/exa-mcp-server.git",
-        "sha": "b4076055af28698d944b50deade80e541b7788ea"
+        "sha": "cc81fda07dea47c636a511cf632a46b564470615"
       },
       "homepage": "https://exa.ai/docs/reference/exa-mcp"
     },
