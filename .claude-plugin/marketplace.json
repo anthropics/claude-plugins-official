@@ -75,7 +75,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/endorlabs/ai-plugins.git",
-        "sha": "e5376ac490db06f53016615088fdd9d64d6a1836"
+        "sha": "adc5aa4a357cbfdc666fd3771e799ec58cae1871"
       },
       "homepage": "https://www.endorlabs.com"
     },
