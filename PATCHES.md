@@ -13,6 +13,7 @@ plugin only. Everything that remains is upstream except the commits below.
 | `telegram: fix poller lock, 409 bail-out and delivery; add topics + formats` | see below |
 | `telegram: let a topic be marked send-only via ignore` | a topic listed in `telegram-topics.json` with `"ignore": true` (the day-review briefing topic) never starts a turn from inbound messages |
 | `telegram: add rich messages to reply` | see below |
+| `telegram: move per-topic instructions into the channel meta` | a topic's standing rules ride in a `topic_instructions` attribute instead of being prepended to the message body, so the model still gets them while the transcript shows only what the sender typed |
 
 ## `telegram: fix poller lock, 409 bail-out and delivery; add topics + formats`
 
@@ -63,7 +64,8 @@ context lives in `$CLAUDE_CONFIG_DIR/telegram-topics.json`:
 }
 ```
 
-`instructions` are prepended to the message body for that turn. The file is
+`instructions` ride in the channel meta as `topic_instructions` for that turn
+(they used to be prepended to the message body). The file is
 re-read per message, so edits apply without restarting the plugin. Requires
 `requireMention: false` for the group in `access.json` if the bot should answer
 without being @-mentioned.

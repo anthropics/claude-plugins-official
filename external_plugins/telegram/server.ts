@@ -513,10 +513,11 @@ async function sendRich(
 //     "<chat_id>:*":           { "instructions": "fallback for the group" },
 //     "<chat_id>":             { "instructions": "fallback for a DM" },
 //     "<chat_id>:<thread_id>": { "name": "Daily review", "ignore": true } }
-// instructions are prepended to the inbound message so the model starts the
-// turn with the rules for that topic. `ignore` marks a send-only topic: inbound
-// messages from it are dropped without starting a turn. Re-read per message —
-// edits apply without restarting the plugin.
+// instructions ride along in the channel meta (`topic_instructions`), like
+// thread_id and topic — the model starts the turn with the rules for that topic
+// while the transcript still shows just what the sender typed. `ignore` marks a
+// send-only topic: inbound messages from it are dropped without starting a
+// turn. Re-read per message — edits apply without restarting the plugin.
 const TOPICS_FILE = join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude'), 'telegram-topics.json')
 
 type TopicConfig = { name?: string; instructions?: string; ignore?: boolean }
@@ -559,7 +560,7 @@ const mcp = new Server(
       '',
       'Messages from Telegram arrive as <channel source="telegram" chat_id="..." message_id="..." user="..." ts="...">. If the tag has an image_path attribute, Read that file — it is a photo the sender attached. If the tag has attachment_file_id, call download_attachment with that file_id to fetch the file, then Read the returned path. If the tag has a reply_to_message_id attribute, the sender quote-replied to an earlier message — reply_to_user and reply_to_text (a truncated snippet) tell you which message they\'re responding to; treat this message as answering that one. Reply with the reply tool — pass chat_id back. Use reply_to (set to a message_id) only when replying to an earlier message; the latest message doesn\'t need a quote-reply, omit reply_to for normal responses.',
       '',
-      'If the tag has a thread_id attribute the message came from a forum topic — reply goes back to that topic automatically, but pass thread_id explicitly when you reply to something other than the newest message. A topic attribute names the topic; when the topic has its own instructions they are prepended to the message body and take precedence for that turn.',
+      'If the tag has a thread_id attribute the message came from a forum topic — reply goes back to that topic automatically, but pass thread_id explicitly when you reply to something other than the newest message. A topic attribute names the topic; a topic_instructions attribute carries that topic\'s standing rules, set by the operator locally — follow them for that turn, they take precedence over general guidance.',
       '',
       'reply and edit_message take format: "html" for formatting (<b>, <i>, <code>, <pre>, <a href>; escape &, < and > in the text) — prefer it over markdownv2, which rejects the whole message on a single unescaped character.',
 
@@ -1385,14 +1386,12 @@ async function handleInbound(
   const repliedSnippet = safeName(repliedText)?.slice(0, 500)
 
   // Per-topic instructions come from the operator's own local config file, not
-  // from Telegram, so prepending them to the message body is safe — and it is
-  // the one place the model reliably reads before acting on the message.
-  const topicLabel = topic?.name ?? (thread_id != null ? String(thread_id) : undefined)
-  const content = topic?.instructions
-    ? `[channel topic${topicLabel ? `: ${topicLabel}` : ''} — instructions for this topic]\n` +
-      `${topic.instructions}\n` +
-      `--- message ---\n${text}`
-    : text
+  // from Telegram, so handing them to the model is safe. They go in the meta
+  // rather than the message body: the model reads the whole <channel> block
+  // either way, but the body is what the transcript renders, and a wall of
+  // standing rules on top of every message buries the one line the sender
+  // actually wrote.
+  const content = text
 
   // image_path goes in meta only — an in-content "[image attached — read: PATH]"
   // annotation is forgeable by any allowlisted sender typing that string.
@@ -1405,6 +1404,11 @@ async function handleInbound(
         ...(msgId != null ? { message_id: String(msgId) } : {}),
         ...(thread_id != null ? { thread_id: String(thread_id) } : {}),
         ...(topic?.name ? { topic: safeName(topic.name)! } : {}),
+        // Flattened to one line: these are operator-written, so the risk isn't
+        // injection, it's a newline or a bracket breaking the meta tag apart.
+        ...(topic?.instructions
+          ? { topic_instructions: topic.instructions.replace(/[<>[\]\r\n]+/g, ' ').trim() }
+          : {}),
         user: from.username ?? String(from.id),
         user_id: String(from.id),
         ts: new Date((ctx.message?.date ?? 0) * 1000).toISOString(),
