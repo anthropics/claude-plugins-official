@@ -1081,7 +1081,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/crowdsecurity/crowdsec-skill.git",
-        "sha": "8238c7991edf22592d1c5acb9170fb3f6c400323"
+        "sha": "2aa905ef2cfc025b6bb2d8085c9568910a09680a"
       },
       "homepage": "https://www.crowdsec.net"
     },
