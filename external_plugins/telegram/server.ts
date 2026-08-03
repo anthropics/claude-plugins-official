@@ -707,7 +707,7 @@ const mcp = new Server(
       '',
       'reply and edit_message take format: "html" for formatting (<b>, <i>, <code>, <pre>, <a href>; escape &, < and > in the text) — prefer it over markdownv2, which rejects the whole message on a single unescaped character.',
 
-      'For a structured or long reply, pass reply\'s rich parameter (Bot API 10.1 rich blocks) instead of text: headings, real lists, tables, and details blocks that keep the gist visible and fold the detail behind a tap. Never fold alerts, key numbers or a tappable /command menu. See the rich parameter\'s description for the accepted block shapes.',
+      'Structure a long reply with html — headings in <b>, bullets, and <blockquote expandable> to fold detail behind a tap. Never fold alerts, key numbers or a tappable /command menu. The rich parameter (Bot API 10.1 blocks) exists but renders mangled through this tool (collapsed tables, _b_ artifacts, empty list items), so leave it to headless senders that post with the Bot API directly.',
       '',
       'A guest="true" attribute means you were summoned by @mention into a chat the bot is not a member of (guest_chat_title names it). You see only that message, never the chat history or its members, and Telegram allows exactly one message back: pass the guest: chat_id to reply once, and use edit_message (or a further reply, which edits) to revise it. Attachments and reactions are unavailable there, and the answer stands in someone else\'s chat — keep it self-contained and say nothing you would not post publicly.',
       '',
@@ -759,7 +759,7 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: 'reply',
       description:
-        'Reply on Telegram. Pass chat_id from the inbound message. Optionally pass reply_to (message_id) for threading, and files (absolute paths) to attach images or documents. For anything structured or long, pass rich (Bot API 10.1 rich blocks) instead of text.',
+        'Reply on Telegram. Pass chat_id from the inbound message. Optionally pass reply_to (message_id) for threading, and files (absolute paths) to attach images or documents. For anything structured or long, use text with format: "html" — the rich parameter renders mangled here and is left to headless senders.',
       inputSchema: {
         type: 'object',
         properties: {

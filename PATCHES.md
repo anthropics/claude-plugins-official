@@ -124,10 +124,14 @@ line when `getMe` reports the bot has guest mode switched off.
 ## `telegram: add rich messages to reply`
 
 `reply` gained a `rich` parameter: an array of Bot API 10.1 rich blocks, sent via
-`sendRichMessage` (grammY has no binding, so it goes over plain `fetch`). This is
-what long or structured replies use — headings, real lists, tables, and `details`
-blocks that keep the gist visible and fold the detail behind a tap, instead of a
-wall of text or HTML `<blockquote expandable>`.
+`sendRichMessage` (grammY has no binding, so it goes over plain `fetch`).
+
+**In practice it renders mangled through this path** — collapsed tables, `_b_`
+artifacts, empty list items — so the tool instructions now point interactive
+replies at `format: "html"` with `<blockquote expandable>` for folding, and leave
+`rich` to the headless senders that call the Bot API directly (`tg_send.py
+--rich`). The parameter stays because those senders share this code path for
+guest answers and edits.
 
 `text` is now optional (`required: ['chat_id']`): with `rich` it is used only as
 the plain-text fallback. If Telegram rejects the payload, the blocks are flattened
