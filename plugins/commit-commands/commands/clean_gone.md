@@ -11,9 +11,11 @@ You need to execute the following bash commands to clean up stale local branches
 1. **First, list branches to identify any with [gone] status**
    Execute this command:
    ```bash
-   git branch -v
+   git branch -vv
    ```
-   
+
+   Note: `-vv` is required. `git branch -v` does not print upstream tracking info, so `gone` never appears in its output.
+
    Note: Branches with a '+' prefix have associated worktrees and must have their worktrees removed before deletion.
 
 2. **Next, identify worktrees that need to be removed for [gone] branches**
@@ -25,17 +27,20 @@ You need to execute the following bash commands to clean up stale local branches
 3. **Finally, remove worktrees and delete [gone] branches (handles both regular and worktree branches)**
    Execute this command:
    ```bash
-   # Process all [gone] branches, removing '+' prefix if present
-   git branch -v | grep '\[gone\]' | sed 's/^[+* ]//' | awk '{print $1}' | while read branch; do
+   # Process all [gone] branches, removing '+' prefix if present.
+   # The upstream marker is rendered as "[origin/<name>: gone]", so match ": gone]".
+   for branch in $(git branch -vv | grep ': gone\]' | sed 's/^[+* ]//' | awk '{print $1}'); do
      echo "Processing branch: $branch"
+     # Record the SHA first so the branch can be restored with `git branch <name> <sha>`
+     sha=$(git rev-parse --short "$branch")
      # Find and remove worktree if it exists
-     worktree=$(git worktree list | grep "\\[$branch\\]" | awk '{print $1}')
-     if [ ! -z "$worktree" ] && [ "$worktree" != "$(git rev-parse --show-toplevel)" ]; then
+     worktree=$(git worktree list | grep "\[$branch\]" | awk '{print $1}')
+     if [ -n "$worktree" ] && [ "$worktree" != "$(git rev-parse --show-toplevel)" ]; then
        echo "  Removing worktree: $worktree"
        git worktree remove --force "$worktree"
      fi
      # Delete the branch
-     echo "  Deleting branch: $branch"
+     echo "  Deleting branch: $branch (was $sha)"
      git branch -D "$branch"
    done
    ```
@@ -47,7 +52,6 @@ After executing these commands, you will:
 - See a list of all local branches with their status
 - Identify and remove any worktrees associated with [gone] branches
 - Delete all branches marked as [gone]
-- Provide feedback on which worktrees and branches were removed
+- Provide feedback on which worktrees and branches were removed, including the SHA each branch pointed at
 
 If no branches are marked as [gone], report that no cleanup was needed.
-
