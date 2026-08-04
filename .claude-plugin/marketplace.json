@@ -1998,7 +1998,7 @@
         "url": "https://github.com/LogRocket/logrocket-claude-plugin.git",
         "path": "plugins/logrocket",
         "ref": "main",
-        "sha": "51ccce4a3b9ff41f9d0de66fe3ac26fd0056cc5a"
+        "sha": "60c1b83ea558771fa92d80d2e756920286c430f7"
       },
       "homepage": "https://logrocket.com"
     },
