@@ -2181,7 +2181,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/mergifyio/mergify-cli.git",
-        "sha": "73c2746a15d91636e5aa9f75f21bbc7354d27b06"
+        "sha": "bd4f81e5a99e2428b074b18c24852b3fbb288a83"
       },
       "homepage": "https://mergify.com"
     },
