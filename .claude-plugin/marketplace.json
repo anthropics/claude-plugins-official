@@ -3320,7 +3320,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/spotify/ads-claude-plugin.git",
-        "sha": "e1f809ec3a287e41c8421301fa7fa69bc4b0e9fb"
+        "sha": "423191d7bf3343b532ac694d9626009a336ebcab"
       },
       "homepage": "https://github.com/spotify/ads-claude-plugin"
     },
