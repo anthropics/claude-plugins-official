@@ -672,7 +672,7 @@
         "url": "https://github.com/carta/plugins.git",
         "path": "plugins/carta-cap-table",
         "ref": "main",
-        "sha": "ffcf886e3458e7b1faf5b65d89a16be06289893a"
+        "sha": "fa78237b4e6bb7fe30178f2648bec401e31cb64a"
       },
       "homepage": "https://carta.com"
     },
