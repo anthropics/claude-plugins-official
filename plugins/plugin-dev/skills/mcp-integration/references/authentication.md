@@ -35,7 +35,6 @@ No additional auth configuration needed! Claude Code handles everything.
 ### Supported Services
 
 **Known OAuth-enabled MCP servers:**
-- Asana: `https://mcp.asana.com/sse`
 - GitHub (when available)
 - Google services (when available)
 - Custom OAuth servers

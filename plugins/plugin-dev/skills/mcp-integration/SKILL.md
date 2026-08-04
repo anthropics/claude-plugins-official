@@ -99,9 +99,9 @@ Connect to hosted MCP servers with OAuth support. Best for cloud services.
 **Configuration:**
 ```json
 {
-  "asana": {
+  "hosted-service": {
     "type": "sse",
-    "url": "https://mcp.asana.com/sse"
+    "url": "https://mcp.example.com/sse"
   }
 }
 ```
