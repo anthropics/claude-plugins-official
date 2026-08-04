@@ -3740,7 +3740,7 @@
         "url": "https://github.com/workos/skills.git",
         "path": "plugins/workos",
         "ref": "main",
-        "sha": "4d470e24d1cbbae0ca4d765c4b7ac0d5e15a4ddd"
+        "sha": "de1ed17cf03fce2b53973247361a1a47719b528c"
       },
       "homepage": "https://workos.com"
     },
