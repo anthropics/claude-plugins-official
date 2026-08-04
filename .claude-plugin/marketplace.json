@@ -258,7 +258,7 @@
     },
     {
       "name": "asana",
-      "description": "Asana project management integration. Create and manage tasks, search projects, update assignments, track progress, and integrate your development workflow with Asana's work management platform.",
+      "description": "Asana project management integration. Connects Claude Code to Asana's V2 MCP server to create and manage tasks, search projects, update assignments, and track progress. Requires a one-time Asana OAuth app setup — run /asana-setup after installing.",
       "category": "productivity",
       "source": "./external_plugins/asana",
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/asana"
