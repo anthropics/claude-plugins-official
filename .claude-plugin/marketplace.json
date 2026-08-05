@@ -2012,7 +2012,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/gemini-cli-extensions/looker.git",
-        "sha": "8ca746f8d6b0079d1f872c96bd3e0530bf4571d3"
+        "sha": "e97aa3d77af624926d2dd2456af2f9ccff17e228"
       },
       "homepage": "https://github.com/gemini-cli-extensions/looker"
     },
