@@ -53,20 +53,38 @@ if (!TOKEN) {
 const INBOX_DIR = join(STATE_DIR, 'inbox')
 const PID_FILE = join(STATE_DIR, 'bot.pid')
 
-// Telegram allows exactly one getUpdates consumer per token. If a previous
-// session crashed (SIGKILL, terminal closed) its server.ts grandchild can
-// survive as an orphan and hold the slot forever, so every new session sees
-// 409 Conflict. Kill any stale holder before we start polling.
+// Telegram allows exactly one getUpdates consumer per token, so the poll slot
+// is exclusive — but only *inbound* polling is. Outbound (sendMessage, edits,
+// reactions) is plain HTTP and works from any number of processes.
+//
+// So we yield rather than kill: a server that finds a live, heartbeating
+// holder skips polling and still serves every outbound tool. First session in
+// keeps the conversation; later ones (Claude Code's bg-spare pre-warms one on
+// its own) no longer steal it. We take the slot only when the holder is truly
+// gone — dead pid, or a heartbeat that stopped (SIGKILL'd orphan, hung poller).
+const HEARTBEAT_MS = 30_000
+const SLOT_STALE_MS = 90_000 // 3 missed heartbeats
+
 mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 })
-try {
-  const stale = parseInt(readFileSync(PID_FILE, 'utf8'), 10)
-  if (stale > 1 && stale !== process.pid) {
-    process.kill(stale, 0)
-    process.stderr.write(`telegram channel: replacing stale poller pid=${stale}\n`)
-    process.kill(stale, 'SIGTERM')
-  }
-} catch {}
-writeFileSync(PID_FILE, String(process.pid))
+
+/** Claim the poll slot if it's free or abandoned. False = someone live holds it. */
+function claimPollSlot(): boolean {
+  try {
+    const holder = parseInt(readFileSync(PID_FILE, 'utf8'), 10)
+    if (holder > 1 && holder !== process.pid) {
+      process.kill(holder, 0) // throws ESRCH if the pid is gone
+      const age = Date.now() - statSync(PID_FILE).mtimeMs
+      if (age < SLOT_STALE_MS) return false
+      process.stderr.write(
+        `telegram channel: poll slot held by pid=${holder} but its heartbeat stopped ` +
+        `${Math.round(age / 1000)}s ago — taking over\n`,
+      )
+      process.kill(holder, 'SIGTERM')
+    }
+  } catch {} // no pid file, unparseable, or holder is dead — the slot is ours
+  writeFileSync(PID_FILE, String(process.pid))
+  return true
+}
 
 // Last-resort safety net — without these the process dies silently on any
 // unhandled promise rejection. With them it logs and keeps serving tools.
@@ -997,6 +1015,24 @@ bot.catch(err => {
 // (MCP stdin keeps it running). Outbound tools kept working but the bot was
 // deaf to inbound messages until a full restart.
 void (async () => {
+  // Wait for the poll slot. If another live server holds it we serve outbound
+  // tools only, re-checking every heartbeat until that server exits.
+  if (!claimPollSlot()) {
+    process.stderr.write(
+      'telegram channel: another server holds the poll slot — outbound tools active, ' +
+      'inbound goes to that session. Will take over if it exits.\n',
+    )
+    while (!claimPollSlot()) {
+      if (shuttingDown) return
+      await new Promise(r => setTimeout(r, HEARTBEAT_MS))
+    }
+    process.stderr.write('telegram channel: poll slot freed — taking over inbound\n')
+  }
+  // Hold the slot: refresh mtime so other servers can tell we're alive, not hung.
+  setInterval(() => {
+    if (!shuttingDown) try { writeFileSync(PID_FILE, String(process.pid)) } catch {}
+  }, HEARTBEAT_MS).unref()
+
   for (let attempt = 1; ; attempt++) {
     try {
       await bot.start({
@@ -1025,6 +1061,11 @@ void (async () => {
           `telegram channel: 409 Conflict persists after ${attempt} attempts — ` +
           `another poller is holding the bot token (stray 'bun server.ts' process or a second session). Exiting.\n`,
         )
+        // We hold the pid file but gave up polling — release it, or every
+        // future server would yield to a slot nobody is actually serving.
+        try {
+          if (parseInt(readFileSync(PID_FILE, 'utf8'), 10) === process.pid) rmSync(PID_FILE)
+        } catch {}
         return
       }
       const delay = Math.min(1000 * attempt, 15000)
