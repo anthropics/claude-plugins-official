@@ -3138,7 +3138,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/getsentry/plugin-claude.git",
-        "sha": "736ac52fec55b2c0f89d38529f6387123b049061"
+        "sha": "3439c37c64b14c82caa0e7a48dadf384b781e2b6"
       },
       "homepage": "https://github.com/getsentry/plugin-claude"
     },
