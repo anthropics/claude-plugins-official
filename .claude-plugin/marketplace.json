@@ -3221,7 +3221,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/Shopify/Shopify-AI-Toolkit.git",
-        "sha": "0e06bc35611e505e372de7f8cdf265e6d6dbc311"
+        "sha": "cc5af6505c27939222072449278f6356857cb064"
       },
       "homepage": "https://shopify.dev"
     },
