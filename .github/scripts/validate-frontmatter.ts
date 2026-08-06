@@ -58,6 +58,29 @@ interface ParseResult {
   frontmatter: Record<string, unknown>;
   content: string;
   error?: string;
+  warning?: string;
+}
+
+type YamlAttempt =
+  | { ok: true; value: Record<string, unknown> }
+  | { ok: false; reason: string };
+
+function tryParseYaml(text: string): YamlAttempt {
+  try {
+    const parsed = parseYaml(text);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return { ok: true, value: parsed as Record<string, unknown> };
+    }
+    return {
+      ok: false,
+      reason: `YAML parsed but result is not an object (got ${typeof parsed}${Array.isArray(parsed) ? " array" : ""})`,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      reason: err instanceof Error ? err.message : String(err),
+    };
+  }
 }
 
 function parseFrontmatter(markdown: string): ParseResult {
@@ -71,26 +94,36 @@ function parseFrontmatter(markdown: string): ParseResult {
     };
   }
 
-  const frontmatterText = quoteSpecialValues(match[1] || "");
+  const rawText = match[1] || "";
   const content = markdown.slice(match[0].length);
 
-  try {
-    const parsed = parseYaml(frontmatterText);
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      return { frontmatter: parsed as Record<string, unknown>, content };
-    }
-    return {
-      frontmatter: {},
-      content,
-      error: `YAML parsed but result is not an object (got ${typeof parsed}${Array.isArray(parsed) ? " array" : ""})`,
-    };
-  } catch (err) {
-    return {
-      frontmatter: {},
-      content,
-      error: `YAML parse failed: ${err instanceof Error ? err.message : err}`,
-    };
+  // Parse the frontmatter exactly as written first. quoteSpecialValues() is a
+  // repair pass; applying it unconditionally means a file that only parses
+  // AFTER repair is reported as clean, while the file on disk stays invalid
+  // for every other YAML reader.
+  const raw = tryParseYaml(rawText);
+  if (raw.ok) {
+    return { frontmatter: raw.value, content };
   }
+
+  // Fall back to the repair, but say so instead of hiding it.
+  const repairedText = quoteSpecialValues(rawText);
+  if (repairedText !== rawText) {
+    const repaired = tryParseYaml(repairedText);
+    if (repaired.ok) {
+      return {
+        frontmatter: repaired.value,
+        content,
+        warning: `Frontmatter only parses after auto-quoting (${raw.reason.split("\n")[0]}). Quote the affected value so the file is valid YAML as written.`,
+      };
+    }
+  }
+
+  return {
+    frontmatter: {},
+    content,
+    error: `YAML parse failed: ${raw.reason}`,
+  };
 }
 
 // --- Validation ---
@@ -233,6 +266,10 @@ async function main() {
 
     if (result.error) {
       issues.push({ level: "error", message: result.error });
+    }
+
+    if (result.warning) {
+      issues.push({ level: "warning", message: result.warning });
     }
 
     if (!result.error) {
