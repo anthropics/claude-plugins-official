@@ -1137,7 +1137,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/CrowdStrike/fusion-skills.git",
-        "sha": "c354974ebe39c1412ba438a1dfa84281e24cf1e8"
+        "sha": "4ed963d52cd0ca7c611c9e1e93fcdd73886a7ce1"
       },
       "homepage": "https://github.com/CrowdStrike/fusion-skills"
     },
