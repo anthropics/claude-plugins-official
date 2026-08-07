@@ -122,6 +122,22 @@
       "homepage": "https://www.airwallex.com/docs"
     },
     {
+      "name": "airwallex-dev",
+      "description": "Build Airwallex payment integrations in your own codebase. Generates the checkout, card-element, onboarding, and subscription-billing code for an Airwallex integration and wires it into your project: Hosted Payment Page, Drop-in and Split Card elements, connected-account KYC onboarding, and Billing Hosted Checkout for subscriptions and card-saving. Also plans card-on-file merchant-initiated flows for AI providers such as top-ups and auto-recharge.",
+      "author": {
+        "name": "Airwallex"
+      },
+      "category": "development",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/airwallex/airwallex-marketplace.git",
+        "path": "plugins/airwallex-dev",
+        "ref": "master",
+        "sha": "af06b97b6e94a4316abcb581d666feaa20c61b98"
+      },
+      "homepage": "https://www.airwallex.com/docs"
+    },
+    {
       "name": "aiven",
       "description": "Easily deploy managed PostgreSQL (pg), Kafka, OpenSearch, Clickhouse and other databases, streaming and apps. Free tier available, up and running in minutes.",
       "author": {
