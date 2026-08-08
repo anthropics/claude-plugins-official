@@ -1,6 +1,14 @@
 {
   "releases-only": [
+    "carta-cap-table",
+    "carta-investors",
+    "chrome-devtools-mcp",
     "crowdstrike-falcon-foundry",
-    "crowdstrike-falcon-fusion"
+    "crowdstrike-falcon-fusion",
+    "datarobot-agent-skills",
+    "deepeval",
+    "hyperframes",
+    "mergify",
+    "remember"
   ]
 }
