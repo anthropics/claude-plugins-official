@@ -1,0 +1,24 @@
+{
+  "name": "contextpilot",
+  "version": "0.1.0",
+  "description": "Adaptive per-prompt project-context routing plugin for Claude Code",
+  "author": {
+    "name": "Motiram Shinde",
+    "url": "https://github.com/motiram944/contextpilot"
+  },
+  "repository": "https://github.com/motiram944/contextpilot.git",
+  "homepage": "https://github.com/motiram944/contextpilot",
+  "license": "MIT",
+  "hooks": {
+    "UserPromptSubmit": "./scripts/contextpilot.mjs hook user-prompt-submit",
+    "SessionStart": "./scripts/contextpilot.mjs hook session-start"
+  },
+  "commands": {
+    "contextpilot": "./commands/contextpilot.md",
+    "contextpilot:explain": "./commands/explain.md",
+    "contextpilot:index": "./commands/index.md"
+  },
+  "skills": [
+    "./skills/context-routing"
+  ]
+}

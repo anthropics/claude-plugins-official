@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "ContextPilot lifecycle hooks configuration for Claude Code",
+  "hooks": {
+    "UserPromptSubmit": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/contextpilot.mjs", "hook", "user-prompt-submit"],
+      "timeoutMs": 500,
+      "failOpen": true,
+      "description": "Automatically analyzes prompt intent and routes compact relevant project context"
+    },
+    "SessionStart": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/contextpilot.mjs", "hook", "session-start"],
+      "timeoutMs": 3000,
+      "failOpen": true,
+      "description": "Validates and incrementally updates the local SQLite project index"
+    }
+  }
+}
