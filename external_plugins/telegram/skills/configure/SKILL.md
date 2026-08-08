@@ -7,12 +7,24 @@ allowed-tools:
   - Write
   - Bash(ls *)
   - Bash(mkdir *)
+  - Bash(echo *)
+  - Bash(chmod *)
 ---
 
 # /telegram:configure — Telegram Channel Setup
 
-Writes the bot token to `~/.claude/channels/telegram/.env` and orients the
-user on access policy. The server reads both files at boot.
+Writes the bot token to `<state-dir>/.env` and orients the user on access
+policy. The server reads both files at boot.
+
+**Resolve the state directory first** (it may be overridden for multi-bot or
+per-project setups):
+
+```bash
+echo "${TELEGRAM_STATE_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/channels/telegram}"
+```
+
+Use the printed path everywhere below in place of `<state-dir>`. The default
+is `~/.claude/channels/telegram`.
 
 Arguments passed: `$ARGUMENTS`
 
@@ -24,11 +36,11 @@ Arguments passed: `$ARGUMENTS`
 
 Read both state files and give the user a complete picture:
 
-1. **Token** — check `~/.claude/channels/telegram/.env` for
+1. **Token** — check `<state-dir>/.env` for
    `TELEGRAM_BOT_TOKEN`. Show set/not-set; if set, show first 10 chars masked
    (`123456789:...`).
 
-2. **Access** — read `~/.claude/channels/telegram/access.json` (missing file
+2. **Access** — read `<state-dir>/access.json` (missing file
    = defaults: `dmPolicy: "pairing"`, empty allowlist). Show:
    - DM policy and what it means in one line
    - Allowed senders: count, and list display names or IDs
@@ -74,10 +86,10 @@ offer.
 
 1. Treat `$ARGUMENTS` as the token (trim whitespace). BotFather tokens look
    like `123456789:AAH...` — numeric prefix, colon, long string.
-2. `mkdir -p ~/.claude/channels/telegram`
+2. `mkdir -p` the resolved `<state-dir>`.
 3. Read existing `.env` if present; update/add the `TELEGRAM_BOT_TOKEN=` line,
    preserve other keys. Write back, no quotes around the value.
-4. `chmod 600 ~/.claude/channels/telegram/.env` — the token is a credential.
+4. `chmod 600` on `<state-dir>/.env` — the token is a credential.
 5. Confirm, then show the no-args status so the user sees where they stand.
 
 ### `clear` — remove the token
