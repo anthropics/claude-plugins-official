@@ -15,6 +15,7 @@ plugin only. Everything that remains is upstream except the commits below.
 | `telegram: add rich messages to reply` | see below |
 | `telegram: answer guest queries from allowlisted callers` | see below |
 | `telegram: move per-topic instructions into the channel meta` | a topic's standing rules ride in a `topic_instructions` attribute instead of being prepended to the message body, so the model still gets them while the transcript shows only what the sender typed |
+| `telegram: take the bot token from the environment only` | the server no longer parses `~/.claude/channels/telegram/.env` into `process.env`; `TELEGRAM_BOT_TOKEN` must come from the environment it is spawned with (locally: `~/.claude/config.env`, sourced by `.bashrc`), so the secret never sits in a file beside the channel state. `/telegram:configure` reports token status instead of writing it |
 
 ## `telegram: fix poller lock, 409 bail-out and delivery; add topics + formats`
 
