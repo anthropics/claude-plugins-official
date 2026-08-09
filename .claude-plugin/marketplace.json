@@ -2110,7 +2110,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/ory/lumen.git",
-        "sha": "80396366e303bfb922071ae9133e74bd36367a1f"
+        "sha": "ce62b6051ac5cb46418b8bfbc4c43ce32cb74bd2"
       },
       "homepage": "https://www.ory.sh"
     },
