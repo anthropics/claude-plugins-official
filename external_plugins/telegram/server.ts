@@ -1306,6 +1306,31 @@ bot.command('status', async ctx => {
   await ctx.reply(`Not paired. Send me a message to get a pairing code.`)
 })
 
+// /cancel — interrupt whatever the paired session is doing right now. Handled
+// here rather than by a UserPromptSubmit hook (the way /clr is) because Claude
+// Code queues prompts that arrive mid-turn: a /cancel relayed as a message would
+// only be seen after the turn it was meant to stop had already finished. The
+// turn runs in a tmux pane, so the interrupt is the same Escape a person at the
+// keyboard would press (Ctrl-C would arm the exit prompt instead).
+const TMUX_SESSION = process.env.CLAUDE_TMUX_SESSION ?? 'claude'
+
+bot.command('cancel', async ctx => {
+  if (!dmCommandGate(ctx)) return
+  let ok = true
+  try {
+    execFileSync('tmux', ['send-keys', '-t', TMUX_SESSION, 'Escape'], { stdio: 'ignore' })
+  } catch (err) {
+    ok = false
+    process.stderr.write(`telegram channel: /cancel tmux send-keys failed: ${err}\n`)
+  }
+  // An interrupted turn never reaches reply(), so nothing else clears the
+  // keep-alive — "typing…" would dangle until the 10-minute safety cap.
+  stopTyping(String(ctx.chat!.id))
+  await ctx
+    .reply(ok ? '🛑 Interrupted the running turn.' : `Couldn't reach tmux session "${TMUX_SESSION}".`)
+    .catch(() => {})
+})
+
 // Inline-button handler for permission requests. Callback data is
 // `perm:allow:<id>`, `perm:deny:<id>`, or `perm:more:<id>`.
 // Security mirrors the text-reply path: allowFrom must contain the sender.
