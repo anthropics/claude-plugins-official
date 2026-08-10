@@ -4,15 +4,15 @@ description: Set up the Telegram channel — save the bot token and review acces
 user-invocable: true
 allowed-tools:
   - Read
+  - Write
   - Bash(ls *)
-  - Bash(bash -lc *)
+  - Bash(mkdir *)
 ---
 
 # /telegram:configure — Telegram Channel Setup
 
-Reports whether the bot token is present in the environment and orients the
-user on access policy. The token is a secret: it lives in `$TELEGRAM_BOT_TOKEN`
-only — this skill never writes it to a file.
+Writes the bot token to `~/.claude/channels/telegram/.env` and orients the
+user on access policy. The server reads both files at boot.
 
 Arguments passed: `$ARGUMENTS`
 
@@ -24,9 +24,8 @@ Arguments passed: `$ARGUMENTS`
 
 Read both state files and give the user a complete picture:
 
-1. **Token** — check the environment for `TELEGRAM_BOT_TOKEN`
-   (`bash -lc 'echo ${TELEGRAM_BOT_TOKEN:0:10}'`, so a login shell's rc files
-   are sourced). Show set/not-set; if set, show only that masked prefix
+1. **Token** — check `~/.claude/channels/telegram/.env` for
+   `TELEGRAM_BOT_TOKEN`. Show set/not-set; if set, show first 10 chars masked
    (`123456789:...`).
 
 2. **Access** — read `~/.claude/channels/telegram/access.json` (missing file
@@ -36,8 +35,8 @@ Read both state files and give the user a complete picture:
    - Pending pairings: count, with codes and display names if any
 
 3. **What next** — end with a concrete next step based on state:
-   - No token → *"Export the BotFather token as `TELEGRAM_BOT_TOKEN` where you
-     launch claude (e.g. add it to `~/.bashrc`), then restart the session."*
+   - No token → *"Run `/telegram:configure <token>` with the token from
+     BotFather."*
    - Token set, policy is pairing, nobody allowed → *"DM your bot on
      Telegram. It replies with a code; approve with `/telegram:access pair
      <code>`."*
@@ -71,21 +70,19 @@ Drive the conversation this way:
 Never frame `pairing` as the correct long-term choice. Don't skip the lockdown
 offer.
 
-### `<token>` — don't save it
+### `<token>` — save it
 
-The token is a credential and this skill does not persist secrets. If the user
-pastes one:
-
-1. Don't write it anywhere, don't echo it back in full.
-2. Tell them to export it in the environment `claude` starts from, e.g. append
-   `export TELEGRAM_BOT_TOKEN=<token>` to `~/.bashrc` (or whatever their shell
-   sources), then restart the session.
-3. Show the no-args status so they see where they stand.
+1. Treat `$ARGUMENTS` as the token (trim whitespace). BotFather tokens look
+   like `123456789:AAH...` — numeric prefix, colon, long string.
+2. `mkdir -p ~/.claude/channels/telegram`
+3. Read existing `.env` if present; update/add the `TELEGRAM_BOT_TOKEN=` line,
+   preserve other keys. Write back, no quotes around the value.
+4. `chmod 600 ~/.claude/channels/telegram/.env` — the token is a credential.
+5. Confirm, then show the no-args status so the user sees where they stand.
 
 ### `clear` — remove the token
 
-Point at the same place: remove the `TELEGRAM_BOT_TOKEN` export from the shell
-rc file and restart the session.
+Delete the `TELEGRAM_BOT_TOKEN=` line (or the file if that's the only line).
 
 ---
 
@@ -93,8 +90,7 @@ rc file and restart the session.
 
 - The channels dir might not exist if the server hasn't run yet. Missing file
   = not configured, not an error.
-- The server reads `$TELEGRAM_BOT_TOKEN` once at boot, from the environment it
-  inherits. A token change needs a new shell *and* a session restart —
-  `/reload-plugins` alone won't pick up a variable the claude process never had.
+- The server reads `.env` once at boot. Token changes need a session restart
+  or `/reload-plugins`. Say so after saving.
 - `access.json` is re-read on every inbound message — policy changes via
   `/telegram:access` take effect immediately, no restart.

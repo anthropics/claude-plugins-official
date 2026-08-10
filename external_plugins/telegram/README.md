@@ -32,13 +32,11 @@ Install the plugin:
 
 **3. Give the server the token.**
 
-Export `TELEGRAM_BOT_TOKEN` in the environment `claude` is launched from — the server reads it from there and nowhere else:
-
-```sh
-echo 'export TELEGRAM_BOT_TOKEN=123456789:AAHfiqksKZ8...' >> ~/.bashrc
+```
+/telegram:configure 123456789:AAHfiqksKZ8...
 ```
 
-`/telegram:configure` shows where the token stands (set / not set) and walks you through access policy; it never writes the secret to disk.
+Writes `TELEGRAM_BOT_TOKEN=...` to `~/.claude/channels/telegram/.env`. You can also write that file by hand, or set the variable in your shell environment — shell takes precedence.
 
 > To run multiple bots on one machine (different tokens, separate allowlists), point `TELEGRAM_STATE_DIR` at a different directory per instance.
 
