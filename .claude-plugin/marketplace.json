@@ -3432,7 +3432,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/confluentinc/agent-skills.git",
-        "sha": "e311f93620480e47a168e88c5aadcf6373632f1d"
+        "sha": "0b4f9f01fcbf2cbc174e62b9fe2df9941c2d6972"
       },
       "homepage": "https://www.confluent.io"
     },
