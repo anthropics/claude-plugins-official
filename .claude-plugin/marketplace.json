@@ -897,7 +897,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/ClickHouse/clickhouse-claude-code-plugin.git",
-        "sha": "fcce1175a863f0833875ad696373ac9f2a408e6e"
+        "sha": "988a7a39834af9c9e14ec3650365243e2cfc6882"
       },
       "homepage": "https://github.com/ClickHouse/clickhouse-claude-code-plugin"
     },
