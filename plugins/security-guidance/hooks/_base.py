@@ -118,6 +118,8 @@ _PV = _read_plugin_version_int()
 # alongside the existing skip_reason / vulns_found fields.
 _USAGE = {
     "in": 0, "out": 0, "cr": 0, "cw": 0, "cost": 0.0, "n": 0,
+    "models": [], "sdk_cost": False, "table_cost": False,
+    "local_summary_emitted": False,
     # HTTP error visibility (#2098 visibility gap — see emit comment in
     # _usage_metrics). Without this, API failures from `_call_claude` left
     # zero fingerprint in telemetry: the call returns None, the caller's
@@ -160,6 +162,7 @@ def _record_usage(usage, model, cost_usd=None):
         cw = int(u.get("cache_creation_input_tokens") or 0)
     except (TypeError, ValueError):
         return
+    sdk_reported_cost = cost_usd is not None
     if cost_usd is None:
         pin, pout = _PRICE_DEFAULT
         m = (model or "").lower()
@@ -175,6 +178,54 @@ def _record_usage(usage, model, cost_usd=None):
         _USAGE["cw"] += cw
         _USAGE["cost"] += float(cost_usd or 0.0)
         _USAGE["n"] += 1
+        if model not in _USAGE["models"]:
+            _USAGE["models"].append(model)
+        _USAGE["sdk_cost"] |= sdk_reported_cost
+        _USAGE["table_cost"] |= not sdk_reported_cost
+
+
+def _local_usage_summary(metrics):
+    """Return one payload-free JSON usage line for a completed LLM review."""
+    if metrics.get("commit_review"):
+        layer = "commit_review"
+    elif metrics.get("push_sweep"):
+        layer = "push_sweep"
+    elif metrics.get("stop_review") or metrics.get("diff_strategy_v2"):
+        layer = "stop_review"
+    else:
+        return None
+
+    with _USAGE_LOCK:
+        if _USAGE["n"] == 0 or _USAGE["local_summary_emitted"]:
+            return None
+        _USAGE["local_summary_emitted"] = True
+        cost_sources = []
+        if _USAGE["table_cost"]:
+            cost_sources.append("plugin_price_table")
+        if _USAGE["sdk_cost"]:
+            cost_sources.append("sdk_reported")
+        summary = {
+            "review_layer": layer,
+            "model_ids": list(_USAGE["models"]),
+            "input_tokens": _USAGE["in"],
+            "output_tokens": _USAGE["out"],
+            "cache_read_input_tokens": _USAGE["cr"],
+            "cache_creation_input_tokens": _USAGE["cw"],
+            "api_call_count": _USAGE["n"],
+            "estimated_api_cost_usd": _USAGE["cost"],
+            "cost_sources": cost_sources,
+            "outcome": (
+                "error" if metrics.get("api_error") is not None
+                or _USAGE["http_err_count"] else
+                "findings" if (metrics.get("vulns_found") or 0) > 0 else
+                "clean"
+            ),
+        }
+        if metrics.get("review_ms") is not None:
+            summary["review_ms"] = metrics["review_ms"]
+    # json.dumps escapes control characters in model IDs, keeping this to one
+    # physical debug-log line. Only allowlisted aggregate fields are encoded.
+    return json.dumps(summary, ensure_ascii=True, separators=(",", ":"))
 
 
 def _record_http_error(status):
@@ -228,4 +279,3 @@ def _usage_metrics():
             out["http_err_last"] = _USAGE["http_err_last"]
             out["http_err_count"] = _USAGE["http_err_count"]
         return out
-

@@ -82,6 +82,7 @@ from _base import (  # noqa: E402,F401
     PROVENANCE_TAG, PROVENANCE_BANNER,
     _read_plugin_version_int, _PV, _USAGE, _USAGE_LOCK,
     _PRICE_PER_MTOK, _PRICE_DEFAULT, _record_usage, _usage_metrics,
+    _local_usage_summary,
     state_dir as _resolve_state_dir,
 )
 import extensibility  # noqa: E402
@@ -260,6 +261,9 @@ def emit_metrics(
     delivery channel above. Defaults to "PostToolUse" (commit-review and
     push-sweep are the most common callers); handle_stop_hook passes "Stop".
     """
+    local_usage_summary = _local_usage_summary(metrics)
+    if local_usage_summary is not None:
+        debug_log(local_usage_summary)
     head = {}
     if _PV and "pv" not in metrics:
         head["pv"] = _PV
