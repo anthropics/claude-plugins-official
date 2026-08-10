@@ -1578,7 +1578,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/atlassian/forge-skills.git",
-        "sha": "ea409cc73b8cac3b6710c3ca7976dd64e570a2fc"
+        "sha": "a8eb109708de685dbad5b92eb25890d0a20addff"
       },
       "homepage": "https://developer.atlassian.com/platform/forge/"
     },
