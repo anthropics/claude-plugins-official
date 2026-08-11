@@ -2962,7 +2962,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/resend/resend-skills.git",
-        "sha": "7fa08a12899bb8fda3e880d91090da0ebd32bd77"
+        "sha": "40449a2b7c0d9db1fc822b2e4489290066b42155"
       },
       "homepage": "https://resend.com"
     },
