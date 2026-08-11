@@ -2588,7 +2588,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/paypal/AI-Toolkit.git",
-        "sha": "725fa65b3135c274e06e90d4368686677fba0e5d"
+        "sha": "a9c0586fe495b1e5d18fc6660c87dccb984eb207"
       },
       "homepage": "https://developer.paypal.com/"
     },
