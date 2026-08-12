@@ -463,7 +463,7 @@
         "url": "https://github.com/aws-samples/sample-claude-code-plugins-for-startups.git",
         "path": "plugins/aws-dev-toolkit",
         "ref": "main",
-        "sha": "abdf86730f3f40ac4d2b775af8d745c3d43894ca"
+        "sha": "05a3889e765521a450e50f4cc2b35d770c40e8d9"
       },
       "homepage": "https://github.com/aws-samples/sample-claude-code-plugins-for-startups"
     },
