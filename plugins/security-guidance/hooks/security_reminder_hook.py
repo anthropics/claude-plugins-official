@@ -197,6 +197,7 @@ def emit_metrics(
     additional_context=None,
     system_message=None,
     hook_event_name="PostToolUse",
+    codex_hook=False,
 ):
     """
     Write a SyncHookJSONOutput line to stdout for Claude Code to pick up.
@@ -256,9 +257,13 @@ def emit_metrics(
     surface; systemMessage adds a per-fire override when the static
     rewakeMessage isn't specific enough for the finding being shown.
 
-    `hook_event_name` (used only when additional_context is set): selects the
-    delivery channel above. Defaults to "PostToolUse" (commit-review and
-    push-sweep are the most common callers); handle_stop_hook passes "Stop".
+    `hook_event_name`: selects the delivery channel above. Defaults to
+    "PostToolUse" (commit-review and push-sweep are the most common callers);
+    handle_stop_hook passes "Stop".
+
+    `codex_hook`: true when the Stop payload contains Codex's turn_id
+    extension. Codex rejects Claude-only telemetry fields, so its output is
+    reduced to the supported Stop fields before serialization.
     """
     head = {}
     if _PV and "pv" not in metrics:
@@ -289,6 +294,13 @@ def emit_metrics(
             }
     if system_message:
         out["systemMessage"] = system_message
+    if codex_hook and hook_event_name == "Stop":
+        codex_stop_fields = {
+            "continue", "decision", "reason", "stopReason",
+            "suppressOutput", "systemMessage",
+        }
+        out = {key: value for key, value in out.items()
+               if key in codex_stop_fields}
     print(json.dumps(out), flush=True)
 
 # =====================================================================
@@ -1842,6 +1854,7 @@ def handle_stop_hook(input_data):
     session_id = input_data.get("session_id", "default")
     stop_hook_active = input_data.get("stop_hook_active", False)
     cwd = input_data.get("cwd", "")
+    codex_hook = bool(input_data.get("turn_id"))
 
     # Recursion guard FIRST — consume_stop_state clears touched_paths, and CC
     # sets stop_hook_active session-wide while any asyncRewake Stop is in
@@ -1849,7 +1862,8 @@ def handle_stop_hook(input_data):
     # paths the concurrent active=False fire needs.
     if stop_hook_active:
         debug_log("Stop hook: stop_hook_active=True, skipping to avoid recursion")
-        emit_metrics({"skipped": True, "skip_reason": 1, "diff_strategy_v2": True})
+        emit_metrics({"skipped": True, "skip_reason": 1, "diff_strategy_v2": True},
+                     hook_event_name="Stop", codex_hook=codex_hook)
         sys.exit(0)
 
     # Snapshot all state under one lock BEFORE any slow work (sweep file I/O,
@@ -1888,7 +1902,7 @@ def handle_stop_hook(input_data):
             "skipped": True, "skip_reason": reason, "fire_index": fire_count + 1,
             "diff_strategy_v2": True,
             **v2_metrics, **extra, **sweep,
-        })
+        }, hook_event_name="Stop", codex_hook=codex_hook)
         sys.exit(0)
 
     # Limit stop hook firings per asyncRewake loop to prevent infinite loops.
@@ -2079,7 +2093,7 @@ def handle_stop_hook(input_data):
         }, rewake_summary=_format_vulns_summary(vulns),
            additional_context=(PROVENANCE_BANNER + "\n\n"
                                + concrete_guidance + CONTINUATION_SUFFIX + "\n"),
-           hook_event_name="Stop")
+           hook_event_name="Stop", codex_hook=codex_hook)
         sys.exit(2)
 
     if llm._last_call_claude_http_error is not None:
@@ -2104,7 +2118,7 @@ def handle_stop_hook(input_data):
         **({"diff_truncated": llm._last_review_truncated_bytes}
            if llm._last_review_truncated_bytes else {}),
         **v2_metrics,
-    })
+    }, hook_event_name="Stop", codex_hook=codex_hook)
     sys.exit(0)
 
 _SDK_BOOTSTRAP_THROTTLE = os.path.join(_resolve_state_dir(), ".sdk_bootstrap_spawned")
