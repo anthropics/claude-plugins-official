@@ -223,7 +223,7 @@
         "url": "https://github.com/amd/skills.git",
         "path": "skills",
         "ref": "main",
-        "sha": "cf5e518e0a2efcc8d1131b18ff17d40970d53ac1"
+        "sha": "ec4bf7f0dda91d25cea2c4db4096adf9ef383096"
       },
       "strict": false,
       "skills": [
