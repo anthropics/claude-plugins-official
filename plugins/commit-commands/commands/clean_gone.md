@@ -1,53 +1,75 @@
 ---
-description: Cleans up all git branches marked as [gone] (branches that have been deleted on the remote but still exist locally), including removing associated worktrees.
+description: Cleans up local git branches whose remote branch was deleted (shown by git as "gone"), including their worktrees — skipping anything with uncommitted work or currently checked out.
 ---
 
 ## Your Task
 
-You need to execute the following bash commands to clean up stale local branches that have been deleted from the remote repository.
+Delete local branches whose upstream remote branch no longer exists, and remove their worktrees — without destroying any work.
 
 ## Commands to Execute
 
-1. **First, list branches to identify any with [gone] status**
-   Execute this command:
-   ```bash
-   git branch -v
-   ```
-   
-   Note: Branches with a '+' prefix have associated worktrees and must have their worktrees removed before deletion.
+1. **Refresh remote state first.** Without this the "gone" markers are stale or absent entirely.
 
-2. **Next, identify worktrees that need to be removed for [gone] branches**
-   Execute this command:
    ```bash
-   git worktree list
+   git fetch --prune origin
    ```
 
-3. **Finally, remove worktrees and delete [gone] branches (handles both regular and worktree branches)**
-   Execute this command:
+2. **List the branches that qualify.** Note this uses `-vv`, not `-v`: the gone marker only appears with two `v`s, and git prints it as `[origin/<branch>: gone]`, so the pattern must be `: gone]` and not `[gone]`.
+
    ```bash
-   # Process all [gone] branches, removing '+' prefix if present
-   git branch -v | grep '\[gone\]' | sed 's/^[+* ]//' | awk '{print $1}' | while read branch; do
-     echo "Processing branch: $branch"
-     # Find and remove worktree if it exists
-     worktree=$(git worktree list | grep "\\[$branch\\]" | awk '{print $1}')
-     if [ ! -z "$worktree" ] && [ "$worktree" != "$(git rev-parse --show-toplevel)" ]; then
-       echo "  Removing worktree: $worktree"
-       git worktree remove --force "$worktree"
+   git branch -vv | grep ': gone\]'
+   ```
+
+   If nothing matches, report that no cleanup was needed and stop.
+
+3. **Delete them, skipping anything unsafe.** This writes a recovery list first, then skips the current branch and any worktree holding uncommitted work.
+
+   ```bash
+   current=$(git symbolic-ref --short -q HEAD)
+   mkdir -p .git/clean_gone
+   rec=".git/clean_gone/deleted-$(date +%Y-%m-%d-%H%M%S).txt"
+   git branch -vv | grep ': gone\]' | cut -c3- | awk '{print $1, $2}' > "$rec"
+   echo "Recovery list ($(wc -l < "$rec" | tr -d ' ') branches with SHAs): $rec"
+
+   git branch -vv | grep ': gone\]' | cut -c3- | awk '{print $1}' | while read -r b; do
+     # Never touch the branch that is checked out here.
+     if [ "$b" = "$current" ]; then
+       echo "SKIP  $b — currently checked out"
+       continue
      fi
-     # Delete the branch
-     echo "  Deleting branch: $branch"
-     git branch -D "$branch"
+
+     # Find this branch's worktree, if it has one.
+     wt=$(git worktree list --porcelain | awk -v br="refs/heads/$b" '
+       /^worktree /{w=$2} /^branch /{if ($2==br) print w}')
+
+     if [ -n "$wt" ]; then
+       # Uncommitted work is the one thing this command must never destroy.
+       # node_modules is ignored because worktrees routinely carry it untracked.
+       dirty=$(git -C "$wt" status --porcelain | grep -v node_modules | wc -l | tr -d ' ')
+       if [ "$dirty" != "0" ]; then
+         echo "SKIP  $b — $dirty uncommitted file(s) in $wt"
+         git -C "$wt" status --porcelain | grep -v node_modules | sed 's/^/        /'
+         continue
+       fi
+       git worktree remove --force "$wt" || { echo "SKIP  $b — could not remove $wt"; continue; }
+       echo "      removed worktree $wt"
+     fi
+
+     git branch -D "$b" >/dev/null && echo "DEL   $b"
    done
    ```
 
-## Expected Behavior
+4. **Report what was skipped.** Anything printed as `SKIP` still exists and needs a human decision — usually either committing the work or confirming it can be thrown away.
 
-After executing these commands, you will:
+## Recovering a branch deleted by mistake
 
-- See a list of all local branches with their status
-- Identify and remove any worktrees associated with [gone] branches
-- Delete all branches marked as [gone]
-- Provide feedback on which worktrees and branches were removed
+The recovery file records every branch name with the commit it pointed at, so any of them can be restored while the objects remain in the reflog:
 
-If no branches are marked as [gone], report that no cleanup was needed.
+```bash
+git branch <name> <sha>
+```
 
+## Notes
+
+- **A "gone" branch is not necessarily merged.** The remote branch is usually deleted when its pull request merges, but a branch can also go gone because the remote was deleted manually, or because work continued locally *after* the pull request merged. Those later commits exist nowhere else. If it matters, check before deleting: `git cherry -v origin/main <branch>` marks with `-` the commits already in main and `+` the ones unique to the branch.
+- **Squash-merged branches always look unmerged.** Squashing rewrites the commits into a new one with a different SHA, so `git branch --merged` and any `origin/main..<branch>` count will report work as missing when it actually landed. Compare by patch (`git cherry`) or by pull request, not by commit count.
