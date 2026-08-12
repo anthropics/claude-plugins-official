@@ -1500,7 +1500,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/fastly/fastly-agent-toolkit.git",
-        "sha": "9e5372506801baba57a3e903bc0e8c48823be081"
+        "sha": "d5a8062287c8f70278f3c94f6198396004a4889f"
       },
       "homepage": "https://github.com/fastly/fastly-agent-toolkit/blob/main/README.md"
     },
