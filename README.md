@@ -42,6 +42,52 @@ plugin-name/
 └── README.md            # Documentation
 ```
 
+## Plugin names are immutable
+
+The `name` field in a marketplace entry is an **immutable slug**. Once a plugin has been published, its `name` must not change — users have it installed under that slug, and renaming it breaks their install with a `plugin-not-found` error.
+
+- To change how a plugin is labeled in the UI, set or update `displayName` instead.
+- If a rename is genuinely unavoidable, add an entry to the top-level `renames` map in `.claude-plugin/marketplace.json` so existing installs auto-migrate:
+
+```json
+"renames": {
+  "old-name": "new-name"
+}
+```
+
+The Claude Code plugin loader reads this map and transparently rewrites the old slug to the new one on the user's next sync.
+
+## Skill-bundle plugins
+
+When a plugin's source repository ships skills (`SKILL.md` files) without a `.claude-plugin/plugin.json` manifest, the marketplace entry can declare the skills directly using `strict: false` and an explicit `skills` array.
+
+```json
+{
+  "name": "example-bundle",
+  "description": "Brief description of the bundled skills.",
+  "author": { "name": "Author Name" },
+  "category": "development",
+  "source": {
+    "source": "git-subdir",
+    "url": "https://github.com/example-org/sdk.git",
+    "path": "packages/agent-skills",
+    "ref": "main",
+    "sha": "<commit sha>"
+  },
+  "strict": false,
+  "skills": [
+    "./skill-a",
+    "./skill-b",
+    "./skill-c"
+  ],
+  "homepage": "https://github.com/example-org/sdk"
+}
+```
+
+Each path in `skills` is relative to `source.path` and points at a directory containing a `SKILL.md`. Paths can reach deeper than a single level — for example, `["./libA/skill-1", "./libB/skill-2"]` exposes a curated subset across multiple library subdirectories. Each skill is registered as `<plugin-name>:<skill-name>` in Claude Code.
+
+For the underlying schema, see [Strict mode](https://code.claude.com/docs/en/plugin-marketplaces) in the marketplace documentation.
+
 ## License
 
 Please see each linked plugin for the relevant LICENSE file.

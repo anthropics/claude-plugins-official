@@ -1,9 +1,5 @@
 {
   "_comment": "Example SSE MCP server configuration for hosted cloud services",
-  "asana": {
-    "type": "sse",
-    "url": "https://mcp.asana.com/sse"
-  },
   "github": {
     "type": "sse",
     "url": "https://mcp.github.com/sse"

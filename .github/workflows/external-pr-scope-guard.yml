@@ -1,0 +1,54 @@
+name: External PR Scope Guard
+
+# Advisory check that surfaces what a NON-MEMBER pull request may change.
+# Members (write/admin) and the repo's own automation bot (bump SHA PRs) are unrestricted and
+# skip this check. For a non-member PR this fails unless the PR is an in-scope external
+# contribution per .github/scripts/external-pr-scope.js: it changes ONLY
+# .claude-plugin/marketplace.json, the delta is additions-only (no existing entry modified or
+# removed), and every ADDED entry's source.url is a repo that ALREADY backs a live plugin in
+# this marketplace (the allowed set is derived from the live marketplace — there is no
+# maintained allowlist).
+#
+# Do NOT add this job to branch protection as a required status check. The merge gate is the
+# `validate` + `scan` checks plus a maintainer approval; this guard is advisory signal for the
+# reviewer, not a hard gate. (Making it required would block the no-approval bump-merge path.)
+#
+# Security: runs on pull_request_target but checks out only the BASE repo (trusted) for the
+# shared script; the head marketplace.json is fetched as DATA via the API and parsed, never executed.
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  scope-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4   # base repo (trusted)
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const { evaluate, isExemptAuthor } = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/external-pr-scope.js`);
+
+            // Members (write/admin) and the repo's own automation bot (bump SHA PRs) are
+            // unrestricted; only genuinely external contributions are scope-checked.
+            const ex = await isExemptAuthor({ github, context });
+            if (ex.exempt) {
+              console.log(`${ex.reason} — scope guard not applicable.`);
+              return;
+            }
+
+            const result = await evaluate({ github, context });
+
+            if (!result.ok) {
+              core.setFailed(
+                `Scope guard: a non-member PR may only ADD marketplace.json entries whose source repo already backs a live plugin here.\n - ` +
+                result.problems.join('\n - ')
+              );
+              return;
+            }
+            console.log(`Scope guard passed: adds ${result.added.join(', ') || 'none'}, all from repos already live here.`);

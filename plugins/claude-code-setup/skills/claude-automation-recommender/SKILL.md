@@ -39,7 +39,7 @@ ls -la package.json pyproject.toml Cargo.toml go.mod pom.xml 2>/dev/null
 cat package.json 2>/dev/null | head -50
 
 # Check dependencies for MCP server recommendations
-cat package.json 2>/dev/null | grep -E '"(react|vue|angular|next|express|fastapi|django|prisma|supabase|stripe)"'
+cat package.json 2>/dev/null | grep -E '"(react|vue|angular|next|express|fastapi|django|prisma|supabase|convex|stripe)"'
 
 # Check for existing Claude Code config
 ls -la .claude/ CLAUDE.md 2>/dev/null
@@ -55,7 +55,7 @@ ls -la src/ app/ lib/ tests/ components/ pages/ api/ 2>/dev/null
 | Language/Framework | package.json, pyproject.toml, import patterns | Hooks, MCP servers |
 | Frontend stack | React, Vue, Angular, Next.js | Playwright MCP, frontend skills |
 | Backend stack | Express, FastAPI, Django | API documentation tools |
-| Database | Prisma, Supabase, raw SQL | Database MCP servers |
+| Database | Prisma, Supabase, Convex, raw SQL | Database / backend MCP servers |
 | External APIs | Stripe, OpenAI, AWS SDKs | context7 MCP for docs |
 | Testing | Jest, pytest, Playwright configs | Testing hooks, subagents |
 | CI/CD | GitHub Actions, CircleCI | GitHub MCP server |
@@ -75,6 +75,7 @@ See [references/mcp-servers.md](references/mcp-servers.md) for detailed patterns
 | Uses popular libraries (React, Express, etc.) | **context7** - Live documentation lookup |
 | Frontend with UI testing needs | **Playwright** - Browser automation/testing |
 | Uses Supabase | **Supabase MCP** - Direct database operations |
+| Uses Convex | **Convex MCP** - Live deployment introspection, run queries/mutations, manage env vars and logs |
 | PostgreSQL/MySQL database | **Database MCP** - Query and schema tools |
 | GitHub repository | **GitHub MCP** - Issues, PRs, actions |
 | Uses Linear for issues | **Linear MCP** - Issue management |

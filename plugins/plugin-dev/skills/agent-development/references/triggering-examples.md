@@ -1,491 +1,217 @@
-# Agent Triggering Examples: Best Practices
+# Agent Triggering: Best Practices
 
-Complete guide to writing effective `<example>` blocks in agent descriptions for reliable triggering.
+Complete guide to writing trigger descriptions that cause an agent to be dispatched reliably.
 
-## Example Block Format
+## Where trigger descriptions live
 
-The standard format for triggering examples:
+An agent file has two places that talk about triggering:
+
+1. **`description:` field in YAML frontmatter.** Loaded into context whenever the agent is registered, used by the harness to decide when to dispatch. Keep it flat prose.
+2. **A "When to invoke" section in the agent body.** Loaded only when the agent is actually invoked. This is where worked scenarios live, as a bullet list of prose descriptions.
+
+## Format
+
+### `description:` field
+
+```
+description: Use this agent when [conditions]. Typical triggers include [scenario 1 phrased as a prose noun phrase], [scenario 2], and [scenario 3]. See "When to invoke" in the agent body for worked scenarios.
+```
+
+Rules:
+- Single line of flat prose within the YAML scalar.
+- Name 2-4 trigger scenarios as noun phrases.
+- End with the pointer to the body's "When to invoke" section.
+
+### "When to invoke" body section
 
 ```markdown
-<example>
-Context: [Describe the situation - what led to this interaction]
-user: "[Exact user message or request]"
-assistant: "[How Claude should respond before triggering]"
-<commentary>
-[Explanation of why this agent should be triggered in this scenario]
-</commentary>
-assistant: "[How Claude triggers the agent - usually 'I'll use the [agent-name] agent...']"
-</example>
+## When to invoke
+
+[Two to four representative scenarios as prose bullets. Each describes the situation
+in third person and what the agent should do.]
+
+- **[Short scenario name].** [What the situation looks like — what just happened or what
+  the user is asking for — and what the agent should do in response.]
+- **[Short scenario name].** [Same.]
 ```
 
-## Anatomy of a Good Example
+## Anatomy of a good scenario
 
-### Context
+### Scenario name (the bold lead)
 
-**Purpose:** Set the scene - what happened before the user's message
+**Purpose:** A short noun phrase identifying the situation type.
 
-**Good contexts:**
-```
-Context: User just implemented a new authentication feature
-Context: User has created a PR and wants it reviewed
-Context: User is debugging a test failure
-Context: After writing several functions without documentation
-```
+**Good names:**
+- *User-requested review after a feature lands.*
+- *Proactive review of newly-written code.*
+- *Pre-PR sanity check.*
+- *PR updated with new logic.*
 
-**Bad contexts:**
-```
-Context: User needs help (too vague)
-Context: Normal usage (not specific)
-```
+**Bad names:**
+- *Normal usage.* (not specific)
+- *User needs help.* (vague)
 
-### User Message
+### Scenario body (after the lead)
 
-**Purpose:** Show the exact phrasing that should trigger the agent
+**Purpose:** Describe what happens and what the agent should do — in prose, third person, no quoted utterances.
 
-**Good user messages:**
-```
-user: "I've added the OAuth flow, can you check it?"
-user: "Review PR #123"
-user: "Why is this test failing?"
-user: "Add docs for these functions"
-```
+**Good:**
+> The user has just implemented a feature (often spanning several files) and asks whether everything looks good. Run a review of the recent diff and report findings.
 
-**Vary the phrasing:**
-Include multiple examples with different phrasings for the same intent:
-```
-Example 1: user: "Review my code"
-Example 2: user: "Can you check this implementation?"
-Example 3: user: "Look over my changes"
-```
+**Bad (transcript shape — do not use):**
+> ```
+> user: "Can you check if everything looks good?"
+> assistant: "I'll use the reviewer agent..."
+> ```
 
-### Assistant Response (Before Triggering)
+The bad version mixes a turn-marker shape into the agent file. Keep scenarios as situation descriptions in prose.
 
-**Purpose:** Show what Claude says before launching the agent
+## Trigger types to cover
 
-**Good responses:**
-```
-assistant: "I'll analyze your OAuth implementation."
-assistant: "Let me review that PR for you."
-assistant: "I'll investigate the test failure."
-```
+Aim for 2-4 scenarios that span these axes:
 
-**Proactive example:**
-```
-assistant: "Great! Now let me review the code quality."
-<commentary>
-Code was just written, proactively trigger review agent.
-</commentary>
-```
+### Explicit request
+The user directly asks for what the agent does.
+- *User-requested security check.* The user explicitly asks for a security review of recent code.
 
-### Commentary
+### Proactive triggering
+The assistant invokes the agent without an explicit ask, after relevant work.
+- *Proactive review after writing database code.* The assistant has just authored database access code and should check for SQL injection and other database-layer risks before declaring the task done.
 
-**Purpose:** Explain the reasoning - WHY this agent should trigger
+### Implicit request
+The user implies need without naming the agent.
+- *Code-clarity complaint.* The user describes existing code as confusing or hard to follow. Treat as a request to refactor for readability.
 
-**Good commentary:**
-```
-<commentary>
-User explicitly requested code review, trigger the code-reviewer agent.
-</commentary>
+### Tool-usage pattern
+The agent should follow a particular tool-use pattern.
+- *Post-test-edit verification.* The assistant has just made multiple edits to test files. Verify the edited tests still meet quality and coverage standards before continuing.
 
-<commentary>
-After code implementation, proactively use review agent to check quality.
-</commentary>
+## Phrasing variation
 
-<commentary>
-PR analysis request matches pr-analyzer agent's expertise.
-</commentary>
+If the same intent is commonly phrased multiple ways, mention that in prose:
+
+> **Pre-PR sanity check.** The user signals (in any phrasing — "ready to open a PR", "I think we're done here", "let's ship this") that they're about to open a pull request.
+
+Don't write three near-duplicate scenarios that differ only in the literal phrase — collapse them into one prose scenario that names the variation.
+
+## How many scenarios?
+
+- **Minimum: 2.** Usually one explicit + one proactive.
+- **Recommended: 3-4.** Explicit, proactive, and one implicit or edge case.
+- **Maximum: 5.** More than that bloats the body without adding routing signal.
+
+## Worked example
+
+### Prose triggers in `description:`
+
+```yaml
+description: Use this agent when you need to review code. Typical triggers include user-requested review after a feature lands, proactive review of freshly-written code, and a pre-PR sanity check. See "When to invoke" in the agent body for worked scenarios.
 ```
 
-**Include decision logic:**
-```
-<commentary>
-User wrote tests (Test tool used). The test-analyzer agent should check
-test quality and coverage before continuing.
-</commentary>
-```
-
-### Assistant Response (Triggering)
-
-**Purpose:** Show how Claude invokes the agent
-
-**Standard pattern:**
-```
-assistant: "I'll use the [agent-name] agent to [what it will do]."
-```
-
-**Examples:**
-```
-assistant: "I'll use the code-reviewer agent to analyze the changes."
-assistant: "Let me use the test-generator agent to create comprehensive tests."
-assistant: "I'll use the security-analyzer agent to check for vulnerabilities."
-```
-
-## Example Types
-
-### Type 1: Explicit Request
-
-User directly asks for what the agent does:
+### Scenarios as situation descriptions in the body
 
 ```markdown
-<example>
-Context: User explicitly requests security analysis
-user: "Check my code for security vulnerabilities"
-assistant: "I'll use the security-analyzer agent to perform a thorough security review."
-<commentary>
-Direct security analysis request triggers the security-analyzer agent.
-</commentary>
-</example>
+## When to invoke
+
+- **User-requested review.** The user asks for a review of recent changes (any phrasing). Run a review of the unstaged diff.
 ```
 
-### Type 2: Proactive Triggering
-
-Agent triggers after relevant work without explicit request:
+### Trigger condition only — output format goes elsewhere
 
 ```markdown
-<example>
-Context: User just implemented database queries
-user: "I've added the user search functionality"
-assistant: "Great! Let me review it for security."
-<commentary>
-Database code written. Proactively trigger security-analyzer to check
-for SQL injection and other database security issues.
-</commentary>
-assistant: "I'll use the security-analyzer agent to check the database code."
-</example>
+- **Review.** The user asks for a review. Run the review and report findings as specified in the Output Format section.
 ```
 
-### Type 3: Implicit Request
+## Template library
 
-User implies need without stating it directly:
+### Code review agent
+
+```yaml
+description: Use this agent when you need to review code for adherence to project guidelines and best practices. Typical triggers include the user asking for a review of a feature they just implemented, proactive review of newly-written code before declaring a task done, and a pre-PR sanity check. See "When to invoke" in the agent body.
+```
 
 ```markdown
-<example>
-Context: User mentions code is hard to understand
-user: "This code is confusing and hard to follow"
-assistant: "I can help improve the code clarity."
-<commentary>
-User indicates complexity issues. Trigger code-simplifier agent to refactor
-for better readability.
-</commentary>
-assistant: "I'll use the code-simplifier agent to suggest improvements."
-</example>
+## When to invoke
+
+- **User-requested review after a feature lands.** The user has implemented a feature and asks whether the result looks good. Review the recent diff and report findings.
+- **Proactive review of newly-written code.** The assistant has just authored new code in response to a user request. Run a self-review before declaring the task done.
+- **Pre-PR sanity check.** The user signals readiness to open a pull request. Review the full diff first.
 ```
 
-### Type 4: Tool Usage Pattern
+### Test generation agent
 
-Agent triggers based on prior tool usage:
+```yaml
+description: Use this agent when you need to generate tests for code that lacks them. Typical triggers include the user explicitly asking for tests for a function or module, and the assistant proactively generating tests after writing new code that has no test coverage. See "When to invoke" in the agent body.
+```
 
 ```markdown
-<example>
-Context: User made multiple edits to test files
-user: "I've updated all the tests"
-assistant: "Great! Let me verify test quality."
-<commentary>
-Multiple Edit tools used on test files. Proactively trigger test-quality-analyzer
-to ensure tests follow best practices.
-</commentary>
-assistant: "I'll use the test-quality-analyzer agent to review the tests."
-</example>
+## When to invoke
+
+- **Explicit test request.** The user asks for tests covering a specific function, module, or feature. Generate a comprehensive test suite.
+- **Proactive coverage after new code.** The assistant has just written new code with no accompanying tests. Generate tests before declaring the task done.
 ```
 
-## Multiple Examples Strategy
+### Documentation agent
 
-### Cover Different Phrasings
+```yaml
+description: Use this agent when you need to write or improve documentation for code, especially APIs. Typical triggers include the user asking for docs on a specific function or endpoint, and proactive documentation generation after the assistant adds new API surface. See "When to invoke" in the agent body.
+```
 
 ```markdown
-<example>
-user: "Review my code"
-[...]
-</example>
+## When to invoke
 
-<example>
-user: "Can you check my implementation?"
-[...]
-</example>
-
-<example>
-user: "Look over these changes"
-[...]
-</example>
+- **Explicit doc request.** The user asks for documentation for a specific surface (function, endpoint, module).
+- **Proactive docs for new API surface.** The assistant has just added new API endpoints or public functions without docstrings.
 ```
 
-### Cover Proactive and Reactive
+### Validation agent
+
+```yaml
+description: Use this agent when you need to validate code before commit or merge. Typical triggers include the user signaling readiness to commit, and an explicit validation request. See "When to invoke" in the agent body.
+```
 
 ```markdown
-<example>
-Context: User explicitly requests review
-user: "Review my code for issues"
-[...]
-</example>
+## When to invoke
 
-<example>
-Context: After user writes code
-user: "I've implemented the feature"
-assistant: "Great! Now let me review it."
-<commentary>
-Code written, proactively review.
-</commentary>
-[...]
-</example>
+- **Pre-commit validation.** The user signals readiness to commit. Run validation first and surface any issues.
+- **Explicit validation request.** The user asks for the code to be validated.
 ```
 
-### Cover Edge Cases
+## Debugging triggering issues
 
-```markdown
-<example>
-Context: Typical usage
-user: "Check my PR"
-[...]
-</example>
+### Agent not triggering
 
-<example>
-Context: Large PR that needs thorough analysis
-user: "This is a big PR, can you do a deep review?"
-[...]
-<commentary>
-Large PR mentioned, use thorough analysis mode.
-</commentary>
-</example>
-```
+Check:
+1. The `description:` prose names the right trigger scenarios.
+2. The scenarios in the body cover the actual phrasings the user uses.
+3. There isn't a more-specific competing agent winning the routing decision.
 
-## Common Mistakes
+Fix: add or expand scenarios in the body, and tighten the prose summary in `description:`.
 
-### ❌ Missing Context
+### Agent triggers too often
 
-```markdown
-<example>
-user: "Review my code"
-assistant: "I'll use the code-reviewer agent."
-</example>
-```
+Check:
+1. The trigger scenarios are too generic or overlap with other agents.
+2. The `description:` doesn't say when NOT to use the agent.
 
-**Why bad:** No context about what led to this request.
+Fix: narrow the scenarios; add a "Do not invoke when..." line to `description:` if needed.
 
-### ✅ With Context
+### Agent triggers in the wrong scenarios
 
-```markdown
-<example>
-Context: User just finished implementing authentication
-user: "Review my code"
-assistant: "I'll use the code-reviewer agent to analyze the auth implementation."
-<commentary>
-Auth code written, review for security and best practices.
-</commentary>
-</example>
-```
+Check:
+1. Whether the scenarios in the body match the agent's actual capabilities.
 
-### ❌ No Commentary
+Fix: rewrite scenarios to match what the agent actually does.
 
-```markdown
-<example>
-Context: User requests review
-user: "Check my changes"
-assistant: "I'll use the reviewer agent."
-</example>
-```
+## Best practices summary
 
-**Why bad:** Doesn't explain WHY agent triggers.
-
-### ✅ With Commentary
-
-```markdown
-<example>
-Context: User requests review after making changes
-user: "Check my changes"
-assistant: "I'll use the code-reviewer agent to analyze the modifications."
-<commentary>
-Code review request triggers agent to check quality, security, and adherence to standards.
-</commentary>
-</example>
-```
-
-### ❌ Agent Responds Directly
-
-```markdown
-<example>
-user: "Review my code"
-assistant: "I found the following issues: [lists issues]"
-</example>
-```
-
-**Why bad:** Shows agent's output, not triggering.
-
-### ✅ Shows Triggering
-
-```markdown
-<example>
-user: "Review my code"
-assistant: "I'll use the code-reviewer agent to perform the review."
-<commentary>
-Review request triggers the agent.
-</commentary>
-</example>
-```
-
-## How Many Examples?
-
-### Minimum: 2 Examples
-
-Cover at least:
-1. Explicit request
-2. One variation or proactive trigger
-
-### Recommended: 3-4 Examples
-
-Cover:
-1. Explicit request (direct ask)
-2. Implicit request (user implies need)
-3. Proactive trigger (after relevant work)
-4. Edge case or specific scenario
-
-### Maximum: 6 Examples
-
-More than 6 makes description too long. Focus on most important scenarios.
-
-## Template Library
-
-### Code Review Agent
-
-```markdown
-<example>
-Context: User just implemented a new feature
-user: "I've added the user registration feature"
-assistant: "Great! Let me review the code quality."
-<commentary>
-Code written, proactively trigger code-reviewer agent.
-</commentary>
-assistant: "I'll use the code-reviewer agent to analyze the implementation."
-</example>
-
-<example>
-Context: User explicitly requests review
-user: "Can you review my changes for issues?"
-assistant: "I'll use the code-reviewer agent to perform a thorough review."
-<commentary>
-Explicit review request triggers the agent.
-</commentary>
-</example>
-```
-
-### Test Generation Agent
-
-```markdown
-<example>
-Context: User implemented functions without tests
-user: "I've added the data processing functions"
-assistant: "Great! Let me generate tests for these."
-<commentary>
-New code without tests, proactively trigger test-generator agent.
-</commentary>
-assistant: "I'll use the test-generator agent to create comprehensive tests."
-</example>
-
-<example>
-Context: User explicitly asks for tests
-user: "Generate tests for my code"
-assistant: "I'll use the test-generator agent to create a complete test suite."
-<commentary>
-Direct test generation request triggers the agent.
-</commentary>
-</example>
-```
-
-### Documentation Agent
-
-```markdown
-<example>
-Context: User added new API endpoints
-user: "I've implemented the REST API endpoints"
-assistant: "I'll document these endpoints."
-<commentary>
-New API code, proactively generate documentation.
-</commentary>
-assistant: "I'll use the api-docs-writer agent to create comprehensive documentation."
-</example>
-
-<example>
-Context: User requests documentation
-user: "Write docs for this API"
-assistant: "I'll use the api-docs-writer agent to generate clear documentation."
-<commentary>
-Documentation request triggers the agent.
-</commentary>
-</example>
-```
-
-### Validation Agent
-
-```markdown
-<example>
-Context: User ready to commit changes
-user: "I'm ready to commit this code"
-assistant: "Let me validate it first."
-<commentary>
-Before commit, proactively validate with validation-agent.
-</commentary>
-assistant: "I'll use the code-validator agent to check for issues."
-</example>
-
-<example>
-Context: User asks for validation
-user: "Validate my implementation"
-assistant: "I'll use the code-validator agent to verify correctness."
-<commentary>
-Explicit validation request triggers the agent.
-</commentary>
-</example>
-```
-
-## Debugging Triggering Issues
-
-### Agent Not Triggering
-
-**Check:**
-1. Examples include relevant keywords from user message
-2. Context matches actual usage scenarios
-3. Commentary explains triggering logic clearly
-4. Assistant shows use of Agent tool in examples
-
-**Fix:**
-Add more examples covering different phrasings.
-
-### Agent Triggers Too Often
-
-**Check:**
-1. Examples are too broad or generic
-2. Triggering conditions overlap with other agents
-3. Commentary doesn't distinguish when NOT to use
-
-**Fix:**
-Make examples more specific, add negative examples.
-
-### Agent Triggers in Wrong Scenarios
-
-**Check:**
-1. Examples don't match actual intended use
-2. Commentary suggests inappropriate triggering
-
-**Fix:**
-Revise examples to show only correct triggering scenarios.
-
-## Best Practices Summary
-
-✅ **DO:**
-- Include 2-4 concrete, specific examples
-- Show both explicit and proactive triggering
-- Provide clear context for each example
-- Explain reasoning in commentary
-- Vary user message phrasing
-- Show Claude using Agent tool
-
-❌ **DON'T:**
-- Use generic, vague examples
-- Omit context or commentary
-- Show only one type of triggering
-- Skip the agent invocation step
-- Make examples too similar
-- Forget to explain why agent triggers
+- Keep `description:` as flat prose with a short summary of trigger scenarios
+- Put detailed scenarios in a "When to invoke" body section, as prose bullets
+- Cover both explicit and proactive triggering
+- Describe situations the agent should respond to
+- Mention phrasing variation in prose ("any phrasing — 'ready to ship', 'looks done'") rather than via multiple near-duplicate scenarios
+- Keep trigger scenarios separate from output format
 
 ## Conclusion
 
-Well-crafted examples are crucial for reliable agent triggering. Invest time in creating diverse, specific examples that clearly demonstrate when and why the agent should be used.
+Reliable triggering comes from prose descriptions of the situations an agent should respond to.

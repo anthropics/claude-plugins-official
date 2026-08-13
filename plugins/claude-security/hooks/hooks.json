@@ -1,0 +1,16 @@
+{
+  "description": "A display-only banner: on the /claude-security menu it prints the Claude Security banner as a systemMessage. It fires only on UserPromptExpansion for that slash command. It is a sensor: it emits a message and never returns a permission decision.",
+  "hooks": {
+    "UserPromptExpansion": [
+      {
+        "matcher": "^claude-security:claude-security$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/banner_hook.sh\""
+          }
+        ]
+      }
+    ]
+  }
+}

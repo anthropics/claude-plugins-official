@@ -122,22 +122,37 @@ that survives un-inlined.
 
 ---
 
-## Dark mode
+## Theme & host styles
 
-```js
-const applyTheme = (theme) =>
-  document.documentElement.classList.toggle("dark", theme === "dark");
+The host renders the iframe inside its own card chrome — paint a **transparent** background and adopt host CSS tokens so the widget blends in across light/dark and across hosts.
 
-app.onhostcontextchanged = (ctx) => applyTheme(ctx.theme);
-await app.connect();
-applyTheme(app.getHostContext()?.theme);
+```html
+<meta name="color-scheme" content="light dark" />
 ```
 
 ```css
-:root { --ink:#0f1111; --bg:#fff; color-scheme:light; }
-:root.dark { --ink:#e6e6e6; --bg:#1f2428; color-scheme:dark; }
+:root {
+  --ink:  var(--color-text-primary,   #0f1111);
+  --sub:  var(--color-text-secondary, #5a6270);
+  --line: var(--color-border-default, #e3e6ea);
+}
+html, body { background: transparent; color: var(--ink); }
 :root.dark .thumb { mix-blend-mode: normal; } /* multiply → images vanish in dark */
 ```
+
+```js
+const { App, applyHostStyleVariables } = globalThis.ExtApps;
+
+function applyHostContext(ctx) {
+  document.documentElement.classList.toggle("dark", ctx?.theme === "dark");
+  if (ctx?.styles?.variables) applyHostStyleVariables(ctx.styles.variables);
+}
+app.onhostcontextchanged = applyHostContext;
+await app.connect();
+applyHostContext(app.getHostContext());
+```
+
+`applyHostStyleVariables` writes the host's `--color-*` / `--font-*` / `--border-radius-*` tokens onto `:root`; the hex values above are fallbacks for hosts that don't supply them.
 
 ---
 

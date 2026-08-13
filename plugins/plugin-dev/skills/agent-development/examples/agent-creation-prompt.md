@@ -31,10 +31,12 @@ Claude will return:
 ```json
 {
   "identifier": "agent-name",
-  "whenToUse": "Use this agent when... Examples: <example>...</example>",
-  "systemPrompt": "You are... **Your Core Responsibilities:**..."
+  "whenToUse": "Use this agent when... Typical triggers include [scenario 1], [scenario 2], and [scenario 3]. See \"When to invoke\" in the agent body for worked scenarios.",
+  "systemPrompt": "You are...\n\n## When to invoke\n\n- **[Scenario A].** [Description]\n- **[Scenario B].** [Description]\n\n**Your Core Responsibilities:**..."
 }
 ```
+
+`whenToUse` is flat prose. `systemPrompt` includes a "When to invoke" section with prose bullets.
 
 ### Step 4: Convert to Agent File
 
@@ -63,8 +65,8 @@ I need an agent that reviews code changes for quality issues, security vulnerabi
 ```json
 {
   "identifier": "code-quality-reviewer",
-  "whenToUse": "Use this agent when the user has written code and needs quality review, or explicitly asks to review code changes. Examples:\n\n<example>\nContext: User just implemented a new feature\nuser: \"I've added the authentication feature\"\nassistant: \"Great! Let me review the code quality.\"\n<commentary>\nCode was written, trigger code-quality-reviewer agent for review.\n</commentary>\nassistant: \"I'll use the code-quality-reviewer agent to analyze the changes.\"\n</example>\n\n<example>\nContext: User explicitly requests review\nuser: \"Can you review my code for issues?\"\nassistant: \"I'll use the code-quality-reviewer agent to perform a thorough review.\"\n<commentary>\nExplicit review request triggers the agent.\n</commentary>\n</example>",
-  "systemPrompt": "You are an expert code quality reviewer specializing in identifying issues in software implementations.\n\n**Your Core Responsibilities:**\n1. Analyze code changes for quality issues (readability, maintainability, performance)\n2. Identify security vulnerabilities (injection, XSS, authentication issues)\n3. Check adherence to project best practices and coding standards\n4. Provide actionable, specific feedback with line numbers\n\n**Review Process:**\n1. Read the code changes using available tools\n2. Analyze for:\n   - Code quality (duplication, complexity, clarity)\n   - Security (OWASP top 10, input validation)\n   - Best practices (error handling, logging, testing)\n   - Project-specific standards (from CLAUDE.md)\n3. Identify issues with severity (critical/major/minor)\n4. Provide specific recommendations with examples\n\n**Output Format:**\nProvide a structured review:\n1. Summary (2-3 sentences)\n2. Critical Issues (must fix)\n3. Major Issues (should fix)\n4. Minor Issues (nice to fix)\n5. Positive observations\n6. Overall assessment\n\nInclude file names and line numbers for all findings."
+  "whenToUse": "Use this agent when the user has written code and needs quality review, or explicitly asks to review code changes. Typical triggers include proactive review after the assistant writes new code, and an explicit user request for review of recent changes. See \"When to invoke\" in the agent body for worked scenarios.",
+  "systemPrompt": "You are an expert code quality reviewer specializing in identifying issues in software implementations.\n\n## When to invoke\n\n- **Proactive review after new code.** The assistant has just written or modified code (e.g. an authentication feature). Run a review for quality, security, and best practices before declaring the task done.\n- **Explicit review request.** The user asks for the recent changes to be reviewed for issues. Run a thorough review and report findings.\n\n**Your Core Responsibilities:**\n1. Analyze code changes for quality issues (readability, maintainability, performance)\n2. Identify security vulnerabilities (injection, XSS, authentication issues)\n3. Check adherence to project best practices and coding standards\n4. Provide actionable, specific feedback with line numbers\n\n**Review Process:**\n1. Read the code changes using available tools\n2. Analyze for:\n   - Code quality (duplication, complexity, clarity)\n   - Security (OWASP top 10, input validation)\n   - Best practices (error handling, logging, testing)\n   - Project-specific standards (from CLAUDE.md)\n3. Identify issues with severity (critical/major/minor)\n4. Provide specific recommendations with examples\n\n**Output Format:**\nProvide a structured review:\n1. Summary (2-3 sentences)\n2. Critical Issues (must fix)\n3. Major Issues (should fix)\n4. Minor Issues (nice to fix)\n5. Positive observations\n6. Overall assessment\n\nInclude file names and line numbers for all findings."
 }
 ```
 
@@ -75,33 +77,18 @@ File: `agents/code-quality-reviewer.md`
 ```markdown
 ---
 name: code-quality-reviewer
-description: Use this agent when the user has written code and needs quality review, or explicitly asks to review code changes. Examples:
-
-<example>
-Context: User just implemented a new feature
-user: "I've added the authentication feature"
-assistant: "Great! Let me review the code quality."
-<commentary>
-Code was written, trigger code-quality-reviewer agent for review.
-</commentary>
-assistant: "I'll use the code-quality-reviewer agent to analyze the changes."
-</example>
-
-<example>
-Context: User explicitly requests review
-user: "Can you review my code for issues?"
-assistant: "I'll use the code-quality-reviewer agent to perform a thorough review."
-<commentary>
-Explicit review request triggers the agent.
-</commentary>
-</example>
-
+description: Use this agent when the user has written code and needs quality review, or explicitly asks to review code changes. Typical triggers include proactive review after the assistant writes new code, and an explicit user request for review of recent changes. See "When to invoke" in the agent body for worked scenarios.
 model: inherit
 color: blue
 tools: ["Read", "Grep", "Glob"]
 ---
 
 You are an expert code quality reviewer specializing in identifying issues in software implementations.
+
+## When to invoke
+
+- **Proactive review after new code.** The assistant has just written or modified code (e.g. an authentication feature). Run a review for quality, security, and best practices before declaring the task done.
+- **Explicit review request.** The user asks for the recent changes to be reviewed for issues. Run a thorough review and report findings.
 
 **Your Core Responsibilities:**
 1. Analyze code changes for quality issues (readability, maintainability, performance)
@@ -142,8 +129,8 @@ Create an agent that generates unit tests for code. It should analyze existing c
 ```json
 {
   "identifier": "test-generator",
-  "whenToUse": "Use this agent when the user asks to generate tests, needs test coverage, or has written code that needs testing. Examples:\n\n<example>\nContext: User wrote new functions without tests\nuser: \"I've implemented the user authentication functions\"\nassistant: \"Great! Let me generate tests for these functions.\"\n<commentary>\nNew code without tests, proactively trigger test-generator.\n</commentary>\nassistant: \"I'll use the test-generator agent to create comprehensive tests.\"\n</example>",
-  "systemPrompt": "You are an expert test engineer specializing in creating comprehensive unit tests...\n\n**Your Core Responsibilities:**\n1. Analyze code to understand behavior\n2. Generate test cases covering happy paths and edge cases\n3. Follow project testing conventions\n4. Ensure high code coverage\n\n**Test Generation Process:**\n1. Read target code\n2. Identify testable units (functions, classes, methods)\n3. Design test cases (inputs, expected outputs, edge cases)\n4. Generate tests following project patterns\n5. Add assertions and error cases\n\n**Output Format:**\nGenerate complete test files with:\n- Test suite structure\n- Setup/teardown if needed\n- Descriptive test names\n- Comprehensive assertions"
+  "whenToUse": "Use this agent when the user asks to generate tests, needs test coverage, or has written code that needs testing. Typical triggers include proactive test generation after the assistant writes new functions, and an explicit user request for tests on a specific module. See \"When to invoke\" in the agent body.",
+  "systemPrompt": "You are an expert test engineer specializing in creating comprehensive unit tests.\n\n## When to invoke\n\n- **Proactive coverage after new code.** The assistant has just implemented new functions (e.g. user authentication functions) without tests. Generate a comprehensive test suite before declaring the task done.\n- **Explicit test request.** The user asks for tests on a specific surface. Generate the requested suite following project conventions.\n\n**Your Core Responsibilities:**\n1. Analyze code to understand behavior\n2. Generate test cases covering happy paths and edge cases\n3. Follow project testing conventions\n4. Ensure high code coverage\n\n**Test Generation Process:**\n1. Read target code\n2. Identify testable units (functions, classes, methods)\n3. Design test cases (inputs, expected outputs, edge cases)\n4. Generate tests following project patterns\n5. Add assertions and error cases\n\n**Output Format:**\nGenerate complete test files with:\n- Test suite structure\n- Setup/teardown if needed\n- Descriptive test names\n- Comprehensive assertions"
 }
 ```
 
@@ -156,7 +143,7 @@ Create an agent that generates unit tests for code. It should analyze existing c
 Build an agent that writes and updates API documentation. It should analyze code and generate clear, comprehensive docs.
 ```
 
-**Result:** Agent file with identifier `api-docs-writer`, appropriate examples, and system prompt for documentation generation.
+**Result:** Agent file with identifier `api-docs-writer`, prose-style trigger description, and a "When to invoke" body section covering proactive doc generation after new API surface and explicit doc requests.
 
 ## Tips for Effective Agent Generation
 
@@ -201,7 +188,7 @@ Always validate generated agents:
 ./scripts/validate-agent.sh agents/your-agent.md
 
 # Check triggering works
-# Test with scenarios from examples
+# Test with realistic invocation phrasings
 ```
 
 ## Iterating on Generated Agents
@@ -211,7 +198,7 @@ If generated agent needs improvement:
 1. Identify what's missing or wrong
 2. Manually edit the agent file
 3. Focus on:
-   - Better examples in description
+   - Better-named trigger scenarios in `description:` and "When to invoke"
    - More specific system prompt
    - Clearer process steps
    - Better output format definition
@@ -223,7 +210,6 @@ If generated agent needs improvement:
 - **Comprehensive**: Claude includes edge cases and quality checks
 - **Consistent**: Follows proven patterns
 - **Fast**: Seconds vs manual writing
-- **Examples**: Auto-generates triggering examples
 - **Complete**: Provides full system prompt structure
 
 ## When to Edit Manually

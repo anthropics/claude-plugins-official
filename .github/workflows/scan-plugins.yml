@@ -1,0 +1,546 @@
+name: Scan Plugins
+
+# Claude policy scan of changed external marketplace entries.
+#
+# `scan` is a required status check on main. A path-filtered workflow never
+# reports a check run when its paths don't match, which would leave unrelated
+# PRs blocked forever — so this workflow runs on every PR and skips the heavy
+# scan setup at the step level when nothing scan-relevant changed. The check
+# always reports.
+#
+# Verdict cache: each (plugin, sha) pair is scanned at most once. The bump
+# workflow force-resets bump/plugin-shas every night, which makes the same
+# SHAs reappear in the diff on consecutive nights — without a cache, the
+# scan would re-burn ~90s of Claude time per entry per night. The cache is
+# keyed on the policy hash so a prompt or schema change invalidates all
+# verdicts and triggers a clean re-scan.
+#
+# Failure handling: a cached `passes:false` verdict still fails the job. The
+# Revert Failed Bumps workflow (revert-failed-bumps.yml) reacts to that by
+# dropping the failing entries from the bump PR, so one bad upstream can't
+# block the rest. After the revert, the re-dispatched scan finds only
+# cached-pass entries and goes green in seconds.
+
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      scan_all:
+        description: Scan every external entry (full re-review). Slow.
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  id-token: write # Anthropic Workload Identity Federation (scan-plugins action)
+
+# Serialize scans per ref so concurrent runs (a re-dispatch racing the
+# original, or a manual dispatch) don't both restore the same cache, scan
+# overlapping sets, and lose one another's verdicts on save.
+concurrency:
+  group: scan-plugins-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+env:
+  MARKETPLACE: .claude-plugin/marketplace.json
+  CACHE_DIR: ${{ github.workspace }}/.scan-cache
+  CACHE_TTL_DAYS: '30'
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Same paths the workflow-level filter used to gate on. workflow_dispatch
+      # always runs the scan (no PR diff to inspect).
+      - name: Check for scan-relevant changes
+        id: changes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+            echo "base_ref=origin/main" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "base_ref=$BASE_SHA" >> "$GITHUB_OUTPUT"
+          if git diff --quiet "$BASE_SHA" HEAD -- "$MARKETPLACE" .github/policy/; then
+            echo "relevant=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No changes to marketplace.json or policy/ — skipping policy scan."
+          else
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Auth: the shared scan-plugins action below uses Workload Identity
+      # Federation (anthropic-federation-rule-id input) — the IDs are literal
+      # in this file, so the action's "skip if no auth" path can't trigger.
+      # The previous "Require ANTHROPIC_API_KEY" fail-closed guard is
+      # therefore no longer needed.
+
+      # Verdict cache, keyed on the policy content hash. A prompt change
+      # invalidates every cached verdict — that is intentional. The save key
+      # includes run_id so each run writes a fresh cache; restore-keys picks
+      # the most recent one. Verdicts older than CACHE_TTL_DAYS are pruned on
+      # restore to bound cache size as the marketplace grows.
+      - name: Restore verdict cache
+        if: steps.changes.outputs.relevant == 'true'
+        id: cache-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: .scan-cache
+          # run_attempt so a re-run can save its own verdicts (cache keys are
+          # immutable; without it a re-run would silently fail to save).
+          key: scan-verdicts-${{ hashFiles('.github/policy/**') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            scan-verdicts-${{ hashFiles('.github/policy/**') }}-
+
+      # Split the diff into cached (skip) and uncached (scan) entries. The
+      # cache key is "<name>@<sha>" — a SHA is immutable, so a verdict for a
+      # given (plugin, sha) is permanent under a fixed policy.
+      - name: Filter scan targets against cache
+        if: steps.changes.outputs.relevant == 'true'
+        id: filter
+        env:
+          BASE_REF: ${{ steps.changes.outputs.base_ref }}
+          SCAN_ALL: ${{ inputs.scan_all || 'false' }}
+          TTL_DAYS: ${{ env.CACHE_TTL_DAYS }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$CACHE_DIR"
+
+          # Initialize / prune the verdict map.
+          if [[ -f "$CACHE_DIR/verdicts.json" ]] && jq -e 'type == "object"' "$CACHE_DIR/verdicts.json" >/dev/null 2>&1; then
+            # Drop entries older than TTL. Verdicts are immutable per (plugin, sha)
+            # but pruning keeps the cache from accumulating forever.
+            cutoff="$(date -u -d "-${TTL_DAYS} days" +%Y-%m-%dT%H:%M:%SZ)"
+            jq --arg cutoff "$cutoff" \
+              'with_entries(select(.value.scanned_at >= $cutoff))' \
+              "$CACHE_DIR/verdicts.json" > "$CACHE_DIR/verdicts.json.tmp"
+            mv "$CACHE_DIR/verdicts.json.tmp" "$CACHE_DIR/verdicts.json"
+          else
+            echo '{}' > "$CACHE_DIR/verdicts.json"
+          fi
+
+          # Build the change set: entries in HEAD whose object differs from base.
+          # scan_all overrides to "every external entry" (full re-review).
+          if [[ "$SCAN_ALL" == "true" ]]; then
+            jq -c '[.plugins[] | select(.source | type == "object")]' "$MARKETPLACE" \
+              > "$CACHE_DIR/changed.json"
+          else
+            if git cat-file -e "${BASE_REF}:${MARKETPLACE}" 2>/dev/null; then
+              git show "${BASE_REF}:${MARKETPLACE}" > "$CACHE_DIR/base.json"
+            else
+              echo '{"plugins":[]}' > "$CACHE_DIR/base.json"
+            fi
+            jq -c -s \
+              '(.[0].plugins | map({(.name): .}) | add // {}) as $b
+               | [.[1].plugins[]
+                  | select(.source | type == "object")
+                  | select(($b[.name] // null) != .)]' \
+              "$CACHE_DIR/base.json" "$MARKETPLACE" > "$CACHE_DIR/changed.json"
+          fi
+
+          changed_count="$(jq 'length' "$CACHE_DIR/changed.json")"
+
+          # Split changed entries into cached vs uncached. A hit requires the
+          # *whole* source object (repo, sha, path, ref) to match the cached
+          # entry, not just name@sha — a repo migration or path change with the
+          # same SHA is different scan content and must miss the cache.
+          jq -c -s \
+            '.[0] as $cache
+             | (.[1] | map(. + {key: (.name + "@" + (.source.sha // "")) })) as $entries
+             | {
+                 to_scan:  [$entries[] | select(($cache[.key].source // null) != .source)],
+                 cached:   [$entries[] | select(($cache[.key].source // null) == .source)
+                            | . + {verdict: $cache[.key]}]
+               }' \
+            "$CACHE_DIR/verdicts.json" "$CACHE_DIR/changed.json" > "$CACHE_DIR/split.json"
+
+          jq -c '.to_scan' "$CACHE_DIR/split.json" > "$CACHE_DIR/to-scan.json"
+          jq -c '.cached'  "$CACHE_DIR/split.json" > "$CACHE_DIR/cached.json"
+
+          to_scan_count="$(jq 'length' "$CACHE_DIR/to-scan.json")"
+          cached_count="$(jq 'length' "$CACHE_DIR/cached.json")"
+          cached_fail_count="$(jq '[.[] | select(.verdict.passes == false)] | length' "$CACHE_DIR/cached.json")"
+
+          # Build a filtered marketplace containing only the uncached entries.
+          # Passing this as the action's marketplace-path means the action's own
+          # base diff (which can't resolve a path outside git) falls back to an
+          # empty base and scans everything in the file — which is exactly the
+          # to-scan set. Annotations point to the temp file rather than the real
+          # marketplace, but the per-entry verdicts still land in the artifact
+          # and the step summary.
+          jq -c '{plugins: .}' "$CACHE_DIR/to-scan.json" > "$CACHE_DIR/scan-targets.json"
+
+          {
+            echo "changed=$changed_count"
+            echo "to_scan=$to_scan_count"
+            echo "cached=$cached_count"
+            echo "cached_failures=$cached_fail_count"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "::notice::$changed_count changed entrie(s): $cached_count cached ($cached_fail_count failing), $to_scan_count to scan."
+
+      - name: Scan uncached entries
+        if: steps.changes.outputs.relevant == 'true' && steps.filter.outputs.to_scan != '0'
+        id: scan
+        # Capture the action's per-entry outputs even when it exits nonzero.
+        # The verdict (cached + fresh) is what gates the job, not the action's
+        # exit code, and the revert workflow needs the artifact even on failure.
+        continue-on-error: true
+        # Pinned to claude-plugins-community#34 (WIF input support).
+        # TODO: re-pin to a main-branch SHA once #34 merges.
+        uses: anthropics/claude-plugins-community/.github/actions/scan-plugins@426e469f322952061102b286b378c0c9733a0934
+        with:
+          # Anthropic auth via Workload Identity Federation — the action
+          # mints a GitHub OIDC token (id-token: write above) and the claude
+          # CLI exchanges it for a short-lived bearer. The federation rule is
+          # bound to this repository (repository_id-pinned).
+          anthropic-federation-rule-id: fdrl_0147kJdru6bZKTtzwFNEqsDf
+          anthropic-organization-id: 1ec12c5c-6542-4da8-bf2f-c15919aef01c
+          anthropic-service-account-id: svac_01DnC3BtPHGjYJEGeuUUXZ8v
+          marketplace-path: .scan-cache/scan-targets.json
+          policy-prompt: .github/policy/prompt.md
+          fail-on-findings: "true"
+          claude-cli-version: latest
+
+      # Merge fresh verdicts into the cache and assemble this run's full
+      # verdict set (cached + fresh) for downstream consumers. Runs even when
+      # the scan step failed so that fail verdicts are also cached — that is
+      # what lets the revert workflow drop them and what stops the same
+      # failing SHA from being re-scanned every night.
+      - name: Merge verdicts and assemble run report
+        if: steps.changes.outputs.relevant == 'true'
+        id: report
+        # The action's `scanned` output travels here via an env var, which is
+        # subject to the OS argv/envp size limit (~128 KiB on Linux). At ~300
+        # bytes/entry that is ~400 entries — an order of magnitude above the
+        # cold-start case, and steady state with the cache is ~10/night. If
+        # the limit is ever hit the runner fails the step before the script
+        # runs ("argument list too long") — the right response is to clear
+        # the cache key and lower max-bumps temporarily. Documented here so
+        # nobody has to rediscover it.
+        env:
+          SCANNED_JSON: ${{ steps.scan.outputs.scanned || '[]' }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$CACHE_DIR"
+          [[ -f "$CACHE_DIR/cached.json" ]]  || echo '[]' > "$CACHE_DIR/cached.json"
+          [[ -f "$CACHE_DIR/changed.json" ]] || echo '[]' > "$CACHE_DIR/changed.json"
+
+          # Defensive: a partial or unparseable action output must not poison
+          # the cache. Treat it as "scanned nothing".
+          printf '%s' "$SCANNED_JSON" > "$CACHE_DIR/scanned-raw.json"
+          if ! jq -e 'type == "array"' "$CACHE_DIR/scanned-raw.json" >/dev/null 2>&1; then
+            echo "::warning::scan action output is not a valid JSON array — treating as empty."
+            echo '[]' > "$CACHE_DIR/scanned-raw.json"
+          fi
+
+          # Defense in depth: the scan action runs Claude with Read access over
+          # a cloned external repo. With WIF auth the process env carries a
+          # short-lived OIDC JWT (masked) and the CLI's exchanged bearer
+          # rather than a long-lived sk-ant- key, which bounds the blast
+          # radius of a prompt-injection exfil to a token that expires in
+          # minutes. The sk-ant- scrubber stays as defense-in-depth (covers
+          # any future static-key fallback) so key-shaped strings still never
+          # reach the cache, artifact, or PR comment.
+          jq -c '(.. | strings) |= gsub("sk-ant-[A-Za-z0-9_-]{8,}"; "[REDACTED]")' \
+            "$CACHE_DIR/scanned-raw.json" > "$CACHE_DIR/scanned-raw.json.tmp"
+          mv "$CACHE_DIR/scanned-raw.json.tmp" "$CACHE_DIR/scanned-raw.json"
+
+          now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          # The action's `scanned` output has no SHA or source — join it with
+          # the change set by name to recover both for the cache key + the
+          # source-equality lookup guard.
+          jq -c -s --arg now "$now" \
+            '.[0] as $changed
+             | (.[1] // []) as $scanned
+             | ($changed | map({(.name): .source}) | add // {}) as $srcs
+             | [$scanned[]
+                | . + {source: ($srcs[.name] // null), sha: ($srcs[.name].sha // ""), scanned_at: $now}]' \
+            "$CACHE_DIR/changed.json" "$CACHE_DIR/scanned-raw.json" \
+            > "$CACHE_DIR/fresh.json"
+
+          # Merge fresh verdicts into the cache, keyed by name@sha. The
+          # full source object is stored so a future repo/path change with the
+          # same SHA fails the lookup guard. summary/violations are model
+          # output — truncate to bound cache size (the artifact carries the
+          # full text for the run that produced it).
+          jq -c -s \
+            '.[0] + ([.[1][] | select(.sha != "") | {(.name + "@" + .sha): {
+                source: .source,
+                passes: .passes,
+                summary: ((.summary // "") | .[0:300]),
+                violations: ((.violations // "") | .[0:500]),
+                scanned_at: .scanned_at
+              }}] | add // {})' \
+            "$CACHE_DIR/verdicts.json" "$CACHE_DIR/fresh.json" \
+            > "$CACHE_DIR/verdicts.json.tmp"
+          mv "$CACHE_DIR/verdicts.json.tmp" "$CACHE_DIR/verdicts.json"
+
+          # The full per-entry verdict for THIS run's diff: cached verdicts
+          # plus freshly-scanned verdicts. The revert workflow consumes the
+          # `failed` list to know exactly which SHAs to drop.
+          jq -c -s \
+            '(.[0] | map({name, sha: .source.sha, passes: .verdict.passes,
+                          summary: (.verdict.summary // ""),
+                          violations: (.verdict.violations // ""),
+                          source: "cache"}))
+             + (.[1] | map({name, sha, passes,
+                            summary: (.summary // ""),
+                            violations: (.violations // ""),
+                            source: "scan"}))' \
+            "$CACHE_DIR/cached.json" "$CACHE_DIR/fresh.json" \
+            > "$CACHE_DIR/run-verdicts.json"
+
+          jq -c '[.[] | select(.passes == false) | .name]' "$CACHE_DIR/run-verdicts.json" \
+            > "$CACHE_DIR/run-failed.json"
+
+          fail_count="$(jq 'length' "$CACHE_DIR/run-failed.json")"
+          total="$(jq 'length' "$CACHE_DIR/run-verdicts.json")"
+
+          {
+            echo "failed_count=$fail_count"
+            echo "total=$total"
+          } >> "$GITHUB_OUTPUT"
+
+          # `summary` and `violations` are model-generated text shaped by a
+          # cloned external repo. Strip markdown control characters AND wrap
+          # in code spans before they hit a publicly-rendered sink — code
+          # spans neutralize auto-linked bare URLs that a prompt-injected
+          # upstream could smuggle in. Stripping backticks first stops a
+          # breakout from the code span.
+          {
+            echo "## Policy scan (with verdict cache)"
+            echo
+            echo "Changed entries: ${total} · cached: $(jq 'length' "$CACHE_DIR/cached.json") · scanned fresh: $(jq 'length' "$CACHE_DIR/fresh.json") · failures: ${fail_count}"
+            echo
+            if [[ "$total" -gt 0 ]]; then
+              echo "| Plugin | SHA | Passes | Source | Summary |"
+              echo "|---|---|---|---|---|"
+              jq -r 'def neutralize: gsub("[|\n\r\\[\\]<>`]"; " ");
+                .[] | "| \(.name) | `\(.sha[0:8])` | \(if .passes then "✅" else "❌" end) | \(.source) | `\(.summary | neutralize | .[0:120])` |"' \
+                "$CACHE_DIR/run-verdicts.json"
+            fi
+            if [[ "$fail_count" -gt 0 ]]; then
+              echo
+              echo "### Violations"
+              jq -r 'def neutralize: gsub("[|\n\r\\[\\]<>`]"; " ");
+                .[] | select(.passes == false) | "- **\(.name)** — `\(.violations | neutralize | .[0:500])`"' "$CACHE_DIR/run-verdicts.json"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Used by revert-failed-bumps.yml to know which entries to drop. Always
+      # uploaded when relevant so the revert workflow can distinguish "scan
+      # found policy failures" from "scan never ran" (infra error → no revert).
+      - name: Upload scan verdicts artifact
+        if: steps.changes.outputs.relevant == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: scan-verdicts
+          path: |
+            .scan-cache/run-verdicts.json
+            .scan-cache/run-failed.json
+          retention-days: 7
+
+      # Save even when the scan failed — fail verdicts are what stop us from
+      # re-burning Claude time on a known-bad SHA every night.
+      - name: Save verdict cache
+        if: always() && steps.changes.outputs.relevant == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .scan-cache
+          key: scan-verdicts-${{ hashFiles('.github/policy/**') }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+      # Required-check gate. Fails on either fresh or cached policy failures —
+      # a known-bad SHA must keep failing until it is reverted or upstream
+      # fixes it (a new SHA is a new cache key and gets a fresh scan).
+      - name: Gate on policy verdict
+        if: steps.changes.outputs.relevant == 'true'
+        env:
+          FAILED: ${{ steps.report.outputs.failed_count || '0' }}
+          SCAN_OUTCOME: ${{ steps.scan.outcome }}
+        run: |
+          set -euo pipefail
+          if [[ "$FAILED" != "0" ]]; then
+            echo "::error::$FAILED entrie(s) fail policy. See the run summary for verdicts."
+            exit 1
+          fi
+          # The action can also fail without a policy verdict (clone error,
+          # API error, schema mismatch). With zero parsed failures and a
+          # nonzero exit, that is an infra error — fail loudly so the revert
+          # workflow does NOT misread it as "everything passed".
+          if [[ "$SCAN_OUTCOME" == "failure" ]]; then
+            echo "::error::Scan step failed without a parseable policy verdict (likely an infra error)."
+            exit 1
+          fi
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # emit-verdict: post a sticky comment per entry to the bump PR with the
+  # structured verdict, so downstream tooling (label automation, delist
+  # authoring) can read verdicts directly instead of scraping job logs.
+  # Sticky comment marker: `<!-- bump-pr-verdict:<name> -->`.
+  #
+  # Mirrors the schema_v1 contract from
+  # anthropics/claude-plugins-community-internal#3908 so the triage scripts
+  # in mcp-local-directory/scripts/triage/ work uniformly across both repos.
+  # -official doesn't run per-entry static checks (zombie, schema, binaries,
+  # etc.) so the `scan.*` axes are emitted as "skipped". The granular policy
+  # booleans (`has_broad_scope_hooks`, `has_undisclosed_telemetry`,
+  # `description_matches_behavior`) aren't surfaced by this workflow's
+  # per-entry artifact yet, so they're emitted as null; the triage
+  # `triage_bool_to_str` helper maps null → "?" so display is graceful.
+  # Status describes the execution state, not the outcome — `ran` when the
+  # scan action evaluated this SHA fresh, `cached` when a prior verdict was
+  # reused (cf. run-verdicts.json's `source` field). Outcome lives in
+  # `policy.passes`. policy-sweep.sh dispatches on this exact vocabulary.
+  #
+  # PR resolution: pull_request events carry the PR number directly. The
+  # bump workflow creates bump PRs via GITHUB_TOKEN (which doesn't fire
+  # pull_request triggers — recursion guard) and dispatches this scan via
+  # workflow_dispatch on the bump branch. In that case we look up the
+  # open PR by head ref. No PR (scan_all dispatch on main, etc.) → no-op.
+  #
+  # continue-on-error at the job level: emit failure must NOT block the
+  # `scan` required check. Consumers fall back to log-scraping if the
+  # comment is absent (gradual migration; no flag day).
+  # ─────────────────────────────────────────────────────────────────────────────
+  emit-verdict:
+    needs: [scan]
+    if: always() && needs.scan.result != 'skipped' && needs.scan.result != 'cancelled'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Download scan verdicts
+        uses: actions/download-artifact@v4
+        with:
+          name: scan-verdicts
+          path: /tmp/scan-verdicts
+        continue-on-error: true
+
+      - name: Resolve PR number for this ref
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_FROM_EVENT: ${{ github.event.pull_request.number }}
+          REF: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "pull_request" && -n "$PR_FROM_EVENT" ]]; then
+            echo "number=$PR_FROM_EVENT" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # workflow_dispatch on the bump branch: find the open PR for it.
+          # head filter takes the form owner:branch.
+          owner="${REPO%%/*}"
+          pr=$(gh api "/repos/${REPO}/pulls?state=open&head=${owner}:${REF}&per_page=1" \
+            --jq '.[0].number // ""')
+          if [[ -z "$pr" ]]; then
+            echo "::notice::No open PR for ref ${REF} — sticky comments skipped (verdicts still in scan-verdicts artifact)"
+          fi
+          echo "number=$pr" >> "$GITHUB_OUTPUT"
+
+      - name: Build and post sticky comments
+        if: steps.pr.outputs.number != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ steps.pr.outputs.number }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+
+          verdicts_path=/tmp/scan-verdicts/run-verdicts.json
+          # Missing/empty artifact: scan job ran but didn't produce verdicts
+          # (e.g. the relevance gate said "no changes"). Nothing to comment;
+          # exit clean.
+          if [[ ! -s "$verdicts_path" ]]; then
+            echo "::notice::No run-verdicts.json artifact — nothing to emit"
+            exit 0
+          fi
+          count=$(jq 'length' "$verdicts_path")
+          if [[ "$count" == "0" ]]; then
+            echo "::notice::run-verdicts.json is empty — nothing to emit"
+            exit 0
+          fi
+
+          ran_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+          # scan.* axes: -official doesn't run per-entry static checks; emit
+          # "skipped" for each so the schema is shape-compatible with -internal.
+          scan_stub='{"clone":"skipped","subpath_missing":"skipped","schema":"skipped","zombie":"skipped","tool_allowlist":"skipped","binaries":"skipped","unique":"skipped","mcp":"skipped"}'
+
+          # Pre-fetch all PR comments once (paginated) for the marker lookup.
+          gh api --paginate "/repos/$REPO/issues/$PR/comments" \
+            --jq '.[] | {id, body}' > /tmp/comments.ndjson
+
+          jq -c '.[]' "$verdicts_path" | while read -r entry; do
+            name=$(jq -r '.name' <<< "$entry")
+            passes=$(jq -r '.passes' <<< "$entry")
+            summary=$(jq -r '.summary // ""' <<< "$entry")
+            violations=$(jq -r '.violations // ""' <<< "$entry")
+            source=$(jq -r '.source // "scan"' <<< "$entry")
+
+            # status = execution state (cf. -internal#3908 vocabulary).
+            # Outcome is in `passes`. Map source → status: scan-action-run
+            # → "ran"; cache-served → "cached". Anything else falls through
+            # as "ran" (only those two values appear in run-verdicts.json).
+            case "$source" in
+              cache) status="cached" ;;
+              scan)  status="ran" ;;
+              *)     status="ran" ;;
+            esac
+
+            policy=$(jq -n \
+              --argjson passes "$passes" \
+              --arg summary "$summary" \
+              --arg violations "$violations" \
+              --arg source "$source" \
+              --arg status "$status" \
+              '{passes: $passes,
+                has_broad_scope_hooks: null,
+                has_undisclosed_telemetry: null,
+                description_matches_behavior: null,
+                summary: $summary,
+                violations: $violations,
+                source: $source,
+                status: $status}')
+
+            verdict=$(jq -n \
+              --argjson scan "$scan_stub" \
+              --argjson policy "$policy" \
+              --arg ran_at "$ran_at" \
+              --arg run_id "$RUN_ID" \
+              '{schema_version: 1, ran_at: $ran_at, run_id: $run_id, scan: $scan, policy: $policy}')
+
+            marker="<!-- bump-pr-verdict:$name -->"
+            body=$(printf '%s\n```json\n%s\n```' "$marker" "$verdict")
+
+            # jq's first() short-circuits and avoids SIGPIPE under pipefail if
+            # duplicate markers exist (shouldn't, but a prior buggy run could
+            # double-post). -s slurps NDJSON; `// empty` yields no output when
+            # no match.
+            existing=$(jq -rs --arg m "$marker" \
+              'first(.[] | select(.body | startswith($m)) | .id) // empty' \
+              /tmp/comments.ndjson)
+
+            if [[ -n "$existing" ]]; then
+              gh api -X PATCH "/repos/$REPO/issues/comments/$existing" -f body="$body" >/dev/null
+              echo "Updated comment $existing for $name"
+            else
+              gh api -X POST "/repos/$REPO/issues/$PR/comments" -f body="$body" >/dev/null
+              echo "Created comment for $name"
+            fi
+          done

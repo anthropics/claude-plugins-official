@@ -2,6 +2,18 @@
 
 The `@modelcontextprotocol/ext-apps` package provides the `App` class (browser side) and `registerAppTool`/`registerAppResource` helpers (server side). Messaging is bidirectional and persistent.
 
+## Construction
+
+```js
+const app = new App(
+  { name: "MyWidget", version: "1.0.0" },
+  {},                       // capabilities
+  { autoResize: true },     // options
+);
+```
+
+`autoResize: true` wires a `ResizeObserver` that emits `ui/notifications/size-changed` so the host iframe height tracks your rendered content. Without it the frame is fixed-height and tall renders get clipped — set it for any widget whose height depends on data.
+
 ---
 
 ## Widget → Host
@@ -63,6 +75,26 @@ card.querySelector("a").addEventListener("click", (e) => {
 
 Host-mediated download (sandbox blocks direct `<a download>`). `content` is a base64 string.
 
+```js
+const csv = rows.map((r) => Object.values(r).join(",")).join("\n");
+app.downloadFile({
+  name: "export.csv",
+  mimeType: "text/csv",
+  content: btoa(unescape(encodeURIComponent(csv))),
+});
+```
+
+### `app.requestDisplayMode({ mode })`
+
+Ask the host to switch the widget between `"inline"`, `"pip"`, or `"fullscreen"`. Check `getHostContext().availableDisplayModes` first; hide the control if the mode isn't offered. The host responds by firing `onhostcontextchanged` with new `displayMode` and `containerDimensions` — re-render at the new size.
+
+```js
+if (app.getHostContext()?.availableDisplayModes?.includes("fullscreen")) {
+  expandBtn.hidden = false;
+  expandBtn.onclick = () => app.requestDisplayMode({ mode: "fullscreen" });
+}
+```
+
 ---
 
 ## Host → Widget
@@ -84,9 +116,22 @@ app.ontoolresult = ({ content }) => {
 
 Fires with the arguments Claude passed to the tool. Useful if the widget needs to know what was asked for (e.g., highlight the search term).
 
+### `app.ontoolinputpartial = ({ arguments }) => {...}` / `app.ontoolcancelled = () => {...}`
+
+`ontoolinputpartial` fires while Claude is still streaming arguments — use it to show a skeleton ("Preparing: <title>…") before the result lands. `ontoolcancelled` fires if the call is aborted; clear the skeleton.
+
 ### `app.getHostContext()` / `app.onhostcontextchanged = (ctx) => {...}`
 
-Read and subscribe to host context — `theme` (`"light"` / `"dark"`), locale, etc. Call `getHostContext()` **after** `connect()`. Subscribe for live updates (user toggles dark mode mid-conversation).
+Read and subscribe to host context. Call `getHostContext()` **after** `connect()`. Subscribe for live updates (user toggles dark mode, expands to fullscreen).
+
+| `ctx.` field | Use |
+|---|---|
+| `theme` | `"light"` / `"dark"` — toggle a `.dark` class |
+| `styles.variables` | Host CSS tokens — pass to `applyHostStyleVariables()` so colors/fonts match host chrome |
+| `displayMode` / `availableDisplayModes` | Current mode and which `requestDisplayMode` targets are valid |
+| `containerDimensions.{maxHeight,width}` | Size your render to this instead of hard-coded px |
+| `deviceCapabilities.touch` | Switch hover-only affordances to tap (`pointerdown`) |
+| `safeAreaInsets` | Padding for notches / composer overlay |
 
 ```js
 const applyTheme = (t) =>
@@ -129,14 +174,36 @@ No `{ notify }` destructure — `extra` is `RequestHandlerExtra`; progress goes 
 ## Lifecycle
 
 1. Claude calls a tool with `_meta.ui.resourceUri` declared
-2. Host fetches the resource (your HTML) and renders it in an iframe
+2. Host fetches the resource (your HTML) and mounts a **fresh iframe** for this call
 3. Widget script runs, sets handlers, calls `await app.connect()`
 4. Host pipes the tool's return value → `ontoolresult` fires
 5. Widget renders, user interacts
 6. Widget calls `sendMessage` / `updateModelContext` / `callServerTool` as needed
-7. Widget persists until conversation context moves on — subsequent calls to the same tool reuse the iframe and fire `ontoolresult` again
+7. Iframe persists in the transcript; **the next call to the same tool mounts another iframe** alongside it
 
-There's no explicit "submit and close" — the widget is a long-lived surface.
+There's no explicit "submit and close" — each instance is long-lived, but instances are not reused across calls.
+
+### Supersession
+
+Because earlier instances stay mounted, a click on a stale widget can `sendMessage` after a newer one has rendered. Detect this with a `BroadcastChannel` and make older instances inert:
+
+```js
+let superseded = false;
+const seq = Date.now() + Math.random();
+const bc = new BroadcastChannel("my-widget");
+bc.onmessage = (e) => {
+  if (e.data?.seq > seq) {
+    superseded = true;
+    document.body.classList.add("superseded"); // opacity:.45; pointer-events:none
+  }
+};
+bc.postMessage({ seq });
+
+// Guard outbound calls:
+function safeSend(msg) {
+  if (!superseded) app.sendMessage(msg);
+}
+```
 
 ---
 

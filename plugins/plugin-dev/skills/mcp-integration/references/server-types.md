@@ -143,9 +143,9 @@ Connect to hosted MCP servers via HTTP with server-sent events for streaming. Be
 **OAuth (Automatic):**
 ```json
 {
-  "asana": {
+  "hosted-service": {
     "type": "sse",
-    "url": "https://mcp.asana.com/sse"
+    "url": "https://mcp.example.com/sse"
   }
 }
 ```
@@ -172,7 +172,6 @@ Claude Code handles OAuth flow:
 ### Use Cases
 
 **Official Services:**
-- Asana: `https://mcp.asana.com/sse`
 - GitHub: `https://mcp.github.com/sse`
 - Other hosted MCP servers
 

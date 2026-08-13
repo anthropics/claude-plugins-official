@@ -1,0 +1,62 @@
+name: Validate Plugins
+
+on:
+  pull_request:
+    paths:
+      - '.claude-plugin/**'
+      - '*/.claude-plugin/**'
+      - '*/agents/**'
+      - '*/skills/**'
+      - '*/commands/**'
+      # `validate` is a required status check, so a PR that touches ONLY workflow
+      # files (e.g. an action-SHA re-pin) would otherwise never trigger validate
+      # and sit "Expected — Waiting for status to be reported" forever (workflow_dispatch
+      # check runs aren't associated with the PR, so they don't satisfy it). Run
+      # validate on workflow changes too so those PRs can clear the gate in-context.
+      - '.github/workflows/**'
+      # Same rationale for the scan policy prompt: a policy-only PR (.github/policy/**)
+      # touches none of the plugin paths above, so validate would never trigger via
+      # pull_request and the required check would sit "Expected" forever (a dispatch
+      # check run isn't associated with the PR, so it can't satisfy the gate either).
+      - '.github/policy/**'
+      # And once more for a plugin's own docs: a PR that only edits a README or
+      # adds a screenshot matches nothing above, so the required check never
+      # reports and the PR can't be merged. Spelled out per level because `*`
+      # doesn't cross a `/` — plugins live at plugins/<name>/, so `*/README.md`
+      # would not match one.
+      - 'plugins/*/README.md'
+      - 'plugins/*/assets/**'
+      - 'external_plugins/*/README.md'
+      - 'external_plugins/*/assets/**'
+  push:
+    branches: [main]
+    paths:
+      - '.claude-plugin/**'
+  # `validate` is a required status check on main. Bump PRs are opened with
+  # GITHUB_TOKEN, which doesn't fire on:pull_request (recursion guard), so the
+  # path-filtered trigger above never reports on them and the PR would be
+  # blocked forever. The bump workflow dispatches this against each per-entry
+  # bump branch instead; the check run lands on the branch HEAD (= PR head)
+  # and satisfies the required check. The validate job runs unconditionally,
+  # so a dispatch always reports.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: anthropics/claude-plugins-community/.github/actions/validate-plugins@426e469f322952061102b286b378c0c9733a0934
+        with:
+          marketplace-path: .claude-plugin/marketplace.json
+          # Official curated marketplace: SHA-pin (I5) is a HARD error.
+          # I8/I11 are warnings until the 15 known vendored-path/name issues
+          # are cleaned up (see PR body); tighten to "I1 I3" after.
+          warn-invariants: "I1 I3 I8 I11"
+          claude-cli-version: latest

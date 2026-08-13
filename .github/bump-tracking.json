@@ -1,0 +1,6 @@
+{
+  "releases-only": [
+    "crowdstrike-falcon-foundry",
+    "crowdstrike-falcon-fusion"
+  ]
+}

@@ -1,0 +1,284 @@
+name: Revert Failed Bumps
+
+# Drops policy-failing entries from a bump PR so one bad upstream can't
+# block the rest. Runs after a Scan Plugins workflow_run on bump/plugin-shas
+# concludes with a failure: read the per-entry verdicts the scan uploaded,
+# revert just the failing entries' source.sha back to main's pin, push a
+# follow-up signed commit, and re-dispatch the scan. The re-dispatched scan
+# finds only cached-pass entries in the new diff and goes green in seconds.
+#
+# Scope and guardrails — this job has contents:write so it must be tight:
+#   - Only acts on bump/plugin-shas (literal branch match).
+#   - Only acts when the scan was dispatched (workflow_dispatch event), i.e.
+#     by bump-plugin-shas.yml. A scan on a regular PR never triggers this.
+#   - Only reverts source.sha. If any other field in a failing entry differs
+#     from main, the run aborts — that means the bump branch was tampered
+#     with and a human needs to look.
+#   - Bounded at MAX_REVERT_PASSES per night via a PR comment marker; a
+#     persistent loop means the cache or scan is broken and a human needs
+#     to look.
+#   - The revert commit is created with createCommitOnBranch (GitHub-signed,
+#     compare-and-swap via expectedHeadOid) — no signing key on the runner.
+
+on:
+  workflow_run:
+    workflows: ["Scan Plugins"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+env:
+  MARKETPLACE: .claude-plugin/marketplace.json
+  BUMP_BRANCH: bump/plugin-shas
+  MAX_REVERT_PASSES: '3'
+  REVERT_MARKER: '<!-- revert-failed-bumps -->'
+
+jobs:
+  revert:
+    # Tight gate: the triggering scan must be a workflow_dispatch run on the
+    # bump branch (i.e. the one bump-plugin-shas.yml dispatched) that failed.
+    # A scan on a regular PR, a passing scan, or a manual dispatch on another
+    # branch must never reach this job.
+    if: >
+      github.event.workflow_run.conclusion == 'failure' &&
+      github.event.workflow_run.event == 'workflow_dispatch' &&
+      github.event.workflow_run.head_branch == 'bump/plugin-shas'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write       # createCommitOnBranch on bump/plugin-shas
+      pull-requests: write  # comment on / close the bump PR
+      actions: write        # gh workflow run scan-plugins.yml --ref bump/plugin-shas
+    concurrency:
+      group: revert-failed-bumps
+      cancel-in-progress: false
+    steps:
+      # The artifact carries run-failed.json (just plugin names) and
+      # run-verdicts.json (full per-entry verdicts for the PR comment). It is
+      # uploaded by scan-plugins.yml for every relevant run so we can tell
+      # "policy failures found" from "scan never ran" (infra error → no revert).
+      # The artifact won't exist when the scan died before the upload step
+      # (cache restore error, jq failure, timeout) — that is an infra error,
+      # not a policy failure, so the right move is to do nothing. The
+      # download must not fail the job; the next step handles the missing file.
+      - name: Download scan verdicts
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: scan-verdicts
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+          path: scan-out
+
+      - name: Determine revert set
+        id: plan
+        run: |
+          set -euo pipefail
+          if [[ ! -f scan-out/run-failed.json ]]; then
+            echo "::warning::No run-failed.json in scan artifact — nothing to revert."
+            echo "act=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! jq -e 'type == "array"' scan-out/run-failed.json >/dev/null 2>&1; then
+            echo "::warning::run-failed.json is not a JSON array — refusing to act."
+            echo "act=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          fail_count="$(jq 'length' scan-out/run-failed.json)"
+          if [[ "$fail_count" -eq 0 ]]; then
+            # The scan job failed but reported zero policy failures: that is
+            # an infra error (API key missing, clone failure, schema break).
+            # Reverting nothing is correct; surfacing the infra error is the
+            # scan job's responsibility.
+            echo "::notice::Scan failed with zero parsed policy failures — infra error, not a policy failure. Not reverting."
+            echo "act=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "act=true" >> "$GITHUB_OUTPUT"
+          echo "fail_count=$fail_count" >> "$GITHUB_OUTPUT"
+          echo "Failing entries:"
+          jq -r '.[]' scan-out/run-failed.json
+
+      - name: Locate bump PR and check revert budget
+        if: steps.plan.outputs.act == 'true'
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # Resolve the bump PR by head ref. `gh pr list --head <ref>` matches
+          # by ref name across forks, so reject any PR whose head repo isn't
+          # ours — a fork PR named bump/plugin-shas must never reach the
+          # contents:write paths below.
+          pr_json="$(gh api "repos/$REPO/pulls?head=${REPO%%/*}:$BUMP_BRANCH&base=main&state=open&per_page=1" \
+            --jq '.[0] // empty')"
+          if [[ -z "$pr_json" ]]; then
+            echo "::warning::No open bump PR on $BUMP_BRANCH — nothing to revert."
+            echo "act=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          pr_number="$(jq -r '.number' <<<"$pr_json")"
+          head_repo="$(jq -r '.head.repo.full_name' <<<"$pr_json")"
+          head_sha="$(jq -r '.head.sha' <<<"$pr_json")"
+          # The list endpoint omits `commits`; the single-PR endpoint has it.
+          commit_count="$(gh api "repos/$REPO/pulls/$pr_number" --jq '.commits')"
+          if [[ "$head_repo" != "$REPO" ]]; then
+            echo "::error::Bump PR head is from $head_repo, not $REPO — refusing to act."
+            echo "act=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Loop bound: every nightly bump force-resets the branch to a single
+          # commit and every revert pass adds exactly one. Counting commits is
+          # therefore the per-night pass count + 1, with no date math, no
+          # pagination, and no exposure to comment spoofing.
+          if [[ "$commit_count" -gt $(( MAX_REVERT_PASSES + 1 )) ]]; then
+            echo "::error::Revert budget exhausted ($((commit_count - 1))/$MAX_REVERT_PASSES passes on this PR). The cache or scan is likely broken — needs a human."
+            gh pr comment "$pr_number" --repo "$REPO" --body \
+              "$REVERT_MARKER"$'\n\n'"⚠️ Revert budget exhausted ($((commit_count - 1)) passes). The scan keeps failing after reverting — likely a cache or scan bug. Pausing automatic reverts until the next nightly bump."
+            echo "act=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "Bump PR #$pr_number @ $head_sha ($commit_count commit(s))"
+          {
+            echo "act=true"
+            echo "number=$pr_number"
+            echo "head_sha=$head_sha"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Revert failing SHAs
+        if: steps.plan.outputs.act == 'true' && steps.pr.outputs.act == 'true'
+        id: revert
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p work
+
+          gh api "repos/$REPO/contents/${MARKETPLACE}?ref=$HEAD_SHA" --jq '.content' | base64 -d > work/head.json
+          gh api "repos/$REPO/contents/${MARKETPLACE}?ref=main" --jq '.content' | base64 -d > work/base.json
+
+          # Build the reverted marketplace: for each failing plugin, restore
+          # source.sha to main's value. Refuse if anything else differs — a
+          # difference outside source.sha on a bump-branch entry means the
+          # branch was tampered with.
+          jq -c -s \
+            '.[0] as $head | .[1] as $base | (.[2] | map({(.): true}) | add // {}) as $fail
+             | ($base.plugins | map({(.name): .}) | add // {}) as $b
+             | $head | .plugins = [
+                 .plugins[] |
+                 if ($fail[.name] // false) and ($b[.name] // null) != null then
+                   # Verify the only delta is source.sha — never silently
+                   # accept a structural change masquerading as a bump.
+                   if (. | del(.source.sha)) == ($b[.name] | del(.source.sha)) then
+                     .source.sha = $b[.name].source.sha
+                   else
+                     error("entry \(.name) differs from main beyond source.sha — refusing to revert")
+                   end
+                 else . end
+               ]' \
+            work/head.json work/base.json scan-out/run-failed.json > work/reverted.json.compact
+
+          # Match the marketplace's existing pretty-print so the diff is
+          # human-reviewable.
+          jq --indent 2 '.' work/reverted.json.compact > work/reverted.json
+
+          # Two no-action cases:
+          #  - nothing actually reverted (failed names not in this PR's diff)
+          #  - everything reverted (the file is back to main → PR is empty)
+          if cmp -s work/reverted.json.compact <(jq -c '.' work/head.json); then
+            echo "::notice::No entries to revert (failing names not in this PR)."
+            echo "committed=false" >> "$GITHUB_OUTPUT"
+            echo "empty=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if cmp -s work/reverted.json.compact <(jq -c '.' work/base.json); then
+            echo "::warning::Every bumped entry failed policy — the PR would be empty."
+            echo "committed=false" >> "$GITHUB_OUTPUT"
+            echo "empty=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Vendored entries have a string `source` — restrict to object
+          # sources or `.source.sha` errors.
+          reverted="$(jq -c -s \
+            '.[0] as $head | .[1] as $rev
+             | ($head.plugins | map(select(.source | type == "object") | {(.name): .source.sha}) | add // {}) as $h
+             | [$rev.plugins[] | select(.source | type == "object")
+                | select(($h[.name] // null) != .source.sha) | .name]' \
+            work/head.json work/reverted.json.compact)"
+          echo "Reverted: $reverted"
+          echo "reverted=$reverted" >> "$GITHUB_OUTPUT"
+
+          msg="Drop $(jq 'length' <<<"$reverted") policy-failing entries from bump"
+          # createCommitOnBranch: GitHub-signed, expectedHeadOid CAS so a
+          # concurrent force-reset from the nightly bump fails this push
+          # loudly instead of being clobbered. The base64'd marketplace can
+          # exceed MAX_ARG_STRLEN, so the body travels via stdin.
+          oid="$(jq -n \
+            --rawfile content work/reverted.json \
+            --arg repo   "$REPO" \
+            --arg branch "$BUMP_BRANCH" \
+            --arg oid    "$HEAD_SHA" \
+            --arg msg    "$msg" \
+            --arg path   "$MARKETPLACE" \
+            '{
+              query: "mutation($repo:String!,$branch:String!,$oid:GitObjectID!,$msg:String!,$path:String!,$contents:Base64String!){createCommitOnBranch(input:{branch:{repositoryNameWithOwner:$repo,branchName:$branch},message:{headline:$msg},fileChanges:{additions:[{path:$path,contents:$contents}]},expectedHeadOid:$oid}){commit{oid}}}",
+              variables: { repo: $repo, branch: $branch, oid: $oid, msg: $msg, path: $path, contents: ($content | @base64) }
+            }' \
+            | gh api graphql --input - --jq '.data.createCommitOnBranch.commit.oid')"
+          [[ "$oid" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::createCommitOnBranch did not return a commit OID."; exit 1; }
+          echo "committed=true" >> "$GITHUB_OUTPUT"
+          echo "empty=false" >> "$GITHUB_OUTPUT"
+          echo "::notice::Pushed revert commit $oid to $BUMP_BRANCH."
+
+      - name: Close empty bump PR
+        if: steps.revert.outputs.empty == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ steps.pr.outputs.number }}
+        run: |
+          set -euo pipefail
+          gh pr comment "$PR" --repo "$REPO" --body \
+            "$REVERT_MARKER"$'\n\n'"Every bumped entry failed the policy scan. Closing — the next nightly run will retry."
+          gh pr close "$PR" --repo "$REPO"
+
+      - name: Comment with revert detail
+        if: steps.revert.outputs.committed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ steps.pr.outputs.number }}
+          REVERTED: ${{ steps.revert.outputs.reverted }}
+          SCAN_RUN_URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          set -euo pipefail
+          {
+            printf '%s\n\n' "$REVERT_MARKER"
+            echo "Dropped $(jq 'length' <<<"$REVERTED") entrie(s) that failed the policy scan. The remaining bumps were unaffected."
+            echo
+            echo "| Plugin | Violations |"
+            echo "|---|---|"
+            # `violations` is model-generated text shaped by a cloned external
+            # repo. Strip markdown control characters and wrap in a code span
+            # so a prompt-injected upstream can't smuggle links/images/table
+            # breakouts into a public PR comment.
+            jq -r --argjson rev "$REVERTED" \
+              'def neutralize: gsub("[|\n\r\\[\\]<>`]"; " ");
+               .[] | select(.name as $n | $rev | index($n))
+               | "| \(.name) | `\(.violations | neutralize | .[0:200])` |"' \
+              scan-out/run-verdicts.json
+            echo
+            echo "These entries will be retried at their next upstream SHA. See the [scan run]($SCAN_RUN_URL) for full verdicts."
+          } > /tmp/comment.md
+          gh pr comment "$PR" --repo "$REPO" --body-file /tmp/comment.md
+
+      - name: Re-dispatch scan on revised bump branch
+        if: steps.revert.outputs.committed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run scan-plugins.yml --ref "$BUMP_BRANCH"

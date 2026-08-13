@@ -2,6 +2,16 @@
 
 Tool schemas and descriptions are prompt engineering. They land directly in Claude's context and determine whether Claude picks the right tool with the right arguments. Most MCP integration bugs trace back to vague descriptions or loose schemas.
 
+## Anthropic Directory hard requirements
+
+If this server will be submitted to the Anthropic Directory, the following are pass/fail review criteria (full list: https://claude.com/docs/connectors/building/review-criteria):
+
+- Every tool **must** include `readOnlyHint`, `destructiveHint`, and `title` annotations — these determine auto-permissions in Claude.
+- Tool names **must** be ≤64 characters.
+- Read and write operations **must** be in separate tools. A single tool accepting both GET and POST/PUT/PATCH/DELETE is rejected — documenting safe vs unsafe within one tool's description does not satisfy this.
+- Tool descriptions **must not** instruct Claude how to behave (e.g. "always do X", "you must call Y first", overriding system instructions, promoting products) — treated as prompt injection at review.
+- Tools that accept freeform API endpoints/params **must** reference the target API's documentation in their description.
+
 ---
 
 ## Descriptions

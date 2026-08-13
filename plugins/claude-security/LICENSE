@@ -1,0 +1,28 @@
+Claude Security for Claude Code
+
+Copyright (c) 2026 Anthropic, PBC. All rights reserved.
+
+This software, including its prompts, agent and skill definitions, workflows,
+server code, and documentation (the "Plugin"), is proprietary to Anthropic,
+PBC and its affiliates ("Anthropic").
+
+Subject to the terms governing your use of the Anthropic products and
+services with which the Plugin is authorized to operate (the "Agreement" --
+for example, Anthropic's Commercial Terms of Service or Consumer Terms of
+Service), Anthropic grants you a limited, non-exclusive, non-transferable,
+non-sublicensable, revocable license to install, run, and modify the Plugin
+for your internal use, solely with Claude Code or other Anthropic products
+and services.
+
+Except as the Agreement expressly permits, you may not: (a) distribute,
+publish, sublicense, sell, or otherwise make the Plugin or any modified
+version of it available to any third party; (b) use the Plugin or any part
+of it with, or to develop, any non-Anthropic product or service, including
+any competing product; or (c) remove or obscure this notice. This notice
+states the license scope for the Plugin; the Agreement governs everything
+else about your use of Anthropic's products and services.
+
+EXCEPT AS EXPRESSLY PROVIDED IN AN APPLICABLE AGREEMENT, AND TO THE MAXIMUM
+EXTENT PERMITTED BY LAW, THE PLUGIN IS PROVIDED "AS IS," WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, AND ANTHROPIC WILL HAVE NO LIABILITY ARISING
+FROM THE PLUGIN OR ITS USE.
