@@ -3958,7 +3958,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/zscaler/zscaler-mcp-server.git",
-        "sha": "080d175246f48d04f0f6b1b2cdacd1c646ffc37b"
+        "sha": "1b9d63a3e00e9bd7878da4dd436ec897c0c425bf"
       },
       "homepage": "https://github.com/zscaler/zscaler-mcp-server"
     },
