@@ -1071,7 +1071,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/spotify/confidence-ai-plugins.git",
-        "sha": "9bb21eaefdf6fd1dae5795275b4a54dcf1c253d3"
+        "sha": "9e8bc1dccbfa3ee70725a2aa5bebeb1faceb8f35"
       },
       "homepage": "https://confidence.spotify.com"
     },
