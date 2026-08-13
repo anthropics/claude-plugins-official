@@ -313,7 +313,8 @@ All hooks receive JSON via stdin with common fields:
 
 **Event-specific fields:**
 
-- **PreToolUse/PostToolUse:** `tool_name`, `tool_input`, `tool_result`
+- **PreToolUse:** `tool_name`, `tool_input`
+- **PostToolUse:** `tool_name`, `tool_input`, `tool_response`
 - **UserPromptSubmit:** `user_prompt`
 - **Stop/SubagentStop:** `reason`
 
