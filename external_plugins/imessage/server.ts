@@ -140,6 +140,23 @@ const qHistory = db.query<Row, [string, number]>(`
   LIMIT ?
 `)
 
+// Messages-in-iCloud resync re-materializes old messages as brand-new rows
+// (new ROWID + guid + ck_record_id) minutes to days later. The copy usually
+// keeps the original nanosecond date but has been observed drifting by up to
+// ~300ms (and switching content storage between text and attributedBody), so
+// match on a small date window and compare decoded content. An older
+// is_from_me=0 row in the window with equal content marks this row a resync.
+const RESYNC_WINDOW_NS = 1_500_000_000 // ±1.5s
+const qNearDateRows = db.query<Row, [string, number, number, number]>(`
+  SELECT m.ROWID AS rowid, m.guid, m.text, m.attributedBody, m.date, m.is_from_me,
+         m.cache_has_attachments, m.service, h.id AS handle_id, c.guid AS chat_guid, c.style AS chat_style
+  FROM message m
+  JOIN chat_message_join cmj ON cmj.message_id = m.ROWID
+  JOIN chat c ON c.ROWID = cmj.chat_id
+  LEFT JOIN handle h ON h.ROWID = m.handle_id
+  WHERE c.guid = ? AND m.date BETWEEN ? AND ? AND m.ROWID < ? AND m.is_from_me = 0
+`)
+
 const qChatsForHandle = db.query<{ guid: string }, [string]>(`
   SELECT DISTINCT c.guid FROM chat c
   JOIN chat_handle_join chj ON chj.chat_id = c.ROWID
@@ -797,6 +814,23 @@ function handleInbound(r: Row): void {
   if (r.is_from_me) return
   if (!r.handle_id) return
   const sender = r.handle_id
+
+  // Drop iCloud resync duplicates: same chat, near-identical date, same
+  // content as an already-seen older row. The echo map can't catch these —
+  // resyncs land long after its 15s window.
+  for (const prev of qNearDateRows.all(
+    r.chat_guid,
+    r.date - RESYNC_WINDOW_NS,
+    r.date + RESYNC_WINDOW_NS,
+    r.rowid,
+  )) {
+    if (messageText(prev) === text) {
+      process.stderr.write(
+        `imessage channel: dropping iCloud resync duplicate (guid=${r.guid}, original rowid=${prev.rowid})\n`,
+      )
+      return
+    }
+  }
 
   // Self-chat: in a DM to yourself, both your typed input and our osascript
   // echoes arrive as is_from_me=0 with handle_id = your own address. Filter
