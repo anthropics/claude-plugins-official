@@ -8,21 +8,40 @@ You need to execute the following bash commands to clean up stale local branches
 
 ## Commands to Execute
 
-1. **First, list branches to identify any with [gone] status**
+1. **First, prune stale remote-tracking refs**
+   Execute this command:
+   ```bash
+   git fetch --prune
+   ```
+
+   REQUIRED — do not skip this, and do not reorder it after the listing step.
+   A branch is marked `[gone]` only once its remote-tracking ref is absent.
+   While `refs/remotes/origin/<branch>` still exists locally, a branch whose
+   remote was deleted looks like an ordinary tracking branch, so step 3 matches
+   nothing and reports "no cleanup needed" on a repo that has stale branches.
+   Deleting a branch on GitHub (including via `gh pr merge --delete-branch`)
+   does not remove your local copy of that ref; only a prune does.
+
+2. **Next, list branches to identify any with [gone] status**
    Execute this command:
    ```bash
    git branch -v
    ```
-   
+
+   Use `-v`, NOT `-vv`. This looks like a typo and is not: `-v` prints a bare
+   `[gone]`, while `-vv` prints `[origin/<branch>: gone]`, which the
+   `grep '\[gone\]'` in step 4 does not match. "Fixing" this to `-vv` silently
+   turns the cleanup into a no-op that still reports success.
+
    Note: Branches with a '+' prefix have associated worktrees and must have their worktrees removed before deletion.
 
-2. **Next, identify worktrees that need to be removed for [gone] branches**
+3. **Next, identify worktrees that need to be removed for [gone] branches**
    Execute this command:
    ```bash
    git worktree list
    ```
 
-3. **Finally, remove worktrees and delete [gone] branches (handles both regular and worktree branches)**
+4. **Finally, remove worktrees and delete [gone] branches (handles both regular and worktree branches)**
    Execute this command:
    ```bash
    # Process all [gone] branches, removing '+' prefix if present
@@ -44,6 +63,7 @@ You need to execute the following bash commands to clean up stale local branches
 
 After executing these commands, you will:
 
+- Remove stale remote-tracking refs, so `[gone]` can appear at all
 - See a list of all local branches with their status
 - Identify and remove any worktrees associated with [gone] branches
 - Delete all branches marked as [gone]
