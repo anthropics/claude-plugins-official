@@ -88,11 +88,13 @@ A `.claude/settings.json` in the project you're modernizing enforces the core in
 ```json
 {
   "permissions": {
-    "allow": ["Read(**)", "Write(analysis/**)", "Write(modernized/**)", "Edit(analysis/**)", "Edit(modernized/**)"],
-    "deny": ["Edit(legacy/**)", "Write(legacy/**)"]
+    "allow": ["Read(**)", "Edit(analysis/**)", "Edit(modernized/**)"],
+    "deny": ["Edit(legacy/**)"]
   }
 }
 ```
+
+`Edit(...)` covers every file-editing tool, Write included, so it is the only rule form these paths need — a `Write(path)` rule is never matched by file permission checks and Claude Code warns about it at startup.
 
 This guards the file tools; shell commands that mutate files (`sed -i`, `git apply`) still go through the normal Bash prompt, so review those with the same invariant in mind. That prompt is the containment for the two steps that fan out many write-capable agents at once — `/modernize-uplift` Step 5b and `/modernize-reimagine` Phase E — so keep Bash on a *prompted* permission mode for those.
 
