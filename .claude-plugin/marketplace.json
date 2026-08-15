@@ -3085,7 +3085,7 @@
         "url": "https://github.com/forcedotcom/sf-skills.git",
         "path": "plugins/builder/salesforce-development",
         "ref": "main",
-        "sha": "ba78d3871d54196e86dbde6bbd9f9a79944ff07f"
+        "sha": "697c208e169e6c542f3d542377939744b651ed87"
       },
       "homepage": "https://github.com/forcedotcom/sf-skills/tree/main/plugins/builder/salesforce-development"
     },
