@@ -88,8 +88,8 @@ A `.claude/settings.json` in the project you're modernizing enforces the core in
 ```json
 {
   "permissions": {
-    "allow": ["Read(**)", "Write(analysis/**)", "Write(modernized/**)", "Edit(analysis/**)", "Edit(modernized/**)"],
-    "deny": ["Edit(legacy/**)", "Write(legacy/**)"]
+    "allow": ["Read(**)", "Edit(analysis/**)", "Edit(modernized/**)"],
+    "deny": ["Edit(legacy/**)"]
   }
 }
 ```
