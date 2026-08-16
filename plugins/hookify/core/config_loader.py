@@ -136,6 +136,9 @@ def extract_frontmatter(content: str) -> tuple[Dict[str, Any], str]:
             key, value = line.split(':', 1)
             key = key.strip()
             value = value.strip()
+            # Strip inline YAML comments from unquoted values (e.g. "false # disabled")
+            if value and value[0] not in ('"', "'") and ' #' in value:
+                value = value[:value.index(' #')].strip()
 
             if not value:
                 # Empty value - list or nested structure follows
