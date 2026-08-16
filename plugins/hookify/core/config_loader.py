@@ -216,10 +216,10 @@ def load_rules(event: Optional[str] = None) -> List[Rule]:
             if not rule:
                 continue
 
-            # Filter by event if specified
-            if event:
-                if rule.event != 'all' and rule.event != event:
-                    continue
+            # Filter by event: non-'all' rules must match the caller's event.
+            # When event is None (unmapped tool), only 'all' rules apply.
+            if rule.event != 'all' and rule.event != event:
+                continue
 
             # Only include enabled rules
             if rule.enabled:
