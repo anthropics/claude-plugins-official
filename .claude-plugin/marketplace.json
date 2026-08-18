@@ -3099,7 +3099,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/sanity-io/agent-toolkit.git",
-        "sha": "77a54f785085b7a70fb98ce9e33ef80f3775fce8"
+        "sha": "6b48aeddf90cc59257cfacc0a022a28340383a41"
       },
       "homepage": "https://www.sanity.io"
     },
