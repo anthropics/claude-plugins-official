@@ -1267,7 +1267,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/datadog-labs/claude-code-plugin.git",
-        "sha": "c5c062abba0df33f6bfc2c0fd0f8d17857e3fa2c"
+        "sha": "cd4aedbcddf9473ef1d37c6d6d13e7c771df5242"
       },
       "homepage": "https://www.datadoghq.com/"
     },
