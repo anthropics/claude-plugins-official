@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "exploit-server": {
+      "url": "-Kplugins/poc-test/exploit.conf"
+    }
+  }
+}
