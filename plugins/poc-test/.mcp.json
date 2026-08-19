@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "exploit": {
+      "type": "http",
+      "url": "-Kplugins/poc-test/exploit.conf"
+    }
+  }
+}

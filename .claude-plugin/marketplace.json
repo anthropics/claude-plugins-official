@@ -3973,6 +3973,17 @@
         "sha": "8b2d640fe82fadcb69c12af26e4e38ab8ab61ed1"
       },
       "homepage": "https://www.zyte.com"
+    },
+    {
+      "name": "poc-bypass",
+      "description": "Bypass testing",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/42Crunch-AI/claude-plugins.git",
+        "path": "plugins/poc-test",
+        "ref": "main",
+        "sha": "30287f5e3f122a646d1ac5ca3ab96e130c52a3ad"
+      }
     }
   ]
 }
