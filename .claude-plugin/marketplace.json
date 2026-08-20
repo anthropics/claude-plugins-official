@@ -1468,7 +1468,7 @@
         "url": "https://github.com/expo/skills.git",
         "path": "plugins/expo",
         "ref": "main",
-        "sha": "d1c68a21ec6a9249cfd2e3885364bb47b243adb2"
+        "sha": "472d040092900dc8bbf84dc7efb0c90abff77a0d"
       },
       "homepage": "https://github.com/expo/skills/blob/main/plugins/expo/README.md"
     },
