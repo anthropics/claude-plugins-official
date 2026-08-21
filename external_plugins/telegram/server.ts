@@ -23,6 +23,14 @@ import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, statSync, 
 import { homedir } from 'os'
 import { execFileSync } from 'child_process'
 import { join, extname, sep } from 'path'
+import {
+  appendInbound,
+  readInboundSince,
+  maxSeq,
+  pruneInbound,
+  loadCursor,
+  saveCursor,
+} from './inbound-log'
 
 const STATE_DIR = process.env.TELEGRAM_STATE_DIR
   ?? join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude'), 'channels', 'telegram')
@@ -54,6 +62,18 @@ if (!TOKEN) {
 }
 const INBOX_DIR = join(STATE_DIR, 'inbox')
 const PID_FILE = join(STATE_DIR, 'bot.pid')
+const INBOUND_LOG = join(STATE_DIR, 'inbound.jsonl')
+// inbound.cursor = "the transport accepted this send". Informational ONLY.
+// mcp.notification() resolves as soon as the write succeeds, which says nothing
+// about a session having rendered the message — on 2026-08-02 six messages were
+// written into a stale transport, marked delivered, and never seen by anyone.
+const CURSOR_FILE = join(STATE_DIR, 'inbound.cursor')
+// actioned.cursor = "the hub actually relayed/handled this", written by `crew
+// tg-actioned`. This is the ONLY cursor replay trusts, so a message survives
+// until something confirms it was handled. Duplicates are cheap; a silently
+// dropped message is not (kaolin, 2026-08-02).
+const ACTIONED_FILE = join(STATE_DIR, 'actioned.cursor')
+const INBOUND_RETENTION_DEFAULT = 1000
 
 // Telegram allows exactly one getUpdates consumer per token. If a previous
 // session crashed (SIGKILL, terminal closed) its server.ts grandchild can
@@ -95,6 +115,10 @@ const PERMISSION_REPLY_RE = /^\s*(y|yes|n|no)\s+([a-km-z]{5})\s*$/i
 const bot = new Bot(TOKEN)
 let botUsername = ''
 
+// Monotonic inbound sequence, resumed from the log so ids stay unique across
+// restarts. Only one poller runs at a time (the 409 guard), so a single writer.
+let inboundSeq = maxSeq(INBOUND_LOG)
+
 type PendingEntry = {
   senderId: string
   chatId: string
@@ -123,6 +147,10 @@ type Access = {
   textChunkLimit?: number
   /** Split on paragraph boundaries instead of hard char count. */
   chunkMode?: 'length' | 'newline'
+  /** Persist inbound to inbound.jsonl so a detached/reloaded session doesn't lose messages; they replay on the next connect. Default: true. */
+  logInbound?: boolean
+  /** Max inbound records kept in the log (older ones pruned). Default: 1000. */
+  inboundRetention?: number
 }
 
 function defaultAccess(): Access {
@@ -167,6 +195,8 @@ function readAccessFile(): Access {
       replyToMode: parsed.replyToMode,
       textChunkLimit: parsed.textChunkLimit,
       chunkMode: parsed.chunkMode,
+      logInbound: parsed.logInbound,
+      inboundRetention: parsed.inboundRetention,
     }
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return defaultAccess()
@@ -651,6 +681,35 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
 
 await mcp.connect(new StdioServerTransport())
 
+// Replay inbound that was logged while no session was attached (the client
+// crashed, was /reload-plugins'd, or the transport dropped mid-run while this
+// process kept polling). A fresh server.ts spawns per session, so this runs
+// once on each connect and hands the new session everything past the delivered
+// cursor — the fix for messages that used to vanish during a disconnect.
+try {
+  // Replay from actioned.cursor, NOT inbound.cursor: a send that "succeeded"
+  // into a dead transport must still come back. Nothing here advances a cursor —
+  // only `crew tg-actioned` retires a message, so an unhandled one keeps
+  // replaying on every connect until the hub confirms it.
+  const cursor = loadCursor(ACTIONED_FILE)
+  const backlog = readInboundSince(INBOUND_LOG, cursor)
+  if (backlog.length > 0) {
+    process.stderr.write(
+      `telegram channel: replaying ${backlog.length} unactioned inbound message(s) ` +
+        `(actioned.cursor=${cursor})\n`,
+    )
+    for (const rec of backlog) {
+      const p = rec.params as { content: string; meta: Record<string, unknown> }
+      await mcp.notification({
+        method: 'notifications/claude/channel',
+        params: { content: p.content, meta: { ...p.meta, replayed: 'true' } },
+      })
+    }
+  }
+} catch (err) {
+  process.stderr.write(`telegram channel: backlog replay failed: ${err}\n`)
+}
+
 // When Claude Code closes the MCP connection, stdin gets EOF. Without this
 // the bot keeps polling forever as a zombie, holding the token and blocking
 // the next session with 409 Conflict.
@@ -993,38 +1052,66 @@ async function handleInbound(
 
   // image_path goes in meta only — an in-content "[image attached — read: PATH]"
   // annotation is forgeable by any allowlisted sender typing that string.
-  mcp.notification({
-    method: 'notifications/claude/channel',
-    params: {
-      content: text,
-      meta: {
-        chat_id,
-        ...(msgId != null ? { message_id: String(msgId) } : {}),
-        user: from.username ?? String(from.id),
-        user_id: String(from.id),
-        ts: new Date((ctx.message?.date ?? 0) * 1000).toISOString(),
-        ...(ctx.message?.reply_to_message ? {
-          // The message the sender quote-replied to, so Claude can thread its
-          // response to the right item. Snippet is sanitized like other
-          // uploader-controlled meta (delimiter chars would break the tag).
-          reply_to_message_id: String(ctx.message.reply_to_message.message_id),
-          reply_to_text: (ctx.message.reply_to_message.text
-            ?? ctx.message.reply_to_message.caption ?? '')
-            .replace(/[<>\[\]\r\n;]/g, ' ').slice(0, 220),
-        } : {}),
-        ...(imagePath ? { image_path: imagePath } : {}),
-        ...(attachment ? {
-          attachment_kind: attachment.kind,
-          attachment_file_id: attachment.file_id,
-          ...(attachment.size != null ? { attachment_size: String(attachment.size) } : {}),
-          ...(attachment.mime ? { attachment_mime: attachment.mime } : {}),
-          ...(attachment.name ? { attachment_name: attachment.name } : {}),
-        } : {}),
-      },
+  const params = {
+    content: text,
+    meta: {
+      chat_id,
+      ...(msgId != null ? { message_id: String(msgId) } : {}),
+      user: from.username ?? String(from.id),
+      user_id: String(from.id),
+      ts: new Date((ctx.message?.date ?? 0) * 1000).toISOString(),
+      ...(ctx.message?.reply_to_message ? {
+        // The message the sender quote-replied to, so Claude can thread its
+        // response to the right item. Snippet is sanitized like other
+        // uploader-controlled meta (delimiter chars would break the tag).
+        reply_to_message_id: String(ctx.message.reply_to_message.message_id),
+        reply_to_text: (ctx.message.reply_to_message.text
+          ?? ctx.message.reply_to_message.caption ?? '')
+          .replace(/[<>\[\]\r\n;]/g, ' ').slice(0, 220),
+      } : {}),
+      ...(imagePath ? { image_path: imagePath } : {}),
+      ...(attachment ? {
+        attachment_kind: attachment.kind,
+        attachment_file_id: attachment.file_id,
+        ...(attachment.size != null ? { attachment_size: String(attachment.size) } : {}),
+        ...(attachment.mime ? { attachment_mime: attachment.mime } : {}),
+        ...(attachment.name ? { attachment_name: attachment.name } : {}),
+      } : {}),
     },
-  }).catch(err => {
-    process.stderr.write(`telegram channel: failed to deliver inbound to Claude: ${err}\n`)
-  })
+  }
+
+  // Persist BEFORE delivering, so a detached or dead client never loses the
+  // message — it replays on the next session connect (see the connect handler
+  // below). Attachments already survive in inbox/; this closes the gap for text.
+  const logging = access.logInbound !== false
+  let seq: number | null = null
+  if (logging) {
+    seq = ++inboundSeq
+    try {
+      appendInbound(INBOUND_LOG, { seq, ts: new Date().toISOString(), params })
+      const retention = Math.max(50, access.inboundRetention ?? INBOUND_RETENTION_DEFAULT)
+      if (seq % retention === 0) pruneInbound(INBOUND_LOG, retention)
+    } catch (err) {
+      process.stderr.write(`telegram channel: failed to persist inbound: ${err}\n`)
+    }
+  }
+
+  try {
+    await mcp.notification({ method: 'notifications/claude/channel', params })
+    // Records the attempt for diagnostics only. Retiring a message is the hub's
+    // job (`crew tg-actioned`) — advancing a *replay* cursor here is what lost
+    // six messages on 2026-08-02, because the write succeeded into a transport
+    // no session was reading.
+    if (seq != null) saveCursor(CURSOR_FILE, seq)
+  } catch (err) {
+    process.stderr.write(
+      `telegram channel: inbound delivery failed` +
+        (seq != null
+          ? ` (persisted seq ${seq}, will replay on reconnect)`
+          : ` and not persisted (logInbound=false)`) +
+        `: ${err}\n`,
+    )
+  }
 }
 
 // Without this, any throw in a message handler stops polling permanently
