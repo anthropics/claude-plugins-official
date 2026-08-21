@@ -406,7 +406,7 @@ const mcp = new Server(
     instructions: [
       'The sender reads Telegram, not this session. Anything you want them to see must go through the reply tool — your transcript output never reaches their chat.',
       '',
-      'Messages from Telegram arrive as <channel source="telegram" chat_id="..." message_id="..." user="..." ts="...">. If the tag has an image_path attribute, Read that file — it is a photo the sender attached. If the tag has attachment_file_id, call download_attachment with that file_id to fetch the file, then Read the returned path. Reply with the reply tool — pass chat_id back. Use reply_to (set to a message_id) only when replying to an earlier message; the latest message doesn\'t need a quote-reply, omit reply_to for normal responses.',
+      'Messages from Telegram arrive as <channel source="telegram" chat_id="..." message_id="..." user="..." ts="...">. If the tag has an image_path attribute, Read that file — it is a photo the sender attached. If the tag has attachment_file_id, call download_attachment with that file_id to fetch the file, then Read the returned path. If the tag has reply_to_message_id, the sender quote-replied to an earlier message — reply_to_text is a snippet of that quoted message; use it to understand which message they are responding to. Reply with the reply tool — pass chat_id back. Use reply_to (set to a message_id) only when replying to an earlier message; the latest message doesn\'t need a quote-reply, omit reply_to for normal responses.',
       '',
       'reply accepts file paths (files: ["/abs/path.png"]) for attachments. Use react to add emoji reactions, and edit_message for interim progress updates. Edits don\'t trigger push notifications — when a long task completes, send a new reply so the user\'s device pings.',
       '',
@@ -795,6 +795,32 @@ bot.on('message:text', async ctx => {
   await handleInbound(ctx, ctx.message.text, undefined)
 })
 
+// An edit used to be invisible: the session kept the ORIGINAL text forever and
+// acted on wording the sender had already corrected. Deliver it as its own
+// inbound, labelled, carrying the id of the message it revises so the reader can
+// tie it to what they already have (kaolin, 2026-08-03).
+bot.on('edited_message:text', async ctx => {
+  const m = ctx.editedMessage
+  if (!m) return
+  await handleInbound(ctx, `[EDITED message ${m.message_id}] ${m.text ?? ''}`, undefined)
+})
+
+// Reactions are a real signal — a 👍 on a relay is an answer. Telegram only
+// sends these if the bot names message_reaction in allowed_updates (see
+// bot.start below); without that this handler never fires.
+bot.on('message_reaction', async ctx => {
+  const r = ctx.messageReaction
+  if (!r) return
+  const emo = (list: readonly { type: string; emoji?: string }[] | undefined) =>
+    (list ?? []).map(x => x.emoji ?? x.type).join(' ')
+  const now = emo(r.new_reaction)
+  const was = emo(r.old_reaction)
+  const what = now
+    ? `reacted ${now} to message ${r.message_id}`
+    : `removed their reaction (${was || '—'}) from message ${r.message_id}`
+  await handleInbound(ctx, `[REACTION] ${what}`, undefined)
+})
+
 bot.on('message:photo', async ctx => {
   const caption = ctx.message.caption ?? '(photo)'
   // Defer download until after the gate approves — any user can send photos,
@@ -977,6 +1003,15 @@ async function handleInbound(
         user: from.username ?? String(from.id),
         user_id: String(from.id),
         ts: new Date((ctx.message?.date ?? 0) * 1000).toISOString(),
+        ...(ctx.message?.reply_to_message ? {
+          // The message the sender quote-replied to, so Claude can thread its
+          // response to the right item. Snippet is sanitized like other
+          // uploader-controlled meta (delimiter chars would break the tag).
+          reply_to_message_id: String(ctx.message.reply_to_message.message_id),
+          reply_to_text: (ctx.message.reply_to_message.text
+            ?? ctx.message.reply_to_message.caption ?? '')
+            .replace(/[<>\[\]\r\n;]/g, ' ').slice(0, 220),
+        } : {}),
         ...(imagePath ? { image_path: imagePath } : {}),
         ...(attachment ? {
           attachment_kind: attachment.kind,
@@ -1007,6 +1042,16 @@ void (async () => {
   for (let attempt = 1; ; attempt++) {
     try {
       await bot.start({
+        // grammY defaults to every update type EXCEPT message_reaction; Telegram
+        // requires it to be named explicitly or reactions are never sent. The
+        // rest are listed because supplying allowed_updates replaces the default
+        // set rather than adding to it.
+        allowed_updates: [
+          'message',
+          'edited_message',
+          'message_reaction',
+          'callback_query',
+        ],
         onStart: info => {
           attempt = 0
           botUsername = info.username
