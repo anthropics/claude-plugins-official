@@ -2886,6 +2886,22 @@
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/plugins/ralph-loop"
     },
     {
+      "name": "ramp",
+      "description": "Connect Claude to Ramp for spend analysis, approvals, transaction cleanup, and vendor workflows.",
+      "author": {
+        "name": "Ramp"
+      },
+      "category": "productivity",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/ramp-public/skills.git",
+        "path": "plugins/ramp",
+        "ref": "main",
+        "sha": "6015ad329e1076d4055c4843ce9ea14f127a9825"
+      },
+      "homepage": "https://ramp.com"
+    },
+    {
       "name": "rc",
       "description": "Configure RevenueCat projects, apps, products, entitlements, and offerings directly from Claude Code. Manage your in-app purchase backend without leaving your development workflow.",
       "category": "development",
