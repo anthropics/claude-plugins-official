@@ -3718,6 +3718,20 @@
       "homepage": "https://github.com/UI5/plugins-coding-agents"
     },
     {
+      "name": "unleash",
+      "description": "Unleash feature management for Claude Code: skills for the full flag lifecycle — evaluate risk, create and wrap flags, plan rollouts, clean up stale flags, and migrate flags from GitLab — backed by the bundled Unleash MCP server.",
+      "author": {
+        "name": "Unleash"
+      },
+      "category": "development",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/Unleash/unleash-claude-skills.git",
+        "sha": "d2b8aee704be78105c938b710a5548a1c09789a5"
+      },
+      "homepage": "https://www.getunleash.io"
+    },
+    {
       "name": "unreal-engine-skills-for-claude-code",
       "description": "Control Unreal Editor directly from Claude Code via MCP. Hundreds of tools exposed via Unreal's ToolsetRegistry across 30+ toolsets: actors, blueprints, materials, Niagara, Control Rigs, Sequencer, State Trees, widgets, Gameplay Ability System, automation testing, and more.",
       "author": {
