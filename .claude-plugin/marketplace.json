@@ -2657,7 +2657,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/planetscale/claude-plugin.git",
-        "sha": "849552445a90b17f2b17267593d0a10d41d4b316"
+        "sha": "835e6e4c76477384d1321650e20bd0d65ec445a7"
       },
       "homepage": "https://planetscale.com/"
     },
