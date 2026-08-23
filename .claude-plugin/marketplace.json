@@ -73,6 +73,34 @@
       "homepage": "https://github.com/SalesforceAIResearch/agentforce-adlc"
     },
     {
+      "name": "agent-systems-toolkit",
+      "description": "Provider-neutral audit skills for agent systems. Twelve focused reviewers covering state integrity, context budget, delegation boundaries, eval contamination, evidence quality, human checkpoints, instruction conflicts, loop termination, memory retention, prompt injection, provider neutrality, and skill-trigger collisions.",
+      "author": {
+        "name": "dEMonaRE"
+      },
+      "category": "development",
+      "tags": [
+        "community-managed"
+      ],
+      "source": {
+        "source": "url",
+        "url": "https://github.com/dEMonaRE/agent-systems-toolkit.git",
+        "sha": "e5ffbdcafa3bfb6c47706c083f6f3071214e77d1"
+      },
+      "homepage": "https://github.com/dEMonaRE/agent-systems-toolkit",
+      "keywords": [
+        "audit",
+        "review",
+        "agent",
+        "provider-neutral",
+        "evaluation",
+        "security",
+        "context",
+        "memory",
+        "delegation"
+      ]
+    },
+    {
       "name": "ai-plugins",
       "description": "Set up endorctl and use Endor Labs to scan, prioritize, and fix security risks across your software supply chain",
       "source": {
