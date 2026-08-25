@@ -223,14 +223,15 @@
         "url": "https://github.com/amd/skills.git",
         "path": "skills",
         "ref": "main",
-        "sha": "b641e5fbd17ec2bf8a8f1256dc3acbd7f97b0ce4"
+        "sha": "b0c6f80305352a0454fd9707a660ea762f0f5856"
       },
       "strict": false,
       "skills": [
         "./local-ai-use",
         "./local-ai-app-integration",
         "./serving-llms-on-instinct",
-        "./tracelens-analysis-orchestrator"
+        "./tracelens-analysis-orchestrator",
+        "./hyperloom-workload-optimizer"
       ],
       "homepage": "https://developer.amd.com/"
     },
