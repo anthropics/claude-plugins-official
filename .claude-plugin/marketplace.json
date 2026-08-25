@@ -4013,6 +4013,21 @@
         "sha": "8b2d640fe82fadcb69c12af26e4e38ab8ab61ed1"
       },
       "homepage": "https://www.zyte.com"
+    },
+    {
+      "name": "crossbeam",
+      "displayName": "Crossbeam",
+      "description": "Crossbeam's Skills for partnership and go-to-market teams: co-sell plays, ecosystem-qualified prospecting, account briefs, pipeline prioritization, and partner outreach built on partner overlap and ecosystem signals.",
+      "author": {
+        "name": "Crossbeam"
+      },
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/getcrossbeam/crossbeam-claude-skills.git",
+        "sha": "b1b491a870d785287cad5417566a66be1adf09c6"
+      },
+      "homepage": "https://www.crossbeam.com/skills"
     }
   ]
 }
