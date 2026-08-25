@@ -1567,6 +1567,20 @@
       "homepage": "https://developer.atlassian.com/platform/forge/"
     },
     {
+      "name": "freee",
+      "description": "freee's official plugin for Claude. Connects to freee's accounting, HR and payroll, invoicing, project time tracking, sales, IT management, contractor management, and e-signature APIs through the freee remote MCP connector, and ships Agent Skills with API references and step-by-step recipes (expense claims, journal entries, invoices, attendance, payroll, reports) so Claude calls the right endpoints correctly.",
+      "author": {
+        "name": "freee K.K."
+      },
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/freee/freee-mcp.git",
+        "sha": "01bc64ddfefaf2f9adf01c4110aba042f898f76d"
+      },
+      "homepage": "https://github.com/freee/freee-mcp"
+    },
+    {
       "name": "frontend-design",
       "description": "Create distinctive, production-grade frontend interfaces with high design quality. Generates creative, polished code that avoids generic AI aesthetics.",
       "author": {
