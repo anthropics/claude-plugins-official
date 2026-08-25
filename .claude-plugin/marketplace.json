@@ -4013,6 +4013,81 @@
         "sha": "8b2d640fe82fadcb69c12af26e4e38ab8ab61ed1"
       },
       "homepage": "https://www.zyte.com"
+    },
+    {
+      "name": "bc-integration",
+      "displayName": "Boomi Integration",
+      "description": "Boomi development tools: skills, commands, and agents for building integrations on the Boomi Enterprise Platform, including connectors, maps, EDI, event streams, and APIs.",
+      "author": {
+        "name": "Boomi"
+      },
+      "category": "development",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/OfficialBoomi/bc-integration.git",
+        "sha": "5c0f3ce4bf618683868367e9d3df2c04467141db"
+      },
+      "homepage": "https://developer.boomi.com/docs/BoomiCompanion/Boomi_companion_overview"
+    },
+    {
+      "name": "bc-marketplace",
+      "displayName": "Boomi Marketplace",
+      "description": "Search and install Boomi Marketplace recipes as reference samples for building integrations.",
+      "author": {
+        "name": "Boomi"
+      },
+      "category": "development",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/OfficialBoomi/bc-marketplace.git",
+        "sha": "2e7d435718a6d063624d821c9d55c5f1bfdea3a9"
+      },
+      "homepage": "https://developer.boomi.com/docs/BoomiCompanion/Boomi_companion_overview"
+    },
+    {
+      "name": "bc-bdi",
+      "displayName": "Boomi Data Integration",
+      "description": "Operate Boomi Data Integration (formerly Rivery) ELT/ETL pipelines and change data capture that load and transform data in a data warehouse or lake.",
+      "author": {
+        "name": "Boomi"
+      },
+      "category": "database",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/OfficialBoomi/bc-bdi.git",
+        "sha": "91d6dcefb77ab9bb996db30df0634ce03500d8ac"
+      },
+      "homepage": "https://developer.boomi.com/docs/BoomiCompanion/Boomi_companion_overview"
+    },
+    {
+      "name": "bc-agentstudio",
+      "displayName": "Boomi Agentstudio",
+      "description": "Build and run Boomi Agentstudio AI agents: list and inspect agents, author agent definitions, browse tools, sources, packages, and deployments, and invoke deployed agents.",
+      "author": {
+        "name": "Boomi"
+      },
+      "category": "development",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/OfficialBoomi/bc-agentstudio.git",
+        "sha": "b5b3eea21fcbebdcf8cb24601aeec08d50283496"
+      },
+      "homepage": "https://developer.boomi.com/docs/BoomiCompanion/Boomi_companion_overview"
+    },
+    {
+      "name": "bc-datahub",
+      "displayName": "Boomi Data Hub",
+      "description": "Design and operate Boomi Data Hub master data: model and source design, deployment lifecycle, quarantine triage, and golden-record CRUD.",
+      "author": {
+        "name": "Boomi"
+      },
+      "category": "database",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/OfficialBoomi/bc-datahub.git",
+        "sha": "56979314b8001e585ad456796958599445ac3ff3"
+      },
+      "homepage": "https://developer.boomi.com/docs/BoomiCompanion/Boomi_companion_overview"
     }
   ]
 }
