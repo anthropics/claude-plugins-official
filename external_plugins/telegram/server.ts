@@ -17,7 +17,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
 import { Bot, GrammyError, InlineKeyboard, InputFile, type Context } from 'grammy'
-import type { ReactionTypeEmoji, Message } from 'grammy/types'
+import type { ReactionTypeEmoji } from 'grammy/types'
 import { randomBytes } from 'crypto'
 import { execFileSync } from 'child_process'
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, statSync, renameSync, realpathSync, chmodSync } from 'fs'
@@ -1515,19 +1515,6 @@ function safeName(s: string | undefined): string | undefined {
   return s?.replace(/[<>\[\]\r\n;]/g, '_')
 }
 
-// In a forum topic every message carries reply_to_message pointing at the
-// topic-creation service message, whether or not the sender quote-replied to
-// anything. Treating that as a quote-reply makes the model answer the topic
-// name instead of the message. Only a reply to some *other* message counts.
-function quoteReplyOf(msg: Message | undefined): NonNullable<Message['reply_to_message']> | undefined {
-  const repliedTo = msg?.reply_to_message
-  if (!repliedTo) return undefined
-  if ('forum_topic_created' in repliedTo && repliedTo.forum_topic_created) return undefined
-  // The topic root's message_id equals the thread id of every message in it.
-  if (msg?.message_thread_id != null && repliedTo.message_id === msg.message_thread_id) return undefined
-  return repliedTo
-}
-
 async function handleInbound(
   ctx: Context,
   text: string,
@@ -1605,7 +1592,7 @@ async function handleInbound(
   // the model knows which message this one answers. reply_to_text is sanitized
   // (safeName strips delimiter chars) and truncated — it's uploader-controlled
   // and lands inside the <channel> tag.
-  const repliedTo = quoteReplyOf(ctx.message)
+  const repliedTo = ctx.message?.reply_to_message
   // If the sender highlighted a specific fragment, the Bot API sends it in
   // message.quote — prefer that over the full original text/caption.
   const repliedText = ctx.message?.quote?.text ?? repliedTo?.text ?? repliedTo?.caption
@@ -1711,7 +1698,7 @@ async function handleGuest(ctx: Context): Promise<void> {
 
   const content = msg.text ?? msg.caption ?? (imagePath ? '(photo)' : `(${attachment?.kind ?? 'message'})`)
 
-  const repliedTo = quoteReplyOf(msg)
+  const repliedTo = msg.reply_to_message
   const repliedText = msg.quote?.text ?? repliedTo?.text ?? repliedTo?.caption
   const repliedSnippet = safeName(repliedText)?.slice(0, 500)
 
