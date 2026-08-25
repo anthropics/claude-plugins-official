@@ -4013,6 +4013,23 @@
         "sha": "8b2d640fe82fadcb69c12af26e4e38ab8ab61ed1"
       },
       "homepage": "https://www.zyte.com"
+    },
+    {
+      "name": "hubspot-sales",
+      "displayName": "HubSpot Sales",
+      "description": "Run your HubSpot sales workflow directly from Claude. Adds skills that cover the full sales day: import contacts and deals into HubSpot, get a prioritised morning brief, prep for any call with full CRM context, draft personalised follow-ups grounded in deal history, log calls and update records by describing what happened, and review your pipeline to surface stalling deals. Everything writes back to HubSpot.",
+      "author": {
+        "name": "HubSpot"
+      },
+      "category": "productivity",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/HubSpot/hubspot-mcp-plugins.git",
+        "path": "HubSpot-Sales",
+        "ref": "main",
+        "sha": "843d5a38f82cdc1b275baf4953a659be0ad41247"
+      },
+      "homepage": "https://www.hubspot.com"
     }
   ]
 }
