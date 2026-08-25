@@ -1180,6 +1180,22 @@
       "homepage": "https://claude.com/cwc-makers"
     },
     {
+      "name": "dart-flutter",
+      "displayName": "Dart and Flutter",
+      "description": "The Dart and Flutter team's official plugin for Claude Code: Flutter and Dart skills plus the Dart MCP server for building, testing, and debugging natively compiled apps for mobile, web, desktop, and embedded devices from a single codebase.",
+      "author": {
+        "name": "Dart and Flutter Team",
+        "url": "https://flutter.dev"
+      },
+      "category": "development",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/flutter/agent-plugins.git",
+        "sha": "864cf8797b190ddb81e4875db6dd6bab89641f62"
+      },
+      "homepage": "https://docs.flutter.dev/ai/get-started"
+    },
+    {
       "name": "dash0",
       "description": "OpenTelemetry observability for Claude Code sessions. Captures tool calls, LLM invocations, token usage, and errors as OTel traces. Send telemetry to Dash0 or any OpenTelemetry-compatible backend.",
       "author": {
