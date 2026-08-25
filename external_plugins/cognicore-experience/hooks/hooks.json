@@ -1,0 +1,27 @@
+{
+  "description": "CogniCore Structured Validated Experience Hooks",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"${CLAUDE_PLUGIN_ROOT}/hooks/session_start_hook.py\"",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"${CLAUDE_PLUGIN_ROOT}/hooks/evidence_collector.py\""
+          }
+        ],
+        "matcher": "Bash"
+      }
+    ]
+  }
+}
