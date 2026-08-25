@@ -4013,6 +4013,23 @@
         "sha": "8b2d640fe82fadcb69c12af26e4e38ab8ab61ed1"
       },
       "homepage": "https://www.zyte.com"
+    },
+    {
+      "name": "unstructured-foundation",
+      "displayName": "Unstructured Foundation",
+      "description": "Connect sources and search processed documents with Unstructured Foundation. Provides MCP access to source setup, processing status, document search, and document retrieval.",
+      "author": {
+        "name": "Unstructured"
+      },
+      "category": "productivity",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/Unstructured-IO/unstructured-foundation-marketplace.git",
+        "path": "plugins/foundation",
+        "ref": "main",
+        "sha": "492770f062ba9f01e8a0ae9b111c89e4642fdb29"
+      },
+      "homepage": "https://unstructured.io"
     }
   ]
 }
