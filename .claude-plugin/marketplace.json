@@ -4013,6 +4013,23 @@
         "sha": "8b2d640fe82fadcb69c12af26e4e38ab8ab61ed1"
       },
       "homepage": "https://www.zyte.com"
+    },
+    {
+      "name": "arcus",
+      "displayName": "Arcus by Testsigma",
+      "description": "Capture Claude Code session context for Testsigma — SSO auth, project pinning, ticket mapping, and automatic grouping signals (branch, repo, tickets). Generates and runs Testsigma tests from what you build and returns a release-readiness verdict.",
+      "author": {
+        "name": "Testsigma"
+      },
+      "category": "testing",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/testsigmahq/arcus-claude-plugin.git",
+        "path": "plugins/arcus",
+        "ref": "prod",
+        "sha": "1ce5682ef8f3e6504945229590b396d8b1a77708"
+      },
+      "homepage": "https://testsigma.com"
     }
   ]
 }
