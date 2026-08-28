@@ -897,13 +897,39 @@ let anyGitData = false;
 let anyGitError = false;
 
 for (const [name, agg] of Object.entries(byRepo)) {
-  const dir = [...agg.cwd][0];
-  // Only ask git about projects that ARE git repos, and only about the files
-  // CC actually touched there.
-  const raw = dir ? gitCommitsWithOurWork(dir, agg.filesTouched) : null;
-  const gitFailed = raw === GIT_UNAVAILABLE;
+  const dirs = [...agg.cwd];
+  // A project can be checked out in more than one local clone (sibling
+  // worktree-style trees cloned separately from the same remote), and they
+  // all land in the same bucket by directory basename. Query every clone
+  // that contributed to this bucket — not just one arbitrarily chosen one —
+  // and union the resulting commits by sha. Picking a single clone means a
+  // commit pushed from a sibling clone but never fetched here reads as a
+  // real "0 commits" instead of a git error, and a file only ever edited in
+  // a different clone than the one picked fails the toplevel-prefix pathspec
+  // check and silently drops out of the query entirely.
+  const byShaForRepo = new Map();
+  let sawUsableClone = false; // some clone answered (repo, maybe zero matching commits)
+  let sawFailedClone = false; // some clone errored (couldn't tell, not "none")
+  for (const dir of dirs) {
+    const raw = gitCommitsWithOurWork(dir, agg.filesTouched);
+    if (raw === GIT_UNAVAILABLE) {
+      sawFailedClone = true;
+    } else if (raw !== null) {
+      // null means this clone wasn't applicable (no toplevel, no resolvable
+      // identity, or none of our files live under it) — not a usable answer,
+      // but not a failure either, so it doesn't set either flag.
+      sawUsableClone = true;
+      for (const c of raw) byShaForRepo.set(c.sha, c.date);
+    }
+  }
+  // Only fall back to "couldn't tell" when NO clone produced usable data —
+  // one stale or broken clone must not hide the answer another clone already
+  // gave for the same project.
+  const gitFailed = sawFailedClone && !sawUsableClone;
   if (gitFailed) anyGitError = true;
-  const commits = gitFailed ? null : raw;
+  const commits = sawUsableClone
+    ? [...byShaForRepo].map(([sha, date]) => ({ sha, date }))
+    : null;
 
   let gitActiveDayOverlap = null;
   if (commits) {
@@ -924,7 +950,7 @@ for (const [name, agg] of Object.entries(byRepo)) {
     // null, not false, for the research bucket — it isn't a repo, but it isn't
     // a directory either, and `false` makes the renderer footnote it as "work
     // done in a plain directory", which is untrue of the biggest row on the page.
-    isRepo: name === NO_PROJECT ? null : !!(dir && gitToplevel(dir)),
+    isRepo: name === NO_PROJECT ? null : dirs.some((d) => !!gitToplevel(d)),
     commitsWithOurWork: commits ? commits.length : null,
     // True when git was asked and couldn't answer. Distinct from a null count
     // meaning "not a repo" or "nothing landed" — the renderer must not report
