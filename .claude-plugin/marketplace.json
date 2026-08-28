@@ -8,6 +8,7 @@
   },
   "renames": {
     "adlc": "agentforce-adlc",
+    "vsql-extension-builder": "villagesql",
     "airwallex": "airwallex-agentos",
     "convex-backend": "convex",
     "vals": "valtown",
@@ -3856,8 +3857,9 @@
       "homepage": "https://www.vibeprospecting.ai/product/claude-plugin"
     },
     {
-      "name": "vsql-extension-builder",
-      "description": "Builds a VillageSQL extension for MySQL end-to-end through a 7-phase persona-driven workflow. Commonly used to port PostgreSQL extensions to MySQL.",
+      "name": "villagesql",
+      "displayName": "VillageSQL Skills",
+      "description": "Skills for VillageSQL (MySQL with extensions): build extensions end-to-end (including porting PostgreSQL extensions to MySQL) and install VillageSQL Server.",
       "author": {
         "name": "VillageSQL"
       },
@@ -3865,7 +3867,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/villagesql/villagesql-skills.git",
-        "sha": "39490c14b7bfe116285bde686eb676cadf042642"
+        "sha": "0e49c28794596936b562a7cd169a8c3854ddc10f"
       },
       "homepage": "https://villagesql.com"
     },
