@@ -8,15 +8,44 @@ for a set of queries. Outputs results as JSON.
 import argparse
 import json
 import os
-import select
+import queue
+import shutil
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
 from scripts.utils import parse_skill_md
+
+
+def iter_stdout_chunks(process: subprocess.Popen, timeout: int):
+    """Yield stdout chunks without using select(), which cannot poll Windows pipes."""
+    chunks = queue.Queue()
+
+    def read_stdout():
+        try:
+            while chunk := os.read(process.stdout.fileno(), 8192):
+                chunks.put(chunk)
+        finally:
+            chunks.put(None)
+
+    threading.Thread(target=read_stdout, daemon=True).start()
+    deadline = time.monotonic() + timeout
+
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise subprocess.TimeoutExpired(process.args, timeout)
+        try:
+            chunk = chunks.get(timeout=min(1.0, remaining))
+        except queue.Empty:
+            continue
+        if chunk is None:
+            return
+        yield chunk
 
 
 def find_project_root() -> Path:
@@ -42,7 +71,7 @@ def run_single_query(
 ) -> bool:
     """Run a single query and return whether the skill was triggered.
 
-    Creates a command file in .claude/commands/ so it appears in Claude's
+    Creates a temporary skill in .claude/skills/ so it appears in Claude's
     available_skills list, then runs `claude -p` with the raw query.
     Uses --include-partial-messages to detect triggering early from
     stream events (content_block_start) rather than waiting for the
@@ -50,22 +79,24 @@ def run_single_query(
     """
     unique_id = uuid.uuid4().hex[:8]
     clean_name = f"{skill_name}-skill-{unique_id}"
-    project_commands_dir = Path(project_root) / ".claude" / "commands"
-    command_file = project_commands_dir / f"{clean_name}.md"
+    project_skills_dir = Path(project_root) / ".claude" / "skills"
+    skill_dir = project_skills_dir / clean_name
+    skill_file = skill_dir / "SKILL.md"
 
     try:
-        project_commands_dir.mkdir(parents=True, exist_ok=True)
+        skill_dir.mkdir(parents=True, exist_ok=False)
         # Use YAML block scalar to avoid breaking on quotes in description
         indented_desc = "\n  ".join(skill_description.split("\n"))
         command_content = (
             f"---\n"
+            f"name: {clean_name}\n"
             f"description: |\n"
             f"  {indented_desc}\n"
             f"---\n\n"
             f"# {skill_name}\n\n"
             f"This skill handles: {skill_description}\n"
         )
-        command_file.write_text(command_content)
+        skill_file.write_text(command_content, encoding="utf-8")
 
         cmd = [
             "claude",
@@ -91,27 +122,13 @@ def run_single_query(
         )
 
         triggered = False
-        start_time = time.time()
         buffer = ""
         # Track state for stream event detection
         pending_tool_name = None
         accumulated_json = ""
 
         try:
-            while time.time() - start_time < timeout:
-                if process.poll() is not None:
-                    remaining = process.stdout.read()
-                    if remaining:
-                        buffer += remaining.decode("utf-8", errors="replace")
-                    break
-
-                ready, _, _ = select.select([process.stdout], [], [], 1.0)
-                if not ready:
-                    continue
-
-                chunk = os.read(process.stdout.fileno(), 8192)
-                if not chunk:
-                    break
+            for chunk in iter_stdout_chunks(process, timeout):
                 buffer += chunk.decode("utf-8", errors="replace")
 
                 while "\n" in buffer:
@@ -174,11 +191,11 @@ def run_single_query(
             if process.poll() is None:
                 process.kill()
                 process.wait()
+            process.stdout.close()
 
         return triggered
     finally:
-        if command_file.exists():
-            command_file.unlink()
+        shutil.rmtree(skill_dir, ignore_errors=True)
 
 
 def run_eval(
@@ -218,11 +235,10 @@ def run_eval(
             query_items[query] = item
             if query not in query_triggers:
                 query_triggers[query] = []
-            try:
-                query_triggers[query].append(future.result())
-            except Exception as e:
-                print(f"Warning: query failed: {e}", file=sys.stderr)
-                query_triggers[query].append(False)
+            # Infrastructure failures are not negative trigger results. Let the
+            # exception abort the evaluation instead of producing a plausible
+            # score from a measurement which never completed.
+            query_triggers[query].append(future.result())
 
     for query, triggers in query_triggers.items():
         item = query_items[query]
@@ -269,7 +285,7 @@ def main():
     parser.add_argument("--verbose", action="store_true", help="Print progress to stderr")
     args = parser.parse_args()
 
-    eval_set = json.loads(Path(args.eval_set).read_text())
+    eval_set = json.loads(Path(args.eval_set).read_text(encoding="utf-8"))
     skill_path = Path(args.skill_path)
 
     if not (skill_path / "SKILL.md").exists():
