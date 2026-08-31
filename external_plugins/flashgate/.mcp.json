@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "flashgate": {
+      "command": "flashgate-mcp",
+      "args": [],
+      "env": {}
+    }
+  }
+}

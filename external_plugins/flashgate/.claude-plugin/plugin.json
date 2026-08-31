@@ -1,0 +1,9 @@
+{
+  "name": "flashgate",
+  "description": "Hardware-in-the-loop verification gate for firmware development. The Stop hook runs build → flash over a debug probe → boot evidence (serial banner or a fixed-address RAM signature read via SWD) → functional probes with hardware register readbacks, and blocks the agent's \"done\" claim until the board itself confirms the firmware works.",
+  "author": {
+    "name": "Lion-1209"
+  },
+  "version": "0.3.0",
+  "homepage": "https://github.com/Lion-1209/flashgate"
+}

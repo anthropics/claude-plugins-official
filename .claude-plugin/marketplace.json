@@ -19,6 +19,13 @@
   },
   "plugins": [
     {
+      "name": "flashgate",
+      "description": "Hardware-in-the-loop verification gate for firmware work: the Stop hook runs build → flash → boot evidence (serial banner or an SWD-read RAM signature) → functional probes with register readbacks, and blocks the agent's done claim until the board itself confirms. Ships with an integration skill, /flashgate commands, an MCP server, and a buildable STM32H743 example.",
+      "category": "testing",
+      "source": "./external_plugins/flashgate",
+      "homepage": "https://github.com/Lion-1209/flashgate"
+    },
+    {
       "name": "42crunch-api-security-testing",
       "description": "Automate API security directly in Claude Code with 42Crunch - automatically audit OpenAPI specs, detect vulnerabilities aligned with OWASP API Security risks (including BOLA/BFLA), and apply AI-powered fixes. Designed for AI-assisted development workflows, it provides continuous guardrails through an audit->scan->remediate->validate loop, ensuring APIs meet enterprise security standards before deployment.",
       "author": {
