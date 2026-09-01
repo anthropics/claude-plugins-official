@@ -10,6 +10,15 @@ from typing import List, Dict, Any, Optional
 from core.config_loader import Rule, Condition
 
 
+# Hook events whose hookSpecificOutput accepts additionalContext.
+ADDITIONAL_CONTEXT_EVENTS = frozenset({
+    'PreToolUse',
+    'PostToolUse',
+    'UserPromptSubmit',
+    'SessionStart',
+})
+
+
 # Cache compiled regexes (max 128 patterns)
 @lru_cache(maxsize=128)
 def compile_regex(pattern: str) -> re.Pattern:
@@ -69,12 +78,23 @@ class RuleEngine:
                     "reason": combined_message,
                     "systemMessage": combined_message
                 }
-            elif hook_event in ['PreToolUse', 'PostToolUse']:
+            elif hook_event == 'PreToolUse':
+                # permissionDecisionReason is the field the model reads. Without
+                # it the tool call is denied with no explanation.
                 return {
                     "hookSpecificOutput": {
                         "hookEventName": hook_event,
-                        "permissionDecision": "deny"
+                        "permissionDecision": "deny",
+                        "permissionDecisionReason": combined_message
                     },
+                    "systemMessage": combined_message
+                }
+            elif hook_event == 'PostToolUse':
+                # permissionDecision is PreToolUse only. PostToolUse blocks with
+                # decision/reason, and reason is the field the model reads.
+                return {
+                    "decision": "block",
+                    "reason": combined_message,
                     "systemMessage": combined_message
                 }
             else:
@@ -86,9 +106,18 @@ class RuleEngine:
         # If only warnings, show them but allow operation
         if warning_rules:
             messages = [f"**[{r.name}]**\n{r.message}" for r in warning_rules]
-            return {
-                "systemMessage": "\n\n".join(messages)
+            combined_message = "\n\n".join(messages)
+            response = {
+                "systemMessage": combined_message
             }
+            # systemMessage renders in the user's terminal only. additionalContext
+            # is the field that reaches the model, so a warning carries both.
+            if hook_event in ADDITIONAL_CONTEXT_EVENTS:
+                response["hookSpecificOutput"] = {
+                    "hookEventName": hook_event,
+                    "additionalContext": combined_message
+                }
+            return response
 
         # No matches - allow operation
         return {}
