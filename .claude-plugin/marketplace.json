@@ -4040,7 +4040,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/ActiveCampaign/activecampaign-plugin.git",
-        "sha": "964b2f9f9ad4c918645adf5efd6d87c2fca36c84"
+        "sha": "0ff858728bc52aee335d5475b0d4eb5f3a9589b0"
       },
       "homepage": "https://www.activecampaign.com"
     }
