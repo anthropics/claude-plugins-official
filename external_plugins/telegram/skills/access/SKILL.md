@@ -119,12 +119,24 @@ Parse `$ARGUMENTS` (space-separated). If empty or unrecognized, show status.
 ### `set <key> <value>`
 
 Delivery/UX config. Supported keys: `ackReaction`, `replyToMode`,
-`textChunkLimit`, `chunkMode`, `mentionPatterns`. Validate types:
+`textChunkLimit`, `chunkMode`, `mentionPatterns`, `defaultFormat`,
+`richChunkLimit`, `skipEntityDetection`, `streaming`, `draftCanStop`,
+`statusReactions`, `autoThinking`, `autoReplyTo`, `projectTopics`.
+Validate types:
 - `ackReaction`: string (emoji) or `""` to disable
 - `replyToMode`: `off` | `first` | `all`
-- `textChunkLimit`: number
+- `textChunkLimit`: number, max 4096
 - `chunkMode`: `length` | `newline`
 - `mentionPatterns`: JSON array of regex strings
+- `defaultFormat`: `rich` | `markdownv2` | `text`
+- `richChunkLimit`: number, max 32768
+- `skipEntityDetection`: boolean
+- `streaming`: boolean
+- `draftCanStop`: boolean
+- `statusReactions`: `false`, or a JSON object with any of `received`/`working`/`done`/`error` mapped to a whitelisted reaction emoji (or `""` to skip that stage)
+- `autoThinking`: boolean
+- `autoReplyTo`: boolean
+- `projectTopics`: boolean
 
 Read, set the key, write, confirm.
 

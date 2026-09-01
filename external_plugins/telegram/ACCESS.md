@@ -88,9 +88,27 @@ Configure outbound behavior with `/telegram:access set <key> <value>`.
 
 **`replyToMode`** controls threading on chunked replies. When a long response is split, `first` (default) threads only the first chunk under the inbound message; `all` threads every chunk; `off` sends all chunks standalone.
 
-**`textChunkLimit`** sets the split threshold. Telegram rejects messages over 4096 characters.
+**`textChunkLimit`** sets the split threshold for `markdownv2` and `text` replies. Telegram rejects messages over 4096 characters.
 
-**`chunkMode`** chooses the split strategy: `length` cuts exactly at the limit; `newline` prefers paragraph boundaries.
+**`chunkMode`** chooses the split strategy for those formats: `length` cuts exactly at the limit; `newline` prefers paragraph boundaries.
+
+**`defaultFormat`** picks the rendering mode when the assistant omits `format`: `rich` (default), `markdownv2`, or `text`. See [Formatting](./README.md#formatting).
+
+**`richChunkLimit`** is the split threshold for `rich` replies. Telegram rejects rich messages over 32768 characters. Rich splitting is always Markdown-aware, so `chunkMode` does not apply.
+
+**`skipEntityDetection`** stops Telegram auto-linking bare URLs, `@handles`, `#hashtags`, `/commands` and card-shaped numbers inside rich messages. Useful when replies are mostly code or config.
+
+**`streaming`** set to `false` disables the `draft` tool. See [Streaming drafts](./README.md#streaming-drafts).
+
+**`draftCanStop`** set to `false` removes the stop button from drafts.
+
+**`statusReactions`** moves a reaction on the inbound message through the processing stages: `received` → `working` → `done`, or `error` if a tool fails. Defaults are 👀 ✍ 👌 😢 — Telegram's whitelist contains no ✅ or ❌, so those can't be used. Set an individual stage to `""` to skip it, or the whole key to `false` to disable. `ackReaction`, if set, still wins for the `received` stage.
+
+**`autoThinking`** set to `false` stops the server sending a "Thinking…" draft when a DM arrives. On by default, refreshed every 20s while the assistant works, and cleared once the reply lands — this is what guarantees a progress indicator and a stop button regardless of whether the assistant calls `draft` itself.
+
+**`autoReplyTo`** set to `false` stops the server picking a quote-reply target when the assistant omits `reply_to`. The fallback threads under the **oldest unanswered** message, which is the right pairing when several arrive while a reply is still being written; the assistant passing `reply_to` explicitly always wins.
+
+**`projectTopics`** set to `false` stops the server creating a per-project topic in the private chat. On by default, but only active when topic mode is enabled for the bot in BotFather — otherwise it is a silent no-op. Replies always go back to the thread the message arrived in regardless of this setting. See [Topics](./README.md#topics).
 
 ## Skill reference
 
@@ -104,7 +122,7 @@ Configure outbound behavior with `/telegram:access set <key> <value>`.
 | `/telegram:access policy allowlist` | Set `dmPolicy`. Values: `pairing`, `allowlist`, `disabled`. |
 | `/telegram:access group add -1001654782309` | Enable a group. Flags: `--no-mention` (also requires disabling privacy mode), `--allow id1,id2`. |
 | `/telegram:access group rm -1001654782309` | Disable a group. |
-| `/telegram:access set ackReaction 👀` | Set a config key: `ackReaction`, `replyToMode`, `textChunkLimit`, `chunkMode`, `mentionPatterns`. |
+| `/telegram:access set ackReaction 👀` | Set a config key: `ackReaction`, `replyToMode`, `textChunkLimit`, `chunkMode`, `mentionPatterns`, `defaultFormat`, `richChunkLimit`, `skipEntityDetection`, `streaming`, `draftCanStop`, `statusReactions`, `autoThinking`, `autoReplyTo`, `projectTopics`. |
 
 ## Config file
 
@@ -138,10 +156,42 @@ Configure outbound behavior with `/telegram:access set <key> <value>`.
   // Threading on chunked replies: first | all | off
   "replyToMode": "first",
 
-  // Split threshold. Telegram rejects > 4096.
+  // Split threshold for markdownv2/text. Telegram rejects > 4096.
   "textChunkLimit": 4096,
 
   // length = cut at limit. newline = prefer paragraph boundaries.
-  "chunkMode": "newline"
+  "chunkMode": "newline",
+
+  // Rendering mode when the assistant omits `format`: rich | markdownv2 | text
+  "defaultFormat": "rich",
+
+  // Split threshold for rich replies. Telegram rejects > 32768.
+  "richChunkLimit": 32768,
+
+  // true = don't auto-link URLs, @handles, #hashtags, /commands in rich messages.
+  "skipEntityDetection": false,
+
+  // false = disable the draft (streaming) tool.
+  "streaming": true,
+
+  // false = drafts have no stop button.
+  "draftCanStop": true,
+
+  // Reaction stages on the inbound message. false disables; "" skips a stage.
+  "statusReactions": {
+    "received": "👀",
+    "working": "✍",
+    "done": "👌",
+    "error": "😢"
+  },
+
+  // false = no automatic "Thinking..." draft on inbound.
+  "autoThinking": true,
+
+  // false = don't thread replies under the message being answered.
+  "autoReplyTo": true,
+
+  // false = don't create a per-project topic in the private chat.
+  "projectTopics": true
 }
 ```

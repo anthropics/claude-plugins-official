@@ -22,7 +22,7 @@ import { randomBytes } from 'crypto'
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, statSync, renameSync, realpathSync, chmodSync } from 'fs'
 import { homedir } from 'os'
 import { execFileSync } from 'child_process'
-import { join, extname, sep } from 'path'
+import { join, basename, extname, sep } from 'path'
 
 const STATE_DIR = process.env.TELEGRAM_STATE_DIR
   ?? join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude'), 'channels', 'telegram')
@@ -108,6 +108,16 @@ type GroupPolicy = {
   allowFrom: string[]
 }
 
+// 'rich'       — Bot API 10.1+ rich messages. Plain Markdown, no escaping, 32k cap.
+// 'markdownv2' — legacy parse_mode. 4096 cap, caller must escape.
+// 'text'       — no formatting at all.
+type OutboundFormat = 'rich' | 'markdownv2' | 'text'
+const OUTBOUND_FORMATS: OutboundFormat[] = ['rich', 'markdownv2', 'text']
+
+function isOutboundFormat(v: unknown): v is OutboundFormat {
+  return typeof v === 'string' && (OUTBOUND_FORMATS as string[]).includes(v)
+}
+
 type Access = {
   dmPolicy: 'pairing' | 'allowlist' | 'disabled'
   allowFrom: string[]
@@ -123,6 +133,53 @@ type Access = {
   textChunkLimit?: number
   /** Split on paragraph boundaries instead of hard char count. */
   chunkMode?: 'length' | 'newline'
+  /** Format used when reply/edit_message/draft omit `format`. Default: 'rich'. */
+  defaultFormat?: OutboundFormat
+  /** Max chars per rich message before splitting. Default: 32768 (Telegram's rich cap). */
+  richChunkLimit?: number
+  /** Suppress Telegram's auto-linking of URLs, @mentions, #hashtags and /commands in rich messages. */
+  skipEntityDetection?: boolean
+  /** Set false to disable the draft tool entirely. */
+  streaming?: boolean
+  /** Show a "stop generating" button on drafts. Default: true. */
+  draftCanStop?: boolean
+  /**
+   * Reaction placed on the inbound message as processing moves along.
+   * Telegram's whitelist has no ✅/❌, hence 👌/😢. Set a key to "" to skip
+   * that stage, or the whole object to false to disable status reactions.
+   */
+  statusReactions?: false | {
+    received?: string
+    working?: string
+    done?: string
+    error?: string
+  }
+  /**
+   * Show a "Thinking…" draft the moment a DM arrives, refreshed until the
+   * reply lands. Guarantees a progress indicator and a stop button without
+   * depending on the assistant remembering to call the draft tool.
+   */
+  autoThinking?: boolean
+  /**
+   * Thread replies under the message being answered when the assistant omits
+   * reply_to. Default: true.
+   */
+  autoReplyTo?: boolean
+  /**
+   * Give each project its own topic in the private chat, named after the
+   * working directory. Requires topic mode enabled for the bot in BotFather;
+   * without it this is a no-op. Default: true.
+   */
+  projectTopics?: boolean
+}
+
+type StatusStage = 'received' | 'working' | 'done' | 'error'
+
+const DEFAULT_STATUS_REACTIONS: Record<StatusStage, string> = {
+  received: '👀',
+  working: '✍',
+  done: '👌',
+  error: '😢',
 }
 
 function defaultAccess(): Access {
@@ -135,6 +192,12 @@ function defaultAccess(): Access {
 }
 
 const MAX_CHUNK_LIMIT = 4096
+// Rich messages carry 32768 UTF-8 chars vs 4096 for classic sendMessage, so
+// most replies that used to arrive as 3-4 fragments now land as one bubble.
+const MAX_RICH_CHUNK_LIMIT = 32768
+// sendMessageDraft caps draft text at 4096; drafts are throwaway previews, so
+// overlong ones get truncated rather than rejected.
+const MAX_DRAFT_TEXT = 4096
 const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024
 
 // reply's files param takes any path. .env is ~60 bytes and ships as a
@@ -167,6 +230,15 @@ function readAccessFile(): Access {
       replyToMode: parsed.replyToMode,
       textChunkLimit: parsed.textChunkLimit,
       chunkMode: parsed.chunkMode,
+      defaultFormat: isOutboundFormat(parsed.defaultFormat) ? parsed.defaultFormat : undefined,
+      richChunkLimit: parsed.richChunkLimit,
+      skipEntityDetection: parsed.skipEntityDetection,
+      streaming: parsed.streaming,
+      draftCanStop: parsed.draftCanStop,
+      statusReactions: parsed.statusReactions,
+      autoThinking: parsed.autoThinking,
+      autoReplyTo: parsed.autoReplyTo,
+      projectTopics: parsed.projectTopics,
     }
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return defaultAccess()
@@ -206,6 +278,256 @@ function assertAllowedChat(chat_id: string): void {
   if (access.allowFrom.includes(chat_id)) return
   if (chat_id in access.groups) return
   throw new Error(`chat ${chat_id} is not allowlisted — add via /telegram:access`)
+}
+
+function resolveFormat(raw: unknown, access: Access): OutboundFormat {
+  if (isOutboundFormat(raw)) return raw
+  return access.defaultFormat ?? 'rich'
+}
+
+// sendMessageDraft/sendRichMessageDraft are private-chat only, and take a
+// numeric chat_id. Telegram group and channel ids are negative, so the sign
+// check also keeps drafts out of allowlisted groups.
+function assertDraftableChat(chat_id: string, access: Access): number {
+  const id = Number(chat_id)
+  if (!Number.isInteger(id)) {
+    throw new Error(`draft needs a numeric private chat id, got "${chat_id}"`)
+  }
+  if (id < 0 || chat_id in access.groups) {
+    throw new Error(`draft is private-chat only — chat ${chat_id} is a group or channel`)
+  }
+  return id
+}
+
+// One live draft per chat. Reusing the id makes Telegram animate the delta
+// between calls instead of replacing the bubble; sending a real reply retires
+// it so the next task starts a fresh draft rather than animating out of a
+// stale one.
+const activeDrafts = new Map<string, number>()
+
+function draftIdFor(chat_id: string): number {
+  const existing = activeDrafts.get(chat_id)
+  if (existing != null) return existing
+  // Must be non-zero and fit Telegram's 32-bit integer range.
+  const id = (Date.now() % 2_000_000_000) || 1
+  activeDrafts.set(chat_id, id)
+  return id
+}
+
+// Messages still waiting for an answer, oldest first. A single "latest inbound"
+// pointer answered the wrong message whenever a second one arrived while the
+// assistant was still working on the first — both the quote-reply and the
+// completion reaction landed on the newcomer.
+const pendingInbound = new Map<string, number[]>()
+const MAX_PENDING_INBOUND = 20
+
+function pushInbound(chat_id: string, msgId: number): void {
+  const queue = pendingInbound.get(chat_id) ?? []
+  queue.push(msgId)
+  // A backlog this deep means answers stopped pairing up; drop the oldest
+  // rather than tracking messages nobody will ever thread under.
+  while (queue.length > MAX_PENDING_INBOUND) queue.shift()
+  pendingInbound.set(chat_id, queue)
+}
+
+/** The message an answer should attach to: the oldest one still unanswered. */
+function peekInbound(chat_id: string): number | undefined {
+  return pendingInbound.get(chat_id)?.[0]
+}
+
+/** Mark one as answered so the next reply moves on to the message behind it. */
+function takeInbound(chat_id: string, msgId: number | undefined): void {
+  const queue = pendingInbound.get(chat_id)
+  if (!queue?.length) return
+  const idx = msgId != null ? queue.indexOf(msgId) : 0
+  if (idx >= 0) queue.splice(idx, 1)
+}
+
+// --- Topics -----------------------------------------------------------------
+// Telegram can run a private chat as a forum. Answering in the thread the
+// message came from keeps parallel conversations apart, and a per-project topic
+// gives each repo its own thread instead of one endless stream.
+
+const TOPICS_FILE = join(STATE_DIR, 'topics.json')
+const PROJECT_NAME = process.env.CLAUDE_PROJECT_DIR
+  ? basename(process.env.CLAUDE_PROJECT_DIR)
+  : undefined
+
+// Topic mode in private chats is a per-bot setting enabled via BotFather, and
+// createForumTopic fails without it. Read from getMe at startup.
+let topicsSupported = false
+
+const threadOf = new Map<string, number>()
+// null caches a failed creation so a broken setup doesn't retry on every send.
+const projectTopicCache = new Map<string, number | null>()
+
+function readTopics(): Record<string, number> {
+  try {
+    const parsed = JSON.parse(readFileSync(TOPICS_FILE, 'utf8'))
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function saveTopic(key: string, threadId: number): void {
+  if (STATIC) return
+  try {
+    const all = readTopics()
+    all[key] = threadId
+    mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 })
+    const tmp = `${TOPICS_FILE}.tmp`
+    writeFileSync(tmp, JSON.stringify(all, null, 2) + '\n', { mode: 0o600 })
+    renameSync(tmp, TOPICS_FILE)
+  } catch (err) {
+    process.stderr.write(`telegram channel: could not persist topic: ${err}\n`)
+  }
+}
+
+async function projectTopicFor(chat_id: string, access: Access): Promise<number | undefined> {
+  if (!topicsSupported || !PROJECT_NAME || access.projectTopics === false) return undefined
+  const cached = projectTopicCache.get(chat_id)
+  if (cached !== undefined) return cached ?? undefined
+
+  const key = `${chat_id}:${PROJECT_NAME}`
+  const saved = readTopics()[key]
+  if (saved != null) {
+    projectTopicCache.set(chat_id, saved)
+    return saved
+  }
+  try {
+    const topic = await bot.api.createForumTopic(chat_id, PROJECT_NAME)
+    projectTopicCache.set(chat_id, topic.message_thread_id)
+    saveTopic(key, topic.message_thread_id)
+    return topic.message_thread_id
+  } catch (err) {
+    projectTopicCache.set(chat_id, null)
+    process.stderr.write(`telegram channel: could not create topic "${PROJECT_NAME}": ${err}\n`)
+    return undefined
+  }
+}
+
+// Where a reply belongs: the thread the message arrived in, else this project's
+// own topic, else the chat's main flow.
+async function threadFor(chat_id: string, access: Access): Promise<number | undefined> {
+  const inbound = threadOf.get(chat_id)
+  if (inbound != null) return inbound
+  return projectTopicFor(chat_id, access)
+}
+
+/** The emoji a stage shows, or '' when that stage is configured off. */
+function statusEmojiFor(access: Access, stage: StatusStage): string {
+  if (access.statusReactions === false) return ''
+  // ackReaction predates status reactions and meant exactly this stage, so it
+  // still wins for anyone who already configured it.
+  if (stage === 'received' && access.ackReaction !== undefined) return access.ackReaction
+  return access.statusReactions?.[stage] ?? DEFAULT_STATUS_REACTIONS[stage]
+}
+
+// The message id is passed in rather than looked up, so a stage always lands on
+// the message it actually belongs to even when several are in flight.
+function setStatusReaction(chat_id: string, msgId: number | undefined, stage: StatusStage): void {
+  if (msgId == null) return
+  const emoji = statusEmojiFor(loadAccess(), stage)
+  if (!emoji) return
+  void bot.api
+    .setMessageReaction(chat_id, msgId, [
+      { type: 'emoji', emoji: emoji as ReactionTypeEmoji['emoji'] },
+    ])
+    .catch(() => {})
+}
+
+// Telegram drops a draft after ~30 seconds, so a task that runs longer needs
+// the placeholder re-sent. One timer per chat, cleared once the reply lands.
+const THINKING_REFRESH_MS = 20_000
+const THINKING_MAX_MS = 10 * 60_000
+
+type LiveDraft = {
+  numericChat: number
+  text: string
+  thinking: boolean
+  format: OutboundFormat
+  thread?: number
+  startedAt: number
+}
+
+// What to re-send on each refresh. Whoever wrote the draft last — the inbound
+// handler or the assistant's own draft call — owns this, so a refresh never
+// overwrites partial text with a stale placeholder.
+const liveDrafts = new Map<string, LiveDraft>()
+const draftTimers = new Map<string, ReturnType<typeof setInterval>>()
+
+function stopDraftRefresh(chat_id: string): void {
+  const timer = draftTimers.get(chat_id)
+  if (timer) {
+    clearInterval(timer)
+    draftTimers.delete(chat_id)
+  }
+  liveDrafts.delete(chat_id)
+}
+
+function pushDraft(chat_id: string, d: LiveDraft, access: Access): void {
+  const other = {
+    can_stop: access.draftCanStop ?? true,
+    keep_on_stop: true,
+    ...(d.thread != null ? { message_thread_id: d.thread } : {}),
+  }
+  const id = draftIdFor(chat_id)
+  if (d.format === 'rich') {
+    const rich = d.thinking
+      ? { blocks: [{ type: 'thinking' as const, text: d.text || 'Thinking…' }] }
+      : richPayload(d.text, access)
+    void bot.api.sendRichMessageDraft(d.numericChat, id, rich, other).catch(() => {
+      // A rejected rich draft still gets the plain placeholder, which Telegram
+      // renders as "Thinking…" when the text is empty.
+      void bot.api.sendMessageDraft(d.numericChat, id, d.thinking ? '' : d.text, other).catch(() => {})
+    })
+    return
+  }
+  void bot.api
+    .sendMessageDraft(d.numericChat, id, d.thinking ? '' : d.text, {
+      ...other,
+      ...(d.format === 'markdownv2' && !d.thinking ? { parse_mode: 'MarkdownV2' as const } : {}),
+    })
+    .catch(() => {})
+}
+
+// Telegram drops a draft after ~30 seconds, so anything longer needs it
+// re-sent. One timer per chat, cleared once the reply lands.
+function trackDraft(chat_id: string, d: LiveDraft, access: Access): void {
+  liveDrafts.set(chat_id, d)
+  if (draftTimers.has(chat_id)) return
+  const timer = setInterval(() => {
+    const live = liveDrafts.get(chat_id)
+    if (!live || Date.now() - live.startedAt > THINKING_MAX_MS) {
+      stopDraftRefresh(chat_id)
+      return
+    }
+    pushDraft(chat_id, live, loadAccess())
+  }, THINKING_REFRESH_MS)
+  timer.unref()
+  draftTimers.set(chat_id, timer)
+}
+
+async function startThinking(chat_id: string, access: Access): Promise<void> {
+  if (access.autoThinking === false || access.streaming === false) return
+  let numericChat: number
+  try {
+    numericChat = assertDraftableChat(chat_id, access)
+  } catch {
+    return // groups — drafts aren't supported there
+  }
+  stopDraftRefresh(chat_id)
+  const d: LiveDraft = {
+    numericChat,
+    text: '',
+    thinking: true,
+    format: access.defaultFormat ?? 'rich',
+    thread: await threadFor(chat_id, access),
+    startedAt: Date.now(),
+  }
+  pushDraft(chat_id, d, access)
+  trackDraft(chat_id, d, access)
 }
 
 function saveAccess(a: Access): void {
@@ -384,6 +706,184 @@ function chunk(text: string, limit: number, mode: 'length' | 'newline'): string[
   return out
 }
 
+const FENCE_RE = /^\s{0,3}(```|~~~)(.*)$/
+// Headroom for healFences: a closing marker on one piece plus a reopening
+// marker with its language tag on the next.
+const FENCE_RESERVE = 24
+
+// Byte offsets just past each newline, split into those that sit outside a
+// fenced code block and the full set. Cutting outside a fence always renders
+// correctly; the full set is the fallback for a code block longer than the
+// limit, where cutting at a line break at least keeps code lines intact.
+function cutPoints(text: string): { safe: number[]; lines: number[] } {
+  const safe: number[] = []
+  const lines: number[] = []
+  let inFence = false
+  let offset = 0
+  for (const line of text.split('\n')) {
+    if (FENCE_RE.test(line)) inFence = !inFence
+    offset += line.length + 1
+    lines.push(offset)
+    if (!inFence) safe.push(offset)
+  }
+  return { safe, lines }
+}
+
+// A code block longer than the limit has to be cut somewhere inside it. Close
+// the fence at the end of that piece and reopen it — language tag and all — on
+// the next, so both halves still render as code instead of spilling literal
+// backticks into the chat.
+function healFences(pieces: string[]): string[] {
+  const out: string[] = []
+  let carry = ''
+  for (const raw of pieces) {
+    let piece = carry ? `${carry}\n${raw}` : raw
+    let open: string | null = null
+    for (const line of piece.split('\n')) {
+      const m = FENCE_RE.exec(line)
+      if (!m) continue
+      open = open === null ? `${m[1]}${m[2].trim().slice(0, 16)}` : null
+    }
+    if (open !== null) {
+      piece = `${piece}\n${open.slice(0, 3)}`
+      carry = open
+    } else {
+      carry = ''
+    }
+    out.push(piece)
+  }
+  return out
+}
+
+// Markdown-aware counterpart to chunk(). Prefers a blank line, then any line
+// break outside a code block, then any line break at all, and only cuts
+// mid-line when a single line is longer than the whole limit.
+function chunkRich(text: string, limit: number): string[] {
+  if (text.length <= limit) return [text]
+  const hasFence = new RegExp(FENCE_RE.source, 'm').test(text)
+  const room = hasFence ? Math.max(1, limit - FENCE_RESERVE) : limit
+  const { safe, lines } = cutPoints(text)
+  const out: string[] = []
+  let start = 0
+
+  const pick = (points: number[], paragraphOnly: boolean): number => {
+    let best = -1
+    for (const p of points) {
+      if (p <= start) continue
+      if (p - start > room) break
+      // Offset p sits just past a newline, so a newline at p-2 means the
+      // preceding line was blank — a paragraph boundary.
+      if (paragraphOnly && text[p - 2] !== '\n') continue
+      best = p
+    }
+    return best
+  }
+
+  while (text.length - start > room) {
+    let cut = pick(safe, true)
+    if (cut <= start) cut = pick(safe, false)
+    if (cut <= start) cut = pick(lines, false)
+    if (cut <= start) cut = start + room
+    const piece = text.slice(start, cut).replace(/\s+$/, '')
+    if (piece) out.push(piece)
+    start = cut
+  }
+  const rest = text.slice(start).replace(/^\n+/, '')
+  if (rest) out.push(rest)
+  return hasFence ? healFences(out) : out
+}
+
+function clampLimit(configured: number | undefined, cap: number): number {
+  return Math.max(1, Math.min(configured ?? cap, cap))
+}
+
+function richPayload(markdown: string, access: Access) {
+  return {
+    markdown,
+    ...(access.skipEntityDetection ? { skip_entity_detection: true } : {}),
+  }
+}
+
+// Telegram answers 400 on Markdown it can't parse. Dropping the whole reply
+// over one stray bracket is worse than dropping the formatting, so fall back
+// to a plain send and report it — silently degrading would leave Claude
+// believing the formatted version went out.
+async function sendRichChunk(
+  chat_id: string,
+  markdown: string,
+  access: Access,
+  opts: { reply_parameters?: { message_id: number }; reply_markup?: InlineKeyboard; message_thread_id?: number },
+  notes: string[],
+): Promise<number> {
+  try {
+    const sent = await bot.api.sendRichMessage(chat_id, richPayload(markdown, access), opts)
+    return sent.message_id
+  } catch (err) {
+    if (!(err instanceof GrammyError) || err.error_code !== 400) throw err
+    notes.push(`rich formatting rejected (${err.description}) — resent as plain text`)
+    const sent = await bot.api.sendMessage(chat_id, markdown, opts)
+    return sent.message_id
+  }
+}
+
+type ButtonSpec = { text?: unknown; action?: unknown; copy?: unknown; url?: unknown }
+
+const MAX_BUTTONS = 12
+const MAX_PENDING_ACTIONS = 200
+
+// callback_data is capped at 64 bytes, so the button carries a token and the
+// action text lives here. Bounded so a long session can't grow it without end.
+const pendingActions = new Map<string, { chat_id: string; action: string }>()
+
+function registerAction(chat_id: string, action: string): string {
+  if (pendingActions.size >= MAX_PENDING_ACTIONS) {
+    // Map preserves insertion order, so the first key is the oldest.
+    const oldest = pendingActions.keys().next()
+    if (!oldest.done) pendingActions.delete(oldest.value)
+  }
+  const token = randomBytes(6).toString('hex')
+  pendingActions.set(token, { chat_id, action })
+  return token
+}
+
+// Only http(s) and tg: links are worth putting behind a button — anything else
+// is either inert or a scheme we have no reason to hand a tap to.
+function assertButtonUrl(url: string): void {
+  if (!/^(https?|tg):/i.test(url)) {
+    throw new Error(`button url must be http(s) or tg:, got "${url}"`)
+  }
+}
+
+function buildKeyboard(chat_id: string, raw: ButtonSpec[]): InlineKeyboard {
+  if (raw.length > MAX_BUTTONS) {
+    throw new Error(`too many buttons: ${raw.length} (max ${MAX_BUTTONS})`)
+  }
+  const kb = new InlineKeyboard()
+  let inRow = 0
+  for (const b of raw) {
+    const text = typeof b.text === 'string' ? b.text.trim() : ''
+    if (!text) throw new Error('every button needs a non-empty text')
+    // Two short buttons per row reads well on a phone; a long label takes its
+    // own row rather than being ellipsised.
+    const wide = text.length > 16
+    if (inRow > 0 && (wide || inRow >= 2)) {
+      kb.row()
+      inRow = 0
+    }
+    if (typeof b.url === 'string') {
+      assertButtonUrl(b.url)
+      kb.url(text, b.url)
+    } else if (typeof b.copy === 'string') {
+      kb.copyText(text, b.copy)
+    } else {
+      const action = typeof b.action === 'string' && b.action.trim() ? b.action : text
+      kb.text(text, `act:${registerAction(chat_id, action)}`)
+    }
+    inRow++
+  }
+  return kb
+}
+
 // .jpg/.jpeg/.png/.gif/.webp go as photos (Telegram compresses + shows inline);
 // everything else goes as documents (raw file, no compression).
 const PHOTO_EXTS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp'])
@@ -406,9 +906,21 @@ const mcp = new Server(
     instructions: [
       'The sender reads Telegram, not this session. Anything you want them to see must go through the reply tool — your transcript output never reaches their chat.',
       '',
-      'Messages from Telegram arrive as <channel source="telegram" chat_id="..." message_id="..." user="..." ts="...">. If the tag has an image_path attribute, Read that file — it is a photo the sender attached. If the tag has attachment_file_id, call download_attachment with that file_id to fetch the file, then Read the returned path. Reply with the reply tool — pass chat_id back. Use reply_to (set to a message_id) only when replying to an earlier message; the latest message doesn\'t need a quote-reply, omit reply_to for normal responses.',
+      'Messages from Telegram arrive as <channel source="telegram" chat_id="..." message_id="..." user="..." ts="...">. If the tag has an image_path attribute, Read that file — it is a photo the sender attached. If the tag has attachment_file_id, call download_attachment with that file_id to fetch the file, then Read the returned path. Reply with the reply tool — pass chat_id back, and set reply_to to the message_id of the message you are answering. Always pass it: you know which message this answer belongs to, and the server can only fall back to guessing, which goes wrong as soon as a second message arrives while you are still working on the first.',
       '',
-      'reply accepts file paths (files: ["/abs/path.png"]) for attachments. Use react to add emoji reactions, and edit_message for interim progress updates. Edits don\'t trigger push notifications — when a long task completes, send a new reply so the user\'s device pings.',
+      'Always format replies as Markdown — headings, lists, tables, fenced code — never as one wall of plain prose. These messages are read on a phone, so structure is what makes them readable.',
+      '',
+      'Put anything long and skimmable-past — a build log, a full diff, a stack trace, a big file listing — inside a collapsible block: <details><summary>Short label</summary> … </details>. Markdown is still parsed inside it. A 300-line log pasted flat destroys the scroll on a phone; behind a summary it costs one line and the sender opens it only if they need it.',
+      '',
+      'Offer buttons on reply whenever the next step is a choice ("Continue", "Show the diff", "Cancel") — tapping beats typing on a phone, and the label comes back to you as a new message. Use a copy button for any command or snippet you would otherwise ask the sender to select by hand.',
+      '',
+      'Receipt, progress and completion are signalled automatically: the inbound message gets a status reaction, and a "Thinking…" draft with a stop button appears while you work. You do not need to send "working on it" messages. Do call draft with partial text during long tasks to replace the placeholder with real progress, and use react only when you want to add meaning beyond status (e.g. 🎉 or 🤔).',
+      '',
+      'reply formats as rich Markdown by default: write ordinary Markdown — # headings, - and 1. lists, - [ ] task lists, tables, ```fenced code```, > block quotes, **bold**, `code` — with NO escaping, up to 32768 chars per message. Never hand-escape special characters unless you explicitly pass format: "markdownv2", which is the old 4096-char parse_mode and does require escaping.',
+      '',
+      'When a reply will take a while in a DM, call draft with no text as soon as you start — the sender sees an animated "Thinking…" placeholder instead of silence — then call draft again with the partial answer as it takes shape, and with short thinking notes ("reading the repo") between steps. Telegram animates each update. Drafts are ephemeral previews: they vanish after ~30 seconds and are never stored in the chat, so you must always finish with reply, which also clears the draft. draft works in private chats only, not groups. If the sender presses the stop button, that arrives as an ordinary inbound message — wrap up and send what you have.',
+      '',
+      'reply accepts file paths (files: ["/abs/path.png"]) for attachments. Use react to add emoji reactions, and edit_message to revise a message you already sent. Neither edits nor drafts trigger push notifications — when a long task completes, send a new reply so the user\'s device pings.',
       '',
       "Telegram's Bot API exposes no history or search — you only see messages as they arrive. If you need earlier context, ask the user to paste it or summarize.",
       '',
@@ -471,10 +983,29 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
             items: { type: 'string' },
             description: 'Absolute file paths to attach. Images send as photos (inline preview); other types as documents. Max 50MB each.',
           },
+          buttons: {
+            type: 'array',
+            description:
+              'Tappable buttons under the message — the main way to save the sender typing on a phone. Offer them whenever the next step is a choice ("Continue" / "Show the diff" / "Cancel") or whenever you would otherwise ask them to copy a command. Max 12.',
+            items: {
+              type: 'object',
+              properties: {
+                text: { type: 'string', description: 'Button label. Keep it under 16 chars so two fit per row.' },
+                action: {
+                  type: 'string',
+                  description: 'Text delivered back to you as a new incoming message when tapped. Defaults to the label. This is the default button type.',
+                },
+                copy: { type: 'string', description: 'Instead of an action, copy this text to the clipboard — use it for commands and snippets.' },
+                url: { type: 'string', description: 'Instead of an action, open this http(s) or tg: link.' },
+              },
+              required: ['text'],
+            },
+          },
           format: {
             type: 'string',
-            enum: ['text', 'markdownv2'],
-            description: "Rendering mode. 'markdownv2' enables Telegram formatting (bold, italic, code, links). Caller must escape special chars per MarkdownV2 rules. Default: 'text' (plain, no escaping needed).",
+            enum: ['rich', 'text', 'markdownv2'],
+            description:
+              "Rendering mode. 'rich' (default) sends a rich message: write ordinary Markdown — # headings, - and 1. lists, - [ ] task lists, tables, ```fenced code```, > block quotes, --- rules, **bold**, `code`, ==marked==, ||spoiler||, $LaTeX$ — with NO escaping, up to 32768 chars. 'markdownv2' is the legacy parse_mode: 4096 chars and every special char must be backslash-escaped by you. 'text' sends the string verbatim with no formatting.",
           },
         },
         required: ['chat_id', 'text'],
@@ -515,11 +1046,45 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
           text: { type: 'string' },
           format: {
             type: 'string',
-            enum: ['text', 'markdownv2'],
-            description: "Rendering mode. 'markdownv2' enables Telegram formatting (bold, italic, code, links). Caller must escape special chars per MarkdownV2 rules. Default: 'text' (plain, no escaping needed).",
+            enum: ['rich', 'text', 'markdownv2'],
+            description:
+              "Rendering mode. 'rich' (default) sends a rich message: write ordinary Markdown — # headings, - and 1. lists, - [ ] task lists, tables, ```fenced code```, > block quotes, --- rules, **bold**, `code`, ==marked==, ||spoiler||, $LaTeX$ — with NO escaping, up to 32768 chars. 'markdownv2' is the legacy parse_mode: 4096 chars and every special char must be backslash-escaped by you. 'text' sends the string verbatim with no formatting.",
           },
         },
         required: ['chat_id', 'message_id', 'text'],
+      },
+    },
+    {
+      name: 'draft',
+      description:
+        'Stream a partial answer into a private Telegram chat while you are still working. Telegram animates the change between successive draft calls, so the message appears to grow. Call it with no text (or thinking: true) the moment you start a long task to show a "Thinking…" placeholder, then call it again with partial text as the answer takes shape. Drafts are ephemeral previews that vanish after ~30s and are NOT saved to the chat — you must still send the finished answer with reply, which also clears the draft. Private chats only; drafts do not work in groups.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          chat_id: { type: 'string' },
+          text: {
+            type: 'string',
+            description: 'Partial answer so far. Omit or leave empty to show the "Thinking…" placeholder. Truncated past 4096 chars.',
+          },
+          thinking: {
+            type: 'boolean',
+            description: 'Render as a "Thinking…" status block rather than answer text. Use for short progress notes like "reading the repo". Implied when text is empty.',
+          },
+          can_stop: {
+            type: 'boolean',
+            description: 'Show the user a button to stop generating. Pressing it arrives as a new inbound message. Default: true.',
+          },
+          draft_id: {
+            type: 'string',
+            description: 'Rarely needed. Successive calls to the same chat reuse one id automatically so updates animate; pass an explicit id only to run two independent drafts at once.',
+          },
+          format: {
+            type: 'string',
+            enum: ['rich', 'text', 'markdownv2'],
+            description: "Rendering mode for text, same meaning as in reply. Default: 'rich'.",
+          },
+        },
+        required: ['chat_id'],
       },
     },
   ],
@@ -532,11 +1097,8 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
       case 'reply': {
         const chat_id = args.chat_id as string
         const text = args.text as string
-        const reply_to = args.reply_to != null ? Number(args.reply_to) : undefined
+        const explicitReplyTo = args.reply_to != null ? Number(args.reply_to) : undefined
         const files = (args.files as string[] | undefined) ?? []
-        const format = (args.format as string | undefined) ?? 'text'
-        const parseMode = format === 'markdownv2' ? 'MarkdownV2' as const : undefined
-
         assertAllowedChat(chat_id)
 
         for (const f of files) {
@@ -548,11 +1110,25 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         }
 
         const access = loadAccess()
-        const limit = Math.max(1, Math.min(access.textChunkLimit ?? MAX_CHUNK_LIMIT, MAX_CHUNK_LIMIT))
-        const mode = access.chunkMode ?? 'length'
+        const format = resolveFormat(args.format, access)
+        const parseMode = format === 'markdownv2' ? 'MarkdownV2' as const : undefined
         const replyMode = access.replyToMode ?? 'first'
-        const chunks = chunk(text, limit, mode)
+        // An assistant that omits reply_to leaves answers floating loose in a
+        // busy chat, so default to threading under the message this turn is
+        // actually answering.
+        const reply_to = explicitReplyTo
+          ?? (access.autoReplyTo === false ? undefined : peekInbound(chat_id))
+
+        const chunks = format === 'rich'
+          ? chunkRich(text, clampLimit(access.richChunkLimit, MAX_RICH_CHUNK_LIMIT))
+          : chunk(text, clampLimit(access.textChunkLimit, MAX_CHUNK_LIMIT), access.chunkMode ?? 'length')
+
+        const buttonSpecs = (args.buttons as ButtonSpec[] | undefined) ?? []
+        const keyboard = buttonSpecs.length ? buildKeyboard(chat_id, buttonSpecs) : undefined
+        const thread = await threadFor(chat_id, access)
+
         const sentIds: number[] = []
+        const notes: string[] = []
 
         try {
           for (let i = 0; i < chunks.length; i++) {
@@ -560,11 +1136,22 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
               reply_to != null &&
               replyMode !== 'off' &&
               (replyMode === 'all' || i === 0)
-            const sent = await bot.api.sendMessage(chat_id, chunks[i], {
+            // Buttons belong under the final chunk — attaching them to an
+            // earlier one would strand them mid-answer.
+            const opts = {
+              ...(thread != null ? { message_thread_id: thread } : {}),
               ...(shouldReplyTo ? { reply_parameters: { message_id: reply_to } } : {}),
-              ...(parseMode ? { parse_mode: parseMode } : {}),
-            })
-            sentIds.push(sent.message_id)
+              ...(keyboard && i === chunks.length - 1 ? { reply_markup: keyboard } : {}),
+            }
+            if (format === 'rich') {
+              sentIds.push(await sendRichChunk(chat_id, chunks[i], access, opts, notes))
+            } else {
+              const sent = await bot.api.sendMessage(chat_id, chunks[i], {
+                ...opts,
+                ...(parseMode ? { parse_mode: parseMode } : {}),
+              })
+              sentIds.push(sent.message_id)
+            }
           }
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err)
@@ -578,9 +1165,12 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         for (const f of files) {
           const ext = extname(f).toLowerCase()
           const input = new InputFile(f)
-          const opts = reply_to != null && replyMode !== 'off'
-            ? { reply_parameters: { message_id: reply_to } }
-            : undefined
+          const opts = {
+            ...(thread != null ? { message_thread_id: thread } : {}),
+            ...(reply_to != null && replyMode !== 'off'
+              ? { reply_parameters: { message_id: reply_to } }
+              : {}),
+          }
           if (PHOTO_EXTS.has(ext)) {
             const sent = await bot.api.sendPhoto(chat_id, input, opts)
             sentIds.push(sent.message_id)
@@ -590,11 +1180,20 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
           }
         }
 
+        // The real message supersedes any live draft, so the next task starts a
+        // fresh one instead of animating out of a stale bubble.
+        activeDrafts.delete(chat_id)
+        stopDraftRefresh(chat_id)
+        setStatusReaction(chat_id, reply_to, 'done')
+        takeInbound(chat_id, reply_to)
+
         const result =
           sentIds.length === 1
             ? `sent (id: ${sentIds[0]})`
             : `sent ${sentIds.length} parts (ids: ${sentIds.join(', ')})`
-        return { content: [{ type: 'text', text: result }] }
+        return {
+          content: [{ type: 'text', text: notes.length ? `${result}\n${notes.join('\n')}` : result }],
+        }
       }
       case 'react': {
         assertAllowedChat(args.chat_id as string)
@@ -622,17 +1221,95 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         return { content: [{ type: 'text', text: path }] }
       }
       case 'edit_message': {
-        assertAllowedChat(args.chat_id as string)
-        const editFormat = (args.format as string | undefined) ?? 'text'
-        const editParseMode = editFormat === 'markdownv2' ? 'MarkdownV2' as const : undefined
-        const edited = await bot.api.editMessageText(
-          args.chat_id as string,
-          Number(args.message_id),
-          args.text as string,
-          ...(editParseMode ? [{ parse_mode: editParseMode }] : []),
-        )
+        const chat_id = args.chat_id as string
+        assertAllowedChat(chat_id)
+        const access = loadAccess()
+        const editFormat = resolveFormat(args.format, access)
+        const message_id = Number(args.message_id)
+        const text = args.text as string
+
+        let edited: Awaited<ReturnType<typeof bot.api.editMessageText>>
+        try {
+          edited = editFormat === 'rich'
+            ? await bot.api.editMessageText(chat_id, message_id, richPayload(text, access))
+            : await bot.api.editMessageText(
+                chat_id,
+                message_id,
+                text,
+                ...(editFormat === 'markdownv2' ? [{ parse_mode: 'MarkdownV2' as const }] : []),
+              )
+        } catch (err) {
+          if (editFormat === 'text' || !(err instanceof GrammyError) || err.error_code !== 400) throw err
+          edited = await bot.api.editMessageText(chat_id, message_id, text)
+        }
         const id = typeof edited === 'object' ? edited.message_id : args.message_id
         return { content: [{ type: 'text', text: `edited (id: ${id})` }] }
+      }
+      case 'draft': {
+        const chat_id = args.chat_id as string
+        assertAllowedChat(chat_id)
+        const access = loadAccess()
+        if (access.streaming === false) {
+          throw new Error('streaming drafts are disabled — set "streaming": true in access.json')
+        }
+        const numericChat = assertDraftableChat(chat_id, access)
+        const draftFormat = resolveFormat(args.format, access)
+        const raw = (args.text as string | undefined) ?? ''
+        const thinking = args.thinking === true || raw.trim() === ''
+        const draft_id = args.draft_id != null ? Number(args.draft_id) : draftIdFor(chat_id)
+        if (!Number.isInteger(draft_id) || draft_id === 0) {
+          throw new Error(`draft_id must be a non-zero integer, got "${args.draft_id}"`)
+        }
+        const canStop = (args.can_stop as boolean | undefined) ?? access.draftCanStop ?? true
+        const draftThread = await threadFor(chat_id, access)
+        const text = raw.length > MAX_DRAFT_TEXT ? raw.slice(0, MAX_DRAFT_TEXT - 1) + '…' : raw
+        // keep_on_stop leaves the partial text on screen when the user hits
+        // stop, so pressing it doesn't blank out what was already written.
+        const other = {
+          can_stop: canStop,
+          keep_on_stop: true,
+          ...(draftThread != null ? { message_thread_id: draftThread } : {}),
+        }
+
+        try {
+          if (draftFormat === 'rich') {
+            const rich = thinking
+              ? { blocks: [{ type: 'thinking' as const, text: text || 'Thinking…' }] }
+              : richPayload(text, access)
+            await bot.api.sendRichMessageDraft(numericChat, draft_id, rich, other)
+          } else {
+            await bot.api.sendMessageDraft(numericChat, draft_id, thinking ? '' : text, {
+              ...other,
+              ...(draftFormat === 'markdownv2' && !thinking
+                ? { parse_mode: 'MarkdownV2' as const }
+                : {}),
+            })
+          }
+        } catch (err) {
+          // A draft is a snapshot of half-written text — an unclosed ``` fence
+          // or table is expected mid-stream, not a bug. Degrade to a plain
+          // draft rather than failing the call.
+          if (!(err instanceof GrammyError) || err.error_code !== 400) throw err
+          await bot.api.sendMessageDraft(numericChat, draft_id, thinking ? '' : text, other)
+        }
+
+        activeDrafts.set(chat_id, draft_id)
+        // Hand refreshing over to this content, so the 20s keepalive re-sends
+        // the assistant's partial text instead of the inbound placeholder.
+        trackDraft(
+          chat_id,
+          { numericChat, text, thinking, format: draftFormat, thread: draftThread, startedAt: Date.now() },
+          access,
+        )
+        setStatusReaction(chat_id, peekInbound(chat_id), 'working')
+
+        const what = thinking ? 'thinking placeholder' : `${text.length} chars`
+        return {
+          content: [{
+            type: 'text',
+            text: `draft ${draft_id} updated (${what}) — ephemeral preview, still send the final answer with reply`,
+          }],
+        }
       }
       default:
         return {
@@ -642,6 +1319,12 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
+    // Surface the failure in the chat too — otherwise a send that died leaves
+    // the sender staring at a "working" reaction that never resolves.
+    if (typeof args.chat_id === 'string') {
+      stopDraftRefresh(args.chat_id)
+      setStatusReaction(args.chat_id, peekInbound(args.chat_id), 'error')
+    }
     return {
       content: [{ type: 'text', text: `${req.params.name} failed: ${msg}` }],
       isError: true,
@@ -735,8 +1418,53 @@ bot.command('status', async ctx => {
 // Inline-button handler for permission requests. Callback data is
 // `perm:allow:<id>`, `perm:deny:<id>`, or `perm:more:<id>`.
 // Security mirrors the text-reply path: allowFrom must contain the sender.
+// A tapped action button opens a new turn: the action text is relayed as if
+// the sender had typed it. The token is single-use and bound to the chat it
+// was issued for, so a press can't be replayed or fired from another chat.
+async function handleActionButton(ctx: Context, token: string): Promise<void> {
+  const entry = pendingActions.get(token)
+  const access = loadAccess()
+  const senderId = String(ctx.from?.id ?? '')
+  const chat_id = String(ctx.chat?.id ?? '')
+  if (!entry || entry.chat_id !== chat_id || !access.allowFrom.includes(senderId)) {
+    await ctx.answerCallbackQuery({ text: 'No longer available.' }).catch(() => {})
+    return
+  }
+  pendingActions.delete(token)
+  await ctx.answerCallbackQuery().catch(() => {})
+  // Drop the keyboard so the same choice can't be made twice, and so the chat
+  // history shows the decision as spent.
+  await ctx.editMessageReplyMarkup().catch(() => {})
+
+  // Thread the answer under the message that carried the buttons.
+  const msgId = ctx.callbackQuery?.message?.message_id
+  if (msgId != null) pushInbound(chat_id, msgId)
+  void startThinking(chat_id, access)
+
+  mcp.notification({
+    method: 'notifications/claude/channel',
+    params: {
+      content: entry.action,
+      meta: {
+        chat_id,
+        ...(msgId != null ? { message_id: String(msgId) } : {}),
+        user: ctx.from?.username ?? senderId,
+        user_id: senderId,
+        ts: new Date().toISOString(),
+      },
+    },
+  }).catch(err => {
+    process.stderr.write(`telegram channel: failed to deliver button press: ${err}\n`)
+  })
+}
+
 bot.on('callback_query:data', async ctx => {
   const data = ctx.callbackQuery.data
+  const act = /^act:([0-9a-f]{12})$/.exec(data)
+  if (act) {
+    await handleActionButton(ctx, act[1])
+    return
+  }
   const m = /^perm:(allow|deny|more):([a-km-z]{5})$/.exec(data)
   if (!m) {
     await ctx.answerCallbackQuery().catch(() => {})
@@ -789,6 +1517,36 @@ bot.on('callback_query:data', async ctx => {
   if (msg && 'text' in msg && msg.text) {
     await ctx.editMessageText(`${msg.text}\n\n${label}`).catch(() => {})
   }
+})
+
+// The "stop generating" button under a draft. Nothing on this side can
+// interrupt an in-flight Claude turn, so the press is relayed as an ordinary
+// inbound message — Claude sees it on its next turn and can cut the answer
+// short. The update carries no `from`, but private-chat id == user id, so
+// allowFrom still gates it.
+bot.on('stopped_message_generation', ctx => {
+  const stopped = ctx.update.stopped_message_generation
+  const chat_id = String(stopped.chat.id)
+  const access = loadAccess()
+  if (access.dmPolicy === 'disabled') return
+  if (!access.allowFrom.includes(chat_id)) return
+
+  if (activeDrafts.get(chat_id) === stopped.draft_id) activeDrafts.delete(chat_id)
+
+  mcp.notification({
+    method: 'notifications/claude/channel',
+    params: {
+      content: '(pressed "stop generating" — stop expanding the answer, send what you already have)',
+      meta: {
+        chat_id,
+        user: stopped.chat.username ?? chat_id,
+        user_id: chat_id,
+        ts: new Date().toISOString(),
+      },
+    },
+  }).catch(err => {
+    process.stderr.write(`telegram channel: failed to deliver stop signal: ${err}\n`)
+  })
 })
 
 bot.on('message:text', async ctx => {
@@ -927,6 +1685,15 @@ async function handleInbound(
   const chat_id = String(ctx.chat!.id)
   const msgId = ctx.message?.message_id
 
+  // Acknowledge receipt before anything else. The sender is looking at a silent
+  // chat wondering whether the bridge is even alive, so this has to land before
+  // any branching, any download, and any relay. Fire-and-forget: Telegram
+  // accepts only a fixed emoji whitelist and rejects the rest, which we swallow.
+  if (msgId != null) {
+    pushInbound(chat_id, msgId)
+    setStatusReaction(chat_id, msgId, 'received')
+  }
+
   // Permission-reply intercept: if this looks like "yes xxxxx" for a
   // pending permission request, emit the structured event instead of
   // relaying as chat. The sender is already gate()-approved at this point
@@ -941,7 +1708,9 @@ async function handleInbound(
       },
     })
     if (msgId != null) {
-      const emoji = permMatch[1]!.toLowerCase().startsWith('y') ? '✅' : '❌'
+      // ✅/❌ are not on Telegram's reaction whitelist — it rejects them, so
+      // this used to leave permission replies with no visible acknowledgement.
+      const emoji = permMatch[1]!.toLowerCase().startsWith('y') ? '👍' : '👎'
       void bot.api.setMessageReaction(chat_id, msgId, [
         { type: 'emoji', emoji: emoji as ReactionTypeEmoji['emoji'] },
       ]).catch(() => {})
@@ -952,16 +1721,16 @@ async function handleInbound(
   // Typing indicator — signals "processing" until we reply (or ~5s elapses).
   void bot.api.sendChatAction(chat_id, 'typing').catch(() => {})
 
-  // Ack reaction — lets the user know we're processing. Fire-and-forget.
-  // Telegram only accepts a fixed emoji whitelist — if the user configures
-  // something outside that set the API rejects it and we swallow.
-  if (access.ackReaction && msgId != null) {
-    void bot.api
-      .setMessageReaction(chat_id, msgId, [
-        { type: 'emoji', emoji: access.ackReaction as ReactionTypeEmoji['emoji'] },
-      ])
-      .catch(() => {})
-  }
+  // Answer in the thread the message came from. Cleared when it arrives in the
+  // chat's main flow, so a reply never lands in a stale topic.
+  const inboundThread = ctx.message?.message_thread_id
+  if (inboundThread != null) threadOf.set(chat_id, inboundThread)
+  else threadOf.delete(chat_id)
+
+  // "Thinking…" draft with a stop button, refreshed until the reply lands. Done
+  // here rather than leaving it to the assistant so the sender always sees
+  // progress, even if the model replies without touching the draft tool.
+  void startThinking(chat_id, access)
 
   const imagePath = downloadImage ? await downloadImage() : undefined
 
@@ -1010,6 +1779,10 @@ void (async () => {
         onStart: info => {
           attempt = 0
           botUsername = info.username
+          // has_topics_enabled is only returned by getMe, and createForumTopic
+          // fails without it, so per-project topics stay off unless the bot
+          // owner turned topic mode on in BotFather.
+          topicsSupported = info.has_topics_enabled === true
           process.stderr.write(`telegram channel: polling as @${info.username}\n`)
           void bot.api.setMyCommands(
             [
