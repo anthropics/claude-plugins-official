@@ -144,3 +144,18 @@ live API): `paragraph`, `heading` (numeric `size`), `list` (items are `{blocks:[
 no `type`), `details`, `blockquote`, `table` (`cells`, not `rows`), `pre`, `divider`,
 `footer`. `section_heading`, `block_quotation`, `preformatted` and `thinking` are
 receive-side names only and are rejected on send.
+
+## `telegram: count a comment on a channel post as a reply`
+
+In a channel's linked discussion group, a comment is a reply to the copy of the
+post Telegram auto-forwarded into the group. That copy's sender is the channel,
+not the bot, so `isMentioned`'s "reply to one of our messages" check never
+matched and every comment was dropped under `requireMention`.
+
+`isMentioned` now also returns true for `reply_to_message.is_automatic_forward`
+— the marker Telegram puts on that forwarded post. A comment therefore reaches
+the session as a reply, with the post as its `reply_to_text`. Group access is
+unchanged: the group must still be registered and the sender allowlisted.
+
+A reply to *another comment* (rather than to the post itself) still needs a
+mention, unless the comment replied to is the bot's own.

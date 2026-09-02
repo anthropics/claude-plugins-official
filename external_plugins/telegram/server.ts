@@ -310,6 +310,12 @@ function isMentioned(ctx: Context, extraPatterns?: string[]): boolean {
   // Reply to one of our messages counts as an implicit mention.
   if (ctx.message?.reply_to_message?.from?.username === botUsername) return true
 
+  // In a channel's linked discussion group, a comment on a post arrives as a
+  // reply to the post Telegram auto-forwarded into the group — its sender is
+  // the channel, never the bot, so the check above misses it. Treat such a
+  // comment as a reply: the post is what it answers.
+  if (ctx.message?.reply_to_message?.is_automatic_forward) return true
+
   for (const pat of extraPatterns ?? []) {
     try {
       if (new RegExp(pat, 'i').test(text)) return true
