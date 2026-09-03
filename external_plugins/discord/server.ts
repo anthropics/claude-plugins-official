@@ -37,6 +37,10 @@ import { join, sep } from 'path'
 const STATE_DIR = process.env.DISCORD_STATE_DIR ?? join(homedir(), '.claude', 'channels', 'discord')
 const ACCESS_FILE = join(STATE_DIR, 'access.json')
 const APPROVED_DIR = join(STATE_DIR, 'approved')
+
+// "▸ Details" on replies — helpers live in ./details.ts (pure, tested with bun test).
+import { composeDetails, detailsRow, loadDetails, saveDetails, splitDetails } from './details.ts'
+const DETAILS_DIR = join(STATE_DIR, 'details')
 const ENV_FILE = join(STATE_DIR, '.env')
 
 // Load ~/.claude/channels/discord/.env into process.env. Real env wins.
@@ -457,7 +461,7 @@ const mcp = new Server(
       '',
       'Messages from Discord arrive as <channel source="discord" chat_id="..." message_id="..." user="..." ts="...">. If the tag has attachment_count, the attachments attribute lists name/type/size — call download_attachment(chat_id, message_id) to fetch them. Reply with the reply tool — pass chat_id back. Use reply_to (set to a message_id) only when replying to an earlier message; the latest message doesn\'t need a quote-reply, omit reply_to for normal responses.',
       '',
-      'reply accepts file paths (files: ["/abs/path.png"]) for attachments. Use react to add emoji reactions, and edit_message for interim progress updates. Edits don\'t trigger push notifications — when a long task completes, send a new reply so the user\'s device pings.',
+      'reply accepts an optional details string: longer evidence or reasoning hidden behind a "▸ Details" button the reader expands in place — use it instead of spoilers or long messages. reply accepts file paths (files: ["/abs/path.png"]) for attachments. Use react to add emoji reactions, and edit_message for interim progress updates. Edits don\'t trigger push notifications — when a long task completes, send a new reply so the user\'s device pings.',
       '',
       "fetch_messages pulls real Discord history. Discord's search API isn't available to bots — if the user asks you to find an old message, fetch more history or ask them roughly when it was.",
       '',
@@ -537,6 +541,11 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
             items: { type: 'string' },
             description: 'Absolute file paths to attach (images, logs, etc). Max 10 files, 25MB each.',
           },
+          details: {
+            type: 'string',
+            description:
+              'Optional longer detail (markdown, ≤1500 chars). Hidden behind a "▸ Details" button the reader can expand in place. Put evidence, reasoning and file paths here; keep text itself short.',
+          },
         },
         required: ['chat_id', 'text'],
       },
@@ -563,6 +572,7 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
           chat_id: { type: 'string' },
           message_id: { type: 'string' },
           text: { type: 'string' },
+          details: { type: 'string', description: 'Optional: replace the hidden detail behind the message\'s "▸ Details" button.' },
         },
         required: ['chat_id', 'message_id', 'text'],
       },
@@ -607,6 +617,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         const text = args.text as string
         const reply_to = args.reply_to as string | undefined
         const files = (args.files as string[] | undefined) ?? []
+        const details = typeof args.details === 'string' ? args.details.trim().slice(0, 1500) : ''
 
         const ch = await fetchAllowedChannel(chat_id)
         if (!('send' in ch)) throw new Error('channel is not sendable')
@@ -633,15 +644,18 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
               reply_to != null &&
               replyMode !== 'off' &&
               (replyMode === 'all' || i === 0)
+            const isLast = i === chunks.length - 1
             const sent = await ch.send({
               content: chunks[i],
               ...(i === 0 && files.length > 0 ? { files } : {}),
               ...(shouldReplyTo
                 ? { reply: { messageReference: reply_to, failIfNotExists: false } }
                 : {}),
+              ...(isLast && details ? { components: [detailsRow(false)] } : {}),
             })
             noteSent(sent.id)
             sentIds.push(sent.id)
+            if (isLast && details) saveDetails(DETAILS_DIR, sent.id, details)
           }
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err)
@@ -686,7 +700,16 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
       case 'edit_message': {
         const ch = await fetchAllowedChannel(args.chat_id as string)
         const msg = await ch.messages.fetch(args.message_id as string)
-        const edited = await msg.edit(args.text as string)
+        // A message posted with details keeps its button; the new text is the new summary,
+        // and an optional `details` replaces the stored detail. Expanded state is preserved.
+        const stored = loadDetails(DETAILS_DIR, msg.id)
+        const newDetails = typeof args.details === 'string' ? args.details.trim().slice(0, 1500) : ''
+        if (newDetails) saveDetails(DETAILS_DIR, msg.id, newDetails)
+        const have = newDetails || stored
+        const { expanded } = splitDetails(msg.content)
+        const edited = have
+          ? await msg.edit({ content: composeDetails(args.text as string, have, expanded), components: [detailsRow(expanded)] })
+          : await msg.edit(args.text as string)
         return { content: [{ type: 'text', text: `edited (id: ${edited.id})` }] }
       }
       case 'download_attachment': {
@@ -746,6 +769,19 @@ client.on('error', err => {
 // Security mirrors the text-reply path: allowFrom must contain the sender.
 client.on('interactionCreate', async (interaction: Interaction) => {
   if (!interaction.isButton()) return
+  // The Details toggle. No allowlist check on purpose — it reveals text the bot already
+  // posted to this channel; it grants nothing. The message must be ours (Discord guarantees it: only
+  // the message's author bot receives its component interactions).
+  if (interaction.customId === 'details:show' || interaction.customId === 'details:hide') {
+    const msg = interaction.message
+    const { summary, expanded } = splitDetails(msg.content)
+    const details = loadDetails(DETAILS_DIR, msg.id) || '(no further detail was recorded for this message)'
+    const nowExpanded = !expanded
+    await interaction
+      .update({ content: composeDetails(summary, details, nowExpanded), components: [detailsRow(nowExpanded)] })
+      .catch(e => process.stderr.write(`discord: details toggle failed: ${e}\n`))
+    return
+  }
   const m = /^perm:(allow|deny|more):([a-km-z]{5})$/.exec(interaction.customId)
   if (!m) return
   const access = loadAccess()

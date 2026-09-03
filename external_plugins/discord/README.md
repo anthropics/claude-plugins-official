@@ -92,8 +92,10 @@ Quick reference: IDs are Discord **snowflakes** (numeric — enable Developer Mo
 | Tool | Purpose |
 | --- | --- |
 | `reply` | Send to a channel. Takes `chat_id` + `text`, optionally `reply_to` (message ID) for native threading and `files` (absolute paths) for attachments — max 10 files, 25MB each. Auto-chunks; files attach to the first chunk. Returns the sent message ID(s). |
+| | Optional `details` (≤1500 chars): longer text hidden behind a **▸ Details** button the reader expands in place (a second press collapses it). Stored under `~/.claude/channels/discord/details/` keyed by message id, so it survives restarts. Use it for evidence and reasoning instead of long messages or spoilers. |
 | `react` | Add an emoji reaction to any message by ID. Unicode emoji work directly; custom emoji need `<:name:id>` form. |
 | `edit_message` | Edit a message the bot previously sent. Useful for "working…" → result progress updates. Only works on the bot's own messages. |
+| | Optional `details` replaces the hidden text of a message that has a Details button; the button and its expanded/collapsed state are kept. |
 | `fetch_messages` | Pull recent history from a channel (oldest-first). Capped at 100 per call. Each line includes the message ID so the model can `reply_to` it; messages with attachments are marked `+Natt`. Discord's search API isn't exposed to bots, so this is the only lookback. |
 | `download_attachment` | Download all attachments from a specific message by ID to `~/.claude/channels/discord/inbox/`. Returns file paths + metadata. Use when `fetch_messages` shows a message has attachments. |
 
