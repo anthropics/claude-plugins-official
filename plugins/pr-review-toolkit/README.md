@@ -183,7 +183,7 @@ Claude may proactively use these agents based on context:
 Install from your personal marketplace:
 
 ```bash
-/plugins
+/plugin
 # Find "pr-review-toolkit"
 # Install
 ```
