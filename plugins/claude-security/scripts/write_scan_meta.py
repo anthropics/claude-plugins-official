@@ -1,19 +1,24 @@
 #!/usr/bin/env python3
 """Write scan-meta.json for a run: the record of what was scanned.
 
-Mints the scan's id and captures, from git itself: the revision, the scan
-root's path within the repository, the credential-free https form of its
-remote and, for a whole-repository scan, the tree's top-level directories,
-printed as a JSON array on a `top_level_dirs:` line and recorded in the meta
-file with any root-level symbolic links left out of them.
+Mints the scan's id, records when the scan started, and captures, from git
+itself: the revision, the scan root's path within the repository, the
+credential-free https form of its remote and, for a whole-repository scan,
+the tree's top-level directories, printed as a JSON array on a
+`top_level_dirs:` line and recorded in the meta file with any root-level
+symbolic links left out of them. For a codebase scan it also lists the scan
+target's tracked files into target-files.json beside the meta file and prints
+their count on a `file_count:` line and, for a whole-repository scan, the
+count under each top-level directory on a `dir_file_counts:` line.
 
 Usage:
   write_scan_meta.py <run_dir> <scan_root> --mode scan|changes|commit
                      --effort low|medium|high|max [--scope a,b] [--base <ref>]
                      [--merge-base <sha>] [--commit <sha>]
 
-Exits 0 on success, 1 on a refusal naming what is wrong, 2 on a usage error;
-the file is written only on success.
+Exits 0 on success, 1 on a refusal naming what is wrong (a run directory that
+already holds a scan-meta.json is one), 2 on a usage error; the file is
+written only on success.
 Python 3.9-compatible, stdlib only.
 """
 
@@ -26,6 +31,8 @@ import stat
 import subprocess
 import sys
 import uuid
+from collections import Counter
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal, NamedTuple, TypedDict
 from urllib.parse import quote, unquote, urlsplit
@@ -88,12 +95,14 @@ def git(cwd: str, *args: str) -> str | None:
 
 
 class Extent(NamedTuple):
-    """The scan target's top-level directories, its root-level symbolic links, and
-    the tracked top-level directories its working tree does not hold."""
+    """The scan target's top-level directories, its root-level symbolic links, the
+    tracked top-level directories its working tree does not hold, and whether
+    git tracks anything here at all."""
 
     dirs: list[str]
     symlinks: list[str]
     absent: list[str]
+    tracked: bool
 
 
 def tree_extent(scan_root: str) -> Extent | None:
@@ -137,7 +146,7 @@ def tree_extent(scan_root: str) -> Extent | None:
     kept = sorted(n for n in names if not n.startswith(plugin.REPORT_DIR_PREFIX))
     on_disk = {n for n in kept if os.path.lexists(os.path.join(scan_root, n))}
     dirs = [n for n in kept if n in on_disk]
-    return Extent(dirs, sorted(symlinks), [n for n in kept if n not in on_disk])
+    return Extent(dirs, sorted(symlinks), [n for n in kept if n not in on_disk], bool(listing))
 
 
 def sparse_checkout(scan_root: str, extent: Extent | None) -> list[str] | None:
@@ -145,6 +154,28 @@ def sparse_checkout(scan_root: str, extent: Extent | None) -> list[str] | None:
     if git(scan_root, "config", "--bool", "core.sparseCheckout") != "true":
         return None
     return extent.absent if extent else []
+
+
+def target_files(scan_root: str, scope: list[str]) -> list[str] | None:
+    """The scan target's tracked regular files in the working tree, sorted; None if unlisted."""
+    listing = git(scan_root, "ls-files", "-z", "--", *scope)
+    if listing is None:
+        return None
+    return sorted({
+        path
+        for path in listing.split("\0")
+        if path
+        and not path.startswith(plugin.REPORT_DIR_PREFIX)
+        and regular_file(os.path.join(scan_root, path))
+    })
+
+
+def regular_file(path: str) -> bool:
+    """Whether `path` is a regular file, judged without following a symbolic link."""
+    try:
+        return stat.S_ISREG(os.lstat(path).st_mode)
+    except OSError:
+        return False
 
 
 REMOTE_SCHEMES = frozenset({"http", "https", "ssh", "git", "git+ssh"})
@@ -237,9 +268,12 @@ def capture_revision(scan_root: str, opts: Args) -> Revision:
 
 
 def scoped(entry: str, scan_root: str) -> str:
-    """A scope entry relative to the scan root; an absolute one that is not inside it is refused."""
+    """A scope entry relative to the scan root; an absolute spelling of anything else is refused."""
     if not absolute.spelled(entry):
         return entry
+    msg = f"--scope entry {entry!r} is not inside the scan root {scan_root!r}"
+    if not os.path.isabs(entry):
+        raise MetaError(f"{msg}; write ./{entry} to name a directory in the tree")
     literal = os.path.abspath(entry)
     parent, name = os.path.split(literal)
     try:
@@ -251,19 +285,14 @@ def scoped(entry: str, scan_root: str) -> str:
     except OSError:
         resolutions = [literal]
     for resolved in resolutions:
-        try:
-            relative = os.path.relpath(resolved, scan_root).replace("\\", "/")
-        except ValueError:
-            continue
-        if relative != ".." and not relative.startswith("../"):
+        if (relative := absolute.relative(resolved, scan_root)) is not None:
             return relative
-    msg = f"--scope entry {entry!r} is not inside the scan root {scan_root!r}"
     raise MetaError(msg)
 
 
 def parse_options(argv: list[str]) -> Args:
     """The parsed command line; anything wrong with it is argparse's exit 2."""
-    ap = argparse.ArgumentParser(prog="write_scan_meta")
+    ap = argparse.ArgumentParser(prog="write_scan_meta", allow_abbrev=False)
     ap.add_argument("run_dir")
     ap.add_argument("scan_root")
     ap.add_argument("--mode", required=True, choices=plugin.MODES)
@@ -282,7 +311,8 @@ def parse_options(argv: list[str]) -> Args:
 
 def main(argv: list[str]) -> int:
     opts = parse_options(argv)
-    run_dir = os.path.realpath(os.path.abspath(opts.run_dir))
+    # abspath first: "x/.." is x's parent as typed, where realpath alone would follow a symlink x.
+    run_dir = Path(os.path.realpath(os.path.abspath(opts.run_dir)))
     scan_root = os.path.realpath(os.path.abspath(opts.scan_root))
     revision = capture_revision(scan_root, opts)
     extent = tree_extent(scan_root)
@@ -302,9 +332,17 @@ def main(argv: list[str]) -> int:
     if scope and all(s in {".", "./"} for s in scope):
         scope = []
     whole_repo = opts.mode == "scan" and not scope
+    tracked = opts.mode == "scan" and extent is not None and extent.tracked
+    files = target_files(scan_root, scope) if tracked else None
+    if tracked and files is None:
+        sys.stderr.write(f"write_scan_meta: could not list {scan_root}; file_count unknown\n")
     if whole_repo and extent is None:
         sys.stderr.write(f"write_scan_meta: could not list {scan_root}; top_level_dirs unknown\n")
     top_level, symlinks = (extent.dirs, extent.symlinks) if whole_repo and extent else (None, None)
+    dir_file_counts = None
+    if top_level is not None and files is not None:
+        per_dir = Counter(path.partition("/")[0] for path in files if "/" in path)
+        dir_file_counts = {name: per_dir[name] for name in top_level}
     if symlinks:
         sys.stderr.write(
             "write_scan_meta: root-level symbolic links not followed, "
@@ -312,10 +350,11 @@ def main(argv: list[str]) -> int:
         )
     meta: dict[str, object] = {
         "scan_id": str(uuid.uuid4()),
+        "started_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
         "scan_root": scan_root,
         "scan_prefix": scan_prefix,
         "remote": remote,
-        "run_dir": run_dir,
+        "run_dir": str(run_dir),
         "flow": "scan" if opts.mode == "scan" else "changes",
         "agent": f"{plugin.NAME}:{plugin.NAME}",
         "mode": opts.mode,
@@ -327,15 +366,28 @@ def main(argv: list[str]) -> int:
         "top_level_dirs": top_level,
         "unfollowed_symlinks": symlinks,
     }
-    path = os.path.join(run_dir, "scan-meta.json")
-    with open(path, "w", encoding="utf-8", newline="\n") as out:
-        out.write(strictjson.text(meta, indent=2) + "\n")
+    path = run_dir / "scan-meta.json"
+    # Created exclusively: a run directory that already holds one belongs to another scan.
+    try:
+        with path.open("x", encoding="utf-8", newline="\n") as out:
+            out.write(strictjson.text(meta, indent=2) + "\n")
+    except FileExistsError as error:
+        msg = (
+            f"{run_dir} already holds a scan's scan-meta.json, so another scan is using this "
+            "report directory; make a new report directory named for the current time and "
+            "run this again there"
+        )
+        raise MetaError(msg) from error
+    if files is not None:
+        (run_dir / plugin.TARGET_FILES_NAME).write_bytes((strictjson.text(files) + "\n").encode())
     sys.stdout.write(f"scan-meta.json written: {path}\n")
     sys.stdout.write(f"revision: {revision.get('commit') or 'UNVERSIONED'}\n")
     if absent is not None:
         listed = strictjson.text(absent)
         sys.stdout.write(f"sparse checkout: top-level directories not checked out: {listed}\n")
     sys.stdout.write(f"top_level_dirs: {strictjson.text(top_level)}\n")
+    sys.stdout.write(f"file_count: {strictjson.text(None if files is None else len(files))}\n")
+    sys.stdout.write(f"dir_file_counts: {strictjson.text(dir_file_counts)}\n")
     return 0
 
 

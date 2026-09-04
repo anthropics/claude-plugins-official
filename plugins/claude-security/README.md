@@ -4,6 +4,10 @@ Put a team of agents to work as security researchers on your codebase: map the a
 
 This is the in-your-session version of [Claude Security](https://claude.com/product/claude-security), Anthropic’s hosted product for vulnerability detection and patching. It runs entirely inside your Claude Code session — no separate process, no daemon.
 
+## Claude Fable 5.1 Support
+
+The Claude Security Plugin for Claude Code supports Claude Fable 5.1, and it is the best model to use for discovering vulnerabilities. Portions of a scan may occasionally be downgraded to Opus 4.8; the rest of the scan completes on Fable 5.1. Please share feedback with `/feedback` so we can keep improving our cybersecurity safeguards.
+
 ## Where it runs
 
 A scan and a fix both run in your Claude Code session, under your permissions. The plugin reads the repository you have open the same way you would, and adds no isolation of its own: the directory's `.git/config`, its `.claude/` settings and hooks, and its `CLAUDE.md` all apply exactly as they would in any other session.
@@ -45,7 +49,7 @@ From there the scan sizes itself to the target. A small diff or a narrow scope g
 Every scan writes its results into a timestamped `CLAUDE-SECURITY-<timestamp>/` directory in the repository:
 
 - **`CLAUDE-SECURITY-RESULTS.md`** — the human-readable report: each finding with its impact, exploit scenario, preconditions, severity (CRITICAL, HIGH, MEDIUM or LOW, assigned from exploitability and impact along the lines of the [CVSS v4.0](https://www.first.org/cvss/v4-0/specification-document) qualitative scale), confidence, and an outcome-focused recommendation.
-- **`CLAUDE-SECURITY-RESULTS.jsonl`** — the same findings in machine-readable form, one JSON object per line. Neither this file nor the SARIF log quotes the source line of a hard-coded credential finding, since that line is the credential; file, line and symbol locate it.
+- **`CLAUDE-SECURITY-RESULTS.jsonl`** — the same findings in machine-readable form, one JSON object per line. Each record carries a `claudeSecurityPluginFindingId` derived from the code at the finding (for a hard-coded credential, and any finding within a few lines of one, from its location instead, since that code holds the secret), designed to stay the same from scan to scan while that code (or, for those, its location) is unchanged so tooling can tell a known finding from a new one; the SARIF log carries the same value in each result's properties. Neither this file nor the SARIF log quotes the source line of a hard-coded credential finding, since that line is the credential; file, line and symbol locate it.
 - **`CLAUDE-SECURITY-RESULTS.sarif`** — the same findings as a [SARIF 2.1.0](https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html) log for GitHub code scanning, IDE SARIF viewers, and other tooling that speaks the standard.
 - **`CLAUDE-SECURITY-REVISION-<sha12>.json`** — the revision stamp: which commit was scanned, at what effort, the severity counts, and how thoroughly the run was verified. The filename carries `-dirty` when uncommitted changes were part of the scanned tree, so a report is always tied to the code it describes.
 
@@ -57,7 +61,7 @@ A whole-repository scan accounts for the whole repository. Every top-level direc
 
 However much effort a scan spends, a finding reaches the report only after surviving verification. Every candidate is handed to independent verifiers whose job is to disprove it, working from the code rather than from the report of it, and told to call it a false positive unless they can confirm a real path to exploitation. Findings that survive that are what you read; the rest are discarded, never shown. That is why the reports stay short.
 
-A finding also cannot claim more confidence than its verification earned, and the record of how thoroughly a run was verified is computed in code rather than asserted by the model that produced the findings — so the report's own account of its rigor is one you can check.
+A finding also cannot claim more confidence than its verification earned, nor, once two of the verifiers who confirmed it have rated it, a higher severity than they support, and the record of how thoroughly a run was verified is computed in code rather than asserted by the model that produced the findings — so the report's own account of its rigor is one you can check.
 
 Throughout, what the repository says is evidence rather than instruction. Code, comments, and any `CLAUDE.md` in the tree are read as data under review, so text addressed to the scan is noted rather than obeyed. Under the trusted-code model this keeps the work anchored to the evidence; it is not a defense against a hostile repository.
 
@@ -78,6 +82,10 @@ The patches land in the report's `patches/` folder: one `F<n>.patch` per finding
 - Claude Code with this plugin installed
 - Python 3.9 or newer on `PATH`
 - A git checkout for scanning changes and suggesting patches — a whole-repository scan works without one
+
+## Telemetry
+
+The plugin reports usage counts (scans started and finished, findings by severity, patches drafted, and which step failed when one does) through Claude Code's built-in telemetry. To turn this off, use Claude Code's own settings: set `DISABLE_TELEMETRY=1` (or `DO_NOT_TRACK=1`, or `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`) and these counts are not sent to Anthropic. See [Claude Code's data usage documentation](https://code.claude.com/docs/en/data-usage#telemetry-services).
 
 ## Security
 

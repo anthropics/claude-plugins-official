@@ -1,7 +1,8 @@
-"""The Finding record every product carries, and build_finding, which validates a raw one."""
+"""The Finding every product is built from, and build_finding, which validates a raw one."""
 
 from __future__ import annotations
 
+import ntpath
 import os
 import re
 from typing import TypedDict
@@ -19,7 +20,7 @@ class Panel(TypedDict):
 
 
 class Finding(TypedDict):
-    """One validated finding: the JSONL record, whose field order is this class's order."""
+    """One validated finding, in the JSONL record's field order; the record adds the id (Record)."""
 
     id: str
     title: str
@@ -36,6 +37,13 @@ class Finding(TypedDict):
     cwe_id: str
     snippet: str
     symbol: str
+    declared_line: int
+
+
+class Record(Finding):
+    """A finding as every product carries it: placed on its line (sarif.placed), its id last."""
+
+    claudeSecurityPluginFindingId: str
 
 
 SEVERITIES = ("CRITICAL", "HIGH", "MEDIUM", "LOW")
@@ -51,6 +59,25 @@ FINDING_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\Z")
 
 class FindingError(Exception):
     """A refusal; the message names what a findings.json record got wrong."""
+
+
+class FindingPathError(FindingError):
+    """A refusal of one finding's model-written path; the rest of a report can still carry.
+
+    The message names the finding and quotes the declared path; `finding_id`
+    and `wrong` (what is wrong with the path, without the path) are what a
+    caller surviving the refusal may record in a product.
+    """
+
+    finding_id: str
+    wrong: str
+    cwe: int = 0
+    snippet: str = ""
+
+    def __init__(self, finding_id: str, *, declared: str, wrong: str) -> None:
+        super().__init__(f"finding {finding_id} file {declared!r} {wrong}")
+        self.finding_id = finding_id
+        self.wrong = wrong
 
 
 def cwe_number(item: JsonMap, finding_id: str) -> int:
@@ -108,6 +135,34 @@ def vote_confidence_ceiling(record: object) -> str | None:
     return "high" if panel["true"] >= PANEL_VOTER_COUNT else "medium"
 
 
+def line_number(raw: object) -> int | None:
+    """A findings.json line value as an integer: an int, or digits in a string; None otherwise."""
+    if is_str(raw) and re.fullmatch(r"\s*-?[0-9]{1,15}\s*", raw):
+        return int(raw)
+    return raw if is_int(raw) else None
+
+
+def line_field(item: JsonMap, key: str, finding_id: str, default: int) -> int:
+    """One of a finding's line fields as an integer (line_number); absent reads as `default`."""
+    line = line_number(item.get(key, default))
+    if line is None:
+        msg = f"finding {finding_id} {key} {item.get(key)!r} is not an integer"
+        raise FindingError(msg)
+    return line
+
+
+def scan_prefix_shaped(prefix: str) -> bool:
+    """Whether `prefix` is what `git rev-parse --show-prefix` prints: empty, or `a/b/`."""
+    if not prefix:
+        return True
+    return (
+        prefix.endswith("/")
+        and "\\" not in prefix
+        and not ntpath.splitdrive(prefix)[0]
+        and all(segment not in {"", ".", ".."} for segment in prefix.split("/")[:-1])
+    )
+
+
 def text_field(item: JsonMap, key: str, finding_id: str, required: bool = False) -> str:
     """One of a finding's text fields; absent or null reads as empty unless it is required."""
     value = item.get(key)
@@ -127,6 +182,15 @@ def text_field(item: JsonMap, key: str, finding_id: str, required: bool = False)
     return text
 
 
+def leaked_spelling(path: str, *, first: str, scan_root: str) -> bool:
+    """Whether a path's cross-platform absolute spelling names the machine, not the repository."""
+    if not absolute.spelled(path):
+        return False
+    if os.name == "nt":
+        return True
+    return not os.path.lexists(os.path.join(scan_root, first))
+
+
 def file_field(
     item: JsonMap, finding_id: str, scan_root: str, scan_prefix: str, must_exist: bool
 ) -> str:
@@ -139,11 +203,12 @@ def file_field(
     With `must_exist` (a codebase scan, whose whole tree is still present when
     the report renders), a path that exists neither under the scan root nor at
     the repository top level is refused.
+    A name that merely spells like another platform's absolute path is treated
+    as repository content when the scan root holds its first segment.
     """
     declared = text_field(item, "file", finding_id, required=True).strip()
     depth = scan_prefix.count("/")
-    beyond = "repository" if depth else "scan root"
-    refusal = f"finding {finding_id} file {declared!r} escapes the {beyond}"
+    escapes = f"escapes the {'repository' if depth else 'scan root'}"
     path = declared.replace("\\", "/")
     prefix = scan_root.replace("\\", "/").rstrip("/") + "/"
     if scan_root and path.startswith(prefix):
@@ -152,12 +217,17 @@ def file_field(
         try:
             path = os.path.relpath(os.path.realpath(path), scan_root).replace("\\", "/")
         except (ValueError, OSError) as error:
-            raise FindingError(refusal) from error
+            raise FindingPathError(finding_id, declared=declared, wrong=escapes) from error
     parts = [part for part in path.split("/") if part and part != "."]
     climb = next((i for i, part in enumerate(parts) if part != ".."), len(parts))
     inside = parts[climb:]
-    if not inside or absolute.spelled(path) or ".." in inside or climb > depth:
-        raise FindingError(refusal)
+    if (
+        not inside
+        or ".." in inside
+        or climb > depth
+        or leaked_spelling(path, first=parts[0], scan_root=scan_root)
+    ):
+        raise FindingPathError(finding_id, declared=declared, wrong=escapes)
     if not os.path.lexists(os.path.join(scan_root, *parts)):
         # A file only the repository top level holds was spelled relative to it, not the scan root.
         if depth and not climb:
@@ -165,8 +235,9 @@ def file_field(
             if os.path.lexists(at_top):
                 return os.path.relpath(at_top, scan_root).replace("\\", "/")
         if must_exist:
-            msg = f"finding {finding_id} file {declared!r} does not exist in the scanned tree"
-            raise FindingError(msg)
+            raise FindingPathError(
+                finding_id, declared=declared, wrong="does not exist in the scanned tree"
+            )
     return "/".join(parts)
 
 
@@ -201,12 +272,8 @@ def build_finding(
     if ceiling is not None and CONFIDENCE_RANK[confidence] > CONFIDENCE_RANK[ceiling]:
         confidence = ceiling
 
-    line = raw.get("line", 0)
-    if is_str(line) and re.fullmatch(r"\s*-?[0-9]{1,15}\s*", line):
-        line = int(line)
-    if not is_int(line):
-        msg = f"finding {finding_id} line {raw.get('line')!r} is not an integer"
-        raise FindingError(msg)
+    line = line_field(raw, "line", finding_id, 0)
+    declared_line = line_field(raw, "declared_line", finding_id, line)
 
     preconditions: list[str] = []
     declared = raw.get("preconditions")
@@ -221,21 +288,34 @@ def build_finding(
 
     number = cwe_number(raw, finding_id)
     category = cwe.catalog.category(number)
+    title = text_field(raw, "title", finding_id, required=True)
+    impact = text_field(raw, "impact", finding_id)
+    description = text_field(raw, "description", finding_id, required=True)
+    exploit_scenario = text_field(raw, "exploit_scenario", finding_id, required=True)
+    recommendation = text_field(raw, "recommendation", finding_id)
+    snippet = text_field(raw, "snippet", finding_id)
+    symbol = text_field(raw, "symbol", finding_id)
+    try:
+        file = file_field(raw, finding_id, scan_root, scan_prefix, must_exist)
+    except FindingPathError as error:
+        error.cwe, error.snippet = number, snippet
+        raise
 
     return {
         "id": finding_id,
-        "title": text_field(raw, "title", finding_id, required=True),
-        "impact": text_field(raw, "impact", finding_id),
-        "file": file_field(raw, finding_id, scan_root, scan_prefix, must_exist),
+        "title": title,
+        "impact": impact,
+        "file": file,
         "line": line,
-        "description": text_field(raw, "description", finding_id, required=True),
-        "exploit_scenario": text_field(raw, "exploit_scenario", finding_id, required=True),
+        "description": description,
+        "exploit_scenario": exploit_scenario,
         "preconditions": preconditions,
         "category": category.name if category is not None else cwe.UNCATEGORIZED,
         "severity": severity,
         "confidence": confidence,
-        "recommendation": text_field(raw, "recommendation", finding_id),
+        "recommendation": recommendation,
         "cwe_id": f"CWE-{number}",
-        "snippet": text_field(raw, "snippet", finding_id),
-        "symbol": text_field(raw, "symbol", finding_id),
+        "snippet": snippet,
+        "symbol": symbol,
+        "declared_line": declared_line,
     }
