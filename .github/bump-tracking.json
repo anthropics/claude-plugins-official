@@ -10,6 +10,8 @@
     "deepeval",
     "hyperframes",
     "mergify",
+    "qodo",
+    "qodo-standards",
     "remember"
   ]
 }
