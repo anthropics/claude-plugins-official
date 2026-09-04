@@ -2863,6 +2863,24 @@
       "homepage": "https://github.com/qodo-ai/qodo-skills.git"
     },
     {
+      "name": "qodo-standards",
+      "displayName": "Qodo Standards",
+      "description": "Optional Qodo rules discovery and standards administration workflows.",
+      "author": {
+        "name": "Qodo",
+        "email": "support@qodo.ai"
+      },
+      "category": "development",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/qodo-ai/qodo-skills.git",
+        "path": "packages/qodo-standards",
+        "ref": "main",
+        "sha": "3f017b1f2e13dbf9feb532143dc39fa4eea12479"
+      },
+      "homepage": "https://github.com/qodo-ai/qodo-skills.git"
+    },
+    {
       "name": "qt-development-skills",
       "description": "Agentic engineering skills for Qt software development — Qt C++/QML code review, QML coding, and Qt C++/QML code documentation.",
       "author": {
