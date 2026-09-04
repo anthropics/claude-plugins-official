@@ -3970,7 +3970,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/zoom/zoom-plugin.git",
-        "sha": "3c779cd462960e56e43c87be970df846754f6ce7"
+        "sha": "9311dd4b31e8e55c27b95479a84601576e449e97"
       },
       "homepage": "https://developers.zoom.us/"
     },
