@@ -3141,7 +3141,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/cap-js/mcp-server.git",
-        "sha": "e7b9bcd77fcfe15db8705da19a1e0a2582f202a1"
+        "sha": "644bf4a132313cf506b2ae11ac51db9123198af3"
       },
       "homepage": "https://cap.cloud.sap/"
     },
