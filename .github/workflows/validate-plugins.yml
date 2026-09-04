@@ -48,6 +48,14 @@ on:
       - 'plugins/*/assets/**'
       - 'external_plugins/*/README.md'
       - 'external_plugins/*/assets/**'
+      # And for a vendored plugin's MCP server config / hooks: a PR that only edits
+      # plugins/<name>/.mcp.json (e.g. repointing a partner's remote MCP URL, as
+      # #4985 and its follow-up did for context7) or a hooks file matches nothing
+      # above, so `validate` never reports and the PR sits "Expected" forever.
+      - 'plugins/*/.mcp.json'
+      - 'plugins/*/hooks/**'
+      - 'external_plugins/*/.mcp.json'
+      - 'external_plugins/*/hooks/**'
   push:
     branches: [main]
     paths:
