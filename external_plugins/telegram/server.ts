@@ -23,6 +23,7 @@ import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, statSync, 
 import { homedir } from 'os'
 import { execFileSync } from 'child_process'
 import { join, extname, sep } from 'path'
+import { deliverAndAck } from './ack'
 
 const STATE_DIR = process.env.TELEGRAM_STATE_DIR
   ?? join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude'), 'channels', 'telegram')
@@ -933,63 +934,83 @@ async function handleInbound(
   // (non-allowlisted senders were dropped above), so we trust the reply.
   const permMatch = PERMISSION_REPLY_RE.exec(text)
   if (permMatch) {
-    void mcp.notification({
-      method: 'notifications/claude/channel/permission',
-      params: {
-        request_id: permMatch[2]!.toLowerCase(),
-        behavior: permMatch[1]!.toLowerCase().startsWith('y') ? 'allow' : 'deny',
+    // Ack (the ✅/❌ reaction) only fires once the permission event has
+    // actually reached Claude — see deliverAndAck in ./ack.ts. An MCP outage
+    // used to leave the reaction on the message regardless, so the sender
+    // saw "received" for a decision that was silently dropped.
+    void deliverAndAck(
+      () => mcp.notification({
+        method: 'notifications/claude/channel/permission',
+        params: {
+          request_id: permMatch[2]!.toLowerCase(),
+          behavior: permMatch[1]!.toLowerCase().startsWith('y') ? 'allow' : 'deny',
+        },
+      }),
+      () => {
+        if (msgId != null) {
+          const emoji = permMatch[1]!.toLowerCase().startsWith('y') ? '✅' : '❌'
+          void bot.api.setMessageReaction(chat_id, msgId, [
+            { type: 'emoji', emoji: emoji as ReactionTypeEmoji['emoji'] },
+          ]).catch(() => {})
+        }
       },
-    })
-    if (msgId != null) {
-      const emoji = permMatch[1]!.toLowerCase().startsWith('y') ? '✅' : '❌'
-      void bot.api.setMessageReaction(chat_id, msgId, [
-        { type: 'emoji', emoji: emoji as ReactionTypeEmoji['emoji'] },
-      ]).catch(() => {})
-    }
+      err => {
+        process.stderr.write(`telegram channel: failed to deliver permission reply to Claude: ${err}\n`)
+      },
+    )
     return
   }
 
   // Typing indicator — signals "processing" until we reply (or ~5s elapses).
   void bot.api.sendChatAction(chat_id, 'typing').catch(() => {})
 
-  // Ack reaction — lets the user know we're processing. Fire-and-forget.
-  // Telegram only accepts a fixed emoji whitelist — if the user configures
-  // something outside that set the API rejects it and we swallow.
-  if (access.ackReaction && msgId != null) {
-    void bot.api
-      .setMessageReaction(chat_id, msgId, [
-        { type: 'emoji', emoji: access.ackReaction as ReactionTypeEmoji['emoji'] },
-      ])
-      .catch(() => {})
-  }
-
   const imagePath = downloadImage ? await downloadImage() : undefined
 
+  // Ack reaction — lets the sender know the message reached Claude. Tied to
+  // delivery via deliverAndAck (see ./ack.ts): the reaction only fires once
+  // mcp.notification below has actually succeeded. Previously it fired
+  // unconditionally before the delivery attempt — an MCP outage window could
+  // then show "delivered" on Telegram for a message that never reached
+  // Claude. Telegram only accepts a fixed emoji whitelist — if the user
+  // configures something outside that set the API rejects it and we swallow.
+  //
   // image_path goes in meta only — an in-content "[image attached — read: PATH]"
   // annotation is forgeable by any allowlisted sender typing that string.
-  mcp.notification({
-    method: 'notifications/claude/channel',
-    params: {
-      content: text,
-      meta: {
-        chat_id,
-        ...(msgId != null ? { message_id: String(msgId) } : {}),
-        user: from.username ?? String(from.id),
-        user_id: String(from.id),
-        ts: new Date((ctx.message?.date ?? 0) * 1000).toISOString(),
-        ...(imagePath ? { image_path: imagePath } : {}),
-        ...(attachment ? {
-          attachment_kind: attachment.kind,
-          attachment_file_id: attachment.file_id,
-          ...(attachment.size != null ? { attachment_size: String(attachment.size) } : {}),
-          ...(attachment.mime ? { attachment_mime: attachment.mime } : {}),
-          ...(attachment.name ? { attachment_name: attachment.name } : {}),
-        } : {}),
+  void deliverAndAck(
+    () => mcp.notification({
+      method: 'notifications/claude/channel',
+      params: {
+        content: text,
+        meta: {
+          chat_id,
+          ...(msgId != null ? { message_id: String(msgId) } : {}),
+          user: from.username ?? String(from.id),
+          user_id: String(from.id),
+          ts: new Date((ctx.message?.date ?? 0) * 1000).toISOString(),
+          ...(imagePath ? { image_path: imagePath } : {}),
+          ...(attachment ? {
+            attachment_kind: attachment.kind,
+            attachment_file_id: attachment.file_id,
+            ...(attachment.size != null ? { attachment_size: String(attachment.size) } : {}),
+            ...(attachment.mime ? { attachment_mime: attachment.mime } : {}),
+            ...(attachment.name ? { attachment_name: attachment.name } : {}),
+          } : {}),
+        },
       },
+    }),
+    () => {
+      if (access.ackReaction && msgId != null) {
+        void bot.api
+          .setMessageReaction(chat_id, msgId, [
+            { type: 'emoji', emoji: access.ackReaction as ReactionTypeEmoji['emoji'] },
+          ])
+          .catch(() => {})
+      }
     },
-  }).catch(err => {
-    process.stderr.write(`telegram channel: failed to deliver inbound to Claude: ${err}\n`)
-  })
+    err => {
+      process.stderr.write(`telegram channel: failed to deliver inbound to Claude: ${err}\n`)
+    },
+  )
 }
 
 // Without this, any throw in a message handler stops polling permanently
