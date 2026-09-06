@@ -803,7 +803,12 @@ client.on('interactionCreate', async (interaction: Interaction) => {
 })
 
 client.on('messageCreate', msg => {
-  if (msg.author.bot) return
+  // Ignore this bot's own messages, which is what the loop guard is actually
+  // for. Dropping every bot-authored message also silenced other bots, which
+  // makes two Claude Code sessions unable to coordinate through a shared
+  // channel even when each has been granted access. The access gate below
+  // still decides who is allowed to reach the session.
+  if (msg.author.id === client.user?.id) return
   handleInbound(msg).catch(e => process.stderr.write(`discord: handleInbound failed: ${e}\n`))
 })
 
