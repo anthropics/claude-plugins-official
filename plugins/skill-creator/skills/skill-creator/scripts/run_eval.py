@@ -8,7 +8,8 @@ for a set of queries. Outputs results as JSON.
 import argparse
 import json
 import os
-import select
+import queue
+import threading
 import subprocess
 import sys
 import time
@@ -97,20 +98,35 @@ def run_single_query(
         pending_tool_name = None
         accumulated_json = ""
 
+        # A reader thread rather than select(): on Windows select() accepts only
+        # sockets, so selecting on a pipe raises WinError 10038 and every query
+        # fails. Blocking reads on a thread behave the same on every platform
+        # and still let the loop honour the timeout.
+        chunks: queue.Queue = queue.Queue()
+
+        def _pump() -> None:
+            try:
+                while True:
+                    chunk = process.stdout.read(8192)
+                    if not chunk:
+                        break
+                    chunks.put(chunk)
+            finally:
+                chunks.put(None)
+
+        reader = threading.Thread(target=_pump, daemon=True)
+        reader.start()
+
         try:
             while time.time() - start_time < timeout:
-                if process.poll() is not None:
-                    remaining = process.stdout.read()
-                    if remaining:
-                        buffer += remaining.decode("utf-8", errors="replace")
-                    break
-
-                ready, _, _ = select.select([process.stdout], [], [], 1.0)
-                if not ready:
+                try:
+                    chunk = chunks.get(timeout=1.0)
+                except queue.Empty:
+                    if process.poll() is not None:
+                        break
                     continue
 
-                chunk = os.read(process.stdout.fileno(), 8192)
-                if not chunk:
+                if chunk is None:
                     break
                 buffer += chunk.decode("utf-8", errors="replace")
 
@@ -211,6 +227,7 @@ def run_eval(
                 future_to_info[future] = (item, run_idx)
 
         query_triggers: dict[str, list[bool]] = {}
+        query_errors: dict[str, int] = {}
         query_items: dict[str, dict] = {}
         for future in as_completed(future_to_info):
             item, _ = future_to_info[future]
@@ -221,11 +238,31 @@ def run_eval(
             try:
                 query_triggers[query].append(future.result())
             except Exception as e:
+                # A failed query is not evidence that the skill did not
+                # trigger. Recording it as False made every
+                # "should_trigger": false case pass by accident, under a
+                # normal-looking summary.
                 print(f"Warning: query failed: {e}", file=sys.stderr)
-                query_triggers[query].append(False)
+                query_errors[query] = query_errors.get(query, 0) + 1
 
     for query, triggers in query_triggers.items():
         item = query_items[query]
+        errors = query_errors.get(query, 0)
+        if not triggers:
+            # Every run of this query errored, so there is nothing to judge.
+            print(
+                f"Error: all {errors} run(s) of this query failed, reporting "
+                f"it as not passed: {query}",
+                file=sys.stderr,
+            )
+            results.append({
+                "query": query,
+                "should_trigger": item["should_trigger"],
+                "trigger_rate": 0.0,
+                "passed": False,
+                "errors": errors,
+            })
+            continue
         trigger_rate = sum(triggers) / len(triggers)
         should_trigger = item["should_trigger"]
         if should_trigger:
