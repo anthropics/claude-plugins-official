@@ -38,7 +38,7 @@ echo "✅ Valid JSON"
 # Check 2: Root structure
 echo ""
 echo "Checking root structure..."
-VALID_EVENTS=("PreToolUse" "PostToolUse" "UserPromptSubmit" "Stop" "SubagentStop" "SessionStart" "SessionEnd" "PreCompact" "Notification")
+VALID_EVENTS=("PreToolUse" "PostToolUse" "PostToolUseFailure" "UserPromptSubmit" "UserPromptExpansion" "Stop" "SubagentStop" "SessionStart" "SessionEnd" "PreCompact" "Notification")
 
 for event in $(jq -r 'keys[]' "$HOOKS_FILE"); do
   found=false
@@ -66,19 +66,27 @@ for event in $(jq -r 'keys[]' "$HOOKS_FILE"); do
   hook_count=$(jq -r ".\"$event\" | length" "$HOOKS_FILE")
 
   for ((i=0; i<hook_count; i++)); do
-    # Check matcher exists
+    # A matcher only selects among tools, so it is meaningful for the tool
+    # events and absent by design elsewhere: SessionStart, UserPromptSubmit and
+    # Stop entries in this repo's own plugins ship without one. Treating that as
+    # an error also skipped every remaining check for the entry, so the script
+    # validated nothing while reporting a problem.
     matcher=$(jq -r ".\"$event\"[$i].matcher // empty" "$HOOKS_FILE")
     if [ -z "$matcher" ]; then
-      echo "❌ $event[$i]: Missing 'matcher' field"
-      ((error_count++))
-      continue
+      case "$event" in
+        PreToolUse|PostToolUse|PostToolUseFailure)
+          echo "❌ $event[$i]: Missing 'matcher' field"
+          error_count=$((error_count+1))
+          continue
+          ;;
+      esac
     fi
 
     # Check hooks array exists
     hooks=$(jq -r ".\"$event\"[$i].hooks // empty" "$HOOKS_FILE")
     if [ -z "$hooks" ] || [ "$hooks" = "null" ]; then
       echo "❌ $event[$i]: Missing 'hooks' array"
-      ((error_count++))
+      error_count=$((error_count+1))
       continue
     fi
 
@@ -90,13 +98,13 @@ for event in $(jq -r 'keys[]' "$HOOKS_FILE"); do
 
       if [ -z "$hook_type" ]; then
         echo "❌ $event[$i].hooks[$j]: Missing 'type' field"
-        ((error_count++))
+        error_count=$((error_count+1))
         continue
       fi
 
       if [ "$hook_type" != "command" ] && [ "$hook_type" != "prompt" ]; then
         echo "❌ $event[$i].hooks[$j]: Invalid type '$hook_type' (must be 'command' or 'prompt')"
-        ((error_count++))
+        error_count=$((error_count+1))
         continue
       fi
 
@@ -105,25 +113,25 @@ for event in $(jq -r 'keys[]' "$HOOKS_FILE"); do
         command=$(jq -r ".\"$event\"[$i].hooks[$j].command // empty" "$HOOKS_FILE")
         if [ -z "$command" ]; then
           echo "❌ $event[$i].hooks[$j]: Command hooks must have 'command' field"
-          ((error_count++))
+          error_count=$((error_count+1))
         else
           # Check for hardcoded paths
           if [[ "$command" == /* ]] && [[ "$command" != *'${CLAUDE_PLUGIN_ROOT}'* ]]; then
             echo "⚠️  $event[$i].hooks[$j]: Hardcoded absolute path detected. Consider using \${CLAUDE_PLUGIN_ROOT}"
-            ((warning_count++))
+            warning_count=$((warning_count+1))
           fi
         fi
       elif [ "$hook_type" = "prompt" ]; then
         prompt=$(jq -r ".\"$event\"[$i].hooks[$j].prompt // empty" "$HOOKS_FILE")
         if [ -z "$prompt" ]; then
           echo "❌ $event[$i].hooks[$j]: Prompt hooks must have 'prompt' field"
-          ((error_count++))
+          error_count=$((error_count+1))
         fi
 
         # Check if prompt-based hooks are used on supported events
         if [ "$event" != "Stop" ] && [ "$event" != "SubagentStop" ] && [ "$event" != "UserPromptSubmit" ] && [ "$event" != "PreToolUse" ]; then
           echo "⚠️  $event[$i].hooks[$j]: Prompt hooks may not be fully supported on $event (best on Stop, SubagentStop, UserPromptSubmit, PreToolUse)"
-          ((warning_count++))
+          warning_count=$((warning_count+1))
         fi
       fi
 
@@ -132,13 +140,13 @@ for event in $(jq -r 'keys[]' "$HOOKS_FILE"); do
       if [ -n "$timeout" ] && [ "$timeout" != "null" ]; then
         if ! [[ "$timeout" =~ ^[0-9]+$ ]]; then
           echo "❌ $event[$i].hooks[$j]: Timeout must be a number"
-          ((error_count++))
+          error_count=$((error_count+1))
         elif [ "$timeout" -gt 600 ]; then
           echo "⚠️  $event[$i].hooks[$j]: Timeout $timeout seconds is very high (max 600s)"
-          ((warning_count++))
+          warning_count=$((warning_count+1))
         elif [ "$timeout" -lt 5 ]; then
           echo "⚠️  $event[$i].hooks[$j]: Timeout $timeout seconds is very low"
-          ((warning_count++))
+          warning_count=$((warning_count+1))
         fi
       fi
     done
