@@ -40,6 +40,16 @@ def main():
         elif tool_name in ['Edit', 'Write', 'MultiEdit']:
             event = 'file'
 
+        if event is None:
+            # Any other tool, including every mcp__* tool. load_rules(None)
+            # skips the event filter altogether, which pulled in rules written
+            # for other events - a `stop` rule using the legacy `pattern` field
+            # becomes a `content` condition and denies any tool whose input
+            # happens to carry a matching field, with no reason attached. There
+            # is no PreToolUse rule event for these tools, so load nothing.
+            print(json.dumps({}), file=sys.stdout)
+            return
+
         # Load rules
         rules = load_rules(event=event)
 
