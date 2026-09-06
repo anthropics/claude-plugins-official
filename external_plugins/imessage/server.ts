@@ -90,13 +90,29 @@ function parseAttributedBody(blob: Uint8Array | null): string | null {
   if (i >= buf.length) return null
   i++
   // Streamtyped length prefix: small lengths are literal bytes; 0x81/0x82/0x83
-  // escape to 1/2/3-byte little-endian lengths respectively.
+  // escape to 2/4/8-byte little-endian lengths respectively. Reading one width
+  // narrower truncated the length (0x81 gave true_length & 0xFF), so messages
+  // of 128 bytes or more were cut mid-word and any message whose length was a
+  // multiple of 256 decoded as empty.
   let len: number
   const b = buf[i++]
-  if (b === 0x81) { len = buf[i]; i += 1 }
-  else if (b === 0x82) { len = buf.readUInt16LE(i); i += 2 }
-  else if (b === 0x83) { len = buf.readUIntLE(i, 3); i += 3 }
-  else { len = b }
+  if (b === 0x81) {
+    if (i + 2 > buf.length) return null
+    len = buf.readUInt16LE(i)
+    i += 2
+  } else if (b === 0x82) {
+    if (i + 4 > buf.length) return null
+    len = buf.readUInt32LE(i)
+    i += 4
+  } else if (b === 0x83) {
+    if (i + 8 > buf.length) return null
+    const wide = buf.readBigUInt64LE(i)
+    if (wide > BigInt(Number.MAX_SAFE_INTEGER)) return null
+    len = Number(wide)
+    i += 8
+  } else {
+    len = b
+  }
   if (i + len > buf.length) return null
   return buf.toString('utf8', i, i + len)
 }
