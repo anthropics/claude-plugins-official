@@ -55,27 +55,7 @@ if (!TOKEN) {
 const INBOX_DIR = join(STATE_DIR, 'inbox')
 const PID_FILE = join(STATE_DIR, 'bot.pid')
 
-// Telegram allows exactly one getUpdates consumer per token. If a previous
-// session crashed (SIGKILL, terminal closed) its server.ts grandchild can
-// survive as an orphan and hold the slot forever, so every new session sees
-// 409 Conflict. Kill any stale holder before we start polling.
 mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 })
-try {
-  const stale = parseInt(readFileSync(PID_FILE, 'utf8'), 10)
-  if (stale > 1 && stale !== process.pid) {
-    process.kill(stale, 0)
-    // PID files race with OS PID recycling — verify the holder is actually a
-    // server.ts process before SIGTERM. Otherwise a recycled PID can point at
-    // our own bun-run wrapper (kills our stdin → immediate self-shutdown) or
-    // an unrelated user process.
-    const cmd = execFileSync('ps', ['-p', String(stale), '-o', 'args='], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
-    if (cmd.includes('server.ts')) {
-      process.stderr.write(`telegram channel: replacing stale poller pid=${stale}\n`)
-      process.kill(stale, 'SIGTERM')
-    }
-  }
-} catch {}
-writeFileSync(PID_FILE, String(process.pid))
 
 // Last-resort safety net — without these the process dies silently on any
 // unhandled promise rejection. With them it logs and keeps serving tools.
@@ -998,12 +978,86 @@ bot.catch(err => {
   process.stderr.write(`telegram channel: handler error (polling continues): ${err.error}\n`)
 })
 
+// Telegram allows exactly one getUpdates consumer per token, so exactly one
+// server.ts polls at a time; bot.pid records the current holder. A live
+// healthy holder is an incumbent serving another Claude Code session — never
+// kill it (gh-81571: an earlier startup guard SIGTERMed any live holder, so
+// starting a second session stole the channel from the first and, when the
+// second session exited, no poller remained at all and the bot went silent).
+// Instead:
+//   - slot free (no pid file, holder dead, or pid recycled to some other
+//     program) → claim it and poll
+//   - live holder → standby: outbound tools stay fully usable, and a watcher
+//     claims the slot the moment the holder goes away (session exit, crash —
+//     the orphan watchdog above reaps pollers whose CLI died)
+// so the last session standing always ends up holding the channel, and the
+// pid file is removed by its owner in shutdown().
+function livePollerPid(): number | null {
+  let holder: number
+  try {
+    holder = parseInt(readFileSync(PID_FILE, 'utf8'), 10)
+  } catch { return null } // no pid file — slot is free
+  if (!(holder > 1) || holder === process.pid) return null
+  try {
+    process.kill(holder, 0) // throws ESRCH once the process is gone
+  } catch (err) {
+    // EPERM = alive but owned by another user — never fight over the slot.
+    return (err as NodeJS.ErrnoException).code === 'EPERM' ? holder : null
+  }
+  // PID liveness alone can't tell an incumbent poller from an unrelated
+  // process that recycled its pid — check the process identity too.
+  // /proc/<pid>/cmdline (Linux) needs no subprocess; ps covers macOS.
+  try {
+    const cmdline = readFileSync(`/proc/${holder}/cmdline`, 'utf8')
+    return cmdline.includes('server.ts') ? holder : null
+  } catch {}
+  try {
+    const args = execFileSync('ps', ['-p', String(holder), '-o', 'args='], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+    return args.includes('server.ts') ? holder : null
+  } catch {
+    // Identity unverifiable (Windows has no ps). Treat the slot as free
+    // rather than deferring forever to an unknown pid; if it IS a live
+    // poller, the 409 retry loop in startPolling reports the conflict
+    // instead of us killing anything.
+    return null
+  }
+}
+
+let polling = false
+function tryBecomePoller(): void {
+  if (polling || shuttingDown) return
+  const holder = livePollerPid()
+  if (holder !== null) return // healthy incumbent — leave it alone
+  writeFileSync(PID_FILE, String(process.pid))
+  // Two standbys can race to claim; last writer owns the file, everyone else
+  // re-reads, sees a different pid, and stays in standby.
+  try {
+    if (parseInt(readFileSync(PID_FILE, 'utf8'), 10) !== process.pid) return
+  } catch { return }
+  polling = true
+  startPolling()
+}
+
+tryBecomePoller()
+if (!polling) {
+  process.stderr.write(
+    `telegram channel: another session's poller holds this channel — ` +
+    `outbound tools active, standing by to take over inbound when it exits\n`,
+  )
+  const standbyWatcher = setInterval(() => {
+    tryBecomePoller()
+    if (polling || shuttingDown) clearInterval(standbyWatcher)
+  }, 2000)
+  standbyWatcher.unref()
+}
+
 // Retry polling with backoff on any error. Previously only 409 was retried —
 // a single ETIMEDOUT/ECONNRESET/DNS failure rejected bot.start(), the catch
 // returned, and polling stopped permanently while the process stayed alive
 // (MCP stdin keeps it running). Outbound tools kept working but the bot was
 // deaf to inbound messages until a full restart.
-void (async () => {
+function startPolling(): void {
+  void (async () => {
   for (let attempt = 1; ; attempt++) {
     try {
       await bot.start({
@@ -1042,4 +1096,5 @@ void (async () => {
       await new Promise(r => setTimeout(r, delay))
     }
   }
-})()
+  })()
+}
