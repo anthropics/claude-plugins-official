@@ -133,16 +133,23 @@ def load_run_results(benchmark_dir: Path) -> dict:
                     "total": grading.get("summary", {}).get("total", 0),
                 }
 
-                # Extract timing — check grading.json first, then sibling timing.json
+                # Extract timing — check grading.json first, then sibling timing.json.
+                # The token count is read whether or not the duration had to come
+                # from the fallback: it used to sit inside the fallback branch, so
+                # a grading.json that carried its own timing (the normal case) left
+                # tokens at 0 and the benchmark reported no token cost at all.
                 timing = grading.get("timing", {})
                 result["time_seconds"] = timing.get("total_duration_seconds", 0.0)
+                result["tokens"] = timing.get("total_tokens", 0)
                 timing_file = run_dir / "timing.json"
-                if result["time_seconds"] == 0.0 and timing_file.exists():
+                if (result["time_seconds"] == 0.0 or not result["tokens"]) and timing_file.exists():
                     try:
                         with open(timing_file) as tf:
                             timing_data = json.load(tf)
-                        result["time_seconds"] = timing_data.get("total_duration_seconds", 0.0)
-                        result["tokens"] = timing_data.get("total_tokens", 0)
+                        if result["time_seconds"] == 0.0:
+                            result["time_seconds"] = timing_data.get("total_duration_seconds", 0.0)
+                        if not result["tokens"]:
+                            result["tokens"] = timing_data.get("total_tokens", 0)
                     except json.JSONDecodeError:
                         pass
 
@@ -260,6 +267,15 @@ def generate_benchmark(benchmark_dir: Path, skill_name: str = "", skill_path: st
         for r in config
     ))
 
+    # Runs per configuration, per eval, taken from the runs that were actually
+    # aggregated. Reported as a single number when every configuration and eval
+    # agrees, which is the normal case, and as the observed maximum otherwise.
+    run_counts = {}
+    for config, config_runs in results.items():
+        for r in config_runs:
+            run_counts[(config, r["eval_id"])] = run_counts.get((config, r["eval_id"]), 0) + 1
+    runs_per_configuration = max(run_counts.values()) if run_counts else 0
+
     benchmark = {
         "metadata": {
             "skill_name": skill_name or "<skill-name>",
@@ -268,7 +284,9 @@ def generate_benchmark(benchmark_dir: Path, skill_name: str = "", skill_path: st
             "analyzer_model": "<model-name>",
             "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "evals_run": eval_ids,
-            "runs_per_configuration": 3
+            # Derived from what was actually aggregated. Hardcoding 3 misreported
+            # every benchmark that ran a different number of runs.
+            "runs_per_configuration": runs_per_configuration,
         },
         "runs": runs,
         "run_summary": run_summary,
