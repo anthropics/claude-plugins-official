@@ -53,14 +53,6 @@ try {
 const TOKEN = process.env.DISCORD_BOT_TOKEN
 const STATIC = process.env.DISCORD_ACCESS_MODE === 'static'
 
-if (!TOKEN) {
-  process.stderr.write(
-    `discord channel: DISCORD_BOT_TOKEN required\n` +
-    `  set in ${ENV_FILE}\n` +
-    `  format: DISCORD_BOT_TOKEN=MTIz...\n`,
-  )
-  process.exit(1)
-}
 const INBOX_DIR = join(STATE_DIR, 'inbox')
 
 // Last-resort safety net — without these the process dies silently on any
@@ -78,7 +70,7 @@ process.on('uncaughtException', err => {
 // Strict: no bare yes/no (conversational), no prefix/suffix chatter.
 const PERMISSION_REPLY_RE = /^\s*(y|yes|n|no)\s+([a-km-z]{5})\s*$/i
 
-const client = new Client({
+export const client = new Client({
   intents: [
     GatewayIntentBits.DirectMessages,
     GatewayIntentBits.Guilds,
@@ -120,7 +112,7 @@ type Access = {
   chunkMode?: 'length' | 'newline'
 }
 
-function defaultAccess(): Access {
+export function defaultAccess(): Access {
   return {
     dmPolicy: 'pairing',
     allowFrom: [],
@@ -136,7 +128,7 @@ const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
 // upload. Claude can already Read+paste file contents, so this isn't a new
 // exfil channel for arbitrary paths — but the server's own state is the one
 // thing Claude has no reason to ever send.
-function assertSendable(f: string): void {
+export function assertSendable(f: string): void {
   let real, stateReal: string
   try {
     real = realpathSync(f)
@@ -148,7 +140,7 @@ function assertSendable(f: string): void {
   }
 }
 
-function readAccessFile(): Access {
+export function readAccessFile(): Access {
   try {
     const raw = readFileSync(ACCESS_FILE, 'utf8')
     const parsed = JSON.parse(raw) as Partial<Access>
@@ -188,11 +180,11 @@ const BOOT_ACCESS: Access | null = STATIC
     })()
   : null
 
-function loadAccess(): Access {
+export function loadAccess(): Access {
   return BOOT_ACCESS ?? readAccessFile()
 }
 
-function saveAccess(a: Access): void {
+export function saveAccess(a: Access): void {
   if (STATIC) return
   mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 })
   const tmp = ACCESS_FILE + '.tmp'
@@ -233,7 +225,7 @@ function noteSent(id: string): void {
   }
 }
 
-async function gate(msg: Message): Promise<GateResult> {
+export async function gate(msg: Message): Promise<GateResult> {
   const access = loadAccess()
   const pruned = pruneExpired(access)
   if (pruned) saveAccess(access)
@@ -293,7 +285,7 @@ async function gate(msg: Message): Promise<GateResult> {
   return { action: 'deliver', access }
 }
 
-async function isMentioned(msg: Message, extraPatterns?: string[]): Promise<boolean> {
+export async function isMentioned(msg: Message, extraPatterns?: string[]): Promise<boolean> {
   if (client.user && msg.mentions.has(client.user)) return true
 
   // Reply to one of our messages counts as an implicit mention.
@@ -364,13 +356,11 @@ function checkApprovals(): void {
   }
 }
 
-if (!STATIC) setInterval(checkApprovals, 5000).unref()
-
 // Discord caps messages at 2000 chars (hard limit — larger sends reject).
 // Split long replies, preferring paragraph boundaries when chunkMode is
 // 'newline'.
 
-function chunk(text: string, limit: number, mode: 'length' | 'newline'): string[] {
+export function chunk(text: string, limit: number, mode: 'length' | 'newline'): string[] {
   if (text.length <= limit) return [text]
   const out: string[] = []
   let rest = text
@@ -437,7 +427,7 @@ function safeAttName(att: Attachment): string {
   return (att.name ?? att.id).replace(/[\[\]\r\n;]/g, '_')
 }
 
-const mcp = new Server(
+export const mcp = new Server(
   { name: 'discord', version: '1.0.0' },
   {
     capabilities: {
@@ -517,91 +507,94 @@ mcp.setNotificationHandler(
   },
 )
 
-mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
-  tools: [
-    {
-      name: 'reply',
-      description:
-        'Reply on Discord. Pass chat_id from the inbound message. Optionally pass reply_to (message_id) for threading, and files (absolute paths) to attach images or other files.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          chat_id: { type: 'string' },
-          text: { type: 'string' },
-          reply_to: {
-            type: 'string',
-            description: 'Message ID to thread under. Use message_id from the inbound <channel> block, or an id from fetch_messages.',
-          },
-          files: {
-            type: 'array',
-            items: { type: 'string' },
-            description: 'Absolute file paths to attach (images, logs, etc). Max 10 files, 25MB each.',
-          },
-        },
-        required: ['chat_id', 'text'],
-      },
-    },
-    {
-      name: 'react',
-      description: 'Add an emoji reaction to a Discord message. Unicode emoji work directly; custom emoji need the <:name:id> form.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          chat_id: { type: 'string' },
-          message_id: { type: 'string' },
-          emoji: { type: 'string' },
-        },
-        required: ['chat_id', 'message_id', 'emoji'],
-      },
-    },
-    {
-      name: 'edit_message',
-      description: 'Edit a message the bot previously sent. Useful for interim progress updates. Edits don\'t trigger push notifications — send a new reply when a long task completes so the user\'s device pings.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          chat_id: { type: 'string' },
-          message_id: { type: 'string' },
-          text: { type: 'string' },
-        },
-        required: ['chat_id', 'message_id', 'text'],
-      },
-    },
-    {
-      name: 'download_attachment',
-      description: 'Download attachments from a specific Discord message to the local inbox. Use after fetch_messages shows a message has attachments (marked with +Natt). Returns file paths ready to Read.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          chat_id: { type: 'string' },
-          message_id: { type: 'string' },
-        },
-        required: ['chat_id', 'message_id'],
-      },
-    },
-    {
-      name: 'fetch_messages',
-      description:
-        "Fetch recent messages from a Discord channel. Returns oldest-first with message IDs. Discord's search API isn't exposed to bots, so this is the only way to look back.",
-      inputSchema: {
-        type: 'object',
-        properties: {
-          channel: { type: 'string' },
-          limit: {
-            type: 'number',
-            description: 'Max messages (default 20, Discord caps at 100).',
-          },
-        },
-        required: ['channel'],
-      },
-    },
-  ],
-}))
+mcp.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }))
 
-mcp.setRequestHandler(CallToolRequestSchema, async req => {
-  const args = (req.params.arguments ?? {}) as Record<string, unknown>
+export const TOOLS = [
+  {
+    name: 'reply',
+    description:
+      'Reply on Discord. Pass chat_id from the inbound message. Optionally pass reply_to (message_id) for threading, and files (absolute paths) to attach images or other files.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        chat_id: { type: 'string' },
+        text: { type: 'string' },
+        reply_to: {
+          type: 'string',
+          description: 'Message ID to thread under. Use message_id from the inbound <channel> block, or an id from fetch_messages.',
+        },
+        files: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Absolute file paths to attach (images, logs, etc). Max 10 files, 25MB each.',
+        },
+      },
+      required: ['chat_id', 'text'],
+    },
+  },
+  {
+    name: 'react',
+    description: 'Add an emoji reaction to a Discord message. Unicode emoji work directly; custom emoji need the <:name:id> form.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        chat_id: { type: 'string' },
+        message_id: { type: 'string' },
+        emoji: { type: 'string' },
+      },
+      required: ['chat_id', 'message_id', 'emoji'],
+    },
+  },
+  {
+    name: 'edit_message',
+    description: 'Edit a message the bot previously sent. Useful for interim progress updates. Edits don\'t trigger push notifications — send a new reply when a long task completes so the user\'s device pings.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        chat_id: { type: 'string' },
+        message_id: { type: 'string' },
+        text: { type: 'string' },
+      },
+      required: ['chat_id', 'message_id', 'text'],
+    },
+  },
+  {
+    name: 'download_attachment',
+    description: 'Download attachments from a specific Discord message to the local inbox. Use after fetch_messages shows a message has attachments (marked with +Natt). Returns file paths ready to Read.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        chat_id: { type: 'string' },
+        message_id: { type: 'string' },
+      },
+      required: ['chat_id', 'message_id'],
+    },
+  },
+  {
+    name: 'fetch_messages',
+    description:
+      "Fetch recent messages from a Discord channel. Returns oldest-first with message IDs. Discord's search API isn't exposed to bots, so this is the only way to look back.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        channel: { type: 'string' },
+        limit: {
+          type: 'number',
+          description: 'Max messages (default 20, Discord caps at 100).',
+        },
+      },
+      required: ['channel'],
+    },
+  },
+]
+
+mcp.setRequestHandler(CallToolRequestSchema, async req =>
+  callTool(req.params.name, (req.params.arguments ?? {}) as Record<string, unknown>),
+)
+
+export async function callTool(name: string, args: Record<string, unknown>) {
   try {
-    switch (req.params.name) {
+    switch (name) {
       case 'reply': {
         const chat_id = args.chat_id as string
         const text = args.text as string
@@ -707,20 +700,18 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
       }
       default:
         return {
-          content: [{ type: 'text', text: `unknown tool: ${req.params.name}` }],
+          content: [{ type: 'text', text: `unknown tool: ${name}` }],
           isError: true,
         }
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     return {
-      content: [{ type: 'text', text: `${req.params.name} failed: ${msg}` }],
+      content: [{ type: 'text', text: `${name} failed: ${msg}` }],
       isError: true,
     }
   }
-})
-
-await mcp.connect(new StdioServerTransport())
+}
 
 // When Claude Code closes the MCP connection, stdin gets EOF. Without this
 // the gateway stays connected as a zombie holding resources.
@@ -732,11 +723,6 @@ function shutdown(): void {
   setTimeout(() => process.exit(0), 2000)
   void Promise.resolve(client.destroy()).finally(() => process.exit(0))
 }
-process.stdin.on('end', shutdown)
-process.stdin.on('close', shutdown)
-process.on('SIGTERM', shutdown)
-process.on('SIGINT', shutdown)
-
 client.on('error', err => {
   process.stderr.write(`discord channel: client error: ${err}\n`)
 })
@@ -807,7 +793,7 @@ client.on('messageCreate', msg => {
   handleInbound(msg).catch(e => process.stderr.write(`discord: handleInbound failed: ${e}\n`))
 })
 
-async function handleInbound(msg: Message): Promise<void> {
+export async function handleInbound(msg: Message): Promise<void> {
   const result = await gate(msg)
 
   if (result.action === 'drop') return
@@ -894,7 +880,30 @@ client.once('ready', c => {
   process.stderr.write(`discord channel: gateway connected as ${c.user.tag}\n`)
 })
 
-client.login(TOKEN).catch(err => {
-  process.stderr.write(`discord channel: login failed: ${err}\n`)
-  process.exit(1)
-})
+// Guarded so the test suite can import this module without claiming stdio or
+// opening a second gateway connection on the same token.
+if (import.meta.main) await main()
+
+async function main(): Promise<void> {
+  if (!TOKEN) {
+    process.stderr.write(
+      `discord channel: DISCORD_BOT_TOKEN required\n` +
+      `  set in ${ENV_FILE}\n` +
+      `  format: DISCORD_BOT_TOKEN=MTIz...\n`,
+    )
+    process.exit(1)
+  }
+
+  if (!STATIC) setInterval(checkApprovals, 5000).unref()
+
+  await mcp.connect(new StdioServerTransport())
+  process.stdin.on('end', shutdown)
+  process.stdin.on('close', shutdown)
+  process.on('SIGTERM', shutdown)
+  process.on('SIGINT', shutdown)
+
+  client.login(TOKEN).catch(err => {
+    process.stderr.write(`discord channel: login failed: ${err}\n`)
+    process.exit(1)
+  })
+}
