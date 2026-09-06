@@ -39,6 +39,15 @@ def main():
         # Always output JSON (even if empty)
         print(json.dumps(result), file=sys.stdout)
 
+    except json.JSONDecodeError as e:
+        # The payload could not be parsed, so there is nothing to evaluate.
+        # Windows file paths arrive with raw backslashes, and sequences like
+        # \U or \D are not valid JSON escapes, so this fires on ordinary tool
+        # calls. Reporting it through systemMessage put an error in front of
+        # the user on every single call for something they cannot act on, so
+        # it goes to stderr for diagnosis instead.
+        print(f"Hookify could not parse hook input: {e}", file=sys.stderr)
+
     except Exception as e:
         error_output = {
             "systemMessage": f"Hookify error: {str(e)}"
