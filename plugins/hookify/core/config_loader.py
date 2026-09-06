@@ -206,8 +206,15 @@ def load_rules(event: Optional[str] = None) -> List[Rule]:
     """
     rules = []
 
-    # Find all hookify.*.local.md files
-    pattern = os.path.join('.claude', 'hookify.*.local.md')
+    # Find all hookify.*.local.md files.
+    #
+    # These live in the user's project, but a plugin hook does not run from
+    # there: Claude Code invokes it from the plugin's own cache directory, so a
+    # cwd-relative glob matches nothing and every rule is silently skipped.
+    # CLAUDE_PROJECT_DIR is the project root Claude Code exports to hooks; fall
+    # back to the working directory for direct invocations and tests.
+    project_dir = os.environ.get('CLAUDE_PROJECT_DIR') or os.getcwd()
+    pattern = os.path.join(project_dir, '.claude', 'hookify.*.local.md')
     files = glob.glob(pattern)
 
     for file_path in files:
