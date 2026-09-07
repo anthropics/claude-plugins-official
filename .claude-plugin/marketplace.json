@@ -15,7 +15,8 @@
     "qodo-skills": "qodo",
     "atlassian-forge-skills": "forge-skills",
     "azure-skills": "azure",
-    "sonarqube-agent-plugins": "sonarqube"
+    "sonarqube-agent-plugins": "sonarqube",
+    "sap-fiori-mcp-server": "sap-ux-fiori-tools"
   },
   "plugins": [
     {
@@ -3146,8 +3147,8 @@
       "homepage": "https://cap.cloud.sap/"
     },
     {
-      "name": "sap-fiori-mcp-server",
-      "description": "MCP server for SAP Fiori development tools for Claude Code. Build and modify SAP Fiori applications with AI assistance.",
+      "name": "sap-ux-fiori-tools",
+      "description": "MCP server and skills for SAP Fiori development. Build, modify, and test SAP Fiori Elements applications with AI assistance.",
       "author": {
         "name": "SAP SE",
         "email": "ospo@sap.com",
@@ -3157,11 +3158,11 @@
       "source": {
         "source": "git-subdir",
         "url": "https://github.com/SAP/open-ux-tools.git",
-        "path": "packages/fiori-mcp-server",
+        "path": "plugins-coding-agents/fiori",
         "ref": "main",
-        "sha": "6cfd8d068955287fe9dc764d2acb5315235ec213"
+        "sha": "c77d37b48561f45fa5636afc37cb41c83634c986"
       },
-      "homepage": "https://github.com/SAP/open-ux-tools/tree/main/packages/fiori-mcp-server"
+      "homepage": "https://github.com/SAP/open-ux-tools/tree/main/plugins-coding-agents/fiori"
     },
     {
       "name": "sap-hana-cli",
