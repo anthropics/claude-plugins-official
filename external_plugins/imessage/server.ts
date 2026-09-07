@@ -89,13 +89,14 @@ function parseAttributedBody(blob: Uint8Array | null): string | null {
   while (i < buf.length && buf[i] !== 0x2B) i++
   if (i >= buf.length) return null
   i++
-  // Streamtyped length prefix: small lengths are literal bytes; 0x81/0x82/0x83
-  // escape to 1/2/3-byte little-endian lengths respectively.
+  // Streamtyped length prefix: values up to 127 are literal bytes. Past that the
+  // stream escapes to a wider signed integer — 0x81 int16, 0x82 int32, both
+  // little-endian. 0x81 is SIGNED, so 32768 and up escalate to 0x82.
   let len: number
   const b = buf[i++]
-  if (b === 0x81) { len = buf[i]; i += 1 }
-  else if (b === 0x82) { len = buf.readUInt16LE(i); i += 2 }
-  else if (b === 0x83) { len = buf.readUIntLE(i, 3); i += 3 }
+  if (b === 0x81) { if (i + 2 > buf.length) return null; len = buf.readUInt16LE(i); i += 2 }
+  else if (b === 0x82) { if (i + 4 > buf.length) return null; len = buf.readUInt32LE(i); i += 4 }
+  else if (b > 127) { return null }
   else { len = b }
   if (i + len > buf.length) return null
   return buf.toString('utf8', i, i + len)
