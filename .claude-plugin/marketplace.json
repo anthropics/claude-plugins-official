@@ -3539,6 +3539,22 @@
       "homepage": "https://superdesign.dev"
     },
     {
+      "name": "supermemory",
+      "description": "Persistent memory across Claude Code sessions using Supermemory",
+      "author": {
+        "name": "Supermemory"
+      },
+      "category": "productivity",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/supermemoryai/claude-supermemory.git",
+        "path": "plugin",
+        "ref": "main",
+        "sha": "036031872728b8a574af17a1ca3bc640658031cd"
+      },
+      "homepage": "https://supermemory.ai/docs/integrations/claude-code"
+    },
+    {
       "name": "superpowers",
       "description": "Superpowers teaches Claude brainstorming, subagent driven development with built in code review, systematic debugging, and red/green TDD. Additionally, it teaches Claude how to author and test new skills.",
       "category": "development",
