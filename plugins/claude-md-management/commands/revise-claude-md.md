@@ -17,12 +17,12 @@ What context was missing that would have helped Claude work more effectively?
 ## Step 2: Find CLAUDE.md Files
 
 ```bash
-find . -name "CLAUDE.md" -o -name ".claude.local.md" 2>/dev/null | head -20
+find . -name "CLAUDE.md" -o -name "CLAUDE.local.md" 2>/dev/null | head -20
 ```
 
 Decide where each addition belongs:
 - `CLAUDE.md` - Team-shared (checked into git)
-- `.claude.local.md` - Personal/local only (gitignored)
+- `CLAUDE.local.md` - Personal/local only (gitignored)
 
 ## Step 3: Draft Additions
 
