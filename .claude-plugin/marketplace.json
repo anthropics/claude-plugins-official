@@ -595,7 +595,7 @@
       "category": "productivity",
       "source": {
         "source": "url",
-        "url": "https://github.com/box/box-for-ai.git",
+        "url": "https://github.com/box/skills.git",
         "sha": "aa75770f645367778df215dcbebbeec0b7e05546"
       },
       "skills": [
@@ -605,7 +605,7 @@
         "./skills/box-legal-workflows-intake",
         "./skills/box-legal-workflows-ma"
       ],
-      "homepage": "https://github.com/box/box-for-ai"
+      "homepage": "https://github.com/box/skills"
     },
     {
       "name": "brightdata-plugin",
