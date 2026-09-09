@@ -3521,6 +3521,20 @@
       "homepage": "https://www.confluent.io"
     },
     {
+      "name": "strands-agents",
+      "description": "Build AI agents in Python and TypeScript with the Strands Agents SDK. Includes guidance for tools and MCP, multi-agent orchestration, sessions and memory, streaming, structured output, observability, and a documentation search MCP server.",
+      "author": {
+        "name": "Strands Agents"
+      },
+      "category": "development",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/tmoreton/claude-code-plugin-strands.git",
+        "sha": "8278e0c649c54b3801161697704ec9202f35c61e"
+      },
+      "homepage": "https://github.com/tmoreton/claude-code-plugin-strands"
+    },
+    {
       "name": "stripe",
       "description": "Stripe development plugin for Claude",
       "category": "development",
