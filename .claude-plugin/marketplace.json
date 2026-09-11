@@ -3544,7 +3544,7 @@
         "url": "https://github.com/stripe/ai.git",
         "path": "providers/claude/plugin",
         "ref": "main",
-        "sha": "68382523846ea5bfad75ba1ef58dc5db031d0a5a"
+        "sha": "12f48810695e79d14ae1ffb251124685488e6c63"
       },
       "homepage": "https://github.com/stripe/ai/tree/main/providers/claude/plugin"
     },
