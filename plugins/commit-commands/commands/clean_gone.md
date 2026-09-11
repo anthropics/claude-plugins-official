@@ -1,5 +1,5 @@
 ---
-description: Cleans up all git branches marked as [gone] (branches that have been deleted on the remote but still exist locally), including removing associated worktrees.
+description: Cleans up all git branches whose upstream is gone (branches that have been deleted on the remote but still exist locally), including removing associated worktrees.
 ---
 
 ## Your Task
@@ -8,25 +8,33 @@ You need to execute the following bash commands to clean up stale local branches
 
 ## Commands to Execute
 
-1. **First, list branches to identify any with [gone] status**
+1. **First, refresh the remote state.** Without this, git still considers deleted remote branches to exist and nothing is reported as gone.
    Execute this command:
    ```bash
-   git branch -v
+   git fetch --prune
    ```
-   
-   Note: Branches with a '+' prefix have associated worktrees and must have their worktrees removed before deletion.
 
-2. **Next, identify worktrees that need to be removed for [gone] branches**
+2. **Next, list branches to identify any whose upstream is gone**
+   Execute this command:
+   ```bash
+   git branch -vv | grep ': gone\]'
+   ```
+
+   Note: `-vv` is required — the single `-v` form does not print upstream tracking information at all. The marker git writes is `[origin/<branch>: gone]`, so the pattern must match `: gone]`.
+
+   Note: Branches with a '+' prefix have associated worktrees and must have their worktrees removed before deletion. Branches with no upstream at all (never pushed) do not appear here and are left untouched.
+
+3. **Next, identify worktrees that need to be removed for gone branches**
    Execute this command:
    ```bash
    git worktree list
    ```
 
-3. **Finally, remove worktrees and delete [gone] branches (handles both regular and worktree branches)**
+4. **Finally, remove worktrees and delete the gone branches (handles both regular and worktree branches)**
    Execute this command:
    ```bash
-   # Process all [gone] branches, removing '+' prefix if present
-   git branch -v | grep '\[gone\]' | sed 's/^[+* ]//' | awk '{print $1}' | while read branch; do
+   # Process all branches whose upstream is gone, removing '+' prefix if present
+   git branch -vv | grep ': gone\]' | sed 's/^[+* ]//' | awk '{print $1}' | while read branch; do
      echo "Processing branch: $branch"
      # Find and remove worktree if it exists
      worktree=$(git worktree list | grep "\\[$branch\\]" | awk '{print $1}')
@@ -44,10 +52,10 @@ You need to execute the following bash commands to clean up stale local branches
 
 After executing these commands, you will:
 
-- See a list of all local branches with their status
-- Identify and remove any worktrees associated with [gone] branches
-- Delete all branches marked as [gone]
+- See a list of local branches whose upstream no longer exists
+- Identify and remove any worktrees associated with those branches
+- Delete them
 - Provide feedback on which worktrees and branches were removed
 
-If no branches are marked as [gone], report that no cleanup was needed.
+If no branches have a gone upstream, report that no cleanup was needed.
 
