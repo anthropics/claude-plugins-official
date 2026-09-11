@@ -290,6 +290,23 @@
       "homepage": "https://appwrite.io"
     },
     {
+      "name": "arcus",
+      "displayName": "Arcus by Testsigma",
+      "description": "Capture Claude Code session context for Testsigma: SSO auth, project pinning, ticket mapping, and automatic grouping signals (branch, repo, tickets). Generates and runs Testsigma tests from what you build and returns a release-readiness verdict.",
+      "author": {
+        "name": "Testsigma"
+      },
+      "category": "testing",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/testsigmahq/arcus-claude-plugin.git",
+        "path": "plugins/arcus",
+        "ref": "prod",
+        "sha": "1ce5682ef8f3e6504945229590b396d8b1a77708"
+      },
+      "homepage": "https://testsigma.com"
+    },
+    {
       "name": "asana",
       "description": "Asana project management integration. Connects Claude Code to Asana's V2 MCP server to create and manage tasks, search projects, update assignments, and track progress. Requires a one-time Asana OAuth app setup — run /asana-setup after installing.",
       "category": "productivity",
