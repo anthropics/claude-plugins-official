@@ -49,12 +49,39 @@ if command -v cygpath >/dev/null 2>&1; then
     converted=()
     for a in "$@"; do
         case "$a" in
+            # The packaged (MSIX) Windows desktop app launches this hook with an
+            # absolute script path that Python's launcher fails to open (ENOENT)
+            # even though the file exists and is readable from a normal shell.
+            # Invoking the script by BASENAME from its own directory resolves
+            # reliably. `cygpath -u` normalizes POSIX/Windows/mixed forms so
+            # dirname/basename/cd all work here.
+            *.py|*.PY)
+                pos=$(cygpath -u "$a" 2>/dev/null || printf '%s' "$a")
+                d=$(dirname "$pos"); b=$(basename "$pos")
+                if [ -d "$d" ]; then cd "$d" 2>/dev/null || true; converted+=("$b")
+                else converted+=("$(cygpath -w "$a")"); fi ;;
             /*) converted+=("$(cygpath -w "$a")") ;;
             *)  converted+=("$a") ;;
         esac
     done
     set -- "${converted[@]}"
 fi
+
+# Run the chosen interpreter on the (now basename) hook script. FAIL SAFE: if the
+# interpreter still cannot open the script -- e.g. a launcher ENOENT in a context
+# we did not anticipate -- exit 0 silently rather than erroring. These hooks are
+# asyncRewake, and an erroring hook is otherwise indistinguishable from one that
+# found an issue, so a bare "can't open file" is re-woken forever as a bogus
+# finding. A hook that cannot run must never loop the session.
+run_py() {
+    local o e rc
+    o=$(mktemp); e=$(mktemp); rc=0
+    "$@" >"$o" 2>"$e" || rc=$?
+    if [ "$rc" -ne 0 ] && grep -qiE "can't open file|No such file or directory" "$e"; then
+        rm -f "$o" "$e"; exit 0
+    fi
+    cat "$o"; cat "$e" >&2; rm -f "$o" "$e"; exit "$rc"
+}
 
 probe() {
     # $1..N: the interpreter command (may be multi-word like `py -3`)
@@ -82,7 +109,7 @@ is_sdk_compatible() {
 for cmd in "python3.13" "python3.12" "python3.11" "python3.10"; do
     v=$(probe "$cmd") || continue
     if is_sdk_compatible "$v"; then
-        exec "$cmd" "$@"
+        run_py "$cmd" "$@"
     fi
 done
 
@@ -94,7 +121,7 @@ for cmd in "python3" "python" "py -3"; do
     v=$(probe $cmd) || continue
     if is_sdk_compatible "$v"; then
         # shellcheck disable=SC2086
-        exec $cmd "$@"
+        run_py $cmd "$@"
     fi
 done
 
@@ -110,7 +137,7 @@ for cmd in "python3" "python" "py -3"; do
     case "$v" in
         [0-9]*.[0-9]*)
             # shellcheck disable=SC2086
-            exec $cmd "$@"
+            run_py $cmd "$@"
             ;;
     esac
 done
