@@ -170,17 +170,39 @@ const qAttachments = db.query<AttRow, [number]>(`
   WHERE maj.message_id = ?
 `)
 
-// Your own addresses, from message.account ("E:you@icloud.com" / "p:+1555...")
-// on rows you sent. Don't supplement with chat.last_addressed_handle — on
-// machines with SMS history that column is polluted with short codes and
-// other people's numbers, not just your own identities.
+// Your own addresses, read from rows this Mac sent (is_from_me = 1). Two
+// columns, because neither one alone is complete:
+//   message.account               the Apple ID, as "E:you@icloud.com".
+//                                 iMessage always stamps the Apple ID here,
+//                                 never a phone number registered to it, so
+//                                 this column alone cannot see a phone
+//                                 identity.
+//   message.destination_caller_id the address the message actually went out
+//                                 from, which is where a phone identity
+//                                 shows up. Values may carry a "tel:" prefix.
+// Restricting both to is_from_me = 1 keeps every value an address this
+// machine sent from, which no other party can forge. This is deliberately
+// not chat.last_addressed_handle, which on machines with SMS history is
+// polluted with short codes and other people's numbers.
 const SELF = new Set<string>()
 {
-  type R = { addr: string }
-  const norm = (s: string) => (/^[A-Za-z]:/.test(s) ? s.slice(2) : s).toLowerCase()
-  for (const { addr } of db.query<R, []>(
+  type R = { addr: string | null }
+  const norm = (s: string) => {
+    const t = s.replace(/^tel:/i, '')
+    return (/^[A-Za-z]:/.test(t) ? t.slice(2) : t).toLowerCase()
+  }
+  const sources = [
     `SELECT DISTINCT account AS addr FROM message WHERE is_from_me = 1 AND account IS NOT NULL AND account != '' LIMIT 50`,
-  ).all()) SELF.add(norm(addr))
+    `SELECT DISTINCT destination_caller_id AS addr FROM message WHERE is_from_me = 1 AND destination_caller_id IS NOT NULL AND destination_caller_id != '' LIMIT 50`,
+  ]
+  for (const sql of sources) {
+    for (const { addr } of db.query<R, []>(sql).all()) {
+      // A bare "E:" with no address normalizes to the empty string. Keep it
+      // out so SELF holds only real addresses.
+      const n = addr ? norm(addr) : ''
+      if (n) SELF.add(n)
+    }
+  }
 }
 process.stderr.write(`imessage channel: self-chat addresses: ${[...SELF].join(', ') || '(none)'}\n`)
 
