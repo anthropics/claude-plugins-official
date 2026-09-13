@@ -1575,7 +1575,8 @@
       },
       "source": "./plugins/frontend-design",
       "category": "development",
-      "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/plugins/frontend-design"
+      "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/plugins/frontend-design",
+      "version": "1.0.0"
     },
     {
       "name": "fullstory",
@@ -3399,7 +3400,8 @@
       },
       "source": "./plugins/skill-creator",
       "category": "development",
-      "homepage": "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/skill-creator"
+      "homepage": "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/skill-creator",
+      "version": "1.0.0"
     },
     {
       "name": "slack",
