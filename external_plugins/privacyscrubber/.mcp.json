@@ -1,0 +1,6 @@
+{
+  "privacyscrubber": {
+    "command": "npx",
+    "args": ["-y", "@privacyscrubber/mcp-server@latest"]
+  }
+}

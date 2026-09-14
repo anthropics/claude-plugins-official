@@ -1,0 +1,8 @@
+{
+  "name": "privacyscrubber",
+  "description": "Zero-trust in-memory PII and secrets masking MCP server. Intercepts API tokens, credentials, and personal identifiers locally in RAM before cloud LLM dispatch with 1-click token reveal.",
+  "author": {
+    "name": "PrivacyScrubber",
+    "url": "https://privacyscrubber.com"
+  }
+}
