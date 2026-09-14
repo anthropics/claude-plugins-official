@@ -120,11 +120,25 @@ ${UNTRUSTED}`,
 )
 
 const injectionFlags = []
-const all = found.filter(Boolean).flatMap(r => {
+const deadFinders = []
+const all = []
+const toolOutputs = []
+// `parallel` preserves one result slot per input. Keep that positional
+// relationship so a skipped or failed finder is visible instead of looking
+// like a clean vulnerability class.
+CLASSES.forEach((c, i) => {
+  const r = found[i]
+  if (!r) {
+    deadFinders.push(c.key)
+    return
+  }
   for (const s of r.injectionSuspects || []) injectionFlags.push(s)
-  return r.findings || []
+  if (r.toolOutput) toolOutputs.push(r.toolOutput)
+  all.push(...(r.findings || []))
 })
-const toolOutputs = found.filter(Boolean).map(r => r.toolOutput).filter(Boolean)
+if (deadFinders.length) {
+  log(`Coverage warning: finder agent(s) failed or were skipped: ${deadFinders.join(', ')}`)
+}
 
 // Dedup across classes (the same hardcoded credential surfaces under auth AND secrets)
 const byKey = new Map()
@@ -170,14 +184,35 @@ const verified = await parallel(
 
 const survivors = []
 const refuted = []
-for (const item of verified.filter(Boolean)) {
-  const { f, v } = item
-  if (!v) continue
+const unverified = []
+// Walk by index rather than filtering nulls: every deduped finding must end up
+// as survived, refuted, or explicitly unverified. A missing verdict is a
+// coverage hole, never evidence that the finding was a false positive.
+for (let i = 0; i < deduped.length; i++) {
+  const f = deduped[i]
+  const item = verified[i]
+  const v = item && item.v
+  if (!v) {
+    unverified.push({
+      ...f,
+      verificationReason: item ? 'verifier returned no verdict' : 'verifier failed or was skipped',
+    })
+    continue
+  }
   if (v.real) {
     survivors.push(v.adjustedSeverity ? { ...f, severity: v.adjustedSeverity, severityNote: v.reason } : f)
   } else {
     refuted.push({ ...f, refutationReason: v.reason })
   }
+}
+const verificationTotal = survivors.length + refuted.length + unverified.length
+if (verificationTotal !== deduped.length) {
+  throw new Error(
+    `Verification reconciliation failed: ${verificationTotal} classified for ${deduped.length} deduped findings`,
+  )
+}
+if (unverified.length) {
+  log(`Coverage warning: ${unverified.length} finding(s) could not be verified and remain unverified`)
 }
 log(`${survivors.length} findings survived refutation; ${refuted.length} killed as false positives`)
 
@@ -214,11 +249,19 @@ return {
   system,
   findings: survivors,
   refuted,
+  unverified,
   credentialFindings: survivors.filter(f => f.isCredential),
   toolOutputs,
+  deadFinders,
   injectionFlags: [...new Set(injectionFlags)],
   stats: {
     bySeverity: survivors.reduce((acc, f) => ({ ...acc, [f.severity]: (acc[f.severity] || 0) + 1 }), {}),
-    falsePositiveRate: deduped.length ? Math.round((refuted.length / deduped.length) * 100) + '%' : 'n/a',
+    judged: survivors.length + refuted.length,
+    unverified: unverified.length,
+    deadFinders: deadFinders.length,
+    falsePositiveRate:
+      survivors.length + refuted.length
+        ? Math.round((refuted.length / (survivors.length + refuted.length)) * 100) + '%'
+        : 'n/a',
   },
 }
