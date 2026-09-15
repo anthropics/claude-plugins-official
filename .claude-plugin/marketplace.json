@@ -4136,6 +4136,23 @@
         "sha": "b7ae5e6c7b03bda6938133cd47ef7d69a425dcc6"
       },
       "homepage": "https://www.dynatrace.com/hub/detail/claude-code-cli/"
+    },
+    {
+      "name": "informatica-for-claude-platform",
+      "displayName": "Informatica",
+      "description": "Governed catalog discovery and data Q&A powered by Informatica's data catalog and governance (IDMC). Discover, explore and evaluate enterprise data assets through natural language without bypassing governance.",
+      "author": {
+        "name": "Informatica"
+      },
+      "category": "development",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/forcedotcom/informatica-claude-plugins.git",
+        "path": "informatica-for-claude-platform",
+        "ref": "main",
+        "sha": "13d2eb50e01b728d0f312b0a0bcc7771393b5a25"
+      },
+      "homepage": "https://github.com/forcedotcom/informatica-claude-plugins"
     }
   ]
 }
