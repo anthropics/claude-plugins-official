@@ -4144,7 +4144,7 @@
       "author": {
         "name": "Informatica"
       },
-      "category": "development",
+      "category": "database",
       "source": {
         "source": "git-subdir",
         "url": "https://github.com/forcedotcom/informatica-claude-plugins.git",
