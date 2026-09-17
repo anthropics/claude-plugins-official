@@ -1212,6 +1212,10 @@ def agentic_review(
     )
     user_prompt = (
         "Review this change for security vulnerabilities.\n\n"
+        f"Repository root (your working directory): {context_dir}\n"
+        "The paths below are relative to it; read them as given or join "
+        "them to this root. Never invent an absolute prefix. "
+        "Report filePath in the repo-relative form listed below.\n\n"
         f"Changed files (you may Read these and any other file in the repo):\n"
         + "\n".join(f"  - {p}" for p in touched_paths[:50])
         + context_note
@@ -1765,4 +1769,3 @@ Respond with JSON."""
         lines.append("")
 
     return "\n".join(lines)
-

@@ -158,6 +158,7 @@ def build_investigate_prompt(
     diff_files: list[tuple[str, str]],
     *,
     context_note: str = "",
+    repo_root: str = "",
 ) -> str:
     capped, _ = cap_diff_for_prompt(diff_files)
     diff_text = "\n\n".join(
@@ -165,7 +166,14 @@ def build_investigate_prompt(
     )
     return (
         "Review this change for security vulnerabilities.\n\n"
-        "Changed files (you may Read these and any other file in the repo):\n"
+        + (
+            f"Repository root (your working directory): {repo_root}\n"
+            "The paths below are relative to it; read them as given or join "
+            "them to this root. Never invent an absolute prefix. "
+            "Report filePath in the repo-relative form listed below.\n\n"
+            if repo_root else ""
+        )
+        + "Changed files (you may Read these and any other file in the repo):\n"
         + "\n".join(f"  - {p}" for p in touched_paths[:50])
         + context_note
         + "\n\nUnified diff (only + lines are new):\n\n"
