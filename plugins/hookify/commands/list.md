@@ -11,9 +11,12 @@ Show all configured hookify rules in the project.
 
 ## Steps
 
-1. Use Glob tool to find all hookify rule files:
+1. Use Glob tool to find all hookify rule files. Rules can live directly in
+   `.claude/` or in the dedicated `.claude/hookify/` subfolder, so run Glob
+   with both patterns and combine the results:
    ```
    pattern: ".claude/hookify.*.local.md"
+   pattern: ".claude/hookify/*.local.md"
    ```
 
 2. For each file found:
@@ -70,7 +73,7 @@ You haven't created any hookify rules yet.
 
 To get started:
 1. Use `/hookify` to analyze conversation and create rules
-2. Or manually create `.claude/hookify.my-rule.local.md` files
+2. Or manually create `.claude/hookify.my-rule.local.md` files (or `.claude/hookify/my-rule.local.md` in the dedicated subfolder)
 3. See `/hookify:help` for documentation
 
 Example:

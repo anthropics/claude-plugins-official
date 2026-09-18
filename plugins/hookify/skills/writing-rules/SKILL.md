@@ -8,7 +8,7 @@ version: 0.1.0
 
 ## Overview
 
-Hookify rules are markdown files with YAML frontmatter that define patterns to watch for and messages to show when those patterns match. Rules are stored in `.claude/hookify.{rule-name}.local.md` files.
+Hookify rules are markdown files with YAML frontmatter that define patterns to watch for and messages to show when those patterns match. Rules are stored in `.claude/hookify.{rule-name}.local.md` files, or in `.claude/hookify/{rule-name}.local.md` files in a dedicated subfolder (see File Organization below).
 
 ## Rule File Format
 
@@ -282,20 +282,28 @@ Better: `rm\s+-rf`
 
 ## File Organization
 
-**Location:** All rules in `.claude/` directory
-**Naming:** `.claude/hookify.{descriptive-name}.local.md`
-**Gitignore:** Add `.claude/*.local.md` to `.gitignore`
+**Location:** Rules can live in either of two places, both loaded together:
+- Flat, directly in `.claude/`: `.claude/hookify.{descriptive-name}.local.md`
+- Dedicated subfolder: `.claude/hookify/{descriptive-name}.local.md`
+
+The subfolder form is useful when you want to sync or symlink just your rules
+across machines/environments without touching the rest of `.claude/`, which
+holds other per-install state (settings, plugin config, etc.).
+
+**Naming (flat layout):** `.claude/hookify.{descriptive-name}.local.md`
+**Naming (subfolder layout):** `.claude/hookify/{descriptive-name}.local.md` (the `hookify.` prefix is redundant here since the folder already namespaces it)
+**Gitignore:** Add `.claude/*.local.md` and `.claude/hookify/*.local.md` to `.gitignore`
 
 **Good names:**
-- `hookify.dangerous-rm.local.md`
-- `hookify.console-log.local.md`
-- `hookify.require-tests.local.md`
-- `hookify.sensitive-files.local.md`
+- `hookify.dangerous-rm.local.md` (flat) or `hookify/dangerous-rm.local.md` (subfolder)
+- `hookify.console-log.local.md` (flat) or `hookify/console-log.local.md` (subfolder)
+- `hookify.require-tests.local.md` (flat) or `hookify/require-tests.local.md` (subfolder)
+- `hookify.sensitive-files.local.md` (flat) or `hookify/sensitive-files.local.md` (subfolder)
 
 **Bad names:**
 - `hookify.rule1.local.md` (not descriptive)
 - `hookify.md` (missing .local)
-- `danger.local.md` (missing hookify prefix)
+- `danger.local.md` in `.claude/` directly (missing hookify prefix, and not in the subfolder either, so it won't be discovered)
 
 ## Workflow
 
@@ -305,7 +313,7 @@ Better: `rm\s+-rf`
 2. Determine which tool is involved (Bash, Edit, etc.)
 3. Choose event type (bash, file, stop, etc.)
 4. Write regex pattern
-5. Create `.claude/hookify.{name}.local.md` file in project root
+5. Create `.claude/hookify.{name}.local.md` (or `.claude/hookify/{name}.local.md`) file in project root
 6. Test immediately - rules are read dynamically on next tool use
 
 ### Refining a Rule

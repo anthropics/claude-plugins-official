@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Configuration loader for hookify plugin.
 
-Loads and parses .claude/hookify.*.local.md files.
+Loads and parses hookify rule files, either directly in .claude/
+(.claude/hookify.*.local.md) or in the dedicated .claude/hookify/
+subfolder (.claude/hookify/*.local.md).
 """
 
 import os
@@ -198,6 +200,12 @@ def extract_frontmatter(content: str) -> tuple[Dict[str, Any], str]:
 def load_rules(event: Optional[str] = None) -> List[Rule]:
     """Load all hookify rules from .claude directory.
 
+    Rules can live directly in .claude/ (.claude/hookify.<name>.local.md)
+    or in a dedicated .claude/hookify/ subfolder (.claude/hookify/<name>.local.md).
+    The subfolder form is useful when you want to sync or symlink just your
+    rules across machines/environments without touching the rest of .claude/,
+    which holds other per-install state (settings, plugin config, etc.).
+
     Args:
         event: Optional event filter ("bash", "file", "stop", etc.)
 
@@ -206,9 +214,12 @@ def load_rules(event: Optional[str] = None) -> List[Rule]:
     """
     rules = []
 
-    # Find all hookify.*.local.md files
-    pattern = os.path.join('.claude', 'hookify.*.local.md')
-    files = glob.glob(pattern)
+    # Find rule files both in the flat layout and the dedicated subfolder.
+    patterns = [
+        os.path.join('.claude', 'hookify.*.local.md'),
+        os.path.join('.claude', 'hookify', '*.local.md'),
+    ]
+    files = sorted(set(f for p in patterns for f in glob.glob(p)))
 
     for file_path in files:
         try:

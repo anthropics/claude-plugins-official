@@ -21,11 +21,11 @@ Hookify installs generic hooks that run on these events:
 - **Stop**: When Claude wants to stop working
 - **UserPromptSubmit**: When user submits a prompt
 
-These hooks read configuration files from `.claude/hookify.*.local.md` and check if any rules match the current operation.
+These hooks read configuration files from `.claude/hookify.*.local.md` and `.claude/hookify/*.local.md` and check if any rules match the current operation.
 
 ### 2. Configuration Files
 
-Users create rules in `.claude/hookify.{rule-name}.local.md` files:
+Users create rules in `.claude/hookify.{rule-name}.local.md` files, or in `.claude/hookify/{rule-name}.local.md` files in a dedicated subfolder (useful for syncing rules across machines/environments without touching the rest of `.claude/`):
 
 ```markdown
 ---
@@ -135,14 +135,14 @@ Use Python regex syntax:
 
 **Block or Warn**: Rules can either `block` operations (prevent execution) or `warn` (show message but allow). Set `action: block` or `action: warn` in the rule's frontmatter.
 
-**Rule Files**: Keep rules in `.claude/hookify.*.local.md` - they should be git-ignored (add to .gitignore if needed).
+**Rule Files**: Keep rules in `.claude/hookify.*.local.md` or `.claude/hookify/*.local.md` - they should be git-ignored (add to .gitignore if needed).
 
 **Disable Rules**: Set `enabled: false` in frontmatter or delete the file.
 
 ## Troubleshooting
 
 **Hook not triggering:**
-- Check rule file is in `.claude/` directory
+- Check rule file is in `.claude/` or `.claude/hookify/` directory
 - Verify `enabled: true` in frontmatter
 - Confirm pattern is valid regex
 - Test pattern: `python3 -c "import re; print(re.search('your_pattern', 'test_text'))"`

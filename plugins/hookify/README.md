@@ -286,6 +286,17 @@ rm .claude/hookify.my-rule.local.md
 /hookify:list
 ```
 
+### Rule File Locations
+
+Rules can live directly in `.claude/` as `.claude/hookify.<name>.local.md`, or
+in a dedicated `.claude/hookify/` subfolder as `.claude/hookify/<name>.local.md`.
+Both locations are loaded together, so pick whichever fits your workflow.
+
+The subfolder form is useful if you want to sync or symlink just your rules
+across machines or environments (e.g. native Windows and WSL against the same
+project) without touching the rest of `.claude/`, which holds other
+per-install state such as settings and plugin config.
+
 ## Installation
 
 This plugin is part of the Claude Code Marketplace. It should be auto-discovered when the marketplace is installed.
@@ -303,7 +314,7 @@ cc --plugin-dir /path/to/hookify
 ## Troubleshooting
 
 **Rule not triggering:**
-1. Check rule file exists in `.claude/` directory (in project root, not plugin directory)
+1. Check rule file exists in `.claude/` or `.claude/hookify/` (in project root, not plugin directory)
 2. Verify `enabled: true` in frontmatter
 3. Test regex pattern separately
 4. Rules should work immediately - no restart needed
