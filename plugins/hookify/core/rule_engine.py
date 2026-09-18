@@ -86,9 +86,21 @@ class RuleEngine:
         # If only warnings, show them but allow operation
         if warning_rules:
             messages = [f"**[{r.name}]**\n{r.message}" for r in warning_rules]
-            return {
-                "systemMessage": "\n\n".join(messages)
-            }
+            combined_message = "\n\n".join(messages)
+            response = {"systemMessage": combined_message}
+
+            # `systemMessage` is displayed to the user; it does not reach the
+            # model. A warn rule exists to change what the model does next, so it
+            # must also be delivered as additionalContext on the events that
+            # support it. Without this, a warn rule is invisible to Claude and
+            # only the human ever sees it.
+            if hook_event in ('PreToolUse', 'PostToolUse', 'UserPromptSubmit'):
+                response["hookSpecificOutput"] = {
+                    "hookEventName": hook_event,
+                    "additionalContext": combined_message,
+                }
+
+            return response
 
         # No matches - allow operation
         return {}
