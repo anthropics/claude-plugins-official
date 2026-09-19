@@ -3,7 +3,7 @@ export const meta = {
   description:
     'Security scan as class-scoped parallel finders with adversarial per-finding verification — false positives die before SECURITY_FINDINGS.md',
   whenToUse:
-    'Invoked by /modernize-harden when the Workflow tool is available. Requires args {system}. Covers the scan + triage input only — remediation patch drafting and the per-hunk review loop stay in the calling session (they write files and handle raw credentials).',
+    'Invoked by /code-modernization:modernize-harden when the Workflow tool is available. Requires args {system}. Covers the scan + triage input only — remediation patch drafting and the per-hunk review loop stay in the calling session (they write files and handle raw credentials).',
   phases: [
     { title: 'Find', detail: 'one finder per vulnerability class' },
     { title: 'Verify', detail: 'one refuter per finding; second judge for Critical/High' },

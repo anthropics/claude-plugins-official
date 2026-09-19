@@ -1,9 +1,9 @@
 export const meta = {
-  name: 'modernize-extract-rules',
+  name: 'modernize-extract-rules-mine',
   description:
     'Business-rule mining with loop-until-dry extraction, per-rule citation verification, and a P0 confirmation panel',
   whenToUse:
-    'Invoked by /modernize-extract-rules when the Workflow tool is available. Requires args {system, modulePattern?, maxRounds?}. Returns structured rule cards — the calling session writes BUSINESS_RULES.md and DATA_OBJECTS.md from them.',
+    'Invoked by /code-modernization:modernize-extract-rules when the Workflow tool is available. Requires args {system, modulePattern?, maxRounds?}. Returns structured rule cards — the calling session writes BUSINESS_RULES.md and DATA_OBJECTS.md from them.',
   phases: [
     { title: 'Extract', detail: 'three lens-scoped extractors per round, rounds until two come up dry' },
     { title: 'Verify', detail: 'one citation referee per fresh rule' },
@@ -23,7 +23,7 @@ const ARGS = typeof args === 'string' ? (() => { try { return JSON.parse(args) }
 const system = ARGS && ARGS.system
 if (!system) {
   throw new Error(
-    'modernize-extract-rules workflow requires args: {system: "<system-dir>", modulePattern?: "<glob>", maxRounds?: number}',
+    'modernize-extract-rules-mine workflow requires args: {system: "<system-dir>", modulePattern?: "<glob>", maxRounds?: number}',
   )
 }
 if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(system)) {

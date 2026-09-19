@@ -3,7 +3,7 @@ export const meta = {
   description:
     'Per-system portfolio sweep as an independent pipeline — metrics, fingerprint, doc coverage per system; COCOMO computed deterministically',
   whenToUse:
-    'Invoked by /modernize-assess --portfolio when the Workflow tool is available. Requires args {parentDir, systems: ["dirname", ...]} — the calling session enumerates the subdirectories (workflow scripts have no filesystem access) and renders analysis/portfolio.html from the returned rows.',
+    'Invoked by /code-modernization:modernize-assess --portfolio when the Workflow tool is available. Requires args {parentDir, systems: ["dirname", ...]} — the calling session enumerates the subdirectories (workflow scripts have no filesystem access) and renders analysis/portfolio.html from the returned rows.',
   phases: [{ title: 'Survey', detail: 'one metrics agent per system, all independent' }],
 }
 

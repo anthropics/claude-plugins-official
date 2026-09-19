@@ -1,6 +1,7 @@
 ---
 description: Full discovery & portfolio analysis of a legacy system — inventory, complexity, debt, relative scale
 argument-hint: <system-dir> [--show-secrets] | --portfolio <parent-dir>
+arguments: system
 ---
 
 **Mode select.** If `$ARGUMENTS` starts with `--portfolio`, run **Portfolio
@@ -97,7 +98,7 @@ Then stop. Tell the user to open `analysis/portfolio.html`.
 
 # Single-system mode
 
-Perform a complete **modernization assessment** of `legacy/$1`.
+Perform a complete **modernization assessment** of `legacy/$system`.
 
 This is the discovery phase — the goal is a fact-grounded executive brief that
 a VP of Engineering could take into a budget meeting. Work in this order:
@@ -106,9 +107,9 @@ a VP of Engineering could take into a budget meeting. Work in this order:
 
 Run and show the output of:
 ```bash
-scc legacy/$1
+scc legacy/$system
 ```
-Then run `scc --by-file -s complexity legacy/$1 | head -25` to identify the
+Then run `scc --by-file -s complexity legacy/$system | head -25` to identify the
 highest-complexity files. Capture scc's COCOMO figure **only as a relative
 complexity/scale index** — and **ignore scc's "Estimated Schedule Effort"
 and cost-in-dollars lines**: those project a human-team timeline and budget,
@@ -116,7 +117,7 @@ which are invalid for agentic modernization (see the not-a-timeline note in
 Step 6).
 
 If `scc` is not installed, fall back in order:
-1. `cloc legacy/$1` for the LOC table, then compute the COCOMO-II index
+1. `cloc legacy/$system` for the LOC table, then compute the COCOMO-II index
    yourself: `2.94 × (KSLOC)^1.10` (nominal scale factors). Show the
    inputs.
 2. If `cloc` is also missing, use `find` + `wc -l` grouped by extension
@@ -139,7 +140,7 @@ Identify, with file evidence:
 
 Spawn three subagents **in parallel**:
 
-1. **legacy-analyst** — "Build a structural map of legacy/$1: what are the
+1. **legacy-analyst** — "Build a structural map of legacy/$system: what are the
    5-12 major functional domains (group optional/feature-gated subsystems
    under one umbrella), which source files belong to each, and how do they
    depend on each other (control flow + shared data)? Return a markdown
@@ -147,14 +148,14 @@ Spawn three subagents **in parallel**:
    `subgraph` to cluster and cap at ~40 edges. Cite repo-relative file
    paths. Flag dangling references (defined but no source, or unused)."
 
-2. **legacy-analyst** — "Identify technical debt in legacy/$1: dead code,
+2. **legacy-analyst** — "Identify technical debt in legacy/$system: dead code,
    deprecated APIs, copy-paste duplication, god objects/programs, missing
    error handling, hardcoded config. Return the top 10 findings ranked by
    remediation value, each with file:line evidence. If evidence contains a
    credential value, mask it per your secret-handling rules — never quote
    it."
 
-3. **security-auditor** — "Scan legacy/$1 for security vulnerabilities:
+3. **security-auditor** — "Scan legacy/$system for security vulnerabilities:
    injection, auth weaknesses, hardcoded secrets, vulnerable dependencies,
    missing input validation. Return findings in CWE-tagged table form with
    file:line evidence and severity. Mask every discovered credential value
@@ -168,7 +169,7 @@ Wait for all three. Synthesize their findings.
 If production telemetry is available — an observability/APM MCP server, batch
 job logs, or runtime exports the user can supply — gather p50/p95/p99
 wall-clock for the system's key jobs/transactions (e.g. JCL members under
-`legacy/$1/jcl/`, scheduled batches, top API routes). Use it to:
+`legacy/$system/jcl/`, scheduled batches, top API routes). Use it to:
 
 - Tag each functional domain from Step 3 with its production wall-clock
   cost and **p99 variance** (p99/p50 ratio).
@@ -193,13 +194,13 @@ security-auditor found any hardcoded credentials:
 
 1. Ensure `analysis/.gitignore` exists and contains the lines
    `SECRETS.local.md` and `*.local.patch` (create or append as needed —
-   the patch pattern is used by `/modernize-harden`; writing both now
+   the patch pattern is used by `/code-modernization:modernize-harden`; writing both now
    means the ignore set is complete from first contact). If the project is a
-   git repo, verify with `git check-ignore -q analysis/$1/SECRETS.local.md`
+   git repo, verify with `git check-ignore -q analysis/$system/SECRETS.local.md`
    — do not write any findings until the check passes. If there is **no
    git repo** (check for `.svn`/`.hg`/`CVS` too — a `.gitignore` protects
    nothing under another VCS): refuse `--show-secrets` and write
-   `SECRETS.local.md` to `~/.modernize/$1/` instead of the project tree,
+   `SECRETS.local.md` to `~/.modernize/$system/` instead of the project tree,
    telling the user where it went and why.
 2. Write `SECRETS.local.md`: one row per credential — masked preview,
    `file:line`, credential type, what it grants access to,
@@ -212,7 +213,7 @@ security-auditor found any hardcoded credentials:
    The Security Findings section adds a one-line pointer:
    "Credential inventory in SECRETS.local.md (gitignored; not for sharing)."
 
-Create `analysis/$1/ASSESSMENT.md` with these sections:
+Create `analysis/$system/ASSESSMENT.md` with these sections:
 - **Executive Summary** (3-4 sentences: what it is, how big, how risky, headline recommendation)
 - **System Inventory** (the scc table + tech fingerprint)
 - **Architecture-at-a-Glance** (the domain table; reference the diagram)
@@ -221,12 +222,12 @@ Create `analysis/$1/ASSESSMENT.md` with these sections:
 - **Security Findings** (CWE table)
 - **Documentation Gaps** (top 5)
 - **Relative Scale** (the COCOMO-II index + KSLOC as a complexity/scale signal for ranking this system against others. **Not a timeline:** state plainly that this is a relative size measure, not an estimate of how long modernization will take or what it will cost — it assumes traditional human-team productivity, which agentic transformation does not follow. Do not print person-months, a schedule, a cost, or a date.)
-- **Recommended Modernization Pattern** (one of: Rehost / Replatform / Refactor / Rearchitect / Rebuild / Replace — with one-paragraph rationale, and the command it routes to: **Replatform / Refactor-in-place same-stack version bump → `/modernize-uplift`**; Rearchitect/cross-stack → `/modernize-transform`; Rebuild → `/modernize-reimagine`)
+- **Recommended Modernization Pattern** (one of: Rehost / Replatform / Refactor / Rearchitect / Rebuild / Replace — with one-paragraph rationale, and the command it routes to: **Replatform / Refactor-in-place same-stack version bump → `/code-modernization:modernize-uplift`**; Rearchitect/cross-stack → `/code-modernization:modernize-transform`; Rebuild → `/code-modernization:modernize-reimagine`)
 
-Also create `analysis/$1/ARCHITECTURE.mmd` containing the Mermaid domain
+Also create `analysis/$system/ARCHITECTURE.mmd` containing the Mermaid domain
 dependency diagram from the legacy-analyst.
 
 ## Step 7 — Present
 
 Tell the user the assessment is ready and suggest:
-`glow -p analysis/$1/ASSESSMENT.md`
+`glow -p analysis/$system/ASSESSMENT.md`

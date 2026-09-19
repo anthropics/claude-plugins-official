@@ -93,7 +93,7 @@
 <aside id="sidebar" class="panel"></aside>
 <div id="hint">scroll to zoom · drag to pan · click a node · double-click to zoom in · Esc to reset</div>
 <div id="err" class="panel"><p>No topology data found in this file.<br>
-Re-run <code>/modernize-map</code> to regenerate it.</p></div>
+Re-run <code>/code-modernization:modernize-map</code> to regenerate it.</p></div>
 
 <script>
 /* Inlined d3 v7 subset (d3-hierarchy, d3-zoom, d3-selection, d3-interpolate, d3-ease) - ISC License, Copyright Mike Bostock. Bundled and minified; exposed as window.d3. */
@@ -110,12 +110,12 @@ function fail(html) {
 // the file is fully self-contained and works offline / air-gapped.
 const d3 = window.d3;
 
-// Injected by /modernize-map: the contents of topology.json replace the
+// Injected by /code-modernization:modernize-map: the contents of topology.json replace the
 // null after the marker comment. Schema documented in the command file.
 const DATA = /*__TOPOLOGY_DATA__*/ null;
 
 if (!DATA || !DATA.root) {
-  fail("No topology data found in this file.<br>Re-run <code>/modernize-map</code> to regenerate it.");
+  fail("No topology data found in this file.<br>Re-run <code>/code-modernization:modernize-map</code> to regenerate it.");
   throw new Error("no data");
 }
 

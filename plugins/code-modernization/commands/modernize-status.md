@@ -1,14 +1,15 @@
 ---
 description: Where am I in the modernization workflow — artifact inventory, staleness, secrets hygiene, next step
 argument-hint: <system-dir>
+arguments: system
 ---
 
-Report where the modernization of `$1` stands, in one screen. This is a
+Report where the modernization of `$system` stands, in one screen. This is a
 read-only command — inspect, never modify.
 
 ## 1 — Artifact inventory
 
-Check `analysis/$1/` and `modernized/$1*/` and build a table — one row per
+Check `analysis/$system/` and `modernized/$system*/` and build a table — one row per
 workflow stage, with the artifact's presence and modification time:
 
 | Stage | Artifacts |
@@ -19,9 +20,9 @@ workflow stage, with the artifact's presence and modification time:
 | extract-rules | `BUSINESS_RULES.md`, `DATA_OBJECTS.md` |
 | brief | `MODERNIZATION_BRIEF.md` (note whether the approval block is signed) |
 | harden | `SECURITY_FINDINGS.md`, `security_remediation.patch` |
-| uplift | `DELTA_CATALOG.md`, `BASELINE.md`, `PLAYBOOK.md` (no playbook = the pilot hasn't happened yet — the fan-out must not); `modernized/$1-uplifted/UPLIFT_NOTES.md` (note per-unit: builds on target? baseline reproduced?) |
-| transform | each `modernized/$1/<module>/` dir — note test presence and whether `TRANSFORMATION_NOTES.md` exists |
-| reimagine | `modernized/$1-reimagined/` — note per-service acceptance tests and the `CLAUDE.md` handoff (reimagine's completion markers; it does NOT write `TRANSFORMATION_NOTES.md`) |
+| uplift | `DELTA_CATALOG.md`, `BASELINE.md`, `PLAYBOOK.md` (no playbook = the pilot hasn't happened yet — the fan-out must not); `modernized/$system-uplifted/UPLIFT_NOTES.md` (note per-unit: builds on target? baseline reproduced?) |
+| transform | each `modernized/$system/<module>/` dir — note test presence and whether `TRANSFORMATION_NOTES.md` exists |
+| reimagine | `modernized/$system-reimagined/` — note per-service acceptance tests and the `CLAUDE.md` handoff (reimagine's completion markers; it does NOT write `TRANSFORMATION_NOTES.md`) |
 
 ## 2 — Staleness
 
@@ -29,13 +30,13 @@ Flag any artifact older than an upstream artifact it derives from:
 
 - `MODERNIZATION_BRIEF.md` older than `ASSESSMENT.md`, `topology.json`,
   or `BUSINESS_RULES.md` → the brief no longer reflects discovery;
-  recommend re-running `/modernize-brief`.
+  recommend re-running `/code-modernization:modernize-brief`.
 - `MODERNIZATION_BRIEF.md` for a same-stack **uplift** plan that is older
   than `DELTA_CATALOG.md` — or that has no catalog at all — → the phase
   order was decided before (or without) the version deltas that determine
-  it; recommend re-running `/modernize-brief`.
+  it; recommend re-running `/code-modernization:modernize-brief`.
 - `TOPOLOGY.html` older than `topology.json` → re-run the injection step
-  from `/modernize-map`.
+  from `/code-modernization:modernize-map`.
 - Any `TRANSFORMATION_NOTES.md` older than `BUSINESS_RULES.md` → the
   module may not implement the latest rule set; list which.
 

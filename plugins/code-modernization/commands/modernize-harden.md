@@ -1,16 +1,17 @@
 ---
 description: Security vulnerability scan with a reviewable remediation patch — OWASP, CWE, CVE, secrets, injection
 argument-hint: <system-dir> [--show-secrets]
+arguments: system
 ---
 
 Run a **security hardening pass** on the legacy system: find
 vulnerabilities, rank them, and produce a reviewable patch for the
 critical ones. Parse arguments flag-independently: the system dir
-(referred to as `$1` below) is the first non-flag token in `$ARGUMENTS`;
+(referred to as `$system` below) is the first non-flag token in `$ARGUMENTS`;
 `--show-secrets` may appear anywhere.
 
 This command never edits `legacy/` — it writes findings and a proposed patch
-to `analysis/$1/`. The user reviews and applies (or not).
+to `analysis/$system/`. The user reviews and applies (or not).
 
 ## Step 0 — Secrets quarantine setup
 
@@ -21,13 +22,13 @@ credential values must never land in them. Before any scanning:
    `SECRETS.local.md` and `*.local.patch`. Create the file or append the
    missing lines.
 2. If the project is a git repo, verify with
-   `git check-ignore -q analysis/$1/SECRETS.local.md` — if that exits
+   `git check-ignore -q analysis/$system/SECRETS.local.md` — if that exits
    non-zero, fix the ignore rule before proceeding. Do not write any
    findings until this check passes.
 3. **If there is no git repo** (check for `.svn`/`.hg`/`CVS` too — a
    `.gitignore` protects nothing under another VCS): refuse
    `--show-secrets`, and write `SECRETS.local.md` and any `.local.patch`
-   file to `~/.modernize/$1/` instead of the project tree, telling the
+   file to `~/.modernize/$system/` instead of the project tree, telling the
    user where they went and why.
 
 All secret values in every shareable artifact this command produces are
@@ -45,7 +46,7 @@ in this session, use it (this command invocation is your authorization):
 ```
 Workflow({
   scriptPath: "${CLAUDE_PLUGIN_ROOT}/workflows/harden-scan.js",
-  args: { system: "$1" }
+  args: { system: "$system" }
 })
 ```
 
@@ -65,7 +66,7 @@ analysis). Then continue at **Triage**.
 **Fallback — direct subagent** (older Claude Code builds without the
 Workflow tool). Spawn the **security-auditor** subagent:
 
-"Adversarially audit legacy/$1 for security vulnerabilities. Cover what's
+"Adversarially audit legacy/$system for security vulnerabilities. Cover what's
 relevant to the stack: injection (SQL/NoSQL/OS command/template), broken
 auth, sensitive data exposure, access control gaps, insecure deserialization,
 hardcoded secrets, vulnerable dependency versions, missing input validation,
@@ -82,13 +83,13 @@ vulnerability rather than code exhibiting one.
 
 ## Triage
 
-Write `analysis/$1/SECURITY_FINDINGS.md`:
+Write `analysis/$system/SECURITY_FINDINGS.md`:
 - Summary scorecard (count by severity, top CWE categories)
 - Findings table sorted by severity
 - Dependency CVE table (package, installed version, CVE, fixed version)
 
 If any hardcoded credentials were found, also write
-`analysis/$1/SECRETS.local.md` (the gitignored quarantine file from Step 0):
+`analysis/$system/SECRETS.local.md` (the gitignored quarantine file from Step 0):
 one row per credential — masked preview, `file:line`, credential type, what
 it appears to grant access to, production/test guess, and a rotation
 recommendation. With `--show-secrets`, append the raw value column here —
@@ -100,7 +101,7 @@ not for sharing)."
 
 For each **Critical** and **High** finding, draft a minimal, targeted fix.
 Do **not** edit `legacy/` — write fixes as unified diffs with **paths
-relative to the project root** (`legacy/$1/...`), applied from the project
+relative to the project root** (`legacy/$system/...`), applied from the project
 root, with a comment line above each hunk citing the finding ID it
 addresses (`# SEC-001: parameterize the query`).
 
@@ -108,11 +109,11 @@ addresses (`# SEC-001: parameterize the query`).
 hardcoded secret necessarily contains the raw value on its `-` and
 context lines — that cannot go in the shareable patch:
 
-- `analysis/$1/security_remediation.patch` (shareable) — every
+- `analysis/$system/security_remediation.patch` (shareable) — every
   non-credential hunk, plus for each credential finding a comment-only
   placeholder: `# SEC-NNN: credential remediation — hunk in
   security_remediation.local.patch (gitignored; not for sharing)`.
-- `analysis/$1/security_remediation.local.patch` (gitignored in Step 0) —
+- `analysis/$system/security_remediation.local.patch` (gitignored in Step 0) —
   the real, applyable hunks for credential findings only.
 
 Add a **Remediation Log** section to SECURITY_FINDINGS.md mapping each
@@ -124,8 +125,8 @@ carries the hunk.
 Spawn the **security-auditor** again to **review both patches** against
 the original code:
 
-"Review analysis/$1/security_remediation.patch and
-analysis/$1/security_remediation.local.patch against legacy/$1. For each
+"Review analysis/$system/security_remediation.patch and
+analysis/$system/security_remediation.local.patch against legacy/$system. For each
 hunk: does it fully remediate the cited finding? Does it introduce new
 vulnerabilities or change behavior beyond the fix? Confirm no raw
 credential values appear anywhere in the shareable patch. Return one
@@ -142,13 +143,13 @@ never ship a hunk that failed its last review.
 ## Present
 
 Tell the user the artifacts are ready:
-- `analysis/$1/SECURITY_FINDINGS.md` — findings, remediation log, patch review
-- `analysis/$1/security_remediation.patch` — review, then apply **from the
-  project root**: `git apply analysis/$1/security_remediation.patch`
-  (if `legacy/$1` is a symlink, use `git apply --unsafe-paths` or apply
+- `analysis/$system/SECURITY_FINDINGS.md` — findings, remediation log, patch review
+- `analysis/$system/security_remediation.patch` — review, then apply **from the
+  project root**: `git apply analysis/$system/security_remediation.patch`
+  (if `legacy/$system` is a symlink, use `git apply --unsafe-paths` or apply
   with `patch -p0` from the project root)
-- `analysis/$1/security_remediation.local.patch` — the credential fixes;
+- `analysis/$system/security_remediation.local.patch` — the credential fixes;
   apply the same way, and rotate the affected credentials regardless
-- Re-run `/modernize-harden $1` after applying to confirm resolution
+- Re-run `/code-modernization:modernize-harden $system` after applying to confirm resolution
 
-Suggest: `glow -p analysis/$1/SECURITY_FINDINGS.md`
+Suggest: `glow -p analysis/$system/SECURITY_FINDINGS.md`

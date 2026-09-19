@@ -3,7 +3,7 @@ export const meta = {
   description:
     'Same-stack uplift delta catalog: one finder per delta category (intersecting known version breaking-changes with this code), each verified against the cited source',
   whenToUse:
-    'Invoked by /modernize-uplift when the Workflow tool is available. Requires args {system, source, target, projectPattern?}. Returns structured delta cards — the calling session writes DELTA_CATALOG.md and runs the migration (build/dual-run are HITL, not in this workflow).',
+    'Invoked by /code-modernization:modernize-uplift when the Workflow tool is available. Requires args {system, source, target, projectPattern?}. Returns structured delta cards — the calling session writes DELTA_CATALOG.md and runs the migration (build/dual-run are HITL, not in this workflow).',
   phases: [
     { title: 'Find', detail: 'one finder per delta category + ecosystem-tool report' },
     { title: 'Verify', detail: 'one referee per delta — does this code really hit it?' },
@@ -222,10 +222,10 @@ return {
   // the codebase. The orchestrating command compares totalTouchedSites to the
   // system's file/LOC count (the command has that from assess; the workflow has
   // no fs access) — if most of the code is forced to change, it's a rewrite, not
-  // an uplift, and the command recommends /modernize-transform. judgment-share is
+  // an uplift, and the command recommends /code-modernization:modernize-transform. judgment-share is
   // a SECONDARY "how much human effort", not the gate.
   upliftVsRewriteSignal:
     confirmed.length === 0
       ? 'no deltas found — verify the version pair and whether the migration tool could actually run'
-      : `${totalSites} touched sites across ${confirmed.length} deltas (${judgmentSites} of them at judgment-class sites). Compare totalTouchedSites against the codebase size from assess: if it approaches "most of the tree", this is a rewrite — recommend /modernize-transform. Judgment share (${Math.round((judgmentCount / confirmed.length) * 100)}% of cards) is a secondary effort signal, not the gate.`,
+      : `${totalSites} touched sites across ${confirmed.length} deltas (${judgmentSites} of them at judgment-class sites). Compare totalTouchedSites against the codebase size from assess: if it approaches "most of the tree", this is a rewrite — recommend /code-modernization:modernize-transform. Judgment share (${Math.round((judgmentCount / confirmed.length) * 100)}% of cards) is a secondary effort signal, not the gate.`,
 }

@@ -1,9 +1,9 @@
 export const meta = {
   name: 'modernize-reimagine-scaffold',
   description:
-    'Phase E of /modernize-reimagine: scaffold every approved service in parallel — no cap; the runtime queues agents against its concurrency limit',
+    'Phase E of /code-modernization:modernize-reimagine: scaffold every approved service in parallel — no cap; the runtime queues agents against its concurrency limit',
   whenToUse:
-    'Invoked by /modernize-reimagine AFTER the human approves the architecture (HITL checkpoint #2). Requires args {system, services: [{name, responsibilities}]}. Scaffolding agents write only under modernized/<system>-reimagined/<service>/ — disjoint directories, so no worktree isolation is needed.',
+    'Invoked by /code-modernization:modernize-reimagine AFTER the human approves the architecture (HITL checkpoint #2). Requires args {system, services: [{name, responsibilities}]}. Scaffolding agents write only under modernized/<system>-reimagined/<service>/ — disjoint directories, so no worktree isolation is needed.',
   phases: [{ title: 'Scaffold', detail: 'one agent per approved service' }],
 }
 

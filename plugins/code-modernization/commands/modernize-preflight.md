@@ -1,10 +1,11 @@
 ---
 description: Environment readiness check — analysis tools, build toolchain, source completeness, telemetry access
 argument-hint: <system-dir> [target-stack]
+arguments: system target_stack
 ---
 
 Check whether this environment is ready to analyze — and eventually
-transform — `legacy/$1`, and tell the user exactly what to fix before the
+transform — `legacy/$system`, and tell the user exactly what to fix before the
 other commands run into it. Modernization sessions fail late and
 confusingly when this isn't done: assessment metrics silently degrade
 without analysis tools, characterization tests can't run without a build
@@ -33,7 +34,7 @@ headless or scripted run still produces a complete `PREFLIGHT.md`, and the
 one thing that never happens is a readiness report silently missing the
 questions.
 
-1. **Scope** — Is `legacy/$1` the complete system, or one slice of a
+1. **Scope** — Is `legacy/$system` the complete system, or one slice of a
    larger codebase? If a slice: what *outside* it depends on code *inside*
    it, and is breaking those consumers acceptable? (Check 6 verifies this
    from the source independently; the human's answer says whether it
@@ -49,17 +50,17 @@ questions.
    documented?
 4. **Prior attempts** — Has anyone tried to modernize any of this before?
    What went wrong?
-5. **Off limits** — Is anything under `legacy/$1` not allowed to change in
+5. **Off limits** — Is anything under `legacy/$system` not allowed to change in
    this pass (a component another team owns, a frozen branch, generated
    code)?
 
 Record every answer **verbatim** in the report — downstream commands, and
-`/modernize-brief` most of all, read them from there. Do not paraphrase
+`/code-modernization:modernize-brief` most of all, read them from there. Do not paraphrase
 away a caveat the human gave you.
 
 ## Check 1 — Detect the stack
 
-Fingerprint `legacy/$1` from file extensions and manifests: languages,
+Fingerprint `legacy/$system` from file extensions and manifests: languages,
 build system, deployment/config descriptors. This drives which checks
 below apply. Report what was detected and the rough file split.
 
@@ -138,7 +139,7 @@ detected stack's equivalents of:
 - **Deployment/config descriptors** — JCL for batch COBOL, CICS CSD
   definitions, `web.xml`/route configs, cron/scheduler definitions.
   Without these, entry-point detection and the code↔storage join in
-  `/modernize-map` are guesswork.
+  `/code-modernization:modernize-map` are guesswork.
 - **Data definitions** — DDL, schemas, copybook record layouts, ORM
   mappings.
 - **Binary-only artifacts** — load modules, jars, DLLs with no matching
@@ -148,48 +149,48 @@ detected stack's equivalents of:
 
 - **Production telemetry** — is an observability/APM MCP server connected,
   or are batch job logs / runtime exports available? (Enables the runtime
-  overlay in `/modernize-assess` Step 4 and timing annotations in
-  `/modernize-map`.)
-- **Version control history** — is `legacy/$1` under git with meaningful
+  overlay in `/code-modernization:modernize-assess` Step 4 and timing annotations in
+  `/code-modernization:modernize-map`.)
+- **Version control history** — is `legacy/$system` under git with meaningful
   history? (Change-frequency data sharpens risk ranking.)
 
-## Check 6 — Scope boundary (is `$1` the whole world, or a slice of one?)
+## Check 6 — Scope boundary (is `$system` the whole world, or a slice of one?)
 
-Every downstream command assumes `legacy/$1` *is* the system. When it is
+Every downstream command assumes `legacy/$system` *is* the system. When it is
 actually **one directory inside a larger source repository** — a module in
 a monorepo, one solution folder inside a much bigger solution, a subsystem
 sharing copybooks or includes with siblings — that assumption is the most
 dangerous thing in the whole run, and nothing else checks it.
 
-Detect it: after resolving the `legacy/$1` symlink (the recommended setup
+Detect it: after resolving the `legacy/$system` symlink (the recommended setup
 symlinks real code in), is there a repository / solution / workspace /
-reactor root *above* it? Do manifests or includes *inside* `$1` reference
+reactor root *above* it? Do manifests or includes *inside* `$system` reference
 paths *outside* it? If either is true, report **both directions** of the
 boundary crossing:
 
-- **Outbound** — things inside `$1` that depend on source *outside* it
+- **Outbound** — things inside `$system` that depend on source *outside* it
   (project/module references, shared includes, a parent build file). The
-  `/modernize-map` topology and any delta catalog only see what is under
-  `$1`, so every outbound reference is a dependency they will silently
+  `/code-modernization:modernize-map` topology and any delta catalog only see what is under
+  `$system`, so every outbound reference is a dependency they will silently
   miss. List them.
-- **Inbound** — things *outside* `$1` that depend on things *inside* it.
-  This is the **blast radius**: an in-place migration (`/modernize-uplift`)
+- **Inbound** — things *outside* `$system` that depend on things *inside* it.
+  This is the **blast radius**: an in-place migration (`/code-modernization:modernize-uplift`)
   of a node with external consumers breaks every one of them. Grep the
-  sibling manifests for references into `$1`, enumerate the
+  sibling manifests for references into `$system`, enumerate the
   inbound-referenced nodes, and say plainly that each needs an explicit
   decision *before* any in-place change — keep it buildable for both old
   and new consumers during the transition, expand the scope to include the
   consumers, or accept and schedule the break. Never let this be
   discovered by a broken build in a directory nobody was looking at.
 
-If `$1` really is a standalone repository, one line saying so is the whole
+If `$system` really is a standalone repository, one line saying so is the whole
 check — it is cheap when it does not apply.
 
 ## Report
 
-Write `analysis/$1/PREFLIGHT.md`. It **leads with the Check 0 answers,
+Write `analysis/$system/PREFLIGHT.md`. It **leads with the Check 0 answers,
 verbatim, and the Check 6 scope-boundary finding** — those two are read by
-every downstream command (`/modernize-brief` above all) and are worth
+every downstream command (`/code-modernization:modernize-brief` above all) and are worth
 nothing paraphrased. Then a status table — one row per check, status
 ✅ / ⚠️ / ❌, what was found, and the fix for anything not green — followed
 by a **Ready / Ready-with-gaps / Not ready** verdict per command:
@@ -213,12 +214,12 @@ by a **Ready / Ready-with-gaps / Not ready** verdict per command:
   for `upgrade-assistant`, `apiport`, OpenRewrite, `pyupgrade`, `ng`)? Missing
   is Ready-with-gaps, not Not-ready — the delta catalog is then fully
   Claude-derived and loses the tool's coverage; note that. (c) Did Check 6
-  find **inbound external consumers** of `$1`? That is **Ready-with-gaps**,
+  find **inbound external consumers** of `$system`? That is **Ready-with-gaps**,
   not Not-ready — preflight runs before any plan exists, so there is nowhere
   yet to record a decision — but it is the gap that matters most: name the
-  inbound-referenced shared nodes and say that `/modernize-brief` must give
+  inbound-referenced shared nodes and say that `/code-modernization:modernize-brief` must give
   each one an explicit transition decision as its own line item (Check 6
-  lists the options), and that `/modernize-uplift` Step 1 will not migrate a
+  lists the options), and that `/code-modernization:modernize-uplift` Step 1 will not migrate a
   shared node in place without one. Never let this be discovered from a
   sibling's broken build.
 

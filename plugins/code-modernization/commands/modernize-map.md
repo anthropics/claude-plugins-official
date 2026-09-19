@@ -1,9 +1,10 @@
 ---
 description: Dependency & topology mapping — call graphs, data lineage, batch flows, rendered as navigable diagrams
 argument-hint: <system-dir>
+arguments: system
 ---
 
-Build a **dependency and topology map** of `legacy/$1` and render it visually.
+Build a **dependency and topology map** of `legacy/$system` and render it visually.
 
 The assessment gave us domains. Now go one level deeper: how do the *pieces*
 connect? This is the map an engineer needs before touching anything.
@@ -11,7 +12,7 @@ connect? This is the map an engineer needs before touching anything.
 ## What to produce
 
 Write a one-off analysis script (Python or shell — your choice) that parses
-the source under `legacy/$1` and extracts the four datasets below. Three
+the source under `legacy/$system` and extracts the four datasets below. Three
 principles apply across stacks; getting them wrong produces a misleading map:
 
 1. **Edges live in two places** — direct calls in source, *and* dispatcher/
@@ -50,9 +51,9 @@ If the source is fixed-column (COBOL columns 8–72, RPG, etc.), slice the
 code area and strip comment lines before regex matching, or you'll match
 sequence numbers and commented-out code.
 
-Save the script as `analysis/$1/extract_topology.py` (or `.sh`) so it can be
+Save the script as `analysis/$system/extract_topology.py` (or `.sh`) so it can be
 re-run and audited. Have it write a machine-readable
-`analysis/$1/topology.json` and print a human summary. Run it; show the
+`analysis/$system/topology.json` and print a human summary. Run it; show the
 summary (cap at ~200 lines for very large estates).
 
 `topology.json` must follow this schema — it feeds the interactive viewer:
@@ -91,7 +92,7 @@ summary (cap at ~200 lines for very large estates).
 ```
 
 - Group leaf modules under `domain` containers (use the domains from
-  `/modernize-assess` if available). Leaf kinds: `module`, `datastore`,
+  `/code-modernization:modernize-assess` if available). Leaf kinds: `module`, `datastore`,
   `job`, `screen`. `loc` drives circle size — include it for modules.
 - Edge kinds: `call` (direct), `dispatch` (dynamic/router), `read`,
   `write`. Every edge endpoint must be a leaf id that exists in the tree.
@@ -131,7 +132,7 @@ engineers and "what happens when someone files a claim" for everyone else.
 
 ## Render
 
-`analysis/$1/TOPOLOGY.html` is an **interactive map**: a zoomable
+`analysis/$system/TOPOLOGY.html` is an **interactive map**: a zoomable
 circle-pack of the whole system (domains as containers, modules sized by
 LOC) with dependency edges, search, per-node detail sidebar, edge-kind
 toggles, and a flow-walkthrough mode that plays each persona flow as a
@@ -139,7 +140,7 @@ numbered path. Build it from the template that ships with this plugin —
 do not hand-write the viewer:
 
 ```bash
-python3 - "${CLAUDE_PLUGIN_ROOT}/assets/topology-viewer.html" analysis/$1 <<'EOF'
+python3 - "${CLAUDE_PLUGIN_ROOT}/assets/topology-viewer.html" analysis/$system <<'EOF'
 import json, sys
 tpl_path, out_dir = sys.argv[1], sys.argv[2]
 tpl = open(tpl_path).read()
@@ -169,16 +170,16 @@ Mermaid stays for **small, exportable** diagrams. Generate standalone
 collapse to domain level if the full graph is bigger (dense Mermaid
 becomes unreadable, which is exactly what the interactive map is for):
 
-- `analysis/$1/call-graph.mmd` — domain-level `graph TD`, entry points
+- `analysis/$system/call-graph.mmd` — domain-level `graph TD`, entry points
   highlighted
-- `analysis/$1/data-lineage.mmd` — `graph LR`, programs → data stores,
+- `analysis/$system/data-lineage.mmd` — `graph LR`, programs → data stores,
   read vs write marked
-- `analysis/$1/critical-path.mmd` — `flowchart TD` of the primary flow
+- `analysis/$system/critical-path.mmd` — `flowchart TD` of the primary flow
   from `flows`, annotated with p50/p99 wall-clock if telemetry is
-  available (see `/modernize-assess` Step 4)
+  available (see `/code-modernization:modernize-assess` Step 4)
 
 ## Present
 
-Tell the user to open `analysis/$1/TOPOLOGY.html` in a browser, and to
+Tell the user to open `analysis/$system/TOPOLOGY.html` in a browser, and to
 try: search for a module, click it to see its connections, and pick a
 persona flow from the walkthrough dropdown.

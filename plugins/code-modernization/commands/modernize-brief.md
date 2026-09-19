@@ -1,39 +1,40 @@
 ---
 description: Generate a phased Modernization Brief — the approved plan that transformation agents will execute against
 argument-hint: <system-dir> [target-stack]
+arguments: system target_stack
 ---
 
-Synthesize everything in `analysis/$1/` into a **Modernization Brief** — the
+Synthesize everything in `analysis/$system/` into a **Modernization Brief** — the
 single document a steering committee approves and engineering executes.
 
-Target stack: `$2` (if blank, recommend one based on the assessment findings).
+Target stack: `$target_stack` (if blank, recommend one based on the assessment findings).
 
-Read `analysis/$1/ASSESSMENT.md`, `analysis/$1/topology.json` (plus the
+Read `analysis/$system/ASSESSMENT.md`, `analysis/$system/topology.json` (plus the
 `.mmd` files alongside it — do NOT read `TOPOLOGY.html`, it's an
 interactive viewer with the data minified inside), and
-`analysis/$1/BUSINESS_RULES.md` first. If any are missing, say so and
-stop — they come from `/modernize-assess`, `/modernize-map`, and
-`/modernize-extract-rules` respectively. Run those first.
+`analysis/$system/BUSINESS_RULES.md` first. If any are missing, say so and
+stop — they come from `/code-modernization:modernize-assess`, `/code-modernization:modernize-map`, and
+`/code-modernization:modernize-extract-rules` respectively. Run those first.
 
 Two more inputs are conditional:
 
-- **`analysis/$1/PREFLIGHT.md`** — read it if it exists. It records two
-  things nothing else has: the human's answers to `/modernize-preflight`
+- **`analysis/$system/PREFLIGHT.md`** — read it if it exists. It records two
+  things nothing else has: the human's answers to `/code-modernization:modernize-preflight`
   Check 0 (scope, whether they can build and run tests locally and how
   long CI takes, bespoke build infrastructure, prior attempts, what is
-  off-limits) and the Check 6 **scope boundary** — whether `legacy/$1` is
+  off-limits) and the Check 6 **scope boundary** — whether `legacy/$system` is
   a slice of a larger codebase, and what *outside* it depends on code
   *inside* it. Both constrain this plan more than anything derivable from
   the source. Never override an answer the human gave there with a guess.
-- **`analysis/$1/DELTA_CATALOG.md`** — **required** whenever the target
-  (`$2`, or your recommendation) is a newer version of the *same* stack.
+- **`analysis/$system/DELTA_CATALOG.md`** — **required** whenever the target
+  (`$target_stack`, or your recommendation) is a newer version of the *same* stack.
   A same-stack uplift's phase order is decided by its version deltas, not
   by the topology alone — most of all by whether the **existing test suite
   can even execute on the target runtime**. Phasing an uplift without the
   catalog is planning blind; it is exactly how a test-framework migration
   ends up scheduled last when it must come first. If the catalog is
-  missing, produce it *before* phasing — run `/modernize-uplift $1
-  <source> $2` through its Step 3 (the delta-catalog step), or spawn the
+  missing, produce it *before* phasing — run `/code-modernization:modernize-uplift $system
+  <source> $target_stack` through its Step 3 (the delta-catalog step), or spawn the
   **version-delta-analyst** agent directly — then return here. Do not
   guess at the deltas.
 
@@ -46,7 +47,7 @@ built from.
 
 ## The Brief
 
-Write `analysis/$1/MODERNIZATION_BRIEF.md`:
+Write `analysis/$system/MODERNIZATION_BRIEF.md`:
 
 ### 1. Objective
 One paragraph: from what, to what, why now.
@@ -63,7 +64,7 @@ for a same-stack uplift (libraries before the apps that depend on them).
 
 For an **uplift**, leaf-first has three overrides, and getting them wrong is
 the most common way an uplift plan fails. Apply them *here*, at planning
-time. `/modernize-uplift` Step 1 re-applies the same rules at execution
+time. `/code-modernization:modernize-uplift` Step 1 re-applies the same rules at execution
 time (its list also names multi-targeting — the *technique* that satisfies
 override 3's first option), and an approved order and a re-derived one must
 never disagree — which is exactly what deciding the order without these
@@ -89,9 +90,9 @@ would produce:
    accept and schedule the break. Never silently migrate a shared node in
    place and break every consumer nobody was looking at.
 
-Name the per-phase execution command: `/modernize-transform` (cross-stack
-module rewrite), `/modernize-reimagine` (greenfield rebuild), or
-`/modernize-uplift` (same-stack version bump — when the target is a newer
+Name the per-phase execution command: `/code-modernization:modernize-transform` (cross-stack
+module rewrite), `/code-modernization:modernize-reimagine` (greenfield rebuild), or
+`/code-modernization:modernize-uplift` (same-stack version bump — when the target is a newer
 version of the *same* stack, this is the path, not transform). For each phase:
 - Scope (which legacy modules, which target services)
 - Entry criteria (what must be true to start)
@@ -107,7 +108,7 @@ version of the *same* stack, this is the path, not transform). For each phase:
 The named execution command **reads this brief** and treats its phase's
 scope, entry criteria, and exit criteria as binding gates. So write entry
 criteria as *checkable preconditions* ("baseline recorded in
-`analysis/$1/BASELINE.md`", "pilot playbook approved"), not aspirations —
+`analysis/$system/BASELINE.md`", "pilot playbook approved"), not aspirations —
 and tell the approver they steer execution by editing this file. An edited
 entry criterion is honored; a note in a chat is not.
 
@@ -119,7 +120,7 @@ durations, and this plan deliberately makes no time claims.
 **Phase 1 is a pilot, and this brief is a hypothesis.** Whenever a phase's
 units share one execution recipe (an uplift over many projects, a transform
 over many similar modules), name **one representative unit** as that
-phase's own first slice. For an uplift, `/modernize-uplift` Step 5a
+phase's own first slice. For an uplift, `/code-modernization:modernize-uplift` Step 5a
 *enforces* this — it will not fan out without a pilot and its playbook; for
 the other execution commands the pilot lives here, written into that
 phase's **entry criteria**, which they read as a gate. A reviewer should
@@ -132,8 +133,8 @@ and the runtime, not in the source; no amount of reading substitutes for
 one unit taken all the way through.
 
 ### 4. Business Walkthroughs
-For each persona flow in `analysis/$1/topology.json` (`flows` — produced
-by `/modernize-map`), a short narrative table: persona, what happens in
+For each persona flow in `analysis/$system/topology.json` (`flows` — produced
+by `/code-modernization:modernize-map`), a short narrative table: persona, what happens in
 business language, which legacy modules implement it today, and which
 phase from §3 replaces each. This is the section non-technical approvers
 actually read — it connects "Phase 2" to "what happens when a customer

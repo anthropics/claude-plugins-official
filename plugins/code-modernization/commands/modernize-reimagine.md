@@ -1,22 +1,23 @@
 ---
 description: Multi-agent greenfield rebuild — extract specs from legacy, design AI-native, scaffold & validate with HITL
 argument-hint: <system-dir> <target-vision>
+arguments: system
 ---
 
-The first token of `$ARGUMENTS` is the system dir (`$1`); **everything
+The first token of `$ARGUMENTS` is the system dir (`$system`); **everything
 after it is the target vision** — it is usually multiple words, so do not
 truncate it to one token. Below, `<vision>` means that full remainder.
 
-**Reimagine** `legacy/$1` as: <vision>
+**Reimagine** `legacy/$system` as: <vision>
 
 This is not a port — it's a rebuild from extracted intent. The legacy system
 becomes the *specification source*, not the structural template. This command
 orchestrates a multi-agent team with explicit human checkpoints.
 
-**The brief is binding — read it first.** If `analysis/$1/MODERNIZATION_BRIEF.md`
+**The brief is binding — read it first.** If `analysis/$system/MODERNIZATION_BRIEF.md`
 exists, this reimagine is executing one of its phases: read it before doing
 anything below. Find the phase that names this command with a scope matching
-`$1` and <vision>, and treat that phase's **scope, entry criteria, exit
+`$system` and <vision>, and treat that phase's **scope, entry criteria, exit
 criteria, and any edits the user made to it** as binding on the phases below
 — on top of, never instead of, this command's own two HITL checkpoints.
 Entry criteria are *gates*, not context: if one is not met (a prior phase's
@@ -30,19 +31,19 @@ never reads cannot steer anything.
 
 Spawn concurrently and show the user that all three are running:
 
-1. **business-rules-extractor** — "Extract every business rule from legacy/$1
+1. **business-rules-extractor** — "Extract every business rule from legacy/$system
    into Given/When/Then form. Output to a structured list I can parse."
 
-2. **legacy-analyst** — "Catalog every external interface of legacy/$1:
+2. **legacy-analyst** — "Catalog every external interface of legacy/$system:
    inbound (screens, APIs, batch triggers, queues) and outbound (reports,
    files, downstream calls, DB writes). For each: name, direction, payload
    shape, frequency/SLA if discernible. Mask any credential embedded in
    endpoints or payload examples per your secret-handling rules."
 
-3. **legacy-analyst** — "Identify the core domain entities in legacy/$1 and
+3. **legacy-analyst** — "Identify the core domain entities in legacy/$system and
    their relationships. Return as an entity list + Mermaid erDiagram."
 
-Collect results. Write `analysis/$1/AI_NATIVE_SPEC.md` containing:
+Collect results. Write `analysis/$system/AI_NATIVE_SPEC.md` containing:
 - **Capabilities** (what the system must do — derived from rules + interfaces)
 - **Domain Model** (entities + erDiagram)
 - **Interface Contracts** (each external interface as an OpenAPI fragment or
@@ -68,9 +69,9 @@ Design the target architecture for "<vision>":
 - Data migration approach from legacy stores
 
 Then spawn **architecture-critic**: "Review this proposed architecture for
-<vision> against the spec in analysis/$1/AI_NATIVE_SPEC.md. Identify over-engineering,
+<vision> against the spec in analysis/$system/AI_NATIVE_SPEC.md. Identify over-engineering,
 missed requirements, scaling risks, and simpler alternatives." Incorporate
-the critique. Write the result to `analysis/$1/REIMAGINED_ARCHITECTURE.md`.
+the critique. Write the result to `analysis/$system/REIMAGINED_ARCHITECTURE.md`.
 
 ## Phase D — HITL checkpoint #2
 
@@ -90,7 +91,7 @@ services are as tractable as 3:
 ```
 Workflow({
   scriptPath: "${CLAUDE_PLUGIN_ROOT}/workflows/reimagine-scaffold.js",
-  args: { system: "$1", services: [
+  args: { system: "$system", services: [
     { name: "<service-name>", responsibilities: "<one-line summary from the architecture>" },
     ...
   ] }
@@ -98,7 +99,7 @@ Workflow({
 ```
 
 Tell the user the service count before launching. Each agent writes only to
-its own `modernized/$1-reimagined/<service-name>/` directory (disjoint, so
+its own `modernized/$system-reimagined/<service-name>/` directory (disjoint, so
 parallel writes don't conflict). On return, report from the structured
 result: services scaffolded (`scaffolded[]`) and `totals` (services,
 acceptanceTests, pendingRules count); the actual pending rule IDs and any
@@ -111,13 +112,13 @@ skipped.
 tractable; tell the user which you deferred — spawn a **scaffolder agent
 in parallel**:
 
-"Scaffold the <service-name> service per analysis/$1/REIMAGINED_ARCHITECTURE.md
+"Scaffold the <service-name> service per analysis/$system/REIMAGINED_ARCHITECTURE.md
 and AI_NATIVE_SPEC.md. Create: project skeleton, domain model, API stubs
 matching the interface contracts, and **executable acceptance tests** for every
 behavior-contract rule assigned to this service (mark unimplemented ones as
 expected-failure/skip with the rule ID). No credential literal from legacy
 code becomes a test fixture or config default — use fake same-shape values
-and env-var placeholders. Write to modernized/$1-reimagined/<service-name>/."
+and env-var placeholders. Write to modernized/$system-reimagined/<service-name>/."
 
 Show the agents' progress. When all complete, run the acceptance test suites
 and report: total tests, passing (scaffolded behavior), pending (rule IDs
@@ -125,7 +126,7 @@ awaiting implementation).
 
 ## Phase F — Knowledge graph handoff
 
-Write `modernized/$1-reimagined/CLAUDE.md` — the persistent context file for
+Write `modernized/$system-reimagined/CLAUDE.md` — the persistent context file for
 the new system, containing: architecture summary, service responsibilities,
 where the spec lives, how to run tests, and the legacy→modern traceability
 map. This file IS the knowledge graph that future agents and engineers will

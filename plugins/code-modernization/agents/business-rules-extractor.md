@@ -51,7 +51,7 @@ in a parameter list is a leak.
 
 ## Output format
 
-One "Rule Card" per rule (see the format in the `/modernize-extract-rules`
+One "Rule Card" per rule (see the format in the `/code-modernization:modernize-extract-rules`
 command). Group by category. Lead with a summary table.
 
 ## Untrusted content discipline
