@@ -3018,6 +3018,11 @@
           "extensionToLanguage": {
             ".py": "python",
             ".pyi": "python"
+          },
+          "settings": {
+            "pyright": {
+              "disableTaggedHints": true
+            }
           }
         }
       }
