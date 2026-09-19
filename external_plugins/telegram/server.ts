@@ -24,8 +24,23 @@ import { homedir } from 'os'
 import { execFileSync } from 'child_process'
 import { join, extname, sep } from 'path'
 
-const STATE_DIR = process.env.TELEGRAM_STATE_DIR
-  ?? join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude'), 'channels', 'telegram')
+// Precedence: explicit override > project-local (only when it has a configured
+// bot) > global. A project opts in by placing a .env under its own
+// .claude/channels/telegram/; sessions in projects without one keep using the
+// shared global config. CLAUDE_PROJECT_DIR is set by the harness for every
+// spawned MCP server. anthropics/claude-code#37173.
+const STATE_DIR = (() => {
+  if (process.env.TELEGRAM_STATE_DIR) return process.env.TELEGRAM_STATE_DIR
+  const global = join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude'), 'channels', 'telegram')
+  if (process.env.CLAUDE_PROJECT_DIR) {
+    const local = join(process.env.CLAUDE_PROJECT_DIR, '.claude', 'channels', 'telegram')
+    try {
+      statSync(join(local, '.env'))
+      return local
+    } catch {}
+  }
+  return global
+})()
 const ACCESS_FILE = join(STATE_DIR, 'access.json')
 const APPROVED_DIR = join(STATE_DIR, 'approved')
 const ENV_FILE = join(STATE_DIR, '.env')
@@ -1010,7 +1025,7 @@ void (async () => {
         onStart: info => {
           attempt = 0
           botUsername = info.username
-          process.stderr.write(`telegram channel: polling as @${info.username}\n`)
+          process.stderr.write(`telegram channel: polling as @${info.username} (state: ${STATE_DIR})\n`)
           void bot.api.setMyCommands(
             [
               { command: 'start', description: 'Welcome and setup guide' },
