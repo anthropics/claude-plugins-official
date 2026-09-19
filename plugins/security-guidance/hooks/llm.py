@@ -1280,6 +1280,10 @@ def agentic_review(
         (structured_output_or_None, turn_count, result_subtype). When the SDK
         exhausts schema-retry it emits subtype=error_max_structured_output_retries
         with structured_output=None — caller translates to fallback/fail-open."""
+        # Capture child claude stderr so it does not leak into the parent
+        # hook's stderr (where Claude Code would treat it as the asyncRewake
+        # notification body and overwrite the findings on stdout).
+        _captured_stderr: List[str] = []
         opts = ClaudeAgentOptions(
             system_prompt=system,
             cwd=context_dir,
@@ -1329,6 +1333,7 @@ def agentic_review(
             # the review run end-to-end; the others are belt-and-suspenders
             # for the same fd-passing pattern.
             env=_agentic_spawn_env(),
+            stderr=lambda l: _captured_stderr.append(l),
         )
         n = 0
         structured: Optional[Dict[str, Any]] = None
@@ -1345,18 +1350,24 @@ def agentic_review(
             yield {"type": "user",
                    "message": {"role": "user", "content": prompt}}
 
-        async for msg in query(prompt=_once(), options=opts):
-            if isinstance(msg, AssistantMessage):
-                n += 1
-            elif isinstance(msg, ResultMessage):
-                subtype = msg.subtype
-                if msg.structured_output is not None:
-                    structured = msg.structured_output
-                # SDK ResultMessage carries aggregate usage + cache-aware
-                # cost across the whole multi-turn run; prefer its cost over
-                # the price-table estimate. getattr guards older SDK builds.
-                _record_usage(getattr(msg, "usage", None) or {}, model,
-                              cost_usd=getattr(msg, "total_cost_usd", None))
+        try:
+            async for msg in query(prompt=_once(), options=opts):
+                if isinstance(msg, AssistantMessage):
+                    n += 1
+                elif isinstance(msg, ResultMessage):
+                    subtype = msg.subtype
+                    if msg.structured_output is not None:
+                        structured = msg.structured_output
+                    # SDK ResultMessage carries aggregate usage + cache-aware
+                    # cost across the whole multi-turn run; prefer its cost over
+                    # the price-table estimate. getattr guards older SDK builds.
+                    _record_usage(getattr(msg, "usage", None) or {}, model,
+                                  cost_usd=getattr(msg, "total_cost_usd", None))
+        finally:
+            if _captured_stderr:
+                debug_log(f"agentic review child stderr ({len(_captured_stderr)} lines):")
+                for _l in _captured_stderr[:20]:
+                    debug_log(f"  | {_l.rstrip()}")
         return structured, n, subtype
 
     def _run(system: str, prompt: str, *, schema: Dict[str, Any]
