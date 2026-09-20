@@ -977,6 +977,27 @@ async function handleInbound(
         user: from.username ?? String(from.id),
         user_id: String(from.id),
         ts: new Date((ctx.message?.date ?? 0) * 1000).toISOString(),
+        ...(() => {
+          // reply_to_* — на что отвечает отправитель (плагин это выбрасывает,
+          // см. anthropics/claude-plugins-official#929). Значения чужие:
+          // режем длину и символы разметки тега, как safeName выше.
+          const r = ctx.message?.reply_to_message
+          const q = (ctx.message as any)?.quote?.text
+          if (!r && !q) return {}
+          const clean = (s: unknown, n: number) =>
+            typeof s === 'string'
+              ? s.replace(/[<>\[\]"\n\r]/g, ' ').slice(0, n)
+              : undefined
+          const who = r?.from?.username ?? (r?.from?.id != null ? String(r.from.id) : undefined)
+          const body = clean(r?.text ?? r?.caption, 300)
+          const quoted = clean(q, 300)
+          return {
+            ...(r?.message_id != null ? { reply_to_message_id: String(r.message_id) } : {}),
+            ...(who ? { reply_to_user: clean(who, 64) } : {}),
+            ...(body ? { reply_to_text: body } : {}),
+            ...(quoted ? { reply_to_quote: quoted } : {}),
+          }
+        })(),
         ...(imagePath ? { image_path: imagePath } : {}),
         ...(attachment ? {
           attachment_kind: attachment.kind,
