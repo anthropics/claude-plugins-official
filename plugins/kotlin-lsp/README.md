@@ -1,3 +1,5 @@
+# kotlin-lsp
+
 Kotlin language server for Claude Code, providing code intelligence, refactoring, and analysis.
 
 ## Supported Extensions
