@@ -1,0 +1,17 @@
+{
+  "name": "browser-verify",
+  "version": "1.0.0",
+  "description": "End-to-end browser flow validation using Playwright — returns blockers, next actions, owners, deadlines, fallback plan, and leadership summary.",
+  "author": "Limitless",
+  "license": "MIT",
+  "commands": [
+    {
+      "name": "browser-verify",
+      "description": "Validate product flows in a browser and return a structured audit report",
+      "file": "commands/browser-verify.md"
+    }
+  ],
+  "allowed-tools": ["Bash", "Playwright"],
+  "tags": ["qa", "e2e", "playwright", "validation", "browser"],
+  "minClaudeCodeVersion": "1.0.0"
+}
