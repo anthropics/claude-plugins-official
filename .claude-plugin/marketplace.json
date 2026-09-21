@@ -1581,10 +1581,10 @@
     },
     {
       "name": "firebase",
-      "description": "Google Firebase MCP integration. Manage Firestore databases, authentication, cloud functions, hosting, and storage. Build and manage your Firebase backend directly from your development workflow.",
+      "description": "Google Firebase integration. Manage Firestore databases, authentication, cloud functions, hosting, and storage. Build and manage your Firebase backend directly from your development workflow.",
       "category": "database",
-      "source": "./external_plugins/firebase",
-      "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/firebase"
+      "source": "https://github.com/firebase/agent-skills.git",
+      "homepage": "https://github.com/firebase/agent-skills"
     },
     {
       "name": "firecrawl",
