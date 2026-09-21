@@ -11,6 +11,9 @@ from .strictjson import is_map, is_str
 NAME = "claude-security"
 ROOT = Path(__file__).resolve().parents[2]
 RUN_DIR_NAME = ".claude-security-run"
+TARGET_FILES_NAME = "target-files.json"
+# Set only by workflows/scan.js (its PROVENANCE) on each vote record it computes.
+VOTES_PROVENANCE = "workflows/scan.js"
 MODES = ("scan", "changes", "commit")
 REPORT_DIR_PREFIX = "CLAUDE-SECURITY-"
 # \Z, not $: `$` also matches before a trailing newline, and this id names product files.

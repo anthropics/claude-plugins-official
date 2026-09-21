@@ -18,6 +18,10 @@ name: Bump Plugin SHAs
 #
 # max-bumps caps the per-night work for cost control. Per-entry scans are
 # more expensive than a single batched scan, so the cap is conservative.
+# Raised 30 -> 60 (2026-09): with ~290 external entries and ~15 upstream
+# movers a day plus re-bumps of stale merges, 30 was hit on consecutive
+# nights and late-alphabet entries went unbumped for days (discovery walks
+# the manifest in order and stops at the cap).
 # The composite action skips entries that already have an open bump PR, so
 # re-dispatches don't pile up duplicate work.
 
@@ -29,7 +33,7 @@ on:
       max_bumps:
         description: Cap on plugins bumped this run
         required: false
-        default: '30'
+        default: '60'
       plugin:
         description: >-
           Bump ONLY this plugin name (exact entry name; empty = all stale). A
@@ -48,8 +52,8 @@ concurrency:
 jobs:
   bump:
     runs-on: ubuntu-latest
-    # Per-bump cost is ~2s (ls-remote + shallow clone + validate); 30 entries
-    # is ~1-2 min. The 60 min ceiling absorbs slow upstreams without letting a
+    # Per-bump cost is ~2s (ls-remote + shallow clone + validate); 60 entries
+    # is ~2-4 min. The 60 min ceiling absorbs slow upstreams without letting a
     # pathological run consume the default 360 min budget.
     timeout-minutes: 60
     steps:
@@ -61,7 +65,7 @@ jobs:
         id: bump
         with:
           marketplace-path: .claude-plugin/marketplace.json
-          max-bumps: ${{ inputs.max_bumps || '30' }}
+          max-bumps: ${{ inputs.max_bumps || '60' }}
           only: ${{ inputs.plugin }}
           pr-mode: per-entry
           # Entries listed in .github/bump-tracking.json {"releases-only": [...]}

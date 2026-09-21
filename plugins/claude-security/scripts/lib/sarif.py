@@ -6,19 +6,17 @@ import hashlib
 import json
 import posixpath
 import re
-from bisect import bisect_right
 from dataclasses import dataclass
-from itertools import accumulate
-from typing import TYPE_CHECKING, NamedTuple
+from typing import TYPE_CHECKING, Final, NamedTuple
 from urllib.parse import quote
 
-from . import cwe, secret
+from . import cwe, secret, source
 
 if TYPE_CHECKING:
     import uuid
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Collection, Mapping, Sequence
 
-    from .finding import Finding, Panel
+    from .finding import Finding, Panel, Record
 
 SCHEMA_ID = (
     "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json"
@@ -28,7 +26,8 @@ TOOL_NAME = "Claude Security Plugin for Claude Code"
 TOOL_URI = "https://claude.com/product/claude-security"
 PROPERTY_BAG = "claudeSecurityPlugin"
 ID_PREFIX = "claude-security-plugin"
-FINGERPRINT_KEY = ID_PREFIX + "/v2"
+FINDING_ID: Final = "claudeSecurityPluginFindingId"
+ID_VERSION = "v3"
 CONTEXT_LINES = 3
 SRCROOT = "%SRCROOT%"
 # error is SARIF's highest level, so CRITICAL and HIGH both map to it.
@@ -52,19 +51,17 @@ class Scan:
 
 
 def log(
-    findings: Sequence[Finding],
+    findings: Sequence[Record],
     scan: Scan,
     tool_version: str | None,
     run_properties: Mapping[str, object],
     panels: Mapping[str, Panel],
-    sources: Mapping[str, str],
     notifications: Sequence[Mapping[str, object]],
 ) -> dict[str, object]:
     """The SARIF 2.1.0 log for one scan: one run, one rule per category, one result per finding.
 
-    `sources` is the text of each scanned file a finding names, keyed by the
-    finding's `file`; a finding whose file is absent from it is fingerprinted
-    on its own quote of the code instead.
+    `findings` are the records render_report built with placed(): each on the
+    line its file places it on, carrying its id.
     """
     filed = [(item, category_of(item)) for item in findings]
     categories = list(dict.fromkeys(category for _, category in filed))
@@ -89,14 +86,7 @@ def log(
         "invocations": [invocation],
         "originalUriBaseIds": {SRCROOT: {"description": {"text": base_description}}},
         "results": [
-            result(
-                item,
-                category,
-                index[category],
-                scan,
-                panels.get(item["id"]),
-                sources.get(item["file"]),
-            )
+            result(item, category, index[category], scan, panels.get(item["id"]))
             for item, category in filed
         ],
         "properties": {
@@ -171,35 +161,86 @@ def rule(category: cwe.Category | None) -> dict[str, object]:
     }
 
 
-def fingerprint(
-    finding: Finding, category: cwe.Category | None, scan: Scan, source: str | None
-) -> str:
-    """The finding's partial fingerprint: a sha256 over its rule, its path and the code it names.
+def placed(
+    findings: Sequence[Finding],
+    scan: Scan,
+    sources: Mapping[str, str],
+    *,
+    refused_secrets: Collection[str],
+) -> list[Record]:
+    """Each finding as the products carry it: `line` moved to where its file places it, id added.
 
-    `source` is the text of the finding's file. The code is the file's own
-    lines around the one that places the finding (see code_at); when the file
-    was not read, or no line of it places the finding, the finding's symbol
-    and snippet stand in for them, and the line when it has neither. A
-    hard-coded credential finding is the exception: its symbol and the number
-    of the line that places it stand in for the code always, so no text of a
-    file that holds a credential enters the hash.
+    `sources` is the text of each scanned file by the finding's `file`; a
+    finding whose file is absent from it keeps its line and hashes the number.
     """
-    parts = [scan.remote or "", rule_id(category), repository_path(scan, finding)]
-    symbol = finding["symbol"].strip()
-    snippet = quoted_line(finding)
-    if secret.is_credential(finding):
-        lines = None if source is None else normalized_lines(source)
-        placed = None if lines is None else placing_row(lines, finding["line"], snippet)
-        parts += [symbol, str(finding["line"] if placed is None else placed + 1)]
-        return hashlib.sha256(json.dumps(parts).encode()).hexdigest()
-    code = None if source is None else code_at(source, finding["line"], snippet)
-    if code is not None:
-        parts.append(code)
-    else:
-        parts += [symbol, snippet]
-        if not symbol and not snippet:
-            parts.append(str(finding["line"]))
-    return hashlib.sha256(json.dumps(parts).encode()).hexdigest()
+    texts = {repository_file(scan, file): text for file, text in sources.items()}
+    secrets = {
+        (path, line)
+        for f in findings
+        if secret.is_credential(f)
+        for path, line in secret_lines(repository_path(scan, f), f, texts)
+    } | {
+        (path, line)
+        for quote in refused_secrets
+        for path, text in texts.items()
+        for line in source.quoted_lines(text, quote, whole=False)
+    }
+    return [placed_one(f, scan, sources.get(f["file"]), secrets) for f in findings]
+
+
+def placed_one(
+    finding: Finding, scan: Scan, text: str | None, secrets: Collection[tuple[str, int]]
+) -> Record:
+    """One finding placed in `text`, its file's content (None when unread), and given its id."""
+    moved: Finding = finding
+    code = None
+    if text is not None:
+        lines = source.normalized_lines(text)
+        row = source.placing_row(lines, finding["line"], finding["snippet"])
+        if row is not None:
+            moved = {**finding, "line": row + 1}
+            path = repository_path(scan, finding)
+            near_secret = any(p == path and abs(row + 1 - n) <= CONTEXT_LINES for p, n in secrets)
+            code = None if near_secret else code_at(lines, row)
+    return {**moved, FINDING_ID: fingerprint(moved, scan, code)}
+
+
+def secret_lines(home: str, credential: Finding, texts: Mapping[str, str]) -> set[tuple[str, int]]:
+    """Every (repository path, line) of `texts` on which the `credential` finding's quote occurs.
+
+    `home` is the credential's own repository path and `texts` the scanned
+    files by repository path. The quote is marked wherever it occurs in any
+    file, with one restraint: a quote its own file shows only as part of a
+    longer line is marked in the other files just where it is a whole line of
+    theirs. The credential's own line is always marked, for one whose quote
+    matched nothing or whose file was not read.
+    """
+    snippet = credential["snippet"]
+    own = texts.get(home, "")
+    found = bool(source.quoted_lines(own, snippet, whole=False))
+    fragment = found and not source.quoted_lines(own, snippet, whole=True)
+    return {
+        (path, line)
+        for path, text in texts.items()
+        for line in source.quoted_lines(text, snippet, whole=fragment and path != home)
+    } | {(home, credential["line"])}
+
+
+def fingerprint(finding: Finding, scan: Scan, code: str | None) -> str:
+    """ID_VERSION, a colon, and a sha256 hex over the rule id, the repository path and `code`.
+
+    `code` is the file's normalized lines around the placed one (code_at);
+    None hashes the finding's line number in its place.
+    """
+    where: str | int = finding["line"] if code is None else code
+    basis = [rule_id(category_of(finding)), repository_path(scan, finding), where]
+    canonical = json.dumps(basis, separators=(",", ":"), ensure_ascii=True)
+    return f"{ID_VERSION}:{hashlib.sha256(canonical.encode()).hexdigest()}"
+
+
+def code_at(lines: Sequence[str], row: int) -> str:
+    """The normalized `lines` CONTEXT_LINES either side of `row`, joined; fewer at a file's ends."""
+    return "\n".join(lines[max(row - CONTEXT_LINES, 0) : row + CONTEXT_LINES + 1])
 
 
 class Site(NamedTuple):
@@ -210,86 +251,21 @@ class Site(NamedTuple):
     line: int
 
 
-def site(finding: Finding, scan: Scan, source: str | None) -> Site | None:
-    """The finding's site: its rule id, its repository path, and the line that places it.
-
-    The line is the one of `source`, the finding's file, that places the
-    finding (placing_row), so two findings that quote one line of code are one
-    site whatever lines they declare; it is the declared line when the file
-    was not read or no line of it places the finding. A finding left with no
-    line (it declared none, line < 1, and none places it) has no site: None.
-    """
-    line = finding["line"]
-    if source is not None:
-        row = placing_row(normalized_lines(source), line, quoted_line(finding))
-        if row is not None:
-            line = row + 1
-    if line < 1:
+def site(finding: Record, scan: Scan) -> Site | None:
+    """The finding's site: its rule id, repository path and placed line; None for a line below 1."""
+    if finding["line"] < 1:
         return None
-    return Site(rule_id(category_of(finding)), repository_path(scan, finding), line)
-
-
-def quoted_line(finding: Finding) -> str:
-    """The finding's snippet with its whitespace normalized, the form placing_row looks for."""
-    return " ".join(finding["snippet"].split())
-
-
-def normalized_lines(source: str) -> list[str]:
-    """A file's lines, split on the newline alone, each with its whitespace normalized."""
-    return [" ".join(each.split()) for each in source.split("\n")]
-
-
-def placing_row(lines: Sequence[str], line: int, quoted: str) -> int | None:
-    """The index into the normalized `lines` of the one placing a finding; None when none does.
-
-    The finding is placed on the line nearest its declared `line` where
-    `quoted`, its normalized snippet, appears, whitespace aside, and on the
-    declared line itself when it appears nowhere.
-    """
-    declared = line - 1
-    at = min(
-        (min(max(declared, first), last) for first, last in occurrences(lines, quoted)),
-        key=lambda row: abs(row - declared),
-        default=declared,
-    )
-    return at if 0 <= at < len(lines) else None
-
-
-def code_at(source: str, line: int, quoted: str) -> str | None:
-    """The normalized lines of `source` around the one placing a finding; None when none does."""
-    lines = normalized_lines(source)
-    at = placing_row(lines, line, quoted)
-    if at is None:
-        return None
-    return "\n".join(lines[max(at - CONTEXT_LINES, 0) : at + CONTEXT_LINES + 1])
-
-
-def occurrences(lines: Sequence[str], quoted: str) -> list[tuple[int, int]]:
-    """The (first, last) index into the normalized `lines` of each occurrence of `quoted`."""
-    if not quoted:
-        return []
-    filled = [row for row, line in enumerate(lines) if line]
-    starts = list(accumulate((len(lines[row]) + 1 for row in filled), initial=0))
-    flat = " ".join(lines[row] for row in filled)
-
-    def row_at(offset: int) -> int:
-        return filled[bisect_right(starts, offset) - 1]
-
-    return [
-        (row_at(found.start()), row_at(found.end() - 1))
-        for found in re.finditer(re.escape(quoted), flat)
-    ]
+    return Site(rule_id(category_of(finding)), repository_path(scan, finding), finding["line"])
 
 
 def result(
-    finding: Finding,
+    finding: Record,
     category: cwe.Category | None,
     rule_index: int,
     scan: Scan,
     panel: Panel | None,
-    source: str | None,
 ) -> dict[str, object]:
-    """One result: the finding under its rule, its partial fingerprint, and its JSONL record."""
+    """One result: the finding under its rule, its location, and its JSONL record, id included."""
     shown = secret.withheld(finding)
     record: dict[str, object] = {**shown}
     if panel is not None:
@@ -300,13 +276,16 @@ def result(
         "level": LEVEL[finding["severity"]],
         "message": {"text": message(finding)},
         "locations": [location(shown, scan)],
-        "partialFingerprints": {FINGERPRINT_KEY: fingerprint(finding, category, scan, source)},
         "properties": {PROPERTY_BAG: record},
     }
 
 
 def location(finding: Finding, scan: Scan) -> dict[str, object]:
-    """A result's one location: the file relative to SRCROOT, the line, the snippet, the symbol."""
+    """A result's one location: the file relative to SRCROOT, the line, the snippet, the symbol.
+
+    The line is the finding's placed line (placed()): where its quoted code
+    sits in the file, or the line it declared when nothing places it.
+    """
     line = finding["line"]
     region: dict[str, object] = {"startLine": max(line, 1)}
     if line >= 1 and finding["snippet"].strip():
@@ -327,7 +306,12 @@ def location(finding: Finding, scan: Scan) -> dict[str, object]:
 
 def repository_path(scan: Scan, finding: Finding) -> str:
     """The finding's file relative to the repository top level, with any leading climb folded."""
-    return posixpath.normpath(scan.prefix + finding["file"])
+    return repository_file(scan, finding["file"])
+
+
+def repository_file(scan: Scan, file: str) -> str:
+    """A scan-root-relative `file`, as file_field carries it, made repository-relative."""
+    return posixpath.normpath(scan.prefix + file)
 
 
 def uri_bytes(text: str) -> bytes:

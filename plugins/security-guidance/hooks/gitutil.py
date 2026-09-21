@@ -39,6 +39,29 @@ GIT_CMD = [
     "-c", "core.quotePath=false",
 ]
 
+SAFE_GIT_CONFIG = (
+    ("core.fsmonitor", "false"),
+    ("core.hooksPath", "/dev/null"),
+)
+
+
+def git_config_env(pairs, base=None):
+    base = os.environ if base is None else base
+    try:
+        n = max(0, int(base.get("GIT_CONFIG_COUNT") or 0))
+    except (TypeError, ValueError):
+        n = 0
+    env = {}
+    for i, (k, v) in enumerate(pairs, start=n):
+        env[f"GIT_CONFIG_KEY_{i}"] = k
+        env[f"GIT_CONFIG_VALUE_{i}"] = v
+    env["GIT_CONFIG_COUNT"] = str(n + len(pairs))
+    return env
+
+
+def apply_safe_git_env():
+    os.environ.update(git_config_env(SAFE_GIT_CONFIG))
+
 
 def _git_rev_parse_head(cwd):
     """Return the current HEAD SHA, or None if not a git repo / no commits."""
@@ -238,7 +261,7 @@ def _git_diff_range(repo_root, base, head="HEAD"):
         # raw UTF-8, not C-quoted. Required by the downstream
         # parse_diff_into_files / extract_file_paths_from_diff regex.
         r = subprocess.run(
-            [*GIT_CMD, "diff", "-p", "--no-color", "--no-ext-diff", base, head],
+            [*GIT_CMD, "diff", "-p", "--no-color", "--no-ext-diff", "--no-textconv", base, head],
             cwd=repo_root, capture_output=True, timeout=30,
         )
         if r.returncode != 0:
@@ -481,7 +504,7 @@ def get_git_diff(cwd, baseline_sha, full_context=False, paths=None, untracked_pa
         return ""
 
     # core.quotePath=false comes from GIT_CMD globally (see definition).
-    cmd = [*GIT_CMD, "diff", "--no-color", "--no-ext-diff", baseline_sha] + (["--unified=99999"] if full_context else []) + pathspec
+    cmd = [*GIT_CMD, "diff", "--no-color", "--no-ext-diff", "--no-textconv", baseline_sha] + (["--unified=99999"] if full_context else []) + pathspec
     try:
         with _temp_index(cwd, untracked_paths) as env:
             # env is None when no index could be found (bare repo / not a

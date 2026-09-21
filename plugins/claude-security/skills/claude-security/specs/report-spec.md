@@ -22,8 +22,10 @@ narrowed, say to what and why. If write_scan_meta.py reported a sparse
 checkout (`revision.not_checked_out_dirs` in the run dir's scan-meta.json
 holds the list), say that only the checked-out part of the repository was
 scanned and name those tracked top-level directories as not checked out.
-If a cap truncated anything -- unreviewed
-candidates, a skipped oversized file -- say so here, plainly. Name every
+Say how many verification runs the panel took
+(coverage.verificationRun), and name any candidate never verified and why:
+lost on the way to a further run (coverage.lostCandidates), or handed to a run
+that did not complete. Name every
 area the scan deliberately did NOT examine, and WHY: each entry of
 coverage.skippedComponents carries the paths left out and the componentizer's
 one-line reason (vendored, generated, documentation, and the like); a
@@ -61,13 +63,35 @@ both -- quote the recorded value, and state its actual consequence for the
 tier that ran: at medium, the target was not treated as small so the full
 pipeline ran instead of the fast path; and, when a file count was the
 unreadable one, an empty range or scope could not have been short-circuited.
+Say how the run was sized when coverage.targetComponents is set: the target's
+coverage.targetFiles tracked files, about coverage.targetComponents components
+asked for (of roughly coverage.filesPerComponent files each, or larger when
+the target holds more than coverage.componentCap components of that size),
+at most coverage.componentCap kept. Then say what the researchers themselves report
+not having read, as their account rather than as fact: coverage.research.components
+lists, per component, the paths its researchers declared not reached and why --
+summarize by directory with the reason, one line for a background tree (under
+focus, test, fixture and vendored trees left as background are expected there
+and are background, not gaps), and name individual files only up to a handful
+per component. coverage.research.tree, when present, is that account checked
+against the tracked files inside the components: how many were read to a
+conclusion, how many lie under a declared not-reached path, and how many no
+researcher accounted for at all (when coverage.research.capped is true an
+account was truncated, so at least that many were read and at most that many
+are unaccounted) -- list coverage.research.tree.unaccountedPaths (the first of them; the count
+is the whole), because a component nobody finished reading would otherwise pass
+for a clean one; files outside every component
+(coverage.research.tree.outsideComponents) are the skipped and dropped areas
+this section already names plus root files no component claims, not a
+researcher's gap. When coverage.research is null or its tree absent, that
+check did not run; say nothing of it, though any declared paths still stand.
 This section is
 what makes the rest of the report trustworthy: a reader who knows what you did
 not look at can calibrate everything else.>
 
 ## Findings
 
-The `F<n>` in each heading is that finding's `id` from `findings.json`, copied exactly — the findings arrive already numbered in report order, so never renumber, reorder, or invent an id.
+The `F<n>` in each heading is that finding's `id` from `findings.json`, copied exactly — the findings arrive already in report order, so never renumber, reorder, or invent an id; gaps in the numbering are candidates the panel rejected.
 
 ### F1 — <title> (HIGH, confidence medium)
 
@@ -102,7 +126,7 @@ it -- do not bury it.>
 
 ## Rules
 
-**Severity is exploitability and impact, not confidence.** CRITICAL means severe impact with nothing in the attacker's way. HIGH means severe impact behind one real hurdle. MEDIUM means bounded impact, or serious impact behind several conditions. LOW means limited impact and demanding exploitation. Uncertainty belongs in `confidence` — a word, `low`, `medium`, or `high` — which the panel's vote clamps: a finding two of three voters confirmed cannot claim `high`, and `render_report.py` will lower it if you try; only a unanimous panel earns `high`.
+**Severity is exploitability and impact, not confidence.** CRITICAL means severe impact with nothing in the attacker's way. HIGH means severe impact behind one real hurdle. MEDIUM means bounded impact, or serious impact behind several conditions. LOW means limited impact and demanding exploitation. The severity in `findings.json` is final: where the panel's confirming voters rated a finding lower than its researchers did, the workflow already lowered it, and coverage.severityLowered names each such finding with both ratings — say so in its **Verification.** line and do not restore the reported one. Uncertainty belongs in `confidence` — a word, `low`, `medium`, or `high` — which the panel's vote clamps: a finding two of three voters confirmed cannot claim `high`, and `render_report.py` will lower it if you try; only a unanimous panel earns `high`.
 
 **Order by severity, then by confidence.** The reader stops partway down; put what matters at the top.
 

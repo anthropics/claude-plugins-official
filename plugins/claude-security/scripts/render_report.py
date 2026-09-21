@@ -5,21 +5,25 @@ Writes CLAUDE-SECURITY-RESULTS.jsonl (one finding per line, fields in a fixed
 order), CLAUDE-SECURITY-RESULTS.sarif (the same findings as a SARIF 2.1.0 log)
 and the CLAUDE-SECURITY-REVISION-<tag>.json stamp, places the report markdown
 beside them, then removes the scan's run directory now that its records are
-rendered. Findings that name one rule at one line of a file are one record in
-every product (see one_per_site). Filenames, JSONL field order, and
-verification.status semantics are stable across releases.
+rendered. Each finding sits at the line of its file its quoted code is on and
+carries an id computed from the file there, and findings that name one rule
+at one line of a file are one record in every product (see one_per_site).
+Filenames, JSONL field order, and verification.status semantics are stable
+across releases.
 
 Usage:
   render_report.py <run_dir> [--products-dir <dir>]
 
 Exits 0 on success, 1 on a refusal naming what is wrong, 2 on a usage error.
+A finding whose path cannot be carried is refused by name instead: the render
+still exits 0, delivers the products without it, and marks the stamp
+unverified (see verification.refused_findings).
 Python 3.9-compatible, stdlib only.
 """
 
 from __future__ import annotations
 
 import argparse
-import ntpath
 import os
 import re
 import shutil
@@ -33,7 +37,8 @@ from typing import TYPE_CHECKING, NamedTuple, TypedDict
 # The lib/ package lives next to this script. Python normally adds a script's own
 # directory to the import path, but not under -P or PYTHONSAFEPATH, so we add it here.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from lib import absolute, console, cwe, plugin, sarif, secret, strictjson
+from lib import absolute, console, cwe, plugin, sarif, secret, source, strictjson
+from lib.chain import chain_of, pending_ranks
 from lib.finding import (
     CONFIDENCES,
     PANEL_KEEP_QUORUM,
@@ -41,8 +46,11 @@ from lib.finding import (
     SEVERITIES,
     Finding,
     FindingError,
+    FindingPathError,
+    Record,
     build_finding,
     panel_complete,
+    scan_prefix_shaped,
 )
 from lib.strictjson import JsonMap, is_int, is_list, is_map, is_str
 
@@ -57,7 +65,18 @@ class _ResearcherCounts(TypedDict, total=False):
     researchers_returned: int
 
 
-class VerificationSummary(_ResearcherCounts):
+class _RefusalRecord(TypedDict):
+    id: str
+    reason: str
+
+
+class _RefusedFindings(TypedDict, total=False):
+    """The refusals a render may add; absent entirely when every finding carried."""
+
+    refused_findings: list[_RefusalRecord]
+
+
+class VerificationSummary(_ResearcherCounts, _RefusedFindings):
     """The stamp's `verification` object; every path names why if not verified."""
 
     status: str
@@ -70,6 +89,7 @@ class VerificationSummary(_ResearcherCounts):
     incomplete_panel_candidates: int
     attested_findings: int
     reason: str | None
+    reason_kind: str | None
 
 
 class Meta(NamedTuple):
@@ -86,19 +106,18 @@ class Meta(NamedTuple):
 class Rendered(NamedTuple):
     """A completed render: the findings, their verification, and the stamp's tag."""
 
-    findings: list[Finding]
+    findings: list[Record]
     verification: VerificationSummary
     tag: str
 
 
 REVISION_PREFIX = "CLAUDE-SECURITY-REVISION-"
+STAMP_ONLY = frozenset({"duration_s", "verification_runs", "reason_kind"})
 JSONL_NAME = "CLAUDE-SECURITY-RESULTS.jsonl"
 SARIF_NAME = "CLAUDE-SECURITY-RESULTS.sarif"
 SANITIZED_REMOTE_RE = re.compile(
     r"https://[a-z0-9.-]+(?::[0-9]+)?/(?:[A-Za-z0-9._~/-]|%[0-9A-F]{2})+\Z"
 )
-# Set only by workflows/scan.js (its PROVENANCE) on each vote record it computes.
-VOTES_PROVENANCE = "workflows/scan.js"
 
 
 class Args(argparse.Namespace):
@@ -112,10 +131,10 @@ class RenderError(Exception):
     """A refusal; the message names what the caller must fix."""
 
 
-def read_json(run_dir: str, name: str) -> object:
+def read_json(run_dir: Path, name: str) -> object:
     """The JSON value in a run file the render requires; a missing or malformed one is a refusal."""
     try:
-        return strictjson.load(os.path.join(run_dir, name))
+        return strictjson.load(run_dir / name)
     except FileNotFoundError as error:
         msg = f"{name} is missing from the run directory. Write it before running this script."
         raise RenderError(msg) from error
@@ -124,10 +143,10 @@ def read_json(run_dir: str, name: str) -> object:
         raise RenderError(msg) from error
 
 
-def read_votes(run_dir: str) -> JsonMap | None:
+def read_votes(run_dir: Path) -> JsonMap | None:
     """The workflow's vote record, or None when votes.json is absent or not marked as its own."""
     try:
-        raw = strictjson.load(os.path.join(run_dir, "votes.json"))
+        raw = strictjson.load(run_dir / "votes.json")
     except FileNotFoundError:
         return None
     except ValueError as error:
@@ -135,20 +154,12 @@ def read_votes(run_dir: str) -> JsonMap | None:
         raise RenderError(msg) from error
     if not is_map(raw):
         raise RenderError("votes.json must be a JSON object mapping the vote record")
-    if raw.get("provenance") != VOTES_PROVENANCE:
+    if raw.get("provenance") != plugin.VOTES_PROVENANCE:
         return None
     return raw
 
 
-def read_source(scan_root: str, file: str) -> str | None:
-    """The text of a scanned file a finding names; None when it cannot be read."""
-    try:
-        return Path(scan_root, file).read_bytes().decode("utf-8", "surrogateescape")
-    except (OSError, ValueError):
-        return None
-
-
-def read_coverage(run_dir: str) -> tuple[JsonMap | None, str]:
+def read_coverage(run_dir: Path) -> tuple[JsonMap | None, str]:
     """The optional coverage.json for the informational run_shape field.
 
     Returns (map_or_None, source): source is "coverage.json" when the file
@@ -157,7 +168,7 @@ def read_coverage(run_dir: str) -> tuple[JsonMap | None, str]:
     """
     name = "coverage.json"
     try:
-        raw = strictjson.load(os.path.join(run_dir, name))
+        raw = strictjson.load(run_dir / name)
     except FileNotFoundError:
         return None, "unavailable"
     except (OSError, ValueError):
@@ -184,14 +195,15 @@ def coverage_texts(raw: object, cap: int) -> list[str]:
 
 
 def tree_relative(path: str, scan_root: str) -> str | None:
-    """A skipped path relative to the scan root; None for an absolute one that is not inside it."""
+    """A skipped path relative to the scan root; None for an absolute spelling of anything else."""
     if not absolute.spelled(path):
         return path
+    if not os.path.isabs(path):
+        return None
     try:
-        relative = os.path.relpath(os.path.realpath(path), scan_root).replace("\\", "/")
+        return absolute.relative(os.path.realpath(path), scan_root)
     except (ValueError, OSError):
         return None
-    return None if relative == ".." or relative.startswith("../") else relative
 
 
 def skipped_component(item: JsonMap, scan_root: str) -> dict[str, object]:
@@ -220,8 +232,49 @@ def coverage_count(value: object) -> int | None:
     return value if is_int(value) else None
 
 
+class ResearchCoverage(TypedDict):
+    """The stamp's research_coverage: the coverage account's counts, and whether a list was cut."""
+
+    files: int
+    read: int
+    not_reached: int
+    unaccounted: int
+    outside_components: int
+    capped: bool
+
+
+def research_coverage(raw: object) -> ResearchCoverage | None:
+    """coverage.research as the stamp carries it, or None when the account was not checked."""
+    tree = raw.get("tree") if is_map(raw) else None
+    if not is_map(raw) or not is_map(tree):
+        return None
+    files, read, not_reached, unaccounted, outside = (
+        tree.get(key) for key in ("files", "read", "notReached", "unaccounted", "outsideComponents")
+    )
+    if not (
+        is_int(files)
+        and is_int(read)
+        and is_int(not_reached)
+        and is_int(unaccounted)
+        and is_int(outside)
+    ):
+        return None
+    return {
+        "files": files,
+        "read": read,
+        "not_reached": not_reached,
+        "unaccounted": unaccounted,
+        "outside_components": outside,
+        "capped": raw.get("capped") is True,
+    }
+
+
 def run_shape(
-    coverage: JsonMap | None, source: str, effort: object, scan_root: str
+    coverage: JsonMap | None,
+    source: str,
+    effort: object,
+    scan_root: str,
+    research: ResearchCoverage | None,
 ) -> dict[str, object]:
     """What shape actually ran, distinct from the effort tier that was asked."""
     shape: dict[str, object] = {"requested_effort": effort, "collapsed": None, "source": source}
@@ -236,6 +289,7 @@ def run_shape(
         "empty_diff": bool(coverage.get("emptyDiff")),
         "empty_scope": bool(coverage.get("emptyScope")),
         "researchers_dispatched": coverage_count(coverage.get("researchersDispatched")),
+        "verification_runs": coverage_count(coverage.get("verificationRun")),
         "skipped_components": skipped_components(coverage.get("skippedComponents"), scan_root),
         "completeness_check_outcome": coverage_enum(
             coverage.get("completenessCheckOutcome"),
@@ -247,21 +301,43 @@ def run_shape(
             ("inventory-failed", "empty-partition", "incomplete-partition"),
         ),
         "top_level_dir_count": coverage_count(coverage.get("topLevelCount")),
+        "target_files": coverage_count(coverage.get("targetFiles")),
+        "component_cap": coverage_count(coverage.get("componentCap")),
+        "research_coverage": research,
     }
 
 
+def handed_on(votes: JsonMap) -> int:
+    """How many candidates the vote record's chain leaves to a run that did not complete."""
+    raw = votes.get("chain")
+    if raw is None:
+        return 0
+    try:
+        parsed = chain_of(raw)
+    except ValueError as error:
+        msg = f"votes.json chain {error}; the vote record is malformed"
+        raise RenderError(msg) from error
+    return len(pending_ranks(parsed))
+
+
 def verification_summary(
-    findings: list[Finding],
+    findings: Sequence[Finding],
     votes: JsonMap,
     votes_present: bool = True,
+    continuing: int = 0,
+    refused: Sequence[_RefusalRecord] = (),
 ) -> VerificationSummary:
-    """Compute the stamp's verification object from the vote record.
+    """Compute the stamp's verification object from the vote record and the render's refusals.
 
     status is 'verified' only when the vote record proves a complete panel
     round for every finding the report contains and for every other candidate
-    it holds a round for; otherwise 'unverified' with a `reason`.
+    it holds a round for, and the render refused nothing; otherwise
+    'unverified' with a `reason` in prose and a fixed `reason_kind` word.
     `incomplete_panel_candidates` counts the unreported candidates whose round
-    is not complete. votes_present is False when read_votes returned None.
+    is not complete. votes_present is False when read_votes returned None;
+    `continuing` is handed_on(votes), the candidates left to a verification run
+    that did not complete. `refused` lists the findings the render refused,
+    which the summary repeats under `refused_findings`.
     """
     raw_rounds = votes.get("rounds")
     rounds: JsonMap = raw_rounds if is_map(raw_rounds) else {}
@@ -291,45 +367,66 @@ def verification_summary(
     dispatched = as_count("researchers_dispatched") if "researchers_dispatched" in votes else None
     returned = as_count("researchers_returned") if "researchers_returned" in votes else None
 
+    kind: str | None = None
     reason: str | None = None
     if not votes_present:
+        kind = "no-vote-record"
         reason = (
             "votes.json is absent from the run directory or is not the scan workflow's record: "
             "the verification pipeline left no vote record, so nothing about this report can "
             "be attested"
         )
     elif "candidates" not in votes:
+        kind = "no-candidate-count"
         reason = (
             "votes.json has no 'candidates' field: the vote record does not prove the pipeline "
             "ran, so nothing about this report can be attested"
         )
     elif dispatched and returned == 0:
+        kind = "nothing-examined"
         reason = (
             f"{dispatched} research agent(s) were dispatched but none returned; the scan "
             "examined nothing"
         )
     elif incomplete:
+        kind = "finding-panel-incomplete"
         reason = (
             f"these findings have no complete {PANEL_VOTER_COUNT}-voter panel round: "
             f"{', '.join(incomplete)}"
         )
     elif findings and quorum != len(findings):
+        kind = "finding-below-quorum"
         reason = (
             f"{len(findings) - quorum} of {len(findings)} reported findings did not reach the "
             "keep quorum, so the report contains findings the panel rejected"
         )
     elif not findings and not rounds and candidates:
+        kind = "candidates-not-paneled"
         reason = f"{candidates} candidates were recorded but none was paneled"
     elif not findings and rounds and not any(map(panel_complete, rounds.values())):
+        kind = "no-panel-completed"
         reason = (
             f"{len(rounds)} panel round(s) were dispatched but none completed a full "
             f"{PANEL_VOTER_COUNT}-voter review; no candidate was actually verified"
         )
     elif dropped_incomplete:
+        kind = "candidate-panel-incomplete"
         reason = (
             f"{len(dropped_incomplete)} candidate(s) were dropped without a complete "
             f"{PANEL_VOTER_COUNT}-voter panel round: {', '.join(dropped_incomplete)}"
         )
+    elif continuing:
+        kind = "continuation-incomplete"
+        reason = continuation_text(continuing)
+    refusals = list(refused)
+    if refusals:
+        names = ", ".join(record["id"] for record in refusals)
+        refusal_reason = (
+            f"{len(refusals)} finding(s) were refused at render and are absent "
+            f"from this report: {names}"
+        )
+        reason = f"{reason}; {refusal_reason}" if reason else refusal_reason
+        kind = kind or "findings-refused"
     summary: VerificationSummary = {
         "status": "verified" if reason is None else "unverified",
         "candidates": candidates,
@@ -341,11 +438,14 @@ def verification_summary(
         "incomplete_panel_candidates": len(dropped_incomplete),
         "attested_findings": 0,
         "reason": reason,
+        "reason_kind": kind,
     }
     if dispatched is not None:
         summary["researchers_dispatched"] = dispatched
     if returned is not None:
         summary["researchers_returned"] = returned
+    if refusals:
+        summary["refused_findings"] = refusals
     return summary
 
 
@@ -361,18 +461,6 @@ def revision_tag(revision: object) -> str:
         msg = f"the run's revision {sha!r} is not a hex commit id, so it cannot name the stamp file"
         raise RenderError(msg)
     return sha[:12] + ("" if revision.get("dirty") is False else "-dirty")
-
-
-def show_prefix_shaped(prefix: str) -> bool:
-    """Whether `prefix` is what `git rev-parse --show-prefix` prints: empty, or `a/b/`."""
-    if not prefix:
-        return True
-    return (
-        prefix.endswith("/")
-        and "\\" not in prefix
-        and not ntpath.splitdrive(prefix)[0]
-        and all(segment not in {"", ".", ".."} for segment in prefix.split("/")[:-1])
-    )
 
 
 def scan_of(meta: JsonMap) -> Meta:
@@ -399,7 +487,7 @@ def scan_of(meta: JsonMap) -> Meta:
     prefix = meta.get("scan_prefix")
     if prefix is None:
         prefix = ""
-    if not is_str(prefix) or not show_prefix_shaped(prefix):
+    if not is_str(prefix) or not scan_prefix_shaped(prefix):
         msg = (
             f"scan-meta.json scan_prefix {prefix!r} is not a path prefix; rerun write_scan_meta.py"
         )
@@ -444,7 +532,21 @@ def scan_of(meta: JsonMap) -> Meta:
     return Meta(scan, scan_root, revision, revision_source, meta.get("model"), meta.get("effort"))
 
 
-def jsonl_text(findings: Sequence[Finding]) -> str:
+def elapsed_seconds(started_at: object, now: datetime) -> int | None:
+    """Whole seconds from scan-meta.json's started_at to now, floored at 0.
+
+    None when started_at is absent, unparseable or timezone-naive.
+    """
+    if not is_str(started_at):
+        return None
+    try:
+        started = datetime.fromisoformat(started_at)
+    except ValueError:
+        return None
+    return max(int((now - started).total_seconds()), 0) if started.tzinfo else None
+
+
+def jsonl_text(findings: Sequence[Record]) -> str:
     """The findings as JSONL: one record per line as the products carry it, findings.json order."""
     return "".join(strictjson.text(secret.withheld(item)) + "\n" for item in findings)
 
@@ -454,9 +556,7 @@ def strength(finding: Finding) -> tuple[int, int]:
     return -SEVERITIES.index(finding["severity"]), CONFIDENCES.index(finding["confidence"])
 
 
-def one_per_site(
-    findings: Sequence[Finding], scan: sarif.Scan, sources: Mapping[str, str]
-) -> tuple[list[Finding], list[str]]:
+def one_per_site(findings: Sequence[Record], scan: sarif.Scan) -> tuple[list[Record], list[str]]:
     """The findings reduced to one per site, and one disclosure sentence per finding merged away.
 
     A site is a rule at a line of a file (sarif.site), which is what a result
@@ -466,8 +566,8 @@ def one_per_site(
     named in a sentence with the finding it was merged into. A finding with
     no site, one whose line was never determined, is kept as it is.
     """
-    sites = [sarif.site(item, scan, sources.get(item["file"])) for item in findings]
-    by_site: dict[sarif.Site, list[Finding]] = {}
+    sites = [sarif.site(item, scan) for item in findings]
+    by_site: dict[sarif.Site, list[Record]] = {}
     for item, where in zip(findings, sites):
         if where is not None:
             by_site.setdefault(where, []).append(item)
@@ -497,19 +597,30 @@ def unrecognized_cwes(findings: Sequence[Finding]) -> list[str]:
     ]
 
 
+def continuation_text(continuing: int) -> str:
+    """The sentence the stamp's reason and the log's notification share for an unfinished chain."""
+    return f"{continuing} candidate(s) were handed to a verification run that did not complete"
+
+
 def notifications_of(
     shape: Mapping[str, object],
+    research: ResearchCoverage | None,
     verification: VerificationSummary,
     merged: Sequence[str],
     unrecognized: Sequence[str],
     symlinks: Sequence[str],
     revision: object,
+    continuing: int,
+    refused: Sequence[_RefusalRecord],
 ) -> list[dict[str, object]]:
-    """The invocation notifications: what was skipped, capped, merged, mislabeled or unverified.
+    """The invocation notifications: skipped, capped, merged, mislabeled, refused or unverified.
 
-    The sentences of `merged` (one_per_site) are disclosed at level note, those
+    `research` is research_coverage's. The sentences of `merged` (one_per_site)
+    are disclosed at level note, those
     of `unrecognized` (unrecognized_cwes) at level warning. `symlinks` names
-    the root-level symbolic links the scan's extent left out unfollowed.
+    the root-level symbolic links the scan's extent left out unfollowed;
+    `continuing` is handed_on(votes); `refused` is the render's per-finding
+    path refusals, each disclosed at level warning.
     """
     note = sarif.notification
     skipped = shape.get("skipped_components")
@@ -534,6 +645,16 @@ def notifications_of(
         names = ", ".join(symlinks)
         text = f"Root-level symbolic links not followed, left out of the scan's extent: {names}"
         notes.append(note("coverage/unfollowed-symlinks", "note", text))
+    if research and (research["not_reached"] or research["unaccounted"]):
+        floor, ceiling = ("at least ", "at most ") if research["capped"] else ("", "")
+        text = (
+            f"Research coverage: of {research['files']} files in the components researched, "
+            f"{floor}{research['read']} read to a conclusion, "
+            f"{research['not_reached']} declared not reached, "
+            f"{ceiling}{research['unaccounted']} in no researcher's account; "
+            f"{research['outside_components']} more outside every component"
+        )
+        notes.append(note("coverage/files-not-reached", "note", text))
     if unreviewed := verification["unreviewed_candidate_sites"]:
         text = f"{unreviewed} candidate site(s) were recorded but never reviewed by the panel"
         notes.append(note("coverage/unverified-by-cap", "warning", text))
@@ -543,14 +664,41 @@ def notifications_of(
             f"{PANEL_VOTER_COUNT}-voter panel round"
         )
         notes.append(note("verification/incomplete-panel", "warning", text))
+    if continuing:
+        text = continuation_text(continuing)
+        notes.append(note("verification/continuation-incomplete", "warning", text))
     notes += [note("finding/merged", "note", text) for text in merged]
     notes += [note("cwe/unrecognized", "warning", text) for text in unrecognized]
+    notes += [
+        note(
+            "verification/refused-finding",
+            "warning",
+            f"Finding {record['id']} was refused at render and is absent from "
+            f"this report: {record['reason']}",
+        )
+        for record in refused
+    ]
     if verification["status"] == "unverified":
         notes.append(note("verification/unverified", "error", verification["reason"] or ""))
     return notes
 
 
-def render(run_dir: str, products_dir: str) -> Rendered:
+def built_or_refused(
+    raw: object,
+    index: int,
+    rounds_by_id: JsonMap,
+    scan_root: str,
+    scan_prefix: str,
+    must_exist: bool,
+) -> Finding | FindingPathError:
+    """One finding carried, or the named path refusal that kept it out of the report."""
+    try:
+        return build_finding(raw, index, rounds_by_id, scan_root, scan_prefix, must_exist)
+    except FindingPathError as error:
+        return error
+
+
+def render(run_dir: Path, products_dir: Path) -> Rendered:
     """Read the run's records, validate them, build every product, then write them, stamp last."""
     meta = read_json(run_dir, "scan-meta.json")
     if not is_map(meta):
@@ -571,11 +719,17 @@ def render(run_dir: str, products_dir: str) -> Rendered:
         rounds_by_id = rounds_raw
     scan, scan_root, revision, revision_source, model, effort = scan_of(meta)
     tag = revision_tag(revision)
-    built = [
-        build_finding(raw, i, rounds_by_id, scan_root, scan.prefix, scan.mode == "scan")
+
+    outcomes = [
+        built_or_refused(raw, i, rounds_by_id, scan_root, scan.prefix, scan.mode == "scan")
         for i, raw in enumerate(findings_in)
     ]
-    counted = Counter(f["id"] for f in built)
+    built = [item for item in outcomes if not isinstance(item, FindingPathError)]
+    path_errors = [item for item in outcomes if isinstance(item, FindingPathError)]
+    refused: list[_RefusalRecord] = [
+        {"id": item.finding_id, "reason": f"its file {item.wrong}"} for item in path_errors
+    ]
+    counted = Counter([f["id"] for f in built] + [record["id"] for record in refused])
     repeated = sorted(finding_id for finding_id, count in counted.items() if count > 1)
     if repeated:
         msg = f"findings.json uses these finding ids more than once: {', '.join(repeated)}"
@@ -583,28 +737,40 @@ def render(run_dir: str, products_dir: str) -> Rendered:
     sources = {
         path: text
         for path in {f["file"] for f in built}
-        if (text := read_source(scan_root, path)) is not None
+        if (text := source.read(scan_root, path)) is not None
     }
-    findings, merged = one_per_site(built, scan, sources)
+    refused_secrets = [e.snippet for e in path_errors if secret.is_credential_cwe(e.cwe)]
+    records = sarif.placed(built, scan, sources, refused_secrets=refused_secrets)
+    findings, merged = one_per_site(records, scan)
 
-    markdown_path = os.path.join(run_dir, "CLAUDE-SECURITY-RESULTS.md")
+    markdown_path = run_dir / "CLAUDE-SECURITY-RESULTS.md"
     if not os.path.isfile(markdown_path):
         raise RenderError(
             "CLAUDE-SECURITY-RESULTS.md is missing. Write the human-readable "
             "report before running this script."
         )
-    with open(markdown_path, encoding="utf-8", newline="") as handle:
-        try:
-            markdown = handle.read()
-        except UnicodeDecodeError as error:
-            msg = f"CLAUDE-SECURITY-RESULTS.md is not valid UTF-8: {error}"
-            raise RenderError(msg) from error
+    markdown = markdown_path.read_bytes()
+    try:
+        markdown.decode("utf-8")
+    except UnicodeDecodeError as error:
+        msg = f"CLAUDE-SECURITY-RESULTS.md is not valid UTF-8: {error}"
+        raise RenderError(msg) from error
 
     counts = Counter(f["severity"] for f in findings)
-    verification = verification_summary(findings, votes, votes_present=votes_raw is not None)
-    shape = run_shape(coverage, coverage_source, effort, scan_root)
+    continuing = handed_on(votes)
+    verification = verification_summary(
+        findings,
+        votes,
+        votes_present=votes_raw is not None,
+        continuing=continuing,
+        refused=refused,
+    )
+    research = research_coverage(coverage.get("research") if coverage else None)
+    shape = run_shape(coverage, coverage_source, effort, scan_root, research)
+    generated = datetime.now(timezone.utc).replace(microsecond=0)
     stamp: dict[str, object] = {
-        "generated_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+        "generated_at": generated.isoformat(),
+        "duration_s": elapsed_seconds(meta.get("started_at"), generated),
         "scan_id": str(scan.id),
         "mode": scan.mode,
         "scan_prefix": scan.prefix,
@@ -625,49 +791,53 @@ def render(run_dir: str, products_dir: str) -> Rendered:
     }
 
     jsonl = jsonl_text(findings)
-    run_properties = {k: v for k, v in stamp.items() if k != "model" or v is not None}
+    run_properties = {
+        key: {k: v for k, v in value.items() if k not in STAMP_ONLY} if is_map(value) else value
+        for key, value in stamp.items()
+        if key not in STAMP_ONLY and (key != "model" or value is not None)
+    }
     panels = {
         f["id"]: panel for f in findings if (panel := panel_complete(rounds_by_id.get(f["id"])))
     }
     unrecognized = unrecognized_cwes(findings)
-    for text in merged + unrecognized:
+    unfinished = [continuation_text(continuing)] if continuing else []
+    refusal_lines = [f"refused {error.finding_id}: {error}" for error in path_errors]
+    for text in merged + unrecognized + unfinished + refusal_lines:
         sys.stderr.write(f"render_report.py: {text}\n")
     symlinks = coverage_texts(meta.get("unfollowed_symlinks"), 200)
-    notifications = notifications_of(shape, verification, merged, unrecognized, symlinks, revision)
-    sarif_log = sarif.log(
-        findings, scan, plugin.version(), run_properties, panels, sources, notifications
+    notifications = notifications_of(
+        shape, research, verification, merged, unrecognized, symlinks, revision, continuing, refused
     )
+    sarif_log = sarif.log(findings, scan, plugin.version(), run_properties, panels, notifications)
     sarif_doc = strictjson.text(sarif_log, indent=2) + "\n"
-    for stale in os.listdir(products_dir):
-        if stale.startswith(REVISION_PREFIX) and stale.endswith(".json"):
-            os.unlink(os.path.join(products_dir, stale))
-    with open(os.path.join(products_dir, JSONL_NAME), "w", encoding="utf-8", newline="\n") as out:
-        out.write(jsonl)
-    with open(os.path.join(products_dir, SARIF_NAME), "w", encoding="utf-8", newline="\n") as out:
-        out.write(sarif_doc)
-    markdown_out = os.path.join(products_dir, "CLAUDE-SECURITY-RESULTS.md")
+    for stale in products_dir.iterdir():
+        if stale.name.startswith(REVISION_PREFIX) and stale.suffix == ".json":
+            stale.unlink()
+    (products_dir / JSONL_NAME).write_bytes(jsonl.encode())
+    (products_dir / SARIF_NAME).write_bytes(sarif_doc.encode())
+    markdown_out = products_dir / "CLAUDE-SECURITY-RESULTS.md"
+    # realpath, not Path.resolve(): on 3.9 for Windows resolve() raises on volumes realpath accepts.
     relocated = os.path.realpath(markdown_path) != os.path.realpath(markdown_out)
     if relocated:
-        with open(markdown_out, "w", encoding="utf-8", newline="\n") as out:
-            out.write(markdown)
-    stamp_path = os.path.join(products_dir, f"{REVISION_PREFIX}{tag}.json")
-    with open(stamp_path, "w", encoding="utf-8", newline="\n") as out:
-        out.write(strictjson.text(stamp, indent=2) + "\n")
+        markdown_out.write_bytes(markdown)
+    stamp_path = products_dir / f"{REVISION_PREFIX}{tag}.json"
+    stamp_path.write_bytes((strictjson.text(stamp, indent=2) + "\n").encode())
     if relocated:
-        os.unlink(markdown_path)
+        markdown_path.unlink()
 
     return Rendered(findings, verification, tag)
 
 
-def remove_run_dir(run_dir: str, products_dir: str) -> str:
+def remove_run_dir(run_dir: Path, products_dir: Path) -> str:
     """Remove the scan's run directory once rendered; returns a one-line status."""
-    target = os.path.normpath(os.path.abspath(run_dir))
-    if os.path.basename(target) != plugin.RUN_DIR_NAME:
+    # abspath folds ".." without following symlinks, so the check below sees this path's own name.
+    target = Path(os.path.abspath(run_dir))
+    if target.name != plugin.RUN_DIR_NAME:
         return f"kept {run_dir} (not a {plugin.RUN_DIR_NAME} run directory)"
     if os.path.realpath(target) == os.path.realpath(products_dir):
         return f"kept {run_dir} (it holds the products)"
     try:
-        shutil.rmtree(target)
+        shutil.rmtree(str(target))
     except OSError as error:
         detail = console.removal_failure_detail(error)
         return f"WARNING: could not remove run directory {run_dir}: {detail}"
@@ -679,6 +849,7 @@ def argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="render_report.py",
         description="Render a scan's machine-readable artifacts from its run directory.",
+        allow_abbrev=False,
     )
     parser.add_argument("run_dir", help="the run directory holding the scan's records")
     parser.add_argument(
@@ -692,18 +863,19 @@ def main(argv: list[str]) -> int:
     args = parser.parse_args(argv, namespace=Args())
     if not os.path.isdir(args.run_dir):
         parser.error(f"not a directory: {args.run_dir}")
-    products_dir = args.products_dir or args.run_dir
-    if not os.path.isdir(products_dir):
-        parser.error(f"products directory is not a directory: {products_dir}")
+    products = args.products_dir or args.run_dir
+    if not os.path.isdir(products):
+        parser.error(f"products directory is not a directory: {products}")
+    run_dir, products_dir = Path(args.run_dir), Path(products)
     try:
-        rendered = render(args.run_dir, products_dir)
+        rendered = render(run_dir, products_dir)
     except (RenderError, FindingError) as error:
         sys.stderr.write(f"render_report.py: {error}\n")
         return 1
     except OSError as error:
         sys.stderr.write(f"render_report.py: could not read or write the report's files: {error}\n")
         return 1
-    removal = remove_run_dir(args.run_dir, products_dir)
+    removal = remove_run_dir(run_dir, products_dir)
     count = len(rendered.findings)
     stamp_name = f"{REVISION_PREFIX}{rendered.tag}.json"
     print(

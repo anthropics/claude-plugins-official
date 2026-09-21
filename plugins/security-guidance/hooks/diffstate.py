@@ -71,7 +71,7 @@ def record_touched_path(session_id, file_path):
     with_locked_state(session_id, _record)
 
 
-def consume_stop_state(session_id):
+def consume_stop_state(session_id, clear=True):
     """Atomically snapshot all state the Stop hook needs and clear touched_paths.
 
     The Stop hook is asyncRewake — it runs in the background after Claude's
@@ -102,15 +102,25 @@ def consume_stop_state(session_id):
             "fire_count": 0 if expired else state.get("stop_hook_fire_count", 0),
             "fire_count_expired": expired and state.get("stop_hook_fire_count", 0) > 0,
             "previous_findings": [] if findings_expired else list(state.get("previous_findings", [])),
+            "reviewed_diff_hash": state.get("reviewed_diff_hash"),
         }
-        state["touched_paths"] = []
+        if clear:
+            state["touched_paths"] = []
+            state.pop("reviewed_diff_hash", None)
         return snap
 
     return with_locked_state(session_id, _snap) or {
         "touched_paths": [], "baseline_sha": None, "head_at_capture": None,
         "untracked_at_baseline": {},
         "fire_count": 0, "fire_count_expired": False, "previous_findings": [],
+        "reviewed_diff_hash": None,
     }
+
+
+def record_reviewed_diff(session_id, diff_hash):
+    def _save(state):
+        state["reviewed_diff_hash"] = diff_hash
+    with_locked_state(session_id, _save)
 
 
 def restore_unreviewed_stop_state(session_id, paths, baseline_sha):

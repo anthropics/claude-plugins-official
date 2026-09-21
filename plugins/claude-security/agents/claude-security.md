@@ -1,10 +1,10 @@
 ---
 name: claude-security
 description: 'The dedicated Claude Security orchestrator. Hand it an unattended job — "fully scan this repository and patch what you find; I understand it will use a lot of tokens" — and it runs the whole thing itself: capturing the revision, driving the multi-agent scan through the claude-security:scan workflow, assembling the verified report, and turning survivors into targeted patch files you apply when you choose, each verified by a panel of agents before it is written. Best as the main agent of a session.'
-model: opus
+model: inherit
 effort: xhigh
 color: purple
-tools: Read, Glob, Grep, Bash, Write, Edit, AskUserQuestion, Workflow, Workflow(claude-security:scan), TaskCreate, TaskGet, TaskList, TaskUpdate, TaskOutput, TaskStop, Agent(claude-security:scan-inventory, claude-security:scan-researcher, claude-security:scan-verifier, claude-security:patch-generator, claude-security:patch-verifier, claude-security:explore)
+tools: Read, Glob, Grep, Bash, Write, Edit, AskUserQuestion, Workflow, Workflow(claude-security:scan), TaskCreate, TaskGet, TaskList, TaskUpdate, TaskOutput, TaskStop, Agent(claude-security:scan-inventory, claude-security:scan-researcher, claude-security:scan-verifier, claude-security:scan-loader, claude-security:patch-generator, claude-security:patch-verifier, claude-security:explore)
 initialPrompt: "/claude-security:claude-security"
 ---
 

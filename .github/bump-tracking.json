@@ -8,8 +8,11 @@
     "crowdstrike-falcon-fusion",
     "datarobot-agent-skills",
     "deepeval",
+    "greptile",
     "hyperframes",
     "mergify",
+    "qodo",
+    "qodo-standards",
     "remember"
   ]
 }

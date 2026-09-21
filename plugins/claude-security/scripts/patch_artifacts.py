@@ -27,19 +27,19 @@ from __future__ import annotations
 
 import argparse
 import os
-import pathlib
 import re
 import shlex
 import shutil
 import stat
 import subprocess
 import sys
+from pathlib import Path
 from typing import TYPE_CHECKING, TypedDict
 
 # The lib/ package lives next to this script. Python normally adds a script's own
 # directory to the import path, but not under -P or PYTHONSAFEPATH, so we add it here.
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-from lib import console, plugin, strictjson
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from lib import absolute, console, plugin, strictjson
 from lib.strictjson import JsonMap, is_list, is_map, is_str
 
 if TYPE_CHECKING:
@@ -233,11 +233,10 @@ def build_unit(item: object, index: int) -> Unit:
     )
 
 
-def load_units(patch_dir: str) -> list[Unit]:
+def load_units(patch_dir: Path) -> list[Unit]:
     """Read and validate patches.json (an object with a `units` array)."""
-    path = os.path.join(patch_dir, "patches.json")
     try:
-        raw = strictjson.load(path)
+        raw = strictjson.load(patch_dir / "patches.json")
     except OSError as error:
         msg = "patches.json is missing from the patch directory. Write it before running this."
         raise PatchError(msg) from error
@@ -258,13 +257,13 @@ def load_units(patch_dir: str) -> list[Unit]:
     return units
 
 
-def read_diff(patch_dir: str, unit_id: str, required: bool) -> bytes | None:
+def read_diff(patch_dir: Path, unit_id: str, required: bool) -> bytes | None:
     """The raw diff git wrote for this unit; None only if absent and optional.
 
     A required one (a written patch) must exist and hold at least one
     `diff --git` section, since the patch and its diffstat are built from it.
     """
-    path = os.path.join(patch_dir, f"{unit_id}.diff")
+    path = patch_dir / f"{unit_id}.diff"
     if not os.path.isfile(path):
         if required:
             msg = (
@@ -274,7 +273,7 @@ def read_diff(patch_dir: str, unit_id: str, required: bool) -> bytes | None:
             )
             raise PatchError(msg)
         return None
-    data = pathlib.Path(path).read_bytes()
+    data = path.read_bytes()
     if required and DIFF_HEADER.encode("ascii") not in data:
         msg = f"{unit_id}.diff contains no '{DIFF_HEADER.strip()}' header; it is not a git diff"
         raise PatchError(msg)
@@ -369,7 +368,7 @@ def git_toplevel(scan_root: str) -> str | None:
     return top or None
 
 
-def apply_check(top: str | None, patch_path: str) -> str:
+def apply_check(top: str | None, patch_path: Path) -> str:
     """`git apply --check` against the user's tree: 'clean', 'conflicts: ...', or 'not_run'."""
     if top is None:
         return "not_run"
@@ -589,55 +588,42 @@ def jsonl(
     return "\n".join(rows) + ("\n" if rows else "")
 
 
-def clear_stale_products(patches_dir: str, produced: set[str]) -> list[str]:
+def clear_stale_products(patches_dir: Path, produced: set[str]) -> list[str]:
     """Remove F<n>.patch / F<n>.md files an earlier run left that this run did not write.
 
     Only the script's own product names (F<n>.patch, F<n>.md) are removed;
     every other file in the folder is left alone.
     """
     removed: list[str] = []
-    for name in sorted(os.listdir(patches_dir)):
-        stem, dot, ext = name.rpartition(".")
-        if not dot or ext not in {"patch", "md"} or not FINDING_ID_RE.match(stem):
+    for path in sorted(patches_dir.iterdir()):
+        if path.suffix not in {".patch", ".md"} or not FINDING_ID_RE.match(path.stem):
             continue
-        if name in produced:
+        if path.name in produced or os.path.isdir(path):
             continue
-        path = os.path.join(patches_dir, name)
-        if os.path.isdir(path):
-            continue
-        os.unlink(path)
-        removed.append(name)
+        path.unlink()
+        removed.append(path.name)
     return removed
 
 
-def ensure_gitignore(report_dir: str) -> str:
+def ensure_gitignore(report_dir: Path) -> str:
     """Fence the report directory with a `*` .gitignore if it has none.
 
     Returns "written" when the fence was just added, "present" when an
     existing .gitignore already ignores everything, and "open" when one exists
     but has no bare `*` line; an existing file is never rewritten.
     """
-    path = os.path.join(report_dir, ".gitignore")
+    path = report_dir / ".gitignore"
     if os.path.lexists(path):
         try:
-            existing = pathlib.Path(path).read_text(encoding="utf-8", errors="replace")
+            existing = path.read_text(encoding="utf-8", errors="replace")
         except OSError:
             return "open"
         return "present" if "*" in (line.strip() for line in existing.splitlines()) else "open"
-    with open(path, "w", encoding="utf-8", newline="\n") as out:
-        out.write("*\n")
+    path.write_bytes(b"*\n")
     return "written"
 
 
-def contained_relpath(target: str, root: str) -> str | None:
-    """`target` as a path from `root`, or None when it does not sit inside root."""
-    rel = os.path.relpath(os.path.realpath(target), os.path.realpath(root))
-    if rel == ".." or rel.startswith(".." + os.sep) or os.path.isabs(rel):
-        return None
-    return rel.replace(os.sep, "/")
-
-
-def report_path_from_root(report_dir: str, top: str | None, fallback: str) -> str:
+def report_path_from_root(report_dir: Path, top: str | None, fallback: str) -> str:
     """The report directory as a path from the repository root, for the apply command.
 
     Falls back to the bare folder name when git cannot name a root or the
@@ -645,35 +631,35 @@ def report_path_from_root(report_dir: str, top: str | None, fallback: str) -> st
     """
     if top is None:
         return fallback
-    return contained_relpath(report_dir, top) or fallback
+    return absolute.relative(os.path.realpath(report_dir), os.path.realpath(top)) or fallback
 
 
-def resolve_report_dir(patches_dir: str) -> tuple[str, str]:
+def resolve_report_dir(patches_dir: Path) -> Path:
     """The report directory holding `patches_dir`, validated by name."""
-    patches_abs = os.path.abspath(patches_dir)
-    report_dir = os.path.dirname(patches_abs)
-    report_dir_name = os.path.basename(report_dir)
-    if os.path.basename(patches_abs) != PATCHES_DIR_NAME:
+    # abspath folds ".." without following symlinks, so the checks below see this path's own names.
+    patches_abs = Path(os.path.abspath(patches_dir))
+    report_dir = patches_abs.parent
+    if patches_abs.name != PATCHES_DIR_NAME:
         msg = (
             f"patches dir must be a directory named {PATCHES_DIR_NAME!r} inside the "
             f"report directory; got {patches_abs}"
         )
         raise PatchError(msg)
-    if not REPORT_DIR_RE.match(report_dir_name):
+    if not REPORT_DIR_RE.match(report_dir.name):
         msg = (
             "patches dir must live inside a CLAUDE-SECURITY-<timestamp> report "
-            f"directory; its parent is {report_dir_name!r}. Refusing rather than "
+            f"directory; its parent is {report_dir.name!r}. Refusing rather than "
             "fence the wrong directory with a .gitignore."
         )
         raise PatchError(msg)
-    return report_dir, report_dir_name
+    return report_dir
 
 
-def run(patch_dir: str, patches_dir: str, scan_root: str, base: str) -> int:
+def run(patch_dir: Path, patches_dir: Path, scan_root: str, base: str) -> int:
     units = load_units(patch_dir)
-    report_dir, report_dir_name = resolve_report_dir(patches_dir)
+    report_dir = resolve_report_dir(patches_dir)
     top = git_toplevel(scan_root)
-    report_ref = shlex.quote(report_path_from_root(report_dir, top, report_dir_name))
+    report_ref = shlex.quote(report_path_from_root(report_dir, top, report_dir.name))
     stats_by_id: dict[str, list[DiffStat] | None] = {}
     checks: dict[str, str] = {}
     produced: set[str] = set()
@@ -683,9 +669,9 @@ def run(patch_dir: str, patches_dir: str, scan_root: str, base: str) -> int:
         stats = numstat(diff) if diff is not None else None
         stats_by_id[unit["id"]] = stats
         if written and diff is not None:
-            patch_path = os.path.join(patches_dir, f"{unit['id']}.patch")
+            patch_path = patches_dir / f"{unit['id']}.patch"
             header = header_comment(unit, base, report_ref)
-            pathlib.Path(patch_path).write_bytes(header.encode("utf-8") + diff)
+            patch_path.write_bytes(header.encode() + diff)
             check = apply_check(top, patch_path)
             checks[unit["id"]] = check
             note = note_written(unit, stats, check, report_ref)
@@ -694,16 +680,11 @@ def run(patch_dir: str, patches_dir: str, scan_root: str, base: str) -> int:
         else:
             note = note_declined(unit, stats)
             print(f"{unit['id']}: no patch ({unit['status']}) -> {unit['id']}.md")
-        note_path = os.path.join(patches_dir, f"{unit['id']}.md")
-        with open(note_path, "w", encoding="utf-8", newline="\n") as out:
-            out.write(note)
+        (patches_dir / f"{unit['id']}.md").write_bytes(note.encode())
         produced.add(f"{unit['id']}.md")
-    index_path = os.path.join(patches_dir, "PATCHES.md")
-    with open(index_path, "w", encoding="utf-8", newline="\n") as out:
-        out.write(index_markdown(units, base, report_dir_name, report_ref))
-    jsonl_path = os.path.join(patches_dir, "patches.jsonl")
-    with open(jsonl_path, "w", encoding="utf-8", newline="\n") as out:
-        out.write(jsonl(units, base, stats_by_id, checks))
+    index = index_markdown(units, base, report_dir.name, report_ref)
+    (patches_dir / "PATCHES.md").write_bytes(index.encode())
+    (patches_dir / "patches.jsonl").write_bytes(jsonl(units, base, stats_by_id, checks).encode())
     for name in clear_stale_products(patches_dir, produced):
         print(f"removed stale {name} (not produced by this run)")
     swept, warnings = remove_workspaces_in(patch_dir)
@@ -731,24 +712,22 @@ def run(patch_dir: str, patches_dir: str, scan_root: str, base: str) -> int:
     return 0
 
 
-def refuse_reason(path: str) -> str | None:
+def refuse_reason(path: Path) -> str | None:
     """Why `path` may NOT be deleted as a scratch workspace, or None when it may.
 
     Only `<report>/.claude-security-run/patch-<ts>/scratch-F<n>` holding its
     own `.git` may be deleted; every other shape is refused.
     """
-    leaf = os.path.normpath(os.path.abspath(path))
+    leaf = Path(os.path.abspath(path))
     if not os.path.isdir(leaf):
         return "it is not a directory"
-    if not SCRATCH_NAME_RE.match(os.path.basename(leaf)):
+    if not SCRATCH_NAME_RE.match(leaf.name):
         return "its name is not scratch-F<n>"
-    run = os.path.dirname(leaf)
-    top = os.path.dirname(run)
-    if not PATCH_DIR_RE.match(os.path.basename(run)):
+    if not PATCH_DIR_RE.match(leaf.parent.name):
         return "it is not inside a patch-<timestamp> run directory"
-    if os.path.basename(top) != plugin.RUN_DIR_NAME:
+    if leaf.parents[1].name != plugin.RUN_DIR_NAME:
         return f"its run directory is not inside {plugin.RUN_DIR_NAME}/"
-    if not os.path.isdir(os.path.join(leaf, ".git")):
+    if not os.path.isdir(leaf / ".git"):
         return "it holds no .git directory of its own"
     return None
 
@@ -762,26 +741,25 @@ def clear_readonly(
     # Git writes read-only objects, which Windows will not delete.
     if func not in {os.unlink, os.rmdir}:
         raise exc_info[1]
-    os.chmod(path, stat.S_IWRITE)
+    Path(path).chmod(stat.S_IWRITE)
     func(path)
 
 
-def remove_workspace(path: str) -> None:
+def remove_workspace(path: Path) -> None:
     """Delete one scratch workspace, refusing anything off the fenced layout."""
     reason = refuse_reason(path)
     if reason is not None:
-        msg = f"refusing to remove {path!r}: {reason}"
+        msg = f"refusing to remove '{path}': {reason}"
         raise PatchError(msg)
-    target = os.path.normpath(os.path.abspath(path))
     try:
-        shutil.rmtree(target, onerror=clear_readonly)
+        shutil.rmtree(os.path.abspath(path), onerror=clear_readonly)
     except OSError as error:
         detail = console.removal_failure_detail(error)
-        msg = f"could not remove {path!r}: {detail}"
+        msg = f"could not remove '{path}': {detail}"
         raise PatchError(msg) from error
 
 
-def remove_workspaces_in(patch_dir: str) -> tuple[list[str], list[str]]:
+def remove_workspaces_in(patch_dir: Path) -> tuple[list[str], list[str]]:
     """Remove every scratch workspace in a patch run directory.
 
     Returns (removed names, warnings). Never raises: a workspace that cannot
@@ -790,43 +768,42 @@ def remove_workspaces_in(patch_dir: str) -> tuple[list[str], list[str]]:
     removed: list[str] = []
     warnings: list[str] = []
     try:
-        names = sorted(os.listdir(patch_dir))
+        paths = sorted(patch_dir.iterdir())
     except OSError as error:
-        return removed, [f"could not list {patch_dir!r}: {error}"]
-    for name in names:
-        if not name.startswith("scratch-"):
+        return removed, [f"could not list '{patch_dir}': {error}"]
+    for path in paths:
+        if not path.name.startswith("scratch-"):
             continue
-        path = os.path.join(patch_dir, name)
         try:
             remove_workspace(path)
         except PatchError as error:
             warnings.append(str(error))
         else:
-            removed.append(name)
+            removed.append(path.name)
     return removed, warnings
 
 
-def remove_patch_run(patch_dir: str) -> tuple[list[str], list[str]]:
+def remove_patch_run(patch_dir: Path) -> tuple[list[Path], list[str]]:
     """Remove a finished patch run directory, and its run directory if now empty.
 
     Returns (removed paths, warnings). Never raises; only the recipe's own
     `<report>/.claude-security-run/patch-<ts>` layout is deleted.
     """
-    removed: list[str] = []
-    target = os.path.normpath(os.path.abspath(patch_dir))
-    run_dir = os.path.dirname(target)
-    if not PATCH_DIR_RE.match(os.path.basename(target)):
-        return removed, [f"left {patch_dir!r} in place: its name is not patch-<timestamp>"]
-    if os.path.basename(run_dir) != plugin.RUN_DIR_NAME:
-        return removed, [f"left {patch_dir!r} in place: it is not inside {plugin.RUN_DIR_NAME}/"]
+    removed: list[Path] = []
+    target = Path(os.path.abspath(patch_dir))
+    run_dir = target.parent
+    if not PATCH_DIR_RE.match(target.name):
+        return removed, [f"left '{patch_dir}' in place: its name is not patch-<timestamp>"]
+    if run_dir.name != plugin.RUN_DIR_NAME:
+        return removed, [f"left '{patch_dir}' in place: it is not inside {plugin.RUN_DIR_NAME}/"]
     try:
-        shutil.rmtree(target, onerror=clear_readonly)
+        shutil.rmtree(str(target), onerror=clear_readonly)
     except OSError as error:
         detail = console.removal_failure_detail(error)
-        return removed, [f"could not remove {patch_dir!r}: {detail}"]
+        return removed, [f"could not remove '{patch_dir}': {detail}"]
     removed.append(target)
     try:
-        os.rmdir(run_dir)
+        run_dir.rmdir()
     except OSError:
         return removed, []
     removed.append(run_dir)
@@ -838,7 +815,7 @@ def main(argv: list[str]) -> int:
         if len(argv) != 2:
             die_usage("--remove-scratch takes exactly one workspace path")
         try:
-            remove_workspace(argv[1])
+            remove_workspace(Path(argv[1]))
         except PatchError as error:
             die(str(error))
         print(f"removed workspace {argv[1]!r}")
@@ -847,6 +824,7 @@ def main(argv: list[str]) -> int:
         prog="patch_artifacts.py",
         description="Render suggested-fix patch files and notes from a patch run directory.",
         epilog="Also: --remove-scratch <workspace> deletes one fenced scratch workspace.",
+        allow_abbrev=False,
     )
     parser.add_argument("patch_dir", help="the patch run dir holding patches.json and F<n>.diff")
     parser.add_argument("patches_dir", help="the report's patches/ directory to write into")
@@ -859,7 +837,7 @@ def main(argv: list[str]) -> int:
     if not plugin.SHA_RE.match(args.base):
         die_usage(f"--base {args.base!r} is not a hex revision id")
     try:
-        return run(args.patch_dir, args.patches_dir, args.scan_root, args.base)
+        return run(Path(args.patch_dir), Path(args.patches_dir), args.scan_root, args.base)
     except PatchError as error:
         die(str(error))
     except OSError as error:

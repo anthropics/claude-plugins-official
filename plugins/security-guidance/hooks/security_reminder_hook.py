@@ -58,6 +58,7 @@ except ImportError:
     fcntl = None
 import contextlib
 import glob
+import hashlib
 import json
 import os
 import random
@@ -96,7 +97,7 @@ from session_state import (  # noqa: E402,F401
     load_state, save_state, with_locked_state,
 )
 from gitutil import (  # noqa: E402,F401
-    GIT_CMD,
+    GIT_CMD, apply_safe_git_env,
     _git_rev_parse_head, _find_git_index, _diff_pathspec, _temp_index,
     _git_toplevel, _git_dir, _git_rev_list_range, _git_diff_range,
     _detect_main_branch, _git_reflog_recent_commits, _git_name_only,
@@ -112,11 +113,17 @@ from gitutil import (  # noqa: E402,F401
 from diffstate import (  # noqa: E402,F401
     STOP_LOOP_STATE_TTL_SEC, PREVIOUS_FINDINGS_TTL_SEC,
     save_baseline_sha, load_baseline_sha, record_touched_path,
-    consume_stop_state, restore_unreviewed_stop_state,
+    consume_stop_state, restore_unreviewed_stop_state, record_reviewed_diff,
     get_baseline_file_content, capture_git_baseline,
     _REVIEWED_SHAS_BASENAME, _REVIEWED_SHAS_CAP,
     _reviewed_shas_path, _load_reviewed_shas, _append_reviewed_shas,
     UNTRACKED_BASELINE_CAP, _list_untracked, compute_v2_review_set,
+)
+from reporesolve import (  # noqa: E402,F401
+    RES_NONE, RES_CWD, RES_COMMAND, RES_SHA_SCAN, RES_TOUCHED_PATHS, RES_HINT,
+    COMMIT_SUBCOMMANDS, PUSH_SUBCOMMANDS,
+    toplevel_from_command, repo_containing_commit, scan_roots,
+    resolve_repo_root, save_repo_hint, load_repo_hint,
 )
 import llm  # noqa: E402  module ref for reassignable globals (_last_call_claude_http_error etc.)
 from llm import (  # noqa: E402,F401
@@ -540,6 +547,16 @@ def handle_user_prompt_submit(input_data):
         # otherwise an untracked-only working tree gets every untracked file
         # reviewed on every turn until something tracked is dirtied.
         untracked_now = _f_ut.result() or {}
+    if not sha and not _git_toplevel(cwd):
+        hint = load_repo_hint(session_id)
+        if hint:
+            debug_log(f"UPS: cwd is not a git repo; using repo hint {hint!r}")
+            cwd = hint
+            with _cf.ThreadPoolExecutor(max_workers=2) as _ex:
+                _f_sha = _ex.submit(capture_git_baseline, cwd)
+                _f_ut = _ex.submit(_list_untracked, cwd)
+                sha = _f_sha.result()
+                untracked_now = _f_ut.result() or {}
     head = _git_rev_parse_head(cwd)
 
     # If the previous turn's Stop hook never ran (user interrupt, follow-up
@@ -678,7 +695,8 @@ _GIT_COMMIT_RE = re.compile(
     # _GIT_PUSH_RE). Without this, `git -C /repo commit` is silently dropped
     # by the handler — see #2089's secondary finding. The gt branch has no
     # global-option layer to worry about.
-    r'\bgit(?:\s+-[Cc]\s+\S+|\s+--\S+=\S+)*\s+commit\b'
+    r'\bgit(?:\s+-[Cc]\s+(?:"[^"]*"|\'[^\']*\'|[^\s"\']\S*)|\s+--[^\s=]+=\S+'
+    r'|\s+--(?:git-dir|work-tree)\s+\S+)*\s+commit\b'
     r'|\bgt\s+(?:create|modify)\b'
 )
 # Match either the `--amend` flag (with the leading whitespace boundary
@@ -721,7 +739,8 @@ COMMIT_REVIEW_RATE_WINDOW_S = int(
 # but the bash hook fires on Claude's top-level command so we need to
 # recognize gt submit at the matcher level. See #2048.
 _GIT_PUSH_RE = re.compile(
-    r'(?:\bgit(?:\s+-[cC]\s+\S+|\s+--\S+=\S+)*\s+push\b|\bgt\s+submit\b)'
+    r'(?:\bgit(?:\s+-[cC]\s+(?:"[^"]*"|\'[^\']*\'|[^\s"\']\S*)|\s+--[^\s=]+=\S+'
+    r'|\s+--(?:git-dir|work-tree)\s+\S+)*\s+push\b|\bgt\s+submit\b)'
 )
 
 # `git push` stdout: "abc1234..def5678  branch -> branch" (or `+abc..def` on
@@ -759,7 +778,12 @@ def _claim_bash_hook_once(input_data):
     cwd = input_data.get("cwd")
     if not tuid or not cwd:
         return True
-    gd = _git_dir(_git_toplevel(cwd) or cwd)
+    command = (input_data.get("tool_input") or {}).get("command", "") or ""
+    gd = _git_dir(
+        _git_toplevel(cwd)
+        or toplevel_from_command(command, cwd, COMMIT_SUBCOMMANDS | PUSH_SUBCOMMANDS)
+        or cwd
+    )
     if not gd:
         return True
     # GC: best-effort sweep of stale sentinels so they don't accumulate.
@@ -1041,15 +1065,28 @@ def handle_commit_review_posttooluse(input_data):
     # emitting labels like `[pre-commit abc1234]`, and on (b) chained
     # `git commit || git log --stat` where `N files changed` appears in output
     # even though the commit itself failed.
+    all_shas = _COMMIT_SHA_RE.findall(bash_output)
     commit_succeeded = (
         not interrupted
-        and _COMMIT_SHA_RE.search(bash_output) is not None
+        and bool(all_shas)
         and any(p.search(bash_output) for p in _COMMIT_DIFFSTAT_PATTERNS)
     )
 
     # commit_review_on emitted on every path so telemetry can filter on
     # commit_review and group by commit_review_on.
     _base = {"commit_review": True, "commit_review_on": COMMIT_REVIEW_ENABLED}
+
+    cwd_root = _git_toplevel(cwd) if cwd else None
+    repo_root = cwd_root
+    repo_res = RES_CWD if cwd_root else RES_NONE
+    if cwd:
+        _cmd_root = toplevel_from_command(command, cwd, COMMIT_SUBCOMMANDS, cwd_root)
+        if _cmd_root and _cmd_root != cwd_root:
+            repo_root, repo_res = _cmd_root, RES_COMMAND
+    if not cwd_root:
+        _base["cwd_is_repo"] = False
+    if repo_res != RES_CWD:
+        _base["repo_resolution"] = repo_res
 
     # Reflog fallback for hidden stdout. Analysis of skip_reason=21 emissions
     # showed a large share were commits that DID succeed
@@ -1068,7 +1105,12 @@ def handle_commit_review_posttooluse(input_data):
     _reflog_shas: List[str] = []
     _skip_21_sub = 0
     if not commit_succeeded and not interrupted and cwd:
-        _root = _git_toplevel(cwd)
+        if not repo_root:
+            repo_root = load_repo_hint(session_id)
+            if repo_root:
+                repo_res = RES_HINT
+                _base["repo_resolution"] = repo_res
+        _root = repo_root
         _fresh, _stale = _git_reflog_recent_commits(_root)
         if _fresh:
             _already = _load_reviewed_shas(_root)
@@ -1119,11 +1161,24 @@ def handle_commit_review_posttooluse(input_data):
         emit_metrics({"skipped": True, "skip_reason": 25, **_base})
         sys.exit(0)
 
-    repo_root = _git_toplevel(cwd)
+    if not repo_root and all_shas and not _reflog_shas:
+        repo_root = repo_containing_commit(all_shas[-1], scan_roots(cwd))
+        if repo_root:
+            repo_res = RES_SHA_SCAN
+    if not repo_root:
+        repo_root = load_repo_hint(session_id)
+        if repo_root:
+            repo_res = RES_HINT
+    if repo_res != RES_CWD:
+        _base["repo_resolution"] = repo_res
     if not repo_root:
         debug_log("Commit review: not in a git repo")
         emit_metrics({"skipped": True, "skip_reason": 26, **_base})
         sys.exit(0)
+    if repo_res != RES_CWD:
+        debug_log(f"Commit review: repo resolved via {repo_res} -> {repo_root!r}")
+        if repo_res in (RES_COMMAND, RES_TOUCHED_PATHS):
+            save_repo_hint(session_id, repo_root)
 
     # Pin the review to the exact SHA the Bash command produced, parsed from
     # its stdout. Reviewing HEAD instead is wrong when the commit was made in
@@ -1150,7 +1205,6 @@ def handle_commit_review_posttooluse(input_data):
         # all are reviewed.
         shas = _reflog_shas
     else:
-        all_shas = _COMMIT_SHA_RE.findall(bash_output)
         shas = [all_shas[-1]] if all_shas else []
     if not shas:
         debug_log("Commit review: no SHA in commit output")
@@ -1229,13 +1283,13 @@ def handle_commit_review_posttooluse(input_data):
                 # Delta review: pre-amend → post-amend. `git diff` (not show)
                 # so the output is a pure unified diff with no commit header.
                 result = subprocess.run(
-                    [*GIT_CMD, "diff", "--no-color", "--no-ext-diff",
+                    [*GIT_CMD, "diff", "--no-color", "--no-ext-diff", "--no-textconv",
                      pre_amend_sha, sha, "--"],
                     cwd=repo_root, capture_output=True, timeout=15
                 )
             else:
                 result = subprocess.run(
-                    [*GIT_CMD, "show", "-p", "--no-color", "--no-ext-diff", sha, "--"],
+                    [*GIT_CMD, "show", "-p", "--no-color", "--no-ext-diff", "--no-textconv", sha, "--"],
                     cwd=repo_root, capture_output=True, timeout=15
                 )
         except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
@@ -1543,10 +1597,24 @@ def handle_push_sweep_posttooluse(input_data):
     if not cwd:
         emit_metrics({"skipped": True, "skip_reason": 25, **_base})
         sys.exit(0)
-    repo_root = _git_toplevel(cwd)
+    _tip_m = _PUSH_RANGE_RE.search(_push_section(bash_output))
+    cwd_root = _git_toplevel(cwd)
+    repo_root, repo_res = resolve_repo_root(
+        cwd, command, PUSH_SUBCOMMANDS,
+        sha=_tip_m.group(2) if _tip_m else None,
+        session_id=session_id, cwd_root=cwd_root,
+    )
+    if not cwd_root:
+        _base["cwd_is_repo"] = False
+    if repo_res != RES_CWD:
+        _base["repo_resolution"] = repo_res
     if not repo_root:
         emit_metrics({"skipped": True, "skip_reason": 26, **_base})
         sys.exit(0)
+    if repo_res != RES_CWD:
+        debug_log(f"Push sweep: repo resolved via {repo_res} -> {repo_root!r}")
+        if repo_res in (RES_COMMAND, RES_TOUCHED_PATHS):
+            save_repo_hint(session_id, repo_root)
 
     # Guard: the sweep diffs `base..HEAD` and the agent Reads the working
     # tree, so the pushed ref MUST be HEAD or the review is of the wrong
@@ -1842,6 +1910,8 @@ def handle_stop_hook(input_data):
     session_id = input_data.get("session_id", "default")
     stop_hook_active = input_data.get("stop_hook_active", False)
     cwd = input_data.get("cwd", "")
+    hook_event_name = input_data.get("hook_event_name") or "Stop"
+    is_subagent = hook_event_name == "SubagentStop"
 
     # Recursion guard FIRST — consume_stop_state clears touched_paths, and CC
     # sets stop_hook_active session-wide while any asyncRewake Stop is in
@@ -1856,7 +1926,8 @@ def handle_stop_hook(input_data):
     # git, network). asyncRewake Stop runs in the background; the next turn's
     # UPS/PostToolUse can fire while we're still here. The snapshot is immune
     # to those writes — they affect the NEXT Stop fire's snapshot.
-    snap = consume_stop_state(session_id)
+    snap = (consume_stop_state(session_id, clear=False) if is_subagent
+            else consume_stop_state(session_id))
     fire_count = snap["fire_count"]
     touched_paths = snap["touched_paths"]
     baseline_sha = snap["baseline_sha"]
@@ -1920,9 +1991,27 @@ def handle_stop_hook(input_data):
         debug_log("Stop hook: no cwd")
         _skip(4)
 
+    repo_cwd, repo_res = resolve_repo_root(
+        cwd, touched_paths=touched_paths, session_id=session_id)
+    res_metrics = ({} if repo_res == RES_CWD
+                   else {"cwd_is_repo": False, "repo_resolution": repo_res})
+    if is_subagent and repo_cwd:
+        _pd = os.environ.get("CLAUDE_PROJECT_DIR")
+        _pd_root = _git_toplevel(_pd) if _pd and os.path.isdir(_pd) else None
+        if _pd_root and _pd_root != repo_cwd:
+            debug_log(f"Stop hook: SubagentStop in {repo_cwd!r}, session repo is {_pd_root!r}")
+            v2_metrics = dict(res_metrics)
+            _skip(11)
+    if repo_res != RES_CWD and repo_cwd:
+        debug_log(f"Stop hook: repo resolved via {repo_res} -> {repo_cwd!r}")
+        if not is_subagent and repo_res in (RES_COMMAND, RES_TOUCHED_PATHS):
+            save_repo_hint(session_id, repo_cwd)
+        cwd = repo_cwd
+
     review_paths, diff_base, repo_root, untracked, v2_metrics = compute_v2_review_set(
         cwd, baseline_sha, head_at_capture, untracked_at_baseline
     )
+    v2_metrics = {**res_metrics, **v2_metrics}
     if not review_paths:
         debug_log("Stop hook: empty review set")
         _skip(9, touched_paths_count=len(touched_paths))
@@ -1950,6 +2039,11 @@ def handle_stop_hook(input_data):
     if not diff_output or not diff_output.strip():
         debug_log("Stop hook: no changes since baseline")
         _skip(6)
+
+    diff_hash = hashlib.sha256(diff_output.encode("utf-8", "replace")).hexdigest()
+    if snap.get("reviewed_diff_hash") == diff_hash:
+        debug_log("Stop hook: diff already reviewed by SubagentStop")
+        _skip(12)
 
     # Parse diff into per-file content
     diff_files = parse_diff_into_files(diff_output)
@@ -2021,12 +2115,15 @@ def handle_stop_hook(input_data):
             for v in vulns
         ]
         # Update baseline so next stop hook iteration only sees new changes
-        new_sha = capture_git_baseline(cwd)
+        new_sha = None if is_subagent else capture_git_baseline(cwd)
         new_untracked_baseline = _list_untracked(cwd) if new_sha else None
 
         def _record_fire(state):
-            state["stop_hook_fire_count"] = fire_index
-            state["stop_hook_fire_count_ts"] = _time.time()
+            if is_subagent:
+                state["reviewed_diff_hash"] = diff_hash
+            else:
+                state["stop_hook_fire_count"] = fire_index
+                state["stop_hook_fire_count_ts"] = _time.time()
             # Re-read under lock — the commit-review PostToolUse hook may have
             # appended findings since consume_stop_state snapshotted.
             # Dedupe on (filePath, category) — vulnerableCode includes diff
@@ -2075,11 +2172,12 @@ def handle_stop_hook(input_data):
             "fire_index": fire_index,
             **({"diff_truncated": llm._last_review_truncated_bytes}
                if llm._last_review_truncated_bytes else {}),
+            **({"repo_resolution": repo_res} if res_metrics else {}),
             **sweep_trimmed,
         }, rewake_summary=_format_vulns_summary(vulns),
            additional_context=(PROVENANCE_BANNER + "\n\n"
                                + concrete_guidance + CONTINUATION_SUFFIX + "\n"),
-           hook_event_name="Stop")
+           hook_event_name=hook_event_name)
         sys.exit(2)
 
     if llm._last_call_claude_http_error is not None:
@@ -2087,6 +2185,8 @@ def handle_stop_hook(input_data):
         restore_unreviewed_stop_state(session_id, touched_paths, snap_baseline)
     else:
         debug_log("Stop hook: no security issues found")
+        if is_subagent:
+            record_reviewed_diff(session_id, diff_hash)
     # CC truncates metrics to 10 keys by
     # insertion order. The previous **sweep,**v2_metrics tail meant the 3
     # v2_metrics keys were always sliced off this most-common path, so the
@@ -2152,6 +2252,7 @@ def _maybe_bootstrap_agent_sdk_async():
 def main():
     """Main hook function."""
     debug_log(f"Hook called with args: {sys.argv}")
+    apply_safe_git_env()
 
     # Master kill switch — honors ENABLE_SECURITY_REMINDER=0 (legacy) and
     # SECURITY_GUIDANCE_DISABLE=1 (clearer name, no double negative). Emit
@@ -2200,7 +2301,7 @@ def main():
         return
 
     # Handle Stop hook — final security check
-    if hook_event_name == "Stop":
+    if hook_event_name in ("Stop", "SubagentStop"):
         handle_stop_hook(input_data)
         return
 

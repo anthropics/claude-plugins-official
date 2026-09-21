@@ -16,7 +16,7 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING, NoReturn, cast
 
 if TYPE_CHECKING:
-    import os
+    from pathlib import Path
     from typing import TypeGuard
 
 JsonMap = Mapping[str, object]
@@ -65,9 +65,9 @@ def _finite(digits: str) -> float:
     return value
 
 
-def load(path: str | os.PathLike[str]) -> object:
+def load(path: Path) -> object:
     """The JSON value in `path`; OSError if unreadable, ValueError if not strict JSON."""
-    with open(path, encoding="utf-8") as handle:
+    with path.open(encoding="utf-8") as handle:
         try:
             return cast("object", json.load(handle, parse_constant=_refuse, parse_float=_finite))
         except RecursionError as error:

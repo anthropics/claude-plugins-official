@@ -1,9 +1,0 @@
-{
-  "greptile": {
-    "type": "http",
-    "url": "https://api.greptile.com/mcp",
-    "headers": {
-      "Authorization": "Bearer ${GREPTILE_API_KEY}"
-    }
-  }
-}

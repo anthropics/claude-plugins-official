@@ -10,7 +10,7 @@ allowed-tools:
   - AskUserQuestion
   - Workflow
   - Workflow(claude-security:scan)
-  - Agent(claude-security:scan-inventory, claude-security:scan-researcher, claude-security:scan-verifier, claude-security:patch-generator, claude-security:patch-verifier, claude-security:explore)
+  - Agent(claude-security:scan-inventory, claude-security:scan-researcher, claude-security:scan-verifier, claude-security:scan-loader, claude-security:patch-generator, claude-security:patch-verifier, claude-security:explore)
   - Bash(date *)
   - Bash(ls *)
   - Bash(wc *)
@@ -19,6 +19,7 @@ allowed-tools:
   - Bash(GIT_CONFIG_GLOBAL=/dev/null GIT_TERMINAL_PROMPT=0 git *)
   - Bash(find . -maxdepth 1 -type d -name "CLAUDE-SECURITY-2*")
   - Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/render_report.py" *)
+  - Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/save_result.py" *)
   - Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/write_scan_meta.py" *)
   - Bash(bash "${CLAUDE_PLUGIN_ROOT}/scripts/keep-waiting.sh" *)
   - Bash(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/patch_artifacts.py" *)
@@ -28,7 +29,7 @@ allowed-tools:
 
 # Claude Security
 
-- Session start time (UTC, the stamp report directories are named with): !`date -u +%Y%m%d-%H%M%S`
+- Session start time (UTC): !`date -u +%Y%m%d-%H%M%S`
 
 ## The front-desk menu
 

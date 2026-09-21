@@ -29,6 +29,7 @@ import extensibility
 import review_api
 from _base import debug_log, _record_usage, _record_http_error, _PV, PROVENANCE_TAG, state_dir as _resolve_state_dir  # noqa: F401
 from session_state import with_locked_state
+from gitutil import git_config_env, SAFE_GIT_CONFIG
 
 
 def _inject_agent_sdk_venv_into_syspath(state_dir):
@@ -1123,6 +1124,7 @@ def _agentic_spawn_env() -> Dict[str, str]:
         "GIT_SSH_COMMAND": "/bin/false",
         "GIT_TERMINAL_PROMPT": "0",
         "GIT_OPTIONAL_LOCKS": "0",
+        **git_config_env(SAFE_GIT_CONFIG),
     }
     if os.environ.get("ANTHROPIC_API_KEY"):
         # API key present → blank the OAuth token so API-key auth wins.
