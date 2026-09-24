@@ -70,6 +70,8 @@ function analyze({ changedFiles, before, after, liveRepos }) {
   }
 
   for (const name of added) {
+    // Command sources have no repo URL to validate.
+    if (after[name] && after[name].source && after[name].source.source === 'command') continue;
     const u = after[name] && after[name].source && after[name].source.url;
     if (!u) { problems.push(`added "${name}" has no source.url to validate`); continue; }
     const r = normalizeRepo(u);
