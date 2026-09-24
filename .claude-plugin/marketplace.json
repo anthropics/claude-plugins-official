@@ -4066,6 +4066,20 @@
       "homepage": "https://val.town"
     },
     {
+      "name": "vanguard-advisor-tools",
+      "description": "Vanguard Advisor Tools for financial professionals: research and compare funds and ETFs across the industry and prepare for client conversations, using Vanguard's advisor connector in Claude.",
+      "author": {
+        "name": "Vanguard"
+      },
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/Vanguard-oss/vanguard-advisor-tools.git",
+        "sha": "328fe9f61fe7a375b87a6492e265b4a5a955b0ce"
+      },
+      "homepage": "https://advisors.vanguard.com"
+    },
+    {
       "name": "vanta",
       "description": "The Vanta plugin connects Claude Code to Vanta's security and compliance platform through the Vanta MCP server. It combines Vanta's test-specific remediation intelligence with your local repository context to help you fix compliance failures faster.",
       "author": {
