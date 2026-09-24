@@ -69,9 +69,10 @@ function analyze({ changedFiles, before, after, liveRepos }) {
     problems.push('makes no in-scope change (expected additions to marketplace.json)');
   }
 
+  const unvalidated = [];
   for (const name of added) {
-    // Command sources have no repo URL to validate.
-    if (after[name] && after[name].source && after[name].source.source === 'command') continue;
+    // Command sources have no repo URL to validate; report them so a reviewer checks them by hand.
+    if (after[name] && after[name].source && after[name].source.source === 'command') { unvalidated.push(name); continue; }
     const u = after[name] && after[name].source && after[name].source.url;
     if (!u) { problems.push(`added "${name}" has no source.url to validate`); continue; }
     const r = normalizeRepo(u);
@@ -81,7 +82,7 @@ function analyze({ changedFiles, before, after, liveRepos }) {
     }
   }
 
-  return { ok: problems.length === 0, problems, added, removed, modified, liveRepoCount: liveRepos.size };
+  return { ok: problems.length === 0, problems, added, removed, modified, unvalidated, liveRepoCount: liveRepos.size };
 }
 
 async function readPlugins(github, owner, repo, ref) {
