@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
-"""Render the suggested-fix products from a patch run directory.
+"""Prepare a patch run, and render the suggested-fix products from it.
 
-Reads the run's `patches.json` and raw `F<n>.diff` files, and writes into the
-report's `patches/` directory:
+`--prepare` lays out a patch run for a report: it checks the repository root
+and the base revision, makes the run's working directory and the report's
+`patches/` directory, writes one `findings/F<n>.json` per selected finding
+(the report's record, its `file` made repository-relative), and prints the two
+directories and the selected ids.
+
+The render form reads the run's `patches.json` and raw `F<n>.diff` files, and
+writes into the report's `patches/` directory:
 
   * `F<n>.patch` -- the raw diff behind an explanatory comment header;
   * `F<n>.md` -- a short note per finding, whether or not a patch was written;
@@ -11,10 +17,11 @@ report's `patches/` directory:
 
 Each written patch is checked read-only against the repository with
 `git apply --check`, and the whole patch run directory -- scratch workspaces,
-raw diffs and the record -- is removed once the products are written, along
-with the run directory above it when nothing else remains there.
+prepared findings, raw diffs and the record -- is removed once the products are
+written, along with the run directory above it when nothing else remains there.
 
 Usage:
+  patch_artifacts.py --prepare <report_dir> <selection> --repo-root <dir> --base <sha>
   patch_artifacts.py <patch_dir> <patches_dir> <scan_root> --base <sha>
   patch_artifacts.py --remove-scratch <workspace>
 
@@ -26,6 +33,7 @@ Python 3.9-compatible, stdlib only.
 from __future__ import annotations
 
 import argparse
+import functools
 import os
 import re
 import shlex
@@ -33,28 +41,41 @@ import shutil
 import stat
 import subprocess
 import sys
+from collections import Counter
+from contextlib import suppress
+from datetime import datetime, timezone
+from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, TypedDict
+from typing import TYPE_CHECKING, NamedTuple, TypedDict
 
 # The lib/ package lives next to this script. Python normally adds a script's own
 # directory to the import path, but not under -P or PYTHONSAFEPATH, so we add it here.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from lib import absolute, console, plugin, strictjson
-from lib.strictjson import JsonMap, is_list, is_map, is_str
+from lib import absolute, console, git, plugin, strictjson
+from lib.finding import Severity, repository_file, scan_prefix_shaped
+from lib.link import is_link
+from lib.strictjson import JsonMap, is_int, is_list, is_map, is_str
 
 if TYPE_CHECKING:
     from collections.abc import Callable
     from types import TracebackType
-    from typing import NoReturn
+    from typing import Literal
 
 FINDING_ID_PATTERN = "F[0-9]{1,9}"
 FINDING_ID_RE = re.compile(rf"^{FINDING_ID_PATTERN}\Z")
+
+
+def finding_number(finding_id: str) -> int:
+    """The number in a finding id, for sorting ids as a reader expects (F2 before F10)."""
+    return int(finding_id[1:])
+
+
 REGULAR_FILE_MODE = "100644"
-# \Z, not $: `$` also matches before a trailing newline, and this is a fence.
-REPORT_DIR_RE = re.compile(rf"^{re.escape(plugin.REPORT_DIR_PREFIX)}[0-9][0-9-]*\Z")
 PATCHES_DIR_NAME = "patches"
+FINDINGS_DIR_NAME = "findings"
 SCRATCH_NAME_RE = re.compile(rf"^scratch-{FINDING_ID_PATTERN}\Z")
-PATCH_DIR_RE = re.compile(r"^patch-[0-9][0-9-]*\Z")
+PATCH_DIR_PREFIX = "patch-"
+PATCH_DIR_RE = re.compile(rf"^{re.escape(PATCH_DIR_PREFIX)}[0-9][0-9-]*\Z")
 DIFF_HEADER = "diff --git "
 CLAIM_KEYS = ("targeted", "no_new_vulnerability", "behaviour_unchanged")
 CLAIM_LABELS = {
@@ -67,7 +88,11 @@ CLAIM_LABELS = {
 }
 CLAIM_STATES = ("CONFIDENT", "NOT_CONFIDENT", "UNSURE")
 STATUSES = ("patch_written", "declined", "skipped_stale")
-GIT_ENV = dict(os.environ, GIT_TERMINAL_PROMPT="0")
+NOT_CONFIRMED = (
+    "The review found this finding is not exploitable as the report describes at this "
+    "revision, so no patch was written for it."
+)
+UNTESTED_NOTICE = "no project test of the patched code was run"
 
 
 class Claim(TypedDict):
@@ -77,12 +102,38 @@ class Claim(TypedDict):
     evidence: str
 
 
+class PathKind(str, Enum):
+    """The kind the fresh reviewer gave an attack path it reported."""
+
+    OPENED = "opened"
+    STILL_REACHABLE = "still_reachable"
+    SET_ASIDE = "set_aside"
+
+    @property
+    def blocks_patch(self) -> bool:
+        return self is not PathKind.SET_ASIDE
+
+
+PATH_KIND_LABELS = {
+    PathKind.OPENED: "opened by the rejected change",
+    PathKind.STILL_REACHABLE: "the finding's exploit, still reachable by another route",
+    PathKind.SET_ASIDE: "set aside as outside this finding; not addressed here",
+}
+
+
+class AttackPath(TypedDict):
+    """An attack path the fresh reviewer reported, with the kind it gave it."""
+
+    kind: PathKind
+    text: str
+
+
 class DiffStat(TypedDict):
-    """Per-file added/deleted line counts."""
+    """Per-file added/deleted line counts, "-" for a binary file as git prints it."""
 
     path: str
-    added: object
-    deleted: object
+    added: int | Literal["-"]
+    deleted: int | Literal["-"]
 
 
 class Unit(TypedDict):
@@ -96,12 +147,15 @@ class Unit(TypedDict):
     untested: bool
     tests_run: str
     reviewed_paths: list[str]
+    attack_paths: list[AttackPath]
+    attempts: int | None
+    confirmed: bool | None
     decline_reason: str
     recommendation: str
 
 
-class Args(argparse.Namespace):
-    """The parsed command line."""
+class RenderArgs(argparse.Namespace):
+    """The parsed render command line."""
 
     patch_dir: str = ""
     patches_dir: str = ""
@@ -109,20 +163,30 @@ class Args(argparse.Namespace):
     base: str = ""
 
 
+class PrepareArgs(argparse.Namespace):
+    """The parsed `--prepare` command line."""
+
+    report_dir: str = ""
+    selection: str = ""
+    repo_root: str = ""
+    base: str = ""
+
+
+class RemoveArgs(argparse.Namespace):
+    """The parsed `--remove-scratch` command line."""
+
+    workspace: str = ""
+
+
+class ReportFinding(NamedTuple):
+    """A report finding as `--prepare` reads it: its severity, and its record to hand on."""
+
+    severity: Severity
+    record: JsonMap
+
+
 class PatchError(Exception):
-    """The run record or a raw diff is malformed; the caller must correct it."""
-
-
-def die(message: str) -> NoReturn:
-    """A refusal: the inputs are well-formed arguments but bad data. Exits 1."""
-    sys.stderr.write(f"patch_artifacts.py: {message}\n")
-    sys.exit(1)
-
-
-def die_usage(message: str) -> NoReturn:
-    """A usage error: the arguments themselves are wrong. Exits 2."""
-    sys.stderr.write(f"patch_artifacts.py: {message}\n")
-    sys.exit(2)
+    """A refusal; the message names what the caller must correct."""
 
 
 def field(value: object, what: str) -> str:
@@ -139,7 +203,7 @@ def field(value: object, what: str) -> str:
 
 
 def line_field(value: object, what: str) -> str:
-    """A record field for the patch's one-line "#" header; line breaks folded to spaces."""
+    """A one-line record field; line breaks folded to spaces."""
     return field(value, what).replace("\r", " ").replace("\n", " ")
 
 
@@ -190,6 +254,84 @@ def build_claims(raw: object, unit_id: str, status: str) -> dict[str, Claim]:
     return out
 
 
+def build_attack_path(item: object, what: str) -> AttackPath:
+    """One of the fresh reviewer's attack paths: a known kind and a non-empty text."""
+    if not is_map(item):
+        msg = f"{what} is not an object with a kind and a text"
+        raise PatchError(msg)
+    try:
+        kind = PathKind(field(item.get("kind"), f"{what}.kind"))
+    except ValueError as error:
+        kinds = ", ".join(k.value for k in PathKind)
+        msg = f"{what} kind {item.get('kind')!r} is not one of {kinds}"
+        raise PatchError(msg) from error
+    text = line_field(item.get("text"), f"{what}.text").strip()
+    if not text:
+        msg = f"{what} has no text saying what the path is"
+        raise PatchError(msg)
+    return AttackPath(kind=kind, text=text)
+
+
+def build_attack_paths(raw: object, unit_id: str, status: str) -> list[AttackPath]:
+    """Validate the fresh reviewer's attack paths; a written patch lists them, none blocking it."""
+    written = status == "patch_written"
+    if raw is None:
+        if written:
+            msg = (
+                f'{unit_id}: status is patch_written but "attack_paths" is missing -- it must '
+                "list what the fresh reviewer reported, or be empty when it reported none."
+            )
+            raise PatchError(msg)
+        return []
+    if not is_list(raw):
+        msg = f"{unit_id}: attack_paths must be a list"
+        raise PatchError(msg)
+    paths = [build_attack_path(item, f"{unit_id} attack_paths[{i}]") for i, item in enumerate(raw)]
+    blocking = next((path for path in paths if path["kind"].blocks_patch), None)
+    if written and blocking is not None:
+        msg = (
+            f"{unit_id}: status is patch_written but the fresh reviewer reported a path it did not "
+            f"set aside ({blocking['kind'].value}: {blocking['text']}) -- that blocks the "
+            "patch: record the unit as declined, or, if a later round's reviewer reported no "
+            "path that counts, leave this earlier round's path out of the record."
+        )
+        raise PatchError(msg)
+    return paths
+
+
+def build_attempts(raw: object, unit_id: str, status: str) -> int | None:
+    """The number of fix attempts made; None for a stale unit, whatever its record says."""
+    if status == "skipped_stale":
+        return None
+    if raw is None:
+        msg = (
+            f'{unit_id}: "attempts" is missing -- it must say how many fix attempts were made '
+            "(1, or 2 for a unit that went through the revision round; 0 only when its workspace "
+            "could not be opened)."
+        )
+        raise PatchError(msg)
+    if not is_int(raw) or raw < 0:
+        msg = f'{unit_id}: "attempts" must be a whole number of fix attempts made'
+        raise PatchError(msg)
+    if status == "patch_written" and raw == 0:
+        msg = f"{unit_id}: a written patch took at least one attempt; attempts cannot be 0"
+        raise PatchError(msg)
+    return raw
+
+
+def build_confirmed(raw: object, unit_id: str, status: str) -> bool | None:
+    """The verifier's word on whether the finding is real; None if unstated or for a stale unit."""
+    if raw is None or status == "skipped_stale":
+        return None
+    if not isinstance(raw, bool):
+        msg = f'{unit_id}: "confirmed" must be true or false'
+        raise PatchError(msg)
+    if not raw and status != "declined":
+        msg = f'{unit_id}: "confirmed" is false, so the unit must be declined: no patch for it'
+        raise PatchError(msg)
+    return raw
+
+
 def build_unit(item: object, index: int) -> Unit:
     """Validate one unit from patches.json into the shape the writers use."""
     if not is_map(item):
@@ -208,12 +350,23 @@ def build_unit(item: object, index: int) -> Unit:
     if status != "patch_written" and not decline_reason:
         msg = f"{unit_id}: status {status} needs a decline_reason saying why no patch was written"
         raise PatchError(msg)
+    attack_paths = build_attack_paths(item.get("attack_paths"), unit_id, status)
+    confirmed = build_confirmed(item.get("confirmed"), unit_id, status)
+    reachable = next((p for p in attack_paths if p["kind"] is PathKind.STILL_REACHABLE), None)
+    if confirmed is False and reachable is not None:
+        msg = (
+            f'{unit_id}: "confirmed": false cannot sit beside a still_reachable path '
+            f"({reachable['text']}) -- if that path reaches the function or line the finding "
+            'names, the panel disagreed: drop "confirmed" and decline on that path; if it '
+            "reaches only other code, the refutation stands: record that path's kind as set_aside"
+        )
+        raise PatchError(msg)
     untested = item.get("untested")
     if untested is None and status == "patch_written":
         msg = (
             f'{unit_id}: status is patch_written but "untested" is missing -- it must '
             "say (true/false) whether the project's own tests exercise the patched "
-            "code, because the patch header tells the reader exactly that."
+            "code, because the patch header warns the reader when they do not."
         )
         raise PatchError(msg)
     if untested is not None and not isinstance(untested, bool):
@@ -228,16 +381,22 @@ def build_unit(item: object, index: int) -> Unit:
         untested=untested is True,
         tests_run=line_field(item.get("tests_run"), f"{unit_id} tests_run"),
         reviewed_paths=field_list(item.get("reviewed_paths"), f"{unit_id} reviewed_paths"),
+        attack_paths=attack_paths,
+        attempts=build_attempts(item.get("attempts"), unit_id, status),
+        confirmed=confirmed,
         decline_reason=decline_reason,
         recommendation=field(item.get("recommendation"), f"{unit_id} recommendation"),
     )
 
 
 def load_units(patch_dir: Path) -> list[Unit]:
-    """Read and validate patches.json (an object with a `units` array)."""
+    """Read and validate patches.json (an object with a `units` array) against the prepared units.
+
+    Every unit id must have the `findings/<id>.json` that `--prepare` laid out.
+    """
     try:
         raw = strictjson.load(patch_dir / "patches.json")
-    except OSError as error:
+    except FileNotFoundError as error:
         msg = "patches.json is missing from the patch directory. Write it before running this."
         raise PatchError(msg) from error
     except ValueError as error:
@@ -248,12 +407,26 @@ def load_units(patch_dir: Path) -> list[Unit]:
         msg = 'patches.json must be an object with a "units" array'
         raise PatchError(msg)
     units = [build_unit(item, i) for i, item in enumerate(units_raw)]
-    seen: set[str] = set()
-    for unit in units:
-        if unit["id"] in seen:
-            msg = f"{unit['id']} appears more than once in patches.json"
-            raise PatchError(msg)
-        seen.add(unit["id"])
+    counted = Counter(unit["id"] for unit in units)
+    repeated = sorted(
+        (unit_id for unit_id, count in counted.items() if count > 1), key=finding_number
+    )
+    if repeated:
+        msg = f"patches.json uses these unit ids more than once: {', '.join(repeated)}"
+        raise PatchError(msg)
+    findings_dir = patch_dir / FINDINGS_DIR_NAME
+    if not os.path.isdir(findings_dir):
+        msg = f"the patch dir has no {FINDINGS_DIR_NAME}/ folder; run --prepare first"
+        raise PatchError(msg)
+    prepared = {path.stem for path in findings_dir.glob("*.json") if FINDING_ID_RE.match(path.stem)}
+    unprepared = [unit["id"] for unit in units if unit["id"] not in prepared]
+    if unprepared:
+        msg = (
+            f"patches.json names {', '.join(unprepared)}, which --prepare did not lay out; "
+            f"this run's units are {', '.join(sorted(prepared, key=finding_number)) or 'none'} "
+            "(the ids --prepare printed)"
+        )
+        raise PatchError(msg)
     return units
 
 
@@ -351,21 +524,7 @@ def numstat(diff: bytes) -> list[DiffStat]:
 
 def git_toplevel(scan_root: str) -> str | None:
     """The repository root containing scan_root, or None when git can't say."""
-    try:
-        out = subprocess.run(
-            ["git", "-C", scan_root, "rev-parse", "--show-toplevel"],
-            env=GIT_ENV,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            timeout=30,
-            check=False,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return None
-    if out.returncode != 0:
-        return None
-    top = out.stdout.decode("utf-8", "replace").rstrip("\r\n")
-    return top or None
+    return git.run(scan_root, "rev-parse", "--show-toplevel") or None
 
 
 def apply_check(top: str | None, patch_path: Path) -> str:
@@ -375,7 +534,7 @@ def apply_check(top: str | None, patch_path: Path) -> str:
     try:
         out = subprocess.run(
             ["git", "-C", top, "apply", "--check", os.path.abspath(patch_path)],
-            env=GIT_ENV,
+            env=git.ENV,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
             timeout=60,
@@ -389,25 +548,42 @@ def apply_check(top: str | None, patch_path: Path) -> str:
     return "conflicts" + (f": {first[0]}" if first else "")
 
 
+def line_counts(entry: DiffStat) -> str:
+    """A file's size in the diffstat: "(+a -d)", or "(binary)" where git counts no lines."""
+    if entry["added"] == "-":
+        return "(binary)"
+    return f"(+{entry['added']} -{entry['deleted']})"
+
+
 def diffstat_lines(stats: list[DiffStat] | None) -> list[str]:
     """Diffstat as markdown bullets, or a one-line note when there is no diff to size."""
     if stats is None:
         return ["- _(no attempt diff was saved)_"]
     if not stats:
         return ["- _(no file changes recorded)_"]
-    return [f"- `{s['path']}` (+{s['added']} -{s['deleted']})" for s in stats]
+    return [f"- `{s['path']}` {line_counts(s)}" for s in stats]
+
+
+def attack_path_lines(paths: list[AttackPath]) -> list[str]:
+    """The fresh reviewer's attack paths as a note section; no lines when it reported none."""
+    if not paths:
+        return []
+    bullets = [f"- **{PATH_KIND_LABELS[path['kind']]}** -- {path['text']}" for path in paths]
+    return ["## What the fresh reviewer reported", "", *bullets, ""]
 
 
 def header_comment(unit: Unit, base: str, report_ref: str) -> str:
     """The comment block prepended above the first `diff --git`; git apply ignores it."""
+    short = base[: plugin.SHORT_ID_CHARS]
     lines = [
         f"# Claude Security -- suggested patch for {unit['id']}: {unit['title']}",
-        f"# Applies to revision {base[:12]} (the revision the scan report describes).",
+        f"# Applies to revision {short} (the revision these patches were built against).",
         "#",
         "# Verified by a panel of agents: an independent verifier reviewed this",
-        "# change against the finding, and a second, fresh reviewer re-challenged",
-        "# the bare diff for new vulnerabilities. The patch was written only",
-        "# because the panel stated all three of these with confidence:",
+        "# change against the finding, and a second, fresh reviewer challenged the",
+        "# diff for an attack path it opens, or a route it leaves open to the",
+        "# finding's exploit. The patch was written only because the panel stated",
+        "# all three of these with confidence:",
     ]
     for key in CLAIM_KEYS:
         claim = unit["claims"][key]
@@ -415,9 +591,9 @@ def header_comment(unit: Unit, base: str, report_ref: str) -> str:
     if unit["untested"]:
         lines += [
             "#",
-            "# NOTE: no test exercises the patched code. The claim that behaviour is",
-            "# unchanged rests on review of the change and its callers, not on a test",
-            "# run -- weigh it accordingly before applying.",
+            f"# NOTE: {UNTESTED_NOTICE}. The claim that",
+            "# behaviour is unchanged rests on review of the change and its callers,",
+            "# not on a test run -- weigh it accordingly before applying.",
         ]
     if unit["summary"]:
         lines += ["#", f"# {unit['summary']}"]
@@ -442,9 +618,10 @@ def note_written(unit: Unit, stats: list[DiffStat] | None, check: str, report_re
         (
             "**Verified by a panel of agents.** An independent verifier reviewed the "
             "change against the finding and stated the three claims below with "
-            "confidence, and a second, fresh reviewer re-challenged the bare diff "
-            "for new vulnerabilities. The patch was written only because the "
-            "panel could vouch for it; nothing here was applied for you."
+            "confidence, and a second, fresh reviewer challenged the diff for an "
+            "attack path it opens, or a route it leaves open to the finding's exploit. "
+            "The patch was written only because the panel could vouch for it; nothing "
+            "here was applied for you."
         ),
         "",
     ]
@@ -458,14 +635,14 @@ def note_written(unit: Unit, stats: list[DiffStat] | None, check: str, report_re
         lines += [
             "",
             (
-                "**No test exercises the patched code.** The behaviour claim rests on "
-                "review of the change and its callers, not on a test run."
+                f"**{UNTESTED_NOTICE[:1].upper()}{UNTESTED_NOTICE[1:]}.** The behaviour claim "
+                "rests on review of the change and its callers, not on a test run."
             ),
         ]
     lines += ["", f"**Tests run:** {unit['tests_run'] or 'none recorded'}", ""]
     lines += ["## Change", ""]
     lines += diffstat_lines(stats)
-    lines += ["", "## Applying it", ""]
+    lines += ["", *attack_path_lines(unit["attack_paths"]), "## Applying it", ""]
     if check == "clean":
         lines.append("Applies cleanly to the working tree (checked with `git apply --check`).")
     elif check == "not_run":
@@ -490,6 +667,24 @@ def note_written(unit: Unit, stats: list[DiffStat] | None, check: str, report_re
     return "\n".join(lines)
 
 
+def decline_wording(unit: Unit) -> tuple[str, str] | None:
+    """A declined unit's outcome as (note sentence, index parenthesis); None for a stale unit."""
+    count = unit["attempts"]
+    if count is None:
+        return None
+    if unit["confirmed"] is False:
+        return NOT_CONFIRMED, "finding not confirmed at this revision"
+    if count == 0:
+        sentence = "No fix for this finding could be attempted, so no patch was written."
+        return sentence, "no attempt possible"
+    made = "1 attempt" if count == 1 else f"{count} attempts"
+    sentence = (
+        f"After {made}, no fix for this finding was produced that passed the panel's review, "
+        "so no patch was written."
+    )
+    return sentence, f"no fix passed review in {made}"
+
+
 def note_declined(unit: Unit, stats: list[DiffStat] | None) -> str:
     """The F<n>.md note for a finding with no patch."""
     lines = [
@@ -497,15 +692,17 @@ def note_declined(unit: Unit, stats: list[DiffStat] | None) -> str:
         "",
         "**Status:** no patch produced",
         "",
+        *([wording[0], ""] if (wording := decline_wording(unit)) else []),
         unit["decline_reason"],
         "",
     ]
     blocking = [(k, c) for k, c in unit["claims"].items() if c["state"] != "CONFIDENT"]
     if blocking:
-        lines += ["## The claim that could not be made with confidence", ""]
+        lines += ["## What could not be claimed with confidence", ""]
         for key, claim in blocking:
             lines.append(f"- **{CLAIM_LABELS[key]}** -- {claim['state']}: {claim['evidence']}")
         lines.append("")
+    lines += attack_path_lines(unit["attack_paths"])
     if stats is not None:
         lines += ["## What the rejected attempt changed", ""]
         lines += diffstat_lines(stats)
@@ -519,12 +716,13 @@ def index_markdown(units: list[Unit], base: str, report_dir_name: str, report_re
     """PATCHES.md: the one-page index of every unit's outcome."""
     patched = [u for u in units if u["status"] == "patch_written"]
     declined = [u for u in units if u["status"] != "patch_written"]
+    short = base[: plugin.SHORT_ID_CHARS]
     lines = [
         "# Suggested patches",
         "",
         (
             f"Targeted patches for findings in `{report_dir_name}`, each written against "
-            f"revision `{base[:12]}` and verified by a panel of agents before it was "
+            f"revision `{short}` and verified by a panel of agents before it was "
             "written. Nothing here is applied, committed, or opened as a pull request "
             "until you choose to do so."
         ),
@@ -533,14 +731,35 @@ def index_markdown(units: list[Unit], base: str, report_dir_name: str, report_re
     if patched:
         lines += ["## Patches written", ""]
         for unit in patched:
-            caveat = " _(no tests cover the patched code)_" if unit["untested"] else ""
+            caveat = f" _({UNTESTED_NOTICE})_" if unit["untested"] else ""
             lines.append(f"- **{unit['id']}** -- {unit['title']}: `{unit['id']}.patch`{caveat}")
         lines.append("")
     if declined:
         lines += ["## No patch produced", ""]
         for unit in declined:
-            lines.append(f"- **{unit['id']}** -- {unit['title']}: {unit['decline_reason']}")
+            wording = decline_wording(unit)
+            suffix = f" ({wording[1]})" if wording else ""
+            lines.append(f"- **{unit['id']}** -- {unit['title']}{suffix}: {unit['decline_reason']}")
         lines.append("")
+    aside = [
+        (unit["id"], path)
+        for unit in units
+        for path in unit["attack_paths"]
+        if path["kind"] is PathKind.SET_ASIDE
+    ]
+    if aside:
+        lines += ["## Set aside by the reviewers", ""]
+        lines += [f"- while reviewing **{unit_id}** -- {path['text']}" for unit_id, path in aside]
+        lines += [
+            "",
+            (
+                "Each of these was seen while reviewing the finding named beside it and was "
+                "set aside as outside that finding, so nothing written for that finding "
+                "addresses it. Unless another finding here covers it, review it yourself, or "
+                "ask Claude Security to scan or patch it."
+            ),
+            "",
+        ]
     lines += [
         "## Applying a patch",
         "",
@@ -568,9 +787,8 @@ def jsonl(
     checks: dict[str, str],
 ) -> str:
     """patches.jsonl: one record per unit, machine-readable for tooling."""
-    rows: list[str] = []
-    for unit in units:
-        record: dict[str, object] = {
+    return "".join(
+        strictjson.text({
             "id": unit["id"],
             "status": unit["status"],
             "base": base,
@@ -580,12 +798,16 @@ def jsonl(
             "untested": unit["untested"],
             "tests_run": unit["tests_run"] or None,
             "reviewed_paths": unit["reviewed_paths"],
+            "attack_paths": unit["attack_paths"],
+            "attempts": unit["attempts"],
+            "confirmed": unit["confirmed"],
             "diffstat": stats_by_id.get(unit["id"]),
             "apply_check": checks.get(unit["id"]),
             "decline_reason": unit["decline_reason"] or None,
-        }
-        rows.append(strictjson.text(record))
-    return "\n".join(rows) + ("\n" if rows else "")
+        })
+        + "\n"
+        for unit in units
+    )
 
 
 def clear_stale_products(patches_dir: Path, produced: set[str]) -> list[str]:
@@ -645,7 +867,7 @@ def resolve_report_dir(patches_dir: Path) -> Path:
             f"report directory; got {patches_abs}"
         )
         raise PatchError(msg)
-    if not REPORT_DIR_RE.match(report_dir.name):
+    if not plugin.REPORT_DIR_RE.match(report_dir.name):
         msg = (
             "patches dir must live inside a CLAUDE-SECURITY-<timestamp> report "
             f"directory; its parent is {report_dir.name!r}. Refusing rather than "
@@ -655,7 +877,136 @@ def resolve_report_dir(patches_dir: Path) -> Path:
     return report_dir
 
 
-def run(patch_dir: Path, patches_dir: Path, scan_root: str, base: str) -> int:
+def stamp_scan_prefix(report_dir: Path) -> str:
+    """The `scan_prefix` recorded in the report's one revision stamp."""
+    stamps = [path for path in report_dir.iterdir() if plugin.is_revision_stamp(path)]
+    if len(stamps) != 1:
+        msg = (
+            f"the report directory must hold exactly one {plugin.REVISION_PREFIX}*.json "
+            f"stamp; {report_dir.name} holds {len(stamps)}"
+        )
+        raise PatchError(msg)
+    try:
+        stamp = strictjson.load(stamps[0])
+    except ValueError as error:
+        msg = f"{stamps[0].name} is not valid JSON: {error}"
+        raise PatchError(msg) from error
+    prefix = stamp.get("scan_prefix") if is_map(stamp) else None
+    if not is_str(prefix) or not scan_prefix_shaped(prefix):
+        msg = f"{stamps[0].name} scan_prefix {prefix!r} is not a path prefix"
+        raise PatchError(msg)
+    return prefix
+
+
+def report_findings(report_dir: Path, scan_prefix: str) -> dict[str, ReportFinding]:
+    """The report's findings by id, in report order, each `file` made repository-relative."""
+    name = plugin.JSONL_NAME
+    try:
+        lines = (report_dir / name).read_text(encoding="utf-8").splitlines()
+    except FileNotFoundError as error:
+        msg = f"{name} is missing from the report directory"
+        raise PatchError(msg) from error
+    except ValueError as error:
+        msg = f"{name} is not UTF-8 text: {error}"
+        raise PatchError(msg) from error
+    findings: dict[str, ReportFinding] = {}
+    for number, line in enumerate(lines, 1):
+        if not line.strip():
+            continue
+        try:
+            record = strictjson.loads(line)
+        except ValueError as error:
+            msg = f"{name} line {number} is not valid JSON: {error}"
+            raise PatchError(msg) from error
+        if not is_map(record):
+            msg = f"{name} line {number} is not a finding object"
+            raise PatchError(msg)
+        finding_id = field(record.get("id"), f"{name} line {number} id")
+        if not FINDING_ID_RE.match(finding_id):
+            msg = f"{name} line {number}: id {finding_id!r} is not a finding id"
+            raise PatchError(msg)
+        if finding_id in findings:
+            msg = f"{finding_id} appears more than once in {name}"
+            raise PatchError(msg)
+        severity = field(record.get("severity"), f"{finding_id} severity")
+        if severity not in Severity.__members__:
+            msg = f"{name} line {number}: {finding_id} severity {severity!r} is not a severity"
+            raise PatchError(msg)
+        declared = field(record.get("file"), f"{finding_id} file")
+        file = repository_file(scan_prefix, file=declared)
+        off_shape = not declared or declared.startswith("/") or "\\" in declared
+        if off_shape or file.split("/")[0] in {".", ".."}:
+            msg = f"{name} line {number}: {finding_id} file {declared!r} is not a repository path"
+            raise PatchError(msg)
+        findings[finding_id] = ReportFinding(Severity[severity], {**record, "file": file})
+    return findings
+
+
+def select_units(findings: dict[str, ReportFinding], selection: str) -> list[str]:
+    """The ids `selection` names -- `all`, `high`, or ids like `F1,F3` -- in report order."""
+    if selection == "all":
+        chosen = set(findings)
+    elif selection == "high":
+        chosen = {i for i, finding in findings.items() if finding.severity >= Severity.HIGH}
+    else:
+        chosen = {part.strip() for part in selection.split(",")}
+        malformed = sorted(i for i in chosen if not FINDING_ID_RE.match(i))
+        if malformed:
+            msg = (
+                f"selection {selection!r}: {', '.join(map(repr, malformed))} is not a finding id "
+                "(F<number>, at most 9 digits); a selection is all, high, or ids like F1,F3"
+            )
+            raise PatchError(msg)
+        unknown = sorted(chosen - findings.keys(), key=finding_number)
+        if unknown:
+            msg = f"{', '.join(unknown)} is not a finding in the report's {plugin.JSONL_NAME}"
+            raise PatchError(msg)
+    ids = [i for i in findings if i in chosen]
+    if not ids:
+        msg = f"nothing to patch: no finding in the report matches the selection {selection!r}"
+        raise PatchError(msg)
+    return ids
+
+
+def prepare(report_dir: Path, *, selection: str, repo_root: str, base: str) -> int:
+    """Lay out a patch run for the selected findings; print its directories and unit ids."""
+    report_dir = Path(os.path.abspath(report_dir))
+    if not plugin.REPORT_DIR_RE.match(report_dir.name):
+        msg = f"{report_dir.name!r} is not a CLAUDE-SECURITY-<timestamp> report directory"
+        raise PatchError(msg)
+    top = git_toplevel(repo_root)
+    if top is None:
+        msg = f"--repo-root {repo_root!r}: git names no repository there"
+        raise PatchError(msg)
+    if not Path(repo_root).samefile(top):
+        msg = f"--repo-root {repo_root!r} is not the top level of its repository; git names {top}"
+        raise PatchError(msg)
+    if git.run(repo_root, "rev-parse", "--verify", "--quiet", f"{base}^{{commit}}") is None:
+        msg = f"--base {base}: git cannot resolve it to a commit in {repo_root}"
+        raise PatchError(msg)
+    findings = report_findings(report_dir, stamp_scan_prefix(report_dir))
+    ids = select_units(findings, selection)
+    started = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    patch_dir = report_dir / plugin.RUN_DIR_NAME / f"{PATCH_DIR_PREFIX}{started}"
+    try:
+        patch_dir.mkdir(parents=True)
+    except FileExistsError as error:
+        msg = f"{patch_dir} already exists (a run prepared this same second); run this again"
+        raise PatchError(msg) from error
+    findings_dir = patch_dir / FINDINGS_DIR_NAME
+    findings_dir.mkdir()
+    patches_dir = report_dir / PATCHES_DIR_NAME
+    patches_dir.mkdir(exist_ok=True)
+    for unit_id in ids:
+        text = strictjson.text(findings[unit_id].record, indent=2) + "\n"
+        (findings_dir / f"{unit_id}.json").write_bytes(text.encode())
+    print(f"patch_dir: {patch_dir}")
+    print(f"patches_dir: {patches_dir}")
+    print(f"units: {strictjson.text(ids)}")
+    return 0
+
+
+def render(patch_dir: Path, patches_dir: Path, scan_root: str, base: str) -> int:
     units = load_units(patch_dir)
     report_dir = resolve_report_dir(patches_dir)
     top = git_toplevel(scan_root)
@@ -671,7 +1022,7 @@ def run(patch_dir: Path, patches_dir: Path, scan_root: str, base: str) -> int:
         if written and diff is not None:
             patch_path = patches_dir / f"{unit['id']}.patch"
             header = header_comment(unit, base, report_ref)
-            patch_path.write_bytes(header.encode() + diff)
+            patch_path.write_bytes(header.encode("utf-8", "surrogateescape") + diff)
             check = apply_check(top, patch_path)
             checks[unit["id"]] = check
             note = note_written(unit, stats, check, report_ref)
@@ -680,10 +1031,10 @@ def run(patch_dir: Path, patches_dir: Path, scan_root: str, base: str) -> int:
         else:
             note = note_declined(unit, stats)
             print(f"{unit['id']}: no patch ({unit['status']}) -> {unit['id']}.md")
-        (patches_dir / f"{unit['id']}.md").write_bytes(note.encode())
+        (patches_dir / f"{unit['id']}.md").write_bytes(note.encode("utf-8", "surrogateescape"))
         produced.add(f"{unit['id']}.md")
     index = index_markdown(units, base, report_dir.name, report_ref)
-    (patches_dir / "PATCHES.md").write_bytes(index.encode())
+    (patches_dir / "PATCHES.md").write_bytes(index.encode("utf-8", "surrogateescape"))
     (patches_dir / "patches.jsonl").write_bytes(jsonl(units, base, stats_by_id, checks).encode())
     for name in clear_stale_products(patches_dir, produced):
         print(f"removed stale {name} (not produced by this run)")
@@ -712,6 +1063,23 @@ def run(patch_dir: Path, patches_dir: Path, scan_root: str, base: str) -> int:
     return 0
 
 
+def misplaced_patch_run_reason(patch_dir: Path) -> str | None:
+    """Why `patch_dir` is not where a patch run lives, or None when it is:
+    `<report>/.claude-security-run/patch-<ts>`, none of the three a symbolic link."""
+    run_dir = patch_dir.parent
+    report_dir = run_dir.parent
+    if not PATCH_DIR_RE.match(patch_dir.name):
+        return f"'{patch_dir.name}' is not named patch-<timestamp>"
+    if run_dir.name != plugin.RUN_DIR_NAME:
+        return f"'{patch_dir.name}' is not inside {plugin.RUN_DIR_NAME}/"
+    if not plugin.REPORT_DIR_RE.match(report_dir.name):
+        return f"'{report_dir.name}' is not a CLAUDE-SECURITY-<timestamp> report directory"
+    for directory in (patch_dir, run_dir, report_dir):
+        if is_link(directory):
+            return f"'{directory}' is a symbolic link"
+    return None
+
+
 def refuse_reason(path: Path) -> str | None:
     """Why `path` may NOT be deleted as a scratch workspace, or None when it may.
 
@@ -719,30 +1087,47 @@ def refuse_reason(path: Path) -> str | None:
     own `.git` may be deleted; every other shape is refused.
     """
     leaf = Path(os.path.abspath(path))
+    if is_link(leaf):
+        return "it is a symbolic link"
     if not os.path.isdir(leaf):
         return "it is not a directory"
     if not SCRATCH_NAME_RE.match(leaf.name):
         return "its name is not scratch-F<n>"
-    if not PATCH_DIR_RE.match(leaf.parent.name):
-        return "it is not inside a patch-<timestamp> run directory"
-    if leaf.parents[1].name != plugin.RUN_DIR_NAME:
-        return f"its run directory is not inside {plugin.RUN_DIR_NAME}/"
-    if not os.path.isdir(leaf / ".git"):
+    if reason := misplaced_patch_run_reason(leaf.parent):
+        return reason
+    dot_git = leaf / ".git"
+    if is_link(dot_git) or not os.path.isdir(dot_git):
         return "it holds no .git directory of its own"
     return None
 
 
-def clear_readonly(
+def retry_removal(
+    root: str,
     func: Callable[..., object],
     path: str,
     exc_info: tuple[type[BaseException], BaseException, TracebackType],
 ) -> None:
-    """Make `path` writable and retry the removal rmtree could not do."""
-    # Git writes read-only objects, which Windows will not delete.
+    """Retry a removal rmtree could not do, after making the entry deletable.
+
+    On Windows that is the entry's read-only bit (never a symlink's); on POSIX the owner write bit
+    of its parent, granted only to a directory (never a symlink) inside `root`, the tree being
+    removed. An entry already gone counts as deleted.
+    """
+    if isinstance(exc_info[1], FileNotFoundError):
+        return
     if func not in {os.unlink, os.rmdir}:
         raise exc_info[1]
-    Path(path).chmod(stat.S_IWRITE)
-    func(path)
+    with suppress(FileNotFoundError):
+        if os.name == "nt":
+            if not is_link(path):
+                Path(path).chmod(stat.S_IWRITE)
+        else:
+            parent = Path(os.path.abspath(path)).parent
+            if os.path.commonpath([root, parent]) == root and not is_link(parent):
+                mode = parent.stat().st_mode
+                if not mode & stat.S_IWUSR:
+                    parent.chmod(mode | stat.S_IWUSR)
+        func(path)
 
 
 def remove_workspace(path: Path) -> None:
@@ -751,8 +1136,9 @@ def remove_workspace(path: Path) -> None:
     if reason is not None:
         msg = f"refusing to remove '{path}': {reason}"
         raise PatchError(msg)
+    root = os.path.abspath(path)
     try:
-        shutil.rmtree(os.path.abspath(path), onerror=clear_readonly)
+        shutil.rmtree(root, onerror=functools.partial(retry_removal, root))
     except OSError as error:
         detail = console.removal_failure_detail(error)
         msg = f"could not remove '{path}': {detail}"
@@ -789,59 +1175,107 @@ def remove_patch_run(patch_dir: Path) -> tuple[list[Path], list[str]]:
     Returns (removed paths, warnings). Never raises; only the recipe's own
     `<report>/.claude-security-run/patch-<ts>` layout is deleted.
     """
-    removed: list[Path] = []
     target = Path(os.path.abspath(patch_dir))
     run_dir = target.parent
-    if not PATCH_DIR_RE.match(target.name):
-        return removed, [f"left '{patch_dir}' in place: its name is not patch-<timestamp>"]
-    if run_dir.name != plugin.RUN_DIR_NAME:
-        return removed, [f"left '{patch_dir}' in place: it is not inside {plugin.RUN_DIR_NAME}/"]
+    if reason := misplaced_patch_run_reason(target):
+        return [], [f"left '{patch_dir}' in place: {reason}"]
+    root = str(target)
     try:
-        shutil.rmtree(str(target), onerror=clear_readonly)
+        shutil.rmtree(root, onerror=functools.partial(retry_removal, root))
     except OSError as error:
         detail = console.removal_failure_detail(error)
-        return removed, [f"could not remove '{patch_dir}': {detail}"]
-    removed.append(target)
+        return [], [f"could not remove '{patch_dir}': {detail}"]
     try:
         run_dir.rmdir()
     except OSError:
-        return removed, []
-    removed.append(run_dir)
-    return removed, []
+        return [target], []
+    return [target, run_dir], []
 
 
-def main(argv: list[str]) -> int:
-    if argv and argv[0] == "--remove-scratch":
-        if len(argv) != 2:
-            die_usage("--remove-scratch takes exactly one workspace path")
-        try:
-            remove_workspace(Path(argv[1]))
-        except PatchError as error:
-            die(str(error))
-        print(f"removed workspace {argv[1]!r}")
-        return 0
+def remove_args(argv: list[str]) -> RemoveArgs:
+    """The `--remove-scratch` command line, parsed; a usage error exits 2."""
+    parser = argparse.ArgumentParser(
+        prog="patch_artifacts.py --remove-scratch",
+        description="Delete one fenced scratch workspace.",
+        allow_abbrev=False,
+    )
+    parser.add_argument("workspace", help="the scratch workspace a patch run made")
+    return parser.parse_args(argv, namespace=RemoveArgs())
+
+
+def prepare_args(argv: list[str]) -> PrepareArgs:
+    """The `--prepare` command line, parsed; a usage error exits 2."""
+    parser = argparse.ArgumentParser(
+        prog="patch_artifacts.py --prepare",
+        description="Lay out a patch run for a report's selected findings.",
+        allow_abbrev=False,
+    )
+    parser.add_argument("report_dir", help="the CLAUDE-SECURITY-<timestamp> report directory")
+    parser.add_argument("selection", help="all, high, or finding ids such as F1,F3")
+    parser.add_argument("--repo-root", required=True, help="the repository's top-level directory")
+    parser.add_argument("--base", required=True, help="the revision every patch is built against")
+    args = parser.parse_args(argv, namespace=PrepareArgs())
+    if not os.path.isdir(args.report_dir):
+        parser.error(f"report dir is not a directory: {args.report_dir}")
+    if not plugin.SHA_RE.match(args.base):
+        parser.error(f"--base {args.base!r} is not a hex revision id")
+    return args
+
+
+def render_args(argv: list[str]) -> RenderArgs:
+    """The render command line, parsed; a usage error exits 2."""
     parser = argparse.ArgumentParser(
         prog="patch_artifacts.py",
         description="Render suggested-fix patch files and notes from a patch run directory.",
-        epilog="Also: --remove-scratch <workspace> deletes one fenced scratch workspace.",
+        epilog=(
+            "Also: --prepare <report_dir> <selection> --repo-root <dir> --base <sha> lays out "
+            "a patch run; --remove-scratch <workspace> deletes one fenced scratch workspace."
+        ),
         allow_abbrev=False,
     )
     parser.add_argument("patch_dir", help="the patch run dir holding patches.json and F<n>.diff")
     parser.add_argument("patches_dir", help="the report's patches/ directory to write into")
     parser.add_argument("scan_root", help="the user's repository root (for git apply --check)")
     parser.add_argument("--base", required=True, help="the revision every patch applies to")
-    args = parser.parse_args(argv, namespace=Args())
+    args = parser.parse_args(argv, namespace=RenderArgs())
     for label, path in (("patch dir", args.patch_dir), ("patches dir", args.patches_dir)):
         if not os.path.isdir(path):
-            die_usage(f"{label} is not a directory: {path}")
+            parser.error(f"{label} is not a directory: {path}")
     if not plugin.SHA_RE.match(args.base):
-        die_usage(f"--base {args.base!r} is not a hex revision id")
+        parser.error(f"--base {args.base!r} is not a hex revision id")
+    return args
+
+
+def dispatch(argv: list[str]) -> int:
+    """Run the form the first argument names. Raises PatchError; a usage error exits 2."""
+    if argv and argv[0] == "--remove-scratch":
+        workspace = remove_args(argv[1:]).workspace
+        remove_workspace(Path(workspace))
+        print(f"removed workspace {workspace!r}")
+        return 0
+    if argv and argv[0] == "--prepare":
+        wanted = prepare_args(argv[1:])
+        return prepare(
+            Path(wanted.report_dir),
+            selection=wanted.selection,
+            repo_root=wanted.repo_root,
+            base=wanted.base,
+        )
+    args = render_args(argv)
+    return render(Path(args.patch_dir), Path(args.patches_dir), args.scan_root, args.base)
+
+
+def main(argv: list[str]) -> int:
     try:
-        return run(Path(args.patch_dir), Path(args.patches_dir), args.scan_root, args.base)
+        return dispatch(argv)
     except PatchError as error:
-        die(str(error))
+        sys.stderr.write(f"patch_artifacts.py: {error}\n")
+        return 1
     except OSError as error:
-        die(f"could not read or write the report's files: {error}")
+        sys.stderr.write(
+            f"patch_artifacts.py: could not read or write the report's files: {error}\n"
+        )
+        return 1
 
 
 if __name__ == "__main__":

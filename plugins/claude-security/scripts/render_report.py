@@ -40,18 +40,22 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from lib import absolute, console, cwe, plugin, sarif, secret, source, strictjson
 from lib.chain import chain_of, pending_ranks
 from lib.finding import (
-    CONFIDENCES,
     PANEL_KEEP_QUORUM,
     PANEL_VOTER_COUNT,
-    SEVERITIES,
+    Confidence,
     Finding,
     FindingError,
     FindingPathError,
     Record,
+    Severity,
     build_finding,
+    finding_panels,
     panel_complete,
+    scan_prefix_fits,
     scan_prefix_shaped,
+    vote_rounds,
 )
+from lib.link import is_link
 from lib.strictjson import JsonMap, is_int, is_list, is_map, is_str
 
 if TYPE_CHECKING:
@@ -93,7 +97,7 @@ class VerificationSummary(_ResearcherCounts, _RefusedFindings):
 
 
 class Meta(NamedTuple):
-    """The scan meta a render reads back: the scan itself, and the stamp fields beside it."""
+    """The scan meta a render reads back: the scan itself, and the fields read beside it."""
 
     scan: sarif.Scan
     scan_root: str
@@ -101,19 +105,19 @@ class Meta(NamedTuple):
     revision_source: str
     model: object
     effort: object
+    asked_for_max: bool
 
 
 class Rendered(NamedTuple):
-    """A completed render: the findings, their verification, and the stamp's tag."""
+    """A completed render: findings, verification, stamp tag, and whether `max` was asked for."""
 
     findings: list[Record]
     verification: VerificationSummary
     tag: str
+    asked_for_max: bool
 
 
-REVISION_PREFIX = "CLAUDE-SECURITY-REVISION-"
-STAMP_ONLY = frozenset({"duration_s", "verification_runs", "reason_kind"})
-JSONL_NAME = "CLAUDE-SECURITY-RESULTS.jsonl"
+STAMP_ONLY = frozenset({"duration_s", "verification_runs", "reason_kind", "pruned_buckets"})
 SARIF_NAME = "CLAUDE-SECURITY-RESULTS.sarif"
 SANITIZED_REMOTE_RE = re.compile(
     r"https://[a-z0-9.-]+(?::[0-9]+)?/(?:[A-Za-z0-9._~/-]|%[0-9A-F]{2})+\Z"
@@ -153,7 +157,8 @@ def read_votes(run_dir: Path) -> JsonMap | None:
         msg = f"votes.json is not valid JSON: {error}"
         raise RenderError(msg) from error
     if not is_map(raw):
-        raise RenderError("votes.json must be a JSON object mapping the vote record")
+        msg = "votes.json must be a JSON object mapping the vote record"
+        raise RenderError(msg)
     if raw.get("provenance") != plugin.VOTES_PROVENANCE:
         return None
     return raw
@@ -177,15 +182,20 @@ def read_coverage(run_dir: Path) -> tuple[JsonMap | None, str]:
 
 
 COVERAGE_TEXT_CAP = 300
+COVERAGE_LIST_ITEM_CAP = 200
+COVERAGE_NAME_CAP = 100
+
+
+def capped(text: str, cap: int) -> str:
+    """`text` trimmed to `cap` characters, the cut marked with how many were dropped."""
+    if len(text) > cap:
+        return text[:cap] + f"...[+{len(text) - cap} chars]"
+    return text
 
 
 def coverage_text(value: object, cap: int = COVERAGE_TEXT_CAP) -> str | None:
     """A coverage string, trimmed to `cap`, or None when the value is not a string."""
-    if not is_str(value):
-        return None
-    if len(value) > cap:
-        return value[:cap] + f"...[+{len(value) - cap} chars]"
-    return value
+    return capped(value, cap) if is_str(value) else None
 
 
 def coverage_texts(raw: object, cap: int) -> list[str]:
@@ -207,9 +217,12 @@ def tree_relative(path: str, scan_root: str) -> str | None:
 
 
 def skipped_component(item: JsonMap, scan_root: str) -> dict[str, object]:
-    paths = (tree_relative(path, scan_root) for path in coverage_texts(item.get("paths"), 200))
+    paths = (
+        tree_relative(path, scan_root)
+        for path in coverage_texts(item.get("paths"), COVERAGE_LIST_ITEM_CAP)
+    )
     return {
-        "name": coverage_text(item.get("name"), 100) or "",
+        "name": coverage_text(item.get("name"), COVERAGE_NAME_CAP) or "",
         "paths": [path for path in paths if path is not None],
         "reason": coverage_text(item.get("reason")) or "",
     }
@@ -222,6 +235,28 @@ def skipped_components(raw: object, scan_root: str) -> list[dict[str, object]] |
     return [skipped_component(entry, scan_root) for entry in raw if is_map(entry)]
 
 
+class PrunedBucket(TypedDict):
+    """One stamp pruned_buckets entry: a group and the research lens it went without."""
+
+    group: str
+    lens: str
+
+
+def pruned_buckets(raw: object) -> list[PrunedBucket] | None:
+    """coverage.prunedBuckets as [{group, lens}], or None when unusable; junk is dropped."""
+    if not is_list(raw):
+        return None
+    parts = (text.rpartition(":") for text in raw if is_str(text))
+    return [
+        {
+            "group": capped(group, COVERAGE_LIST_ITEM_CAP),
+            "lens": capped(lens, COVERAGE_LIST_ITEM_CAP),
+        }
+        for group, sep, lens in parts
+        if sep and group and lens
+    ]
+
+
 def coverage_enum(value: object, allowed: tuple[str, ...]) -> str | None:
     """A coverage enum field, or None when absent or not one of the known values."""
     return value if is_str(value) and value in allowed else None
@@ -230,6 +265,11 @@ def coverage_enum(value: object, allowed: tuple[str, ...]) -> str | None:
 def coverage_count(value: object) -> int | None:
     """A coverage count field, or None when absent or not an integer."""
     return value if is_int(value) else None
+
+
+def coverage_length(value: object) -> int | None:
+    """How many entries a coverage list field holds, or None when absent or not a list."""
+    return len(value) if is_list(value) else None
 
 
 class ResearchCoverage(TypedDict):
@@ -276,26 +316,30 @@ def run_shape(
     scan_root: str,
     research: ResearchCoverage | None,
 ) -> dict[str, object]:
-    """What shape actually ran, distinct from the effort tier that was asked."""
+    """What shape actually ran, distinct from the effort tier that was recorded."""
     shape: dict[str, object] = {"requested_effort": effort, "collapsed": None, "source": source}
     if coverage is None:
         return shape
     return {
         **shape,
-        "collapsed": coverage_enum(coverage.get("collapsed"), ("small-diff", "small-scope")),
+        "collapsed": coverage_enum(coverage.get("collapsed"), ("small-scope",)),
         "diff_files": coverage_count(coverage.get("diffFiles")),
         "diff_lines": coverage_count(coverage.get("diffLines")),
+        "pre_existing": coverage_length(coverage.get("preExisting")),
         "scope_files": coverage_count(coverage.get("scopeFiles")),
         "empty_diff": bool(coverage.get("emptyDiff")),
         "empty_scope": bool(coverage.get("emptyScope")),
         "researchers_dispatched": coverage_count(coverage.get("researchersDispatched")),
         "verification_runs": coverage_count(coverage.get("verificationRun")),
         "skipped_components": skipped_components(coverage.get("skippedComponents"), scan_root),
+        "pruned_buckets": pruned_buckets(coverage.get("prunedBuckets")),
         "completeness_check_outcome": coverage_enum(
             coverage.get("completenessCheckOutcome"),
             ("checked", "partial", "not-checkable", "not-applicable"),
         ),
-        "unaccounted_top_level_dirs": coverage_texts(coverage.get("unaccountedTopLevelDirs"), 200),
+        "unaccounted_top_level_dirs": coverage_texts(
+            coverage.get("unaccountedTopLevelDirs"), COVERAGE_LIST_ITEM_CAP
+        ),
         "inventory_fallback": coverage_enum(
             coverage.get("inventoryFallback"),
             ("inventory-failed", "empty-partition", "incomplete-partition"),
@@ -323,9 +367,10 @@ def handed_on(votes: JsonMap) -> int:
 def verification_summary(
     findings: Sequence[Finding],
     votes: JsonMap,
-    votes_present: bool = True,
-    continuing: int = 0,
-    refused: Sequence[_RefusalRecord] = (),
+    *,
+    votes_present: bool,
+    continuing: int,
+    refused: Sequence[_RefusalRecord],
 ) -> VerificationSummary:
     """Compute the stamp's verification object from the vote record and the render's refusals.
 
@@ -339,9 +384,8 @@ def verification_summary(
     that did not complete. `refused` lists the findings the render refused,
     which the summary repeats under `refused_findings`.
     """
-    raw_rounds = votes.get("rounds")
-    rounds: JsonMap = raw_rounds if is_map(raw_rounds) else {}
-    panels = [(f["id"], panel_complete(rounds.get(f["id"]))) for f in findings]
+    rounds = vote_rounds(votes)
+    panels = finding_panels(rounds, [f["id"] for f in findings])
     incomplete = sorted(finding_id for finding_id, panel in panels if panel is None)
     reviewed = [panel for _, panel in panels if panel is not None]
     quorum = sum(panel["true"] >= PANEL_KEEP_QUORUM for panel in reviewed)
@@ -454,13 +498,13 @@ def revision_tag(revision: object) -> str:
     if not is_map(revision):
         msg = f"the run's revision {revision!r} is not an object, so it cannot name the stamp file"
         raise RenderError(msg)
-    sha = revision.get("commit") or revision.get("head")
+    sha = revision.get("commit")
     if not sha:
         return "UNVERSIONED"
     if not is_str(sha) or not plugin.SHA_RE.match(sha):
         msg = f"the run's revision {sha!r} is not a hex commit id, so it cannot name the stamp file"
         raise RenderError(msg)
-    return sha[:12] + ("" if revision.get("dirty") is False else "-dirty")
+    return sha[: plugin.SHORT_ID_CHARS] + ("" if revision.get("dirty") is False else "-dirty")
 
 
 def scan_of(meta: JsonMap) -> Meta:
@@ -490,6 +534,17 @@ def scan_of(meta: JsonMap) -> Meta:
     if not is_str(prefix) or not scan_prefix_shaped(prefix):
         msg = (
             f"scan-meta.json scan_prefix {prefix!r} is not a path prefix; rerun write_scan_meta.py"
+        )
+        raise RenderError(msg)
+    try:
+        os.path.realpath(scan_root)
+    except (OSError, ValueError) as error:
+        msg = f"scan-meta.json scan_root {scan_root!r} cannot be resolved; rerun write_scan_meta.py"
+        raise RenderError(msg) from error
+    if not scan_prefix_fits(prefix, scan_root=scan_root):
+        msg = (
+            f"scan-meta.json scan_prefix {prefix!r} is deeper than scan_root {scan_root!r}; "
+            "rerun write_scan_meta.py"
         )
         raise RenderError(msg)
     remote = meta.get("remote")
@@ -529,7 +584,15 @@ def scan_of(meta: JsonMap) -> Meta:
         scope=tuple(entries),
         revision=clean_commit,
     )
-    return Meta(scan, scan_root, revision, revision_source, meta.get("model"), meta.get("effort"))
+    return Meta(
+        scan,
+        scan_root,
+        revision,
+        revision_source,
+        meta.get("model"),
+        meta.get("effort"),
+        meta.get("asked_for_max") is True,
+    )
 
 
 def elapsed_seconds(started_at: object, now: datetime) -> int | None:
@@ -551,9 +614,9 @@ def jsonl_text(findings: Sequence[Record]) -> str:
     return "".join(strictjson.text(secret.withheld(item)) + "\n" for item in findings)
 
 
-def strength(finding: Finding) -> tuple[int, int]:
+def strength(finding: Finding) -> tuple[Severity, Confidence]:
     """A finding's rank among those at one site: severity first, then confidence."""
-    return -SEVERITIES.index(finding["severity"]), CONFIDENCES.index(finding["confidence"])
+    return Severity[finding["severity"]], Confidence[finding["confidence"]]
 
 
 def one_per_site(findings: Sequence[Record], scan: sarif.Scan) -> tuple[list[Record], list[str]]:
@@ -571,20 +634,32 @@ def one_per_site(findings: Sequence[Record], scan: sarif.Scan) -> tuple[list[Rec
     for item, where in zip(findings, sites):
         if where is not None:
             by_site.setdefault(where, []).append(item)
-    kept = {where: max(group, key=strength) for where, group in by_site.items()}
+    strongest = {where: max(group, key=strength) for where, group in by_site.items()}
     merged = [
-        f"finding {other['id']} names the same site as finding {kept[where]['id']}, "
+        f"finding {other['id']} names the same site as finding {strongest[where]['id']}, "
         f"{where.path}:{where.line} under rule {where.rule}; merged into it"
         for where, group in by_site.items()
         for other in group
-        if other is not kept[where]
+        if other is not strongest[where]
     ]
+    kept = {where: with_cwes_of(strongest[where], group) for where, group in by_site.items()}
     unmerged = [
         item if where is None else kept[where]
         for item, where in zip(findings, sites)
         if where is None or item is by_site[where][0]
     ]
     return unmerged, merged
+
+
+def with_cwes_of(kept: Record, group: Sequence[Record]) -> Record:
+    """`kept` carrying, as further CWEs, every id the findings merged into it were filed under."""
+    others = [
+        cwe_id
+        for item in group
+        for cwe_id in (item["cwe_id"], *item["other_cwe_ids"])
+        if cwe_id != kept["cwe_id"]
+    ]
+    return {**kept, "other_cwe_ids": list(dict.fromkeys([*kept["other_cwe_ids"], *others]))}
 
 
 def unrecognized_cwes(findings: Sequence[Finding]) -> list[str]:
@@ -702,10 +777,12 @@ def render(run_dir: Path, products_dir: Path) -> Rendered:
     """Read the run's records, validate them, build every product, then write them, stamp last."""
     meta = read_json(run_dir, "scan-meta.json")
     if not is_map(meta):
-        raise RenderError("scan-meta.json must be a JSON object")
+        msg = "scan-meta.json must be a JSON object"
+        raise RenderError(msg)
     findings_in = read_json(run_dir, "findings.json")
     if not is_list(findings_in):
-        raise RenderError("findings.json must be a JSON array (use [] for no findings)")
+        msg = "findings.json must be a JSON array (use [] for no findings)"
+        raise RenderError(msg)
     coverage, coverage_source = read_coverage(run_dir)
     votes_raw = read_votes(run_dir)
     votes: JsonMap = {} if votes_raw is None else votes_raw
@@ -717,7 +794,7 @@ def render(run_dir: Path, products_dir: Path) -> Rendered:
             msg = f"votes.json 'rounds' must be an object keyed by finding id, not {kind}"
             raise RenderError(msg)
         rounds_by_id = rounds_raw
-    scan, scan_root, revision, revision_source, model, effort = scan_of(meta)
+    scan, scan_root, revision, revision_source, model, effort, asked_for_max = scan_of(meta)
     tag = revision_tag(revision)
 
     outcomes = [
@@ -739,16 +816,17 @@ def render(run_dir: Path, products_dir: Path) -> Rendered:
         for path in {f["file"] for f in built}
         if (text := source.read(scan_root, path)) is not None
     }
-    refused_secrets = [e.snippet for e in path_errors if secret.is_credential_cwe(e.cwe)]
+    refused_secrets = [e.snippet for e in path_errors if any(map(secret.is_credential_cwe, e.cwes))]
     records = sarif.placed(built, scan, sources, refused_secrets=refused_secrets)
     findings, merged = one_per_site(records, scan)
 
     markdown_path = run_dir / "CLAUDE-SECURITY-RESULTS.md"
     if not os.path.isfile(markdown_path):
-        raise RenderError(
+        msg = (
             "CLAUDE-SECURITY-RESULTS.md is missing. Write the human-readable "
             "report before running this script."
         )
+        raise RenderError(msg)
     markdown = markdown_path.read_bytes()
     try:
         markdown.decode("utf-8")
@@ -804,28 +882,28 @@ def render(run_dir: Path, products_dir: Path) -> Rendered:
     refusal_lines = [f"refused {error.finding_id}: {error}" for error in path_errors]
     for text in merged + unrecognized + unfinished + refusal_lines:
         sys.stderr.write(f"render_report.py: {text}\n")
-    symlinks = coverage_texts(meta.get("unfollowed_symlinks"), 200)
+    symlinks = coverage_texts(meta.get("unfollowed_symlinks"), COVERAGE_LIST_ITEM_CAP)
     notifications = notifications_of(
         shape, research, verification, merged, unrecognized, symlinks, revision, continuing, refused
     )
     sarif_log = sarif.log(findings, scan, plugin.version(), run_properties, panels, notifications)
     sarif_doc = strictjson.text(sarif_log, indent=2) + "\n"
     for stale in products_dir.iterdir():
-        if stale.name.startswith(REVISION_PREFIX) and stale.suffix == ".json":
+        if plugin.is_revision_stamp(stale):
             stale.unlink()
-    (products_dir / JSONL_NAME).write_bytes(jsonl.encode())
+    (products_dir / plugin.JSONL_NAME).write_bytes(jsonl.encode())
     (products_dir / SARIF_NAME).write_bytes(sarif_doc.encode())
     markdown_out = products_dir / "CLAUDE-SECURITY-RESULTS.md"
     # realpath, not Path.resolve(): on 3.9 for Windows resolve() raises on volumes realpath accepts.
     relocated = os.path.realpath(markdown_path) != os.path.realpath(markdown_out)
     if relocated:
         markdown_out.write_bytes(markdown)
-    stamp_path = products_dir / f"{REVISION_PREFIX}{tag}.json"
+    stamp_path = products_dir / f"{plugin.REVISION_PREFIX}{tag}.json"
     stamp_path.write_bytes((strictjson.text(stamp, indent=2) + "\n").encode())
     if relocated:
         markdown_path.unlink()
 
-    return Rendered(findings, verification, tag)
+    return Rendered(findings, verification, tag, asked_for_max)
 
 
 def remove_run_dir(run_dir: Path, products_dir: Path) -> str:
@@ -836,6 +914,11 @@ def remove_run_dir(run_dir: Path, products_dir: Path) -> str:
         return f"kept {run_dir} (not a {plugin.RUN_DIR_NAME} run directory)"
     if os.path.realpath(target) == os.path.realpath(products_dir):
         return f"kept {run_dir} (it holds the products)"
+    if not plugin.REPORT_DIR_RE.match(target.parent.name):
+        return f"kept {run_dir} (not inside a CLAUDE-SECURITY-<timestamp> report directory)"
+    for directory in (target, target.parent):
+        if is_link(directory):
+            return f"kept {run_dir} ('{directory}' is a symbolic link)"
     try:
         shutil.rmtree(str(target))
     except OSError as error:
@@ -877,9 +960,9 @@ def main(argv: list[str]) -> int:
         return 1
     removal = remove_run_dir(run_dir, products_dir)
     count = len(rendered.findings)
-    stamp_name = f"{REVISION_PREFIX}{rendered.tag}.json"
+    stamp_name = f"{plugin.REVISION_PREFIX}{rendered.tag}.json"
     print(
-        f"wrote {JSONL_NAME}, {SARIF_NAME} ({count} finding{'' if count == 1 else 's'}) "
+        f"wrote {plugin.JSONL_NAME}, {SARIF_NAME} ({count} finding{'' if count == 1 else 's'}) "
         f"and {stamp_name} into {products_dir}"
     )
     print(f"stamp: {stamp_name}")
@@ -887,6 +970,8 @@ def main(argv: list[str]) -> int:
     if reason := rendered.verification["reason"]:
         print(f"verification.reason: {reason}")
     print(removal)
+    if rendered.asked_for_max:
+        print(plugin.RETIRED_MAX_RELAY)
     return 0
 
 

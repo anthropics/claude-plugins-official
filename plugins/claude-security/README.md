@@ -4,9 +4,11 @@ Put a team of agents to work as security researchers on your codebase: map the a
 
 This is the in-your-session version of [Claude Security](https://claude.com/product/claude-security), Anthropic’s hosted product for vulnerability detection and patching. It runs entirely inside your Claude Code session — no separate process, no daemon.
 
-## Claude Fable 5.1 Support
+## Recommended models
 
-The Claude Security Plugin for Claude Code supports Claude Fable 5.1, and it is the best model to use for discovering vulnerabilities. Portions of a scan may occasionally be downgraded to Opus 4.8; the rest of the scan completes on Fable 5.1. Please share feedback with `/feedback` so we can keep improving our cybersecurity safeguards.
+We recommend Claude Opus 5.5 or Fable 5.1 for best performance. Pick a model using Claude Code's `/model` command.
+
+In Opus 5.5 or Fable 5.1, portions of a scan may occasionally be downgraded to Opus 4.8. The rest of the scan will complete on your chosen model. Please share feedback with `/feedback` so we can keep improving our cybersecurity safeguards.
 
 ## Where it runs
 
@@ -31,8 +33,10 @@ Run `/claude-security` for the menu. It offers the three jobs the plugin does:
 | Job | What it scans |
 | --- | --- |
 | **Scan codebase** | The whole repository, or a scoped part of it |
-| **Scan changes** | This branch's diff, a pull request's diff, or one commit |
+| **Scan changes** | This branch's diff, a pull request's diff (with its branch checked out), or one commit |
 | **Suggest patches** | A report's findings, turned into patch files |
+
+You can skip the menu. Type the job after the command (`/claude-security scan my branch at high`) or ask in plain words ("run a Claude Security scan on the whole repo at medium"). A scan asks you once to confirm its time and token cost, unless your request already accepts it.
 
 Everything happens in your session. A scan reports each stage as it starts, with the detail available by running `/workflows`, then assembles the report when the agents are done.
 
@@ -42,16 +46,20 @@ Two things shape a scan: **scope**, how much of the tree it looks at, and **effo
 
 It reads the repository before it asks — how large the tree is, which directories hold real code, what branch you are on, whether there is a diff to scan — so the choice you are offered is concrete, with the cost of each option stated, and every question carries an "I don't know" that resolves to a sensible default. It then says what it settled on before the work starts.
 
-From there the scan sizes itself to the target. A small diff or a narrow scope gets a pass proportionate to it, verified to the same standard: a thorough scan covers more ground, but every finding a quick scan does report has cleared the same verification bar. A large repository is scanned with attention on the code an attacker can reach, treating tests, fixtures, generated code, and vendored trees as background rather than targets, plus a dedicated secrets pass that still checks fixtures for real committed keys. Asking for an exhaustive scan overrides all of this. A target with nothing in it is not scanned at all; the run says there is nothing to scan.
+From there the scan sizes itself to the target. A narrow scope gets a pass proportionate to it, verified to the same standard: a thorough scan covers more ground, but every finding a quick scan does report has cleared the same verification bar. A large repository is scanned with attention on the code an attacker can reach, treating tests, fixtures and generated code as background rather than targets, plus a dedicated secrets pass that still checks fixtures for real committed keys. Unless you point the scan at it, a codebase scan is told to ignore vendored and installed third-party code, such as `node_modules` or a virtual environment: to read there only to understand your own code, and to report no finding there. A scan of changes still reviews a change to such code. A target with nothing in it is not scanned at all; the run says there is nothing to scan.
+
+A scan of changes is a security review of the diff. It reports only flaws the change takes part in and leaves the rest to a scan of the codebase. For a feature-sized change, choose `high` effort.
 
 ## What a scan gives you
 
 Every scan writes its results into a timestamped `CLAUDE-SECURITY-<timestamp>/` directory in the repository:
 
 - **`CLAUDE-SECURITY-RESULTS.md`** — the human-readable report: each finding with its impact, exploit scenario, preconditions, severity (CRITICAL, HIGH, MEDIUM or LOW, assigned from exploitability and impact along the lines of the [CVSS v4.0](https://www.first.org/cvss/v4-0/specification-document) qualitative scale), confidence, and an outcome-focused recommendation.
-- **`CLAUDE-SECURITY-RESULTS.jsonl`** — the same findings in machine-readable form, one JSON object per line. Each record carries a `claudeSecurityPluginFindingId` derived from the code at the finding (for a hard-coded credential, and any finding within a few lines of one, from its location instead, since that code holds the secret), designed to stay the same from scan to scan while that code (or, for those, its location) is unchanged so tooling can tell a known finding from a new one; the SARIF log carries the same value in each result's properties. Neither this file nor the SARIF log quotes the source line of a hard-coded credential finding, since that line is the credential; file, line and symbol locate it.
+- **`CLAUDE-SECURITY-RESULTS.jsonl`** — the same findings in machine-readable form, one JSON object per line. Each record carries a `claudeSecurityPluginFindingId`, designed to stay the same from scan to scan so tooling can tell a known finding from a new one. The SARIF log carries the same id. Neither this file nor the SARIF log quotes the source line of a hard-coded credential finding, since that line is the credential; file, line and symbol locate it.
 - **`CLAUDE-SECURITY-RESULTS.sarif`** — the same findings as a [SARIF 2.1.0](https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html) log for GitHub code scanning, IDE SARIF viewers, and other tooling that speaks the standard.
 - **`CLAUDE-SECURITY-REVISION-<sha12>.json`** — the revision stamp: which commit was scanned, at what effort, the severity counts, and how thoroughly the run was verified. The filename carries `-dirty` when uncommitted changes were part of the scanned tree, so a report is always tied to the code it describes.
+
+Once these files are written, an agent replaces each credential value it finds in the report, the JSONL and the SARIF log with `[REDACTED]`. It is a model's best effort, not a guarantee, so look over the files before you share them; if it fails or reports a file it could not clean, the scan says so.
 
 That is the whole report — the run's working files are removed once it is written, so the directory holds only what you read. It carries its own `.gitignore`, so a stray `git add` never sweeps a report or a suggested patch into a commit; the report stays searchable where it sits, and if you want it in history, delete that one `.gitignore` and commit it like any other file.
 
@@ -73,7 +81,7 @@ Scans are nondeterministic. Two scans of the same code can surface different fin
 
 Each fix is developed away from your working tree, in a scratch copy of the repository — your own checkout and index are never touched — and then reviewed by agents independent of the one that wrote it, including a review of your project's tests against the change and a fresh look at the diff on its own terms for anything new it might introduce.
 
-A patch is written only when that review can vouch for three things: the change addresses that one finding, it introduces no new vulnerability, and it leaves the code's behaviour otherwise unchanged — and a change to which inputs the code accepts counts as a behaviour change. When it cannot vouch for all three, you get a short note explaining why instead of a patch. When the patched code has no tests, the patch says so, so you know the claim rests on review rather than on a test run.
+A patch is written only when that review can vouch for three things: the change addresses that one finding, it introduces no new vulnerability, and it leaves the code's behaviour otherwise unchanged — and a change to which inputs the code accepts counts as a behaviour change. When it cannot vouch for all three, you get a short note explaining why instead of a patch. When the review marks the patched code as exercised by none of your project's tests, the patch notes that no project test of it was run, and its behaviour claim then rests on review rather than on a test run.
 
 The patches land in the report's `patches/` folder: one `F<n>.patch` per finding, a short note beside each explaining the change and how to apply it (`git apply CLAUDE-SECURITY-<ts>/patches/F<n>.patch`), and an index. Nothing is applied for you — the job does not apply, commit, or push anything. If you want a patch applied or turned into a pull request, ask, and Claude does that as a separate request you can watch.
 
@@ -85,7 +93,7 @@ The patches land in the report's `patches/` folder: one `F<n>.patch` per finding
 
 ## Telemetry
 
-The plugin reports usage counts (scans started and finished, findings by severity, patches drafted, and which step failed when one does) through Claude Code's built-in telemetry. To turn this off, use Claude Code's own settings: set `DISABLE_TELEMETRY=1` (or `DO_NOT_TRACK=1`, or `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`) and these counts are not sent to Anthropic. See [Claude Code's data usage documentation](https://code.claude.com/docs/en/data-usage#telemetry-services).
+The plugin reports usage counts (scans started and finished, findings by severity, patches drafted, which step failed when one does, and how often a scan is suggested after a push) and its Python minor version through Claude Code's built-in telemetry. To turn this off, use Claude Code's own settings: set `DISABLE_TELEMETRY=1` (or `DO_NOT_TRACK=1`, or `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`) and these counts are not sent to Anthropic. See [Claude Code's data usage documentation](https://code.claude.com/docs/en/data-usage#telemetry-services). To stop the scan suggestion itself, set `CLAUDE_SECURITY_SCAN_TIP=off`.
 
 ## Security
 

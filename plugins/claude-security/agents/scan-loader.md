@@ -1,6 +1,6 @@
 ---
 name: scan-loader
-description: Restricted read-only loader dispatched by the Claude Security scan workflow to return one candidates file from the run directory; not for direct invocation.
+description: Restricted read-only loader dispatched by the Claude Security scan workflow to return one JSON file from the run directory; not for direct invocation.
 model: sonnet
 effort: low
 color: cyan

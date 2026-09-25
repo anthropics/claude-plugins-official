@@ -9,12 +9,24 @@ the tree's top-level directories, printed as a JSON array on a
 symbolic links left out of them. For a codebase scan it also lists the scan
 target's tracked files into target-files.json beside the meta file and prints
 their count on a `file_count:` line and, for a whole-repository scan, the
-count under each top-level directory on a `dir_file_counts:` line.
+count under each top-level directory on a `dir_file_counts:` line. For a
+changes or commit scan it writes the files the change touches into numbered
+changed-files.<n>.json chunks beside the meta file and prints the change as its
+two commit ids on a `range:` line, the count of those files on a
+`changed_file_count:` line, their added-plus-deleted line count on a
+`diff_line_count:` line and, last, the list itself on a `changed_files:`
+line when it is short enough to hand over (null when it is not).
+
+`--effort max` is recorded as `high`, and a `relay:` line carries the note
+that tells the user so.
 
 Usage:
   write_scan_meta.py <run_dir> <scan_root> --mode scan|changes|commit
                      --effort low|medium|high|max [--scope a,b] [--base <ref>]
                      [--merge-base <sha>] [--commit <sha>]
+
+A changes scan names its `--merge-base`; a commit scan names its `--commit`,
+which must be the checked-out commit.
 
 Exits 0 on success, 1 on a refusal naming what is wrong (a run directory that
 already holds a scan-meta.json is one), 2 on a usage error; the file is
@@ -28,35 +40,30 @@ import argparse
 import os
 import re
 import stat
-import subprocess
 import sys
 import uuid
 from collections import Counter
 from datetime import datetime, timezone
+from enum import Enum
 from pathlib import Path
-from typing import Literal, NamedTuple, TypedDict
+from typing import NamedTuple, TypedDict
 from urllib.parse import quote, unquote, urlsplit
 
 # The lib/ package lives next to this script. Python normally adds a script's own
 # directory to the import path, but not under -P or PYTHONSAFEPATH, so we add it here.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from lib import absolute, console, plugin, strictjson
+from lib.git import run as git
+from lib.revision import Revision, change_range
 
-GIT_ENV = dict(os.environ, GIT_TERMINAL_PROMPT="0")
 
+class Effort(Enum):
+    """An effort tier, as `--effort` spells it."""
 
-class Revision(TypedDict, total=False):
-    """What was scanned. `versioned` is always present; the rest when in git."""
-
-    versioned: bool
-    commit: str | None
-    parent: str | None
-    branch: str | None
-    dirty: bool | None
-    sparse: Literal[True]
-    not_checked_out_dirs: list[str]
-    base: str | None
-    merge_base: str | None
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    MAX = "max"
 
 
 class Args(argparse.Namespace):
@@ -65,7 +72,7 @@ class Args(argparse.Namespace):
     run_dir: str = ""
     scan_root: str = ""
     mode: str = ""
-    effort: str = ""
+    effort: Effort = Effort.MEDIUM
     scope: str = ""
     base: str | None = None
     merge_base: str | None = None
@@ -76,22 +83,27 @@ class MetaError(Exception):
     """A refusal: the command line was well-formed but the run cannot be recorded."""
 
 
-def git(cwd: str, *args: str) -> str | None:
-    """One read-only git call, prompts suppressed. None on any failure."""
-    try:
-        out = subprocess.run(
-            ["git", "-C", cwd, *args],
-            env=GIT_ENV,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            timeout=30,
-            check=False,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return None
-    if out.returncode != 0:
-        return None
-    return out.stdout.decode("utf-8", "surrogateescape").rstrip("\r\n")
+# Paths per changed-files.<n>.json; workflows/scan.js derives the chunk count from the same size.
+CHANGED_FILES_CHUNK = 100
+CHANGED_FILES_INLINE_CHARS = 25_000
+
+
+class ChangedFiles(TypedDict):
+    """One changed-files.<n>.json chunk: its number, the whole change's file count, its files."""
+
+    chunk: int
+    total_files: int
+    files: list[str]
+
+
+class Change(NamedTuple):
+    """A change: its two commits as the `<base>..<commit>` range the scan diffs,
+    the files it touches and its added-plus-deleted line count, None when a
+    binary file leaves the count unknown."""
+
+    range: str
+    files: list[str]
+    lines: int | None
 
 
 class Extent(NamedTuple):
@@ -170,6 +182,48 @@ def target_files(scan_root: str, scope: list[str]) -> list[str] | None:
     })
 
 
+def changed_files(scan_root: str, scope: list[str], *, commits: str) -> Change:
+    """The change `commits` names (`<base>..<commit>`) within `scope`, from `git diff-tree`."""
+    numstat = ("diff-tree", "-r", "--no-commit-id", "--numstat", "-z", "-M", "--relative")
+    listing = git(scan_root, *numstat, commits, "--", *scope)
+    if listing is None:
+        msg = f"git could not diff {commits} in {scan_root!r}"
+        raise MetaError(msg)
+    lines: dict[str, int | None] = {}
+    records = iter(listing.split("\0"))
+    for record in records:
+        if not record:
+            continue
+        added, deleted, path = record.split("\t", 2)
+        if not path:
+            next(records, "")
+            path = next(records, "")
+        if path and not path.startswith(plugin.REPORT_DIR_PREFIX):
+            lines[path] = None if "-" in {added, deleted} else int(added) + int(deleted)
+    known = [count for count in lines.values() if count is not None]
+    total = sum(known) if len(known) == len(lines) else None
+    return Change(commits, sorted(lines), total)
+
+
+def change_lines(change: Change | None) -> list[str]:
+    """The range, changed_file_count, diff_line_count and changed_files lines record() prints."""
+    if change is None:
+        return [
+            "range: null",
+            "changed_file_count: null",
+            "diff_line_count: null",
+            "changed_files: null",
+        ]
+    listed = strictjson.text(change.files)
+    handed = listed if len(listed) <= CHANGED_FILES_INLINE_CHARS else "null"
+    return [
+        f"range: {strictjson.text(change.range)}",
+        f"changed_file_count: {len(change.files)}",
+        f"diff_line_count: {strictjson.text(change.lines)}",
+        f"changed_files: {handed}",
+    ]
+
+
 def regular_file(path: str) -> bool:
     """Whether `path` is a regular file, judged without following a symbolic link."""
     try:
@@ -237,43 +291,89 @@ def worktree_dirty(scan_root: str) -> bool | None:
 
 def capture_revision(scan_root: str, opts: Args) -> Revision:
     versioned = git(scan_root, "rev-parse", "--is-inside-work-tree") == "true"
+    if opts.mode != "scan" and not versioned:
+        msg = f"--mode {opts.mode} needs a git repository; {scan_root!r} is not one"
+        raise MetaError(msg)
     if opts.mode == "commit":
-        if not versioned:
-            msg = f"--mode commit needs a git repository; {scan_root!r} is not one"
-            raise MetaError(msg)
         commit_arg = opts.commit or ""
         sha = git(scan_root, "rev-parse", "--verify", "--quiet", commit_arg + "^{commit}")
         if not sha:
             msg = f"--commit {commit_arg!r} does not resolve to a commit"
             raise MetaError(msg)
+        short = sha[: plugin.SHORT_ID_CHARS]
+        parent = git(scan_root, "rev-parse", "--verify", "--quiet", sha + "^") or None
+        if parent is None:
+            msg = (
+                f"the parent of commit {short} is not in this clone (a shallow checkout); "
+                "fetch more history before scanning the commit"
+                if names_a_parent(scan_root, sha)
+                else f"commit {short} is the repository's first and has no parent to "
+                "diff against; scan the codebase at that commit instead"
+            )
+            raise MetaError(msg)
+        if sha != git(scan_root, "rev-parse", "--verify", "--quiet", "HEAD"):
+            msg = (
+                f"commit {short} is not checked out, and a commit scan runs only on the "
+                f"checked-out commit (HEAD); tell the user to check {short} out and ask again, "
+                "and stop: never check it out or add a worktree yourself"
+            )
+            raise MetaError(msg)
         return {
             "versioned": True,
             "commit": sha,
-            "parent": git(scan_root, "rev-parse", "--verify", "--quiet", sha + "^") or None,
+            "parent": parent,
             "branch": git(scan_root, "rev-parse", "--abbrev-ref", "HEAD"),
             "dirty": False,
         }
     if not versioned:
         return {"versioned": False}
+    head = git(scan_root, "rev-parse", "--verify", "--quiet", "HEAD")
     revision: Revision = {
         "versioned": True,
-        "commit": git(scan_root, "rev-parse", "HEAD"),
+        "commit": head,
         "branch": git(scan_root, "rev-parse", "--abbrev-ref", "HEAD"),
         "dirty": worktree_dirty(scan_root),
     }
     if opts.mode == "changes":
+        if not head:
+            msg = "HEAD names no commit yet, so there is no change to scan"
+            raise MetaError(msg)
+        base_arg = opts.merge_base or ""
+        merge_base = git(scan_root, "rev-parse", "--verify", "--quiet", base_arg + "^{commit}")
+        if not merge_base:
+            msg = (
+                f"--merge-base {opts.merge_base!r} does not resolve to a commit "
+                "(a shallow clone may not hold it: fetch more history)"
+            )
+            raise MetaError(msg)
+        if git(scan_root, "merge-base", "--is-ancestor", merge_base, head) is None:
+            msg = (
+                f"--merge-base {opts.merge_base!r} is not an ancestor of HEAD, so it is not "
+                "this branch's merge base (a shallow clone cannot compute one: fetch more history)"
+            )
+            raise MetaError(msg)
         revision["base"] = opts.base
-        revision["merge_base"] = opts.merge_base
+        revision["merge_base"] = merge_base
     return revision
+
+
+def names_a_parent(scan_root: str, sha: str) -> bool:
+    """Whether the commit object itself records a parent, whatever the clone holds of it."""
+    body = git(scan_root, "cat-file", "commit", sha)
+    if body is None:
+        msg = f"git could not read commit {sha[: plugin.SHORT_ID_CHARS]}, so its parent is unknown"
+        raise MetaError(msg)
+    return any(line.startswith("parent ") for line in body.split("\n\n", 1)[0].splitlines())
 
 
 def scoped(entry: str, scan_root: str) -> str:
     """A scope entry relative to the scan root; an absolute spelling of anything else is refused."""
     if not absolute.spelled(entry):
         return entry
-    msg = f"--scope entry {entry!r} is not inside the scan root {scan_root!r}"
+    outside = f"--scope entry {entry!r} is not inside the scan root {scan_root!r}"
     if not os.path.isabs(entry):
-        raise MetaError(f"{msg}; write ./{entry} to name a directory in the tree")
+        msg = f"{outside}; write ./{entry} to name a directory in the tree"
+        raise MetaError(msg)
     literal = os.path.abspath(entry)
     parent, name = os.path.split(literal)
     try:
@@ -287,30 +387,45 @@ def scoped(entry: str, scan_root: str) -> str:
     for resolved in resolutions:
         if (relative := absolute.relative(resolved, scan_root)) is not None:
             return relative
-    raise MetaError(msg)
+    raise MetaError(outside)
+
+
+def tier(word: str) -> Effort:
+    """The tier a word names, whatever its case or the spaces around it; any other is refused."""
+    try:
+        return Effort(word.strip().lower())
+    except ValueError:
+        offered = ", ".join(effort.value for effort in Effort if effort is not Effort.MAX)
+        msg = (
+            f"{word!r} is not an effort tier; the tiers are {offered}. "
+            "Tell the user so and start no scan; do not choose a tier for them"
+        )
+        raise argparse.ArgumentTypeError(msg) from None
 
 
 def parse_options(argv: list[str]) -> Args:
     """The parsed command line; anything wrong with it is argparse's exit 2."""
-    ap = argparse.ArgumentParser(prog="write_scan_meta", allow_abbrev=False)
-    ap.add_argument("run_dir")
-    ap.add_argument("scan_root")
-    ap.add_argument("--mode", required=True, choices=plugin.MODES)
-    ap.add_argument("--effort", required=True, choices=["low", "medium", "high", "max"])
-    ap.add_argument("--scope")
-    ap.add_argument("--base")
-    ap.add_argument("--merge-base", dest="merge_base")
-    ap.add_argument("--commit")
-    opts = ap.parse_args(argv, namespace=Args())
+    parser = argparse.ArgumentParser(prog="write_scan_meta.py", allow_abbrev=False)
+    parser.add_argument("run_dir")
+    parser.add_argument("scan_root")
+    parser.add_argument("--mode", required=True, choices=plugin.MODES)
+    parser.add_argument("--effort", required=True, type=tier)
+    parser.add_argument("--scope")
+    parser.add_argument("--base")
+    parser.add_argument("--merge-base", dest="merge_base")
+    parser.add_argument("--commit")
+    opts = parser.parse_args(argv, namespace=Args())
     if opts.mode == "commit" and not opts.commit:
-        ap.error("--mode commit requires --commit <sha>")
+        parser.error("--mode commit requires --commit <sha>")
+    if opts.mode == "changes" and not opts.merge_base:
+        parser.error("--mode changes requires --merge-base <sha>")
     if not os.path.isdir(opts.run_dir):
-        ap.error(f"run directory does not exist: {opts.run_dir}")
+        parser.error(f"run directory does not exist: {opts.run_dir}")
     return opts
 
 
-def main(argv: list[str]) -> int:
-    opts = parse_options(argv)
+def record(opts: Args) -> None:
+    """Record what is scanned into the run directory's scan-meta.json and print its summary."""
     # abspath first: "x/.." is x's parent as typed, where realpath alone would follow a symlink x.
     run_dir = Path(os.path.realpath(os.path.abspath(opts.run_dir)))
     scan_root = os.path.realpath(os.path.abspath(opts.scan_root))
@@ -335,9 +450,18 @@ def main(argv: list[str]) -> int:
     tracked = opts.mode == "scan" and extent is not None and extent.tracked
     files = target_files(scan_root, scope) if tracked else None
     if tracked and files is None:
-        sys.stderr.write(f"write_scan_meta: could not list {scan_root}; file_count unknown\n")
+        sys.stderr.write(f"write_scan_meta.py: could not list {scan_root}; file_count unknown\n")
+    change = None
+    if opts.mode != "scan":
+        commits = change_range(revision)
+        if commits is None:
+            msg = "the change's endpoints are unknown"
+            raise MetaError(msg)
+        change = changed_files(scan_root, scope, commits=commits)
     if whole_repo and extent is None:
-        sys.stderr.write(f"write_scan_meta: could not list {scan_root}; top_level_dirs unknown\n")
+        sys.stderr.write(
+            f"write_scan_meta.py: could not list {scan_root}; top_level_dirs unknown\n"
+        )
     top_level, symlinks = (extent.dirs, extent.symlinks) if whole_repo and extent else (None, None)
     dir_file_counts = None
     if top_level is not None and files is not None:
@@ -345,9 +469,11 @@ def main(argv: list[str]) -> int:
         dir_file_counts = {name: per_dir[name] for name in top_level}
     if symlinks:
         sys.stderr.write(
-            "write_scan_meta: root-level symbolic links not followed, "
+            "write_scan_meta.py: root-level symbolic links not followed, "
             f"left out of top_level_dirs: {', '.join(symlinks)}\n"
         )
+    retired = opts.effort is Effort.MAX
+    effort = Effort.HIGH if retired else opts.effort
     meta: dict[str, object] = {
         "scan_id": str(uuid.uuid4()),
         "started_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
@@ -359,7 +485,8 @@ def main(argv: list[str]) -> int:
         "agent": f"{plugin.NAME}:{plugin.NAME}",
         "mode": opts.mode,
         "scope": scope,
-        "effort": opts.effort,
+        "effort": effort.value,
+        "asked_for_max": retired,
         "model": None,
         "revision": revision,
         "revision_source": "self-reported",
@@ -371,7 +498,9 @@ def main(argv: list[str]) -> int:
     try:
         with path.open("x", encoding="utf-8", newline="\n") as out:
             out.write(strictjson.text(meta, indent=2) + "\n")
-    except FileExistsError as error:
+    except (FileExistsError, PermissionError) as error:
+        if isinstance(error, PermissionError) and not path.is_dir():
+            raise
         msg = (
             f"{run_dir} already holds a scan's scan-meta.json, so another scan is using this "
             "report directory; make a new report directory named for the current time and "
@@ -380,24 +509,42 @@ def main(argv: list[str]) -> int:
         raise MetaError(msg) from error
     if files is not None:
         (run_dir / plugin.TARGET_FILES_NAME).write_bytes((strictjson.text(files) + "\n").encode())
-    sys.stdout.write(f"scan-meta.json written: {path}\n")
-    sys.stdout.write(f"revision: {revision.get('commit') or 'UNVERSIONED'}\n")
+    if change is not None:
+        for number, start in enumerate(range(0, len(change.files), CHANGED_FILES_CHUNK), start=1):
+            chunk: ChangedFiles = {
+                "chunk": number,
+                "total_files": len(change.files),
+                "files": change.files[start : start + CHANGED_FILES_CHUNK],
+            }
+            (run_dir / f"changed-files.{number}.json").write_bytes(
+                (strictjson.text(chunk, indent=1) + "\n").encode()
+            )
+    print(f"scan-meta.json written: {path}")
+    print(f"revision: {revision.get('commit') or 'UNVERSIONED'}")
     if absent is not None:
-        listed = strictjson.text(absent)
-        sys.stdout.write(f"sparse checkout: top-level directories not checked out: {listed}\n")
-    sys.stdout.write(f"top_level_dirs: {strictjson.text(top_level)}\n")
-    sys.stdout.write(f"file_count: {strictjson.text(None if files is None else len(files))}\n")
-    sys.stdout.write(f"dir_file_counts: {strictjson.text(dir_file_counts)}\n")
+        print(f"sparse checkout: top-level directories not checked out: {strictjson.text(absent)}")
+    if retired:
+        print(plugin.RETIRED_MAX_RELAY)
+    print(f"top_level_dirs: {strictjson.text(top_level)}")
+    print(f"file_count: {strictjson.text(None if files is None else len(files))}")
+    print(f"dir_file_counts: {strictjson.text(dir_file_counts)}")
+    for line in change_lines(change):
+        print(line)
+
+
+def main(argv: list[str]) -> int:
+    opts = parse_options(argv)
+    try:
+        record(opts)
+    except MetaError as error:
+        sys.stderr.write(f"write_scan_meta.py: {error}\n")
+        return 1
+    except OSError as error:
+        sys.stderr.write(f"write_scan_meta.py: could not write the run's output: {error}\n")
+        return 1
     return 0
 
 
 if __name__ == "__main__":
     console.tolerate_undecodable_names()
-    try:
-        sys.exit(main(sys.argv[1:]))
-    except MetaError as error:
-        sys.stderr.write(f"write_scan_meta: {error}\n")
-        sys.exit(1)
-    except OSError as error:
-        sys.stderr.write(f"write_scan_meta: could not write the run's output: {error}\n")
-        sys.exit(1)
+    sys.exit(main(sys.argv[1:]))

@@ -1,16 +1,16 @@
 ---
 name: claude-security
-description: "The Claude Security menu — pick a job: scan the codebase (the whole repository or a scoped part of it), scan changes (this branch's or a pull request's diff, or one commit), or suggest patches (findings turned into targeted patch files, each verified by a panel of agents, that you apply when you choose)."
-disable-model-invocation: true
+description: "Claude Security: scan the codebase (the whole repository or a scoped part of it), scan changes (this branch's or a pull request's diff, or one commit), or suggest patches (findings turned into targeted patch files, each verified by a panel of agents, that you apply when you choose). Use when the user asks to scan, audit or check code with Claude Security, to scan their changes with Claude Security, or to fix or patch Claude Security findings."
 allowed-tools:
   - Read
   - Write
+  - Edit
   - Glob
   - Grep
   - AskUserQuestion
   - Workflow
   - Workflow(claude-security:scan)
-  - Agent(claude-security:scan-inventory, claude-security:scan-researcher, claude-security:scan-verifier, claude-security:scan-loader, claude-security:patch-generator, claude-security:patch-verifier, claude-security:explore)
+  - Agent(claude-security:scan-inventory, claude-security:scan-researcher, claude-security:scan-verifier, claude-security:scan-loader, claude-security:scan-redactor, claude-security:patch-generator, claude-security:patch-verifier, claude-security:explore)
   - Bash(date *)
   - Bash(ls *)
   - Bash(wc *)
@@ -44,7 +44,7 @@ This is the front desk. Its whole purpose is to work out which job the user want
    3. [Suggest patches](${CLAUDE_SKILL_DIR}/jobs/suggest-patches.md)
 
    "Scan codebase" is the recommended pick — it carries " (Recommended)" and goes first; the other two keep this order.
-3. **Then note auto mode once, and Read the chosen job's recipe and follow it.** As soon as the job is known — picked on the menu, or named directly in step 1 — first emit exactly one fixed plain-text line, worded identically every time: "Claude Security works best in auto mode. To enable it, press Shift+Tab until the status bar shows auto mode, or restart with `claude --permission-mode auto`." It is a note, not a question — say it once, never reword or size it, and do not diagnose the user's settings (whether auto mode is available to them is not yours to determine). Then read the recipe: every recipe opens with its own one-question sub-menu — which kind of scan, or which patch mode — built from the repository's real state, and every sub-menu has an "I don't know" choice that the recipe resolves to a sensible default itself. So the user answers at most a couple of questions, then one fixed confirmation before a scan actually starts (skipped only when their request already accepted the scan's time or token cost), and the run goes quiet; ask them all now, while the user is present.
+3. **Then note auto mode once, and Read the chosen job's recipe and follow it.** As soon as the job is known — picked on the menu, or named directly in step 1 — first emit exactly one fixed plain-text line, worded identically every time: "Claude Security works best in auto mode. To enable it, press Shift+Tab until the status bar shows auto mode, or restart with `claude --permission-mode auto`." It is a note, not a question — say it once, never reword or size it, and do not diagnose the user's settings (whether auto mode is available to them is not yours to determine). Then read the recipe, even when the request leaves nothing to ask — it says how to launch the job and wait for it, so never call Workflow before reading it. Where the request left a question open, the recipe opens with its own one-question sub-menu — which kind of scan, or which patch mode — built from the repository's real state, and every sub-menu has an "I don't know" choice that the recipe resolves to a sensible default itself. So the user answers at most a couple of questions, then one fixed confirmation before a scan actually starts (skipped only when their request already accepted the scan's time or token cost), and the run goes quiet; ask them all now, while the user is present.
 
 ## Environment and Paths (substituted at invocation, use verbatim)
 
