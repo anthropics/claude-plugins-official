@@ -468,19 +468,19 @@
     },
     {
       "name": "aws-startup-advisor",
-      "description": "Personalized architecture, cost, security, and migration guidance for startups. From day-one account setup and security baselines to production-ready infrastructure, cost optimization, and beyond. Includes AWS Activate Credits eligibility, 60+ exclusive startup offers, and multi-account multi-region support. Built on expertise from AWS Startup Solutions Architects and patterns from 350,000+ startups.",
+      "description": "Personalized AWS guidance built on patterns from 350,000+ startups. Get architecture, cost, and security recommendations matched to your stage, from day-one account setup to production-ready infrastructure. Migrate to AWS from Azure, GCP, or Heroku with resource discovery, cost estimates, and generated Terraform. Move OpenAI, Azure OpenAI, and Gemini code to Amazon Bedrock, and plan and prototype AI agents on AgentCore and other AWS runtimes. Includes AWS Activate credits eligibility, 60+ exclusive startup offers, and multi-account, multi-region support. Built by AWS Startup Solutions Architects.",
       "author": {
         "name": "Amazon Web Services"
       },
       "category": "development",
       "source": {
         "source": "git-subdir",
-        "url": "https://github.com/awslabs/startups.git",
-        "path": "advisor/plugins/aws-startup-advisor",
+        "url": "https://github.com/aws/agent-toolkit-for-aws.git",
+        "path": "plugins/aws-startup-advisor",
         "ref": "main",
-        "sha": "ec681ba5d49b039dbf1ef9d87d3304205b824f3d"
+        "sha": "5bcc9580235709f56e929c7c1fb57fb99bff20af"
       },
-      "homepage": "https://github.com/awslabs/startups"
+      "homepage": "https://github.com/aws/agent-toolkit-for-aws"
     },
     {
       "name": "aws-transform",
