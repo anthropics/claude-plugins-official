@@ -3921,6 +3921,27 @@
       "homepage": "https://www.together.ai"
     },
     {
+      "name": "togetherlink",
+      "description": "Run Claude Code, Codex, Claude Desktop, and ChatGPT Desktop on Together AI models with TogetherLink: launching sessions, pinning a model, the Claude tier to model mapping, headless runs, spend, and setup of the TogetherLink CLI.",
+      "author": {
+        "name": "Together AI"
+      },
+      "category": "development",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/togethercomputer/skills.git",
+        "path": "skills",
+        "ref": "main",
+        "sha": "0e2d3c56982fc16f544bfe1f7bb4212811219ed5"
+      },
+      "strict": false,
+      "skills": [
+        "./together-togetherlink",
+        "./together-togetherlink-configure"
+      ],
+      "homepage": "https://docs.together.ai/docs/togetherlink"
+    },
+    {
       "name": "twilio-developer-kit",
       "description": "Twilio Skills provide procedural knowledge for AI coding agents — which APIs to use, in what order, and what to avoid. Covers SMS, Voice, WhatsApp, Verify, SendGrid, Compliance, and 30+ products.",
       "author": {
