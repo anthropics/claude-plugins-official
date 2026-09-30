@@ -15,7 +15,8 @@
     "qodo-skills": "qodo",
     "atlassian-forge-skills": "forge-skills",
     "azure-skills": "azure",
-    "sonarqube-agent-plugins": "sonarqube"
+    "sonarqube-agent-plugins": "sonarqube",
+    "data-agent-kit-starter-pack": "data-agent-kit"
   },
   "plugins": [
     {
@@ -1265,7 +1266,7 @@
       "homepage": "https://github.com/astronomer/agents"
     },
     {
-      "name": "data-agent-kit-starter-pack",
+      "name": "data-agent-kit",
       "description": "This plugin provides a specialized suite of skills for data engineers and database practitioners working on Google Cloud. It acts as an expert assistant, allowing you to use natural language prompts in your preferred coding agent to architect complex data pipelines, transform data with dbt, write Spark and BigQuery SQL notebooks, and orchestrate end-to-end workflows across GCP's data ecosystem.",
       "author": {
         "name": "Google LLC"
@@ -1273,10 +1274,10 @@
       "category": "development",
       "source": {
         "source": "url",
-        "url": "https://github.com/gemini-cli-extensions/data-agent-kit-starter-pack.git",
-        "sha": "2df10e25bbf7dba2570dce1b2e2e77870143969e"
+        "url": "https://github.com/GoogleCloudPlatform/data-agent-kit-plugin.git",
+        "sha": "83c53b5f129cdeecabe149ff4ba82645d3e51745"
       },
-      "homepage": "https://github.com/gemini-cli-extensions/data-agent-kit-starter-pack"
+      "homepage": "https://cloud.google.com/products/data-agent-kit"
     },
     {
       "name": "data-engineering",
