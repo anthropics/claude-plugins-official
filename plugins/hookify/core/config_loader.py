@@ -206,9 +206,22 @@ def load_rules(event: Optional[str] = None) -> List[Rule]:
     """
     rules = []
 
-    # Find all hookify.*.local.md files
-    pattern = os.path.join('.claude', 'hookify.*.local.md')
-    files = glob.glob(pattern)
+    # Determine directories to search for .claude/hookify.*.local.md
+    base_dirs = []
+    project_dir = os.environ.get('CLAUDE_PROJECT_DIR') or os.environ.get('CLAUDE_PROJECT_ROOT')
+    if project_dir and project_dir.strip():
+        base_dirs.append(project_dir.strip())
+    base_dirs.append('.')
+
+    seen_paths = set()
+    files = []
+    for base_dir in base_dirs:
+        pattern = os.path.join(base_dir, '.claude', 'hookify.*.local.md')
+        for file_path in glob.glob(pattern):
+            canonical_path = os.path.realpath(file_path)
+            if canonical_path not in seen_paths:
+                seen_paths.add(canonical_path)
+                files.append(file_path)
 
     for file_path in files:
         try:

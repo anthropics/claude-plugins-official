@@ -125,15 +125,15 @@ conditions:
 
 ### Step 4: Create Files and Confirm
 
-**IMPORTANT**: Rule files must be created in the current working directory's `.claude/` folder, NOT the plugin directory.
+**IMPORTANT**: Rule files must be created in the project root's `.claude/` folder, NOT the plugin directory.
 
-Use the current working directory (where Claude Code was started) as the base path.
+Use the project root directory (`$CLAUDE_PROJECT_DIR`, or where Claude Code was started) as the base path.
 
-1. Check if `.claude/` directory exists in current working directory
+1. Check if `.claude/` directory exists in the project root directory
    - If not, create it first with: `mkdir -p .claude`
 
 2. Use Write tool to create each `.claude/hookify.{name}.local.md` file
-   - Use relative path from current working directory: `.claude/hookify.{name}.local.md`
+   - Use path relative to project root: `.claude/hookify.{name}.local.md`
    - The path should resolve to the project's .claude directory, not the plugin's
 
 3. Show user what was created:
