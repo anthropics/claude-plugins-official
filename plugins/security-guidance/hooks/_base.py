@@ -140,6 +140,9 @@ _PRICE_PER_MTOK = {
     "claude-sonnet-4-6": (3.0, 15.0),
     "claude-opus-4-6": (15.0, 75.0),
     "claude-opus-4-7": (5.0, 25.0),
+    "claude-opus-4-8": (5.0, 25.0),
+    "claude-opus-5": (5.0, 25.0),
+    "claude-opus-5-5": (4.0, 20.0),
 }
 _PRICE_DEFAULT = (3.0, 15.0)
 

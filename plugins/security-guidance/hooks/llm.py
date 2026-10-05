@@ -18,10 +18,13 @@ Two reassignable globals here are read by handlers in
 ``from``-import) so they observe reassignment.
 """
 import glob
+import hashlib
 import json
 import os
 import re
 import sys
+import tempfile
+import time
 import urllib.request
 from typing import Optional, Tuple, Dict, Any, List
 
@@ -125,11 +128,19 @@ HAS_API_CREDENTIALS = bool(
     ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN or _HAS_3P_PROVIDER_AT_LOAD
 )
 
-# Model for security review. Default chosen for its precision profile on
+# Model for security review. Opus is the default for its precision profile on
 # interruptive review surfaces — false positives are the dominant uninstall
 # driver, so the default favors precision over recall and over latency.
 # Override via the SECURITY_REVIEW_MODEL env var (see README).
-SECURITY_REVIEW_MODEL = os.environ.get("SECURITY_REVIEW_MODEL", "").strip() or "claude-opus-4-7"
+#
+# Without an override the review follows the newest Opus rather than a
+# release named here: default_review_model() resolves it per call path.
+# _PINNED_REVIEW_MODEL is only what a review uses when that lookup fails.
+_PINNED_REVIEW_MODEL = "claude-opus-5-5"
+# Claude Code's own alias. The CLI the Agent SDK spawns resolves it to the
+# newest Opus it knows how to drive, in the provider's id form on 3P.
+_CLI_OPUS_ALIAS = "opus"
+SECURITY_REVIEW_MODEL = os.environ.get("SECURITY_REVIEW_MODEL", "").strip() or _PINNED_REVIEW_MODEL
 
 # OAuth subscriber tokens (ANTHROPIC_AUTH_TOKEN) require this exact system prompt
 # for api.anthropic.com/v1/messages — the API checks for one of the known Claude
@@ -256,8 +267,8 @@ def _cap_files_for_prompt(files):
 _auth_prefer_token = False
 
 
-def _build_auth_headers(use_token):
-    betas = ["structured-outputs-2025-11-13"]
+def _build_auth_headers(use_token, betas=("structured-outputs-2025-11-13",)):
+    betas = list(betas)
     headers = {
         "Content-Type": "application/json",
         "anthropic-version": "2023-06-01",
@@ -267,7 +278,8 @@ def _build_auth_headers(use_token):
         betas.append("oauth-2025-04-20")
     else:
         headers["x-api-key"] = ANTHROPIC_API_KEY
-    headers["anthropic-beta"] = ",".join(betas)
+    if betas:
+        headers["anthropic-beta"] = ",".join(betas)
     return headers
 
 
@@ -278,7 +290,10 @@ def _build_auth_headers(use_token):
 _ADAPTIVE_THINKING_MODELS = (
     "claude-opus-4-6",
     "claude-opus-4-7",
+    "claude-opus-4-8",
+    "claude-opus-5",
     "claude-sonnet-4-6",
+    "claude-sonnet-5",
 )
 _LEGACY_THINKING_MODELS = (
     "claude-3-",
@@ -339,6 +354,159 @@ def _is_3p_provider() -> bool:
     return False
 
 
+# ── Default review model ─────────────────────────────────────────────────
+# The API has no alias for "newest Opus", so the raw-HTTP path asks the
+# endpoint it is about to call (GET /v1/models) and keeps the answer in the
+# state dir. Asking that endpoint, not api.anthropic.com, means a gateway
+# that serves an older Opus gets a model it can actually route.
+
+_REVIEW_MODEL_CACHE_FILE = "review_model.json"
+_REVIEW_MODEL_TTL_SECONDS = 24 * 3600
+# A failed lookup is remembered too, for less long: otherwise an endpoint
+# without /v1/models costs every hook fire the lookup timeout.
+_REVIEW_MODEL_RETRY_SECONDS = 3600
+_REVIEW_MODEL_LOOKUP_TIMEOUT = 5
+_REVIEW_MODEL_LISTING_MAX_BYTES = 4 * 1024 * 1024
+
+# claude-opus-<major>[-<minor>][-<yyyymmdd>]. Anything else a listing or the
+# cache file holds (other families, gateway-prefixed names, free text) is
+# never sent as a model id.
+_OPUS_ID = re.compile(r"claude-opus-(\d{1,2})(?:-(\d{1,2}))?(?:-(\d{8}))?")
+
+_review_model_memo: Optional[str] = None
+
+
+def _newest_opus(model_ids) -> Optional[str]:
+    """The highest-versioned Opus id in `model_ids`, or None."""
+    best = None
+    for model_id in model_ids:
+        m = _OPUS_ID.fullmatch(model_id) if isinstance(model_id, str) else None
+        if not m:
+            continue
+        version = (int(m.group(1)), int(m.group(2) or 0), m.group(3) or "")
+        if best is None or version > best[0]:
+            best = (version, model_id)
+    return best[1] if best else None
+
+
+def _fetch_newest_opus() -> Optional[str]:
+    """Newest Opus the configured endpoint lists; None if it can't say."""
+    # Newest first, so one modest page is enough; an org with many models
+    # otherwise returns a megabyte-sized listing.
+    url = _anthropic_base_url() + "/v1/models?limit=100"
+    use_token = _auth_prefer_token or not ANTHROPIC_API_KEY
+    for _ in range(2):
+        request = urllib.request.Request(
+            url, headers=_build_auth_headers(use_token, betas=()), method="GET",
+        )
+        try:
+            with urllib.request.urlopen(
+                request, timeout=_REVIEW_MODEL_LOOKUP_TIMEOUT,
+            ) as response:
+                listing = json.loads(
+                    response.read(_REVIEW_MODEL_LISTING_MAX_BYTES).decode("utf-8")
+                )
+            entries = listing.get("data") if isinstance(listing, dict) else None
+            if not isinstance(entries, list):
+                debug_log("review model lookup: no model list in response")
+                return None
+            ids = [e.get("id") for e in entries if isinstance(e, dict)]
+            if listing.get("has_more"):
+                # A truncated page may hold no current Opus at all (an org's
+                # own models can fill it); never let it pick an older one.
+                ids.append(_PINNED_REVIEW_MODEL)
+            return _newest_opus(ids)
+        except urllib.error.HTTPError as e:
+            if e.code == 401 and not use_token and ANTHROPIC_AUTH_TOKEN:
+                use_token = True
+                continue
+            debug_log(f"review model lookup: HTTP {e.code}")
+            return None
+        except Exception as e:
+            debug_log(f"review model lookup failed: {type(e).__name__}")
+            return None
+    return None
+
+
+def _read_review_model_cache(path, endpoint_key, now):
+    """(hit, model) from the cache file. `model` is None for a remembered
+    failed lookup. The file is user-writable state: every field is checked
+    and a model id is accepted only if it has the shape of an Opus id."""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            entry = json.loads(f.read(4096))
+    except (OSError, ValueError):
+        return False, None
+    if not isinstance(entry, dict) or entry.get("endpoint") != endpoint_key:
+        return False, None
+    at = entry.get("at")
+    if isinstance(at, bool) or not isinstance(at, (int, float)):
+        return False, None
+    model = entry.get("model")
+    if model is None:
+        ttl = _REVIEW_MODEL_RETRY_SECONDS
+    elif isinstance(model, str) and _OPUS_ID.fullmatch(model):
+        ttl = _REVIEW_MODEL_TTL_SECONDS
+    else:
+        return False, None
+    if not 0 <= now - at < ttl:
+        return False, None
+    return True, model
+
+
+def _write_review_model_cache(path, endpoint_key, model, now):
+    tmp = None
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix=".review_model.")
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump({"endpoint": endpoint_key, "model": model, "at": now}, f)
+        os.replace(tmp, path)
+    except OSError as e:
+        debug_log(f"review model cache not written: {type(e).__name__}")
+        if tmp:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+
+
+def default_review_model() -> str:
+    """Model for a review the user hasn't pinned with SECURITY_REVIEW_MODEL.
+
+    3P providers go through the Agent SDK, so the CLI alias does the work.
+    1P and gateways get the newest Opus the endpoint lists, looked up at most
+    once per _REVIEW_MODEL_TTL_SECONDS; _PINNED_REVIEW_MODEL when the lookup
+    can't answer. Never raises.
+    """
+    global _review_model_memo
+    explicit = os.environ.get("SECURITY_REVIEW_MODEL", "").strip()
+    if explicit:
+        return explicit
+    if _is_3p_provider():
+        return _CLI_OPUS_ALIAS
+    if not HAS_API_CREDENTIALS:
+        return _PINNED_REVIEW_MODEL
+    if _review_model_memo:
+        return _review_model_memo
+    try:
+        path = os.path.join(_resolve_state_dir(), _REVIEW_MODEL_CACHE_FILE)
+        # Hashed: a gateway URL can carry credentials.
+        endpoint_key = hashlib.sha256(
+            _anthropic_base_url().encode("utf-8")
+        ).hexdigest()[:16]
+        now = time.time()
+        hit, model = _read_review_model_cache(path, endpoint_key, now)
+        if not hit:
+            model = _fetch_newest_opus()
+            _write_review_model_cache(path, endpoint_key, model, now)
+    except Exception as e:
+        debug_log(f"review model resolution failed: {type(e).__name__}")
+        model = None
+    _review_model_memo = model or _PINNED_REVIEW_MODEL
+    return _review_model_memo
+
+
 def _call_claude_via_sdk(prompt, output_schema, *, max_tokens=16000, model=None):
     """Single-turn SDK call as a substitute for the HTTP _call_claude path on
     3P providers. Uses the same `output_format` JSON-schema contract so the
@@ -379,7 +547,8 @@ def _call_claude_via_sdk(prompt, output_schema, *, max_tokens=16000, model=None)
             return None
 
     cli_path = os.environ.get("SG_AGENTIC_CLI_PATH") or None
-    chosen_model = model or SECURITY_REVIEW_MODEL
+    default_model = default_review_model()
+    chosen_model = model or default_model
 
     # Capture child claude stderr so a failing 3P call surfaces the real
     # error (auth missing, model id wrong, etc.) in the debug log instead
@@ -396,10 +565,10 @@ def _call_claude_via_sdk(prompt, output_schema, *, max_tokens=16000, model=None)
             model=chosen_model,
             output_format={"type": "json_schema", "schema": output_schema},
             # Identical --model/--fallback-model is rejected by the CLI at
-            # startup; chosen_model defaults to SECURITY_REVIEW_MODEL, so
-            # only pass a fallback when it actually differs.
+            # startup; chosen_model defaults to default_model, so only pass
+            # a fallback when it actually differs.
             fallback_model=(
-                SECURITY_REVIEW_MODEL if chosen_model != SECURITY_REVIEW_MODEL else None
+                default_model if chosen_model != default_model else None
             ),
             env=_agentic_spawn_env(),
             stderr=lambda l: _captured_stderr.append(l),
@@ -450,7 +619,7 @@ def _call_claude(prompt, output_schema, thinking_budget=10000, max_tokens=16000,
                  retry_5xx=True):
     """
     Call the configured LLM model with extended thinking and structured outputs.
-    Model defaults to Sonnet 4.6 but can be overridden via SECURITY_REVIEW_MODEL env var.
+    Model defaults to default_review_model(); SECURITY_REVIEW_MODEL overrides it.
     Returns parsed JSON response or None on failure.
     On failure, sets module-level _last_call_claude_http_error to the HTTP status
     (or -1 for network/timeout) so callers can distinguish API failure from an
@@ -485,7 +654,7 @@ def _call_claude(prompt, output_schema, thinking_budget=10000, max_tokens=16000,
     headers = _build_auth_headers(use_token)
 
     payload = {
-        "model": model or SECURITY_REVIEW_MODEL,
+        "model": model or default_review_model(),
         "max_tokens": max_tokens,
         "system": CLAUDE_CODE_SYSTEM_PROMPT,
         "messages": [{"role": "user", "content": prompt}],
@@ -622,7 +791,7 @@ def _call_claude_dual_or(prompt, output_schema, *, bool_key: str, list_key: str,
     from concurrent.futures import ThreadPoolExecutor
 
     explicit = os.environ.get("SECURITY_REVIEW_MODEL", "").strip()
-    primary = explicit or SECURITY_REVIEW_MODEL
+    primary = default_review_model()
 
     if not _dual_or_enabled():
         # Single-call path. Reuse the same sonnet-fallback retry as a dual_or
@@ -1187,10 +1356,8 @@ def agentic_review(
             debug_log(f"agentic_review: SDK unavailable ({e}); falling back")
             return None, [], {"agentic_fallback": f"import:{type(e).__name__}"}
 
-    # Default to the documented public model. Overridable via SG_AGENTIC_MODEL.
-    # The bundled SDK CLI only knows public model names.
-    _DEFAULT_PUBLIC_MODEL = "claude-opus-4-7"
-    model = os.environ.get("SG_AGENTIC_MODEL") or _DEFAULT_PUBLIC_MODEL
+    # Overridable via SG_AGENTIC_MODEL.
+    model = os.environ.get("SG_AGENTIC_MODEL") or _CLI_OPUS_ALIAS
     max_turns = int(os.environ.get("SG_AGENTIC_MAX_TURNS", "18"))
     # In production repo_dir is the user's working tree (full repo). Under the
     # eval harness it's a temp dir with ONLY touched_paths — the agent can't
@@ -1302,11 +1469,11 @@ def agentic_review(
             # Identical --model/--fallback-model is rejected by the inner CLI
             # at startup ("Fallback model cannot be the same as the main
             # model", exit 1 → ProcessError). The default model here IS
-            # _DEFAULT_PUBLIC_MODEL, so an unconditional fallback_model would
+            # _CLI_OPUS_ALIAS, so an unconditional fallback_model would
             # kill every spawn before the first API call. Omit the fallback
             # when it would equal the primary.
             fallback_model=(
-                _DEFAULT_PUBLIC_MODEL if model != _DEFAULT_PUBLIC_MODEL else None
+                _CLI_OPUS_ALIAS if model != _CLI_OPUS_ALIAS else None
             ),
             # Plugin-hook subprocesses get ANTHROPIC_AUTH_TOKEN (the user's
             # OAuth token) injected by Claude Code. The SDK builds the child
