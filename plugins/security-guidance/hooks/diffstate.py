@@ -13,7 +13,7 @@ from _base import debug_log, _PV
 from gitutil import (
     GIT_CMD,
     _git_dir, _git_toplevel, _git_status_porcelain,
-    _git_rev_parse_head, _is_ancestor, _git_name_only,
+    _git_rev_parse_head, _is_ancestor, _git_name_only, _temp_index,
 )
 from session_state import with_locked_state
 
@@ -188,6 +188,13 @@ def capture_git_baseline(cwd):
     Falls back to HEAD if the working tree is clean.
     Returns the SHA string, or None if not in a git repo or if the repo has no commits.
 
+    `stash create` runs on a throwaway copy of the index (GIT_INDEX_FILE), so
+    its `index.lock` and `index.stash.<pid>` files land next to the copy, not
+    in `.git`: it cannot collide with a concurrent git command, and a timeout
+    kill cannot leave a lock that blocks the user's next one.
+    GIT_OPTIONAL_LOCKS does not cover stash. Copying the real index without a
+    lock is safe: git replaces it by atomic rename.
+
     NOTE: `git stash create` does NOT capture untracked files. UPS pairs this
     SHA with a `_list_untracked()` snapshot stored as `untracked_at_baseline`,
     and `compute_v2_review_set` subtracts that set so pre-existing untracked
@@ -209,11 +216,16 @@ def capture_git_baseline(cwd):
             debug_log("No commits in repo, skipping baseline capture")
             return None
 
-        result = subprocess.run(
-            [*GIT_CMD, "stash", "create"],
-            cwd=cwd, capture_output=True, timeout=15
-        )
-        sha = (result.stdout or b"").decode("utf-8", errors="replace").strip()
+        sha = ""
+        # untracked_paths=[]: a plain copy of the index, no `add -N` pass.
+        with _temp_index(cwd, untracked_paths=[]) as env:
+            # env is None when there is no index file to copy: treat as clean.
+            if env is not None:
+                result = subprocess.run(
+                    [*GIT_CMD, "stash", "create"],
+                    cwd=cwd, capture_output=True, timeout=15, env=env
+                )
+                sha = (result.stdout or b"").decode("utf-8", errors="replace").strip()
         if sha:
             return sha
 
@@ -450,7 +462,7 @@ def compute_v2_review_set(cwd, baseline_sha, head_at_capture, untracked_at_basel
         dirty_now |= _git_name_only(repo, f"{head_at_capture}..HEAD") or set()
         diff_base = head_at_capture
 
-    # changed_since: tracked files vs the stash baseline (no temp index — the
+    # changed_since: tracked files vs the stash baseline (no `add -N` — the
     # stash never contained untracked files anyway), then union with
     # currently-untracked. The previous `include_untracked=True` arm cost a
     # full `git add -N .` (slow in large repos) per call to surface
