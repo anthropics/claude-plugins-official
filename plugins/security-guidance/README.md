@@ -121,3 +121,9 @@ Open an issue on the [security-guidance plugin repo](https://github.com/anthropi
 - Provider setup (1P / Bedrock / Vertex / LLM gateway / etc.)
 - A minimal repro diff
 - The relevant section of `~/.claude/security/log.txt`
+
+## Codex and Windows hooks
+
+Native Windows hooks run Python directly using `commandWindows`, avoiding Windows paths passed to Bash. Install Python and make `python` available on PATH.
+
+When `CODEX_THREAD_ID` is present, Stop and SubagentStop emit one JSON object. Claude telemetry fields are omitted from that output; review decisions, stderr findings, and exit codes are preserved. Claude and other hook events keep their existing output.

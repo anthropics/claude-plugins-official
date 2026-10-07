@@ -7,7 +7,8 @@
           {
             "type": "command",
             "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/pretooluse.py\"",
-            "timeout": 10
+            "timeout": 10,
+            "commandWindows": "python -X utf8 \"${CLAUDE_PLUGIN_ROOT}/hooks/pretooluse.py\""
           }
         ]
       }
@@ -18,7 +19,8 @@
           {
             "type": "command",
             "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/posttooluse.py\"",
-            "timeout": 10
+            "timeout": 10,
+            "commandWindows": "python -X utf8 \"${CLAUDE_PLUGIN_ROOT}/hooks/posttooluse.py\""
           }
         ]
       }
@@ -29,7 +31,8 @@
           {
             "type": "command",
             "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/stop.py\"",
-            "timeout": 10
+            "timeout": 10,
+            "commandWindows": "python -X utf8 \"${CLAUDE_PLUGIN_ROOT}/hooks/stop.py\""
           }
         ]
       }
@@ -40,7 +43,8 @@
           {
             "type": "command",
             "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/userpromptsubmit.py\"",
-            "timeout": 10
+            "timeout": 10,
+            "commandWindows": "python -X utf8 \"${CLAUDE_PLUGIN_ROOT}/hooks/userpromptsubmit.py\""
           }
         ]
       }

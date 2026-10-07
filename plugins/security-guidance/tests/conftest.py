@@ -128,7 +128,7 @@ def hook_env(tmp_path, stub_api):
                         "CLAUDE_PROJECT_DIR", "HTTP_PROXY", "HTTPS_PROXY",
                         "http_proxy", "https_proxy", "ALL_PROXY", "all_proxy",
                         "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX",
-                        "CLAUDE_CODE_USE_FOUNDRY")}
+                        "CLAUDE_CODE_USE_FOUNDRY", "CODEX_THREAD_ID")}
     env.update(GIT_ENV)
     env.update({
         "SECURITY_WARNINGS_STATE_DIR": str(state),

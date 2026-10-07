@@ -7,7 +7,8 @@
           {
             "type": "command",
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/sg-python.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/ensure_agent_sdk.py\"",
-            "timeout": 180
+            "timeout": 180,
+            "commandWindows": "python -X utf8 \"${CLAUDE_PLUGIN_ROOT}/hooks/ensure_agent_sdk.py\""
           }
         ]
       }
@@ -17,7 +18,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/sg-python.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/security_reminder_hook.py\""
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/sg-python.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/security_reminder_hook.py\"",
+            "commandWindows": "python -X utf8 \"${CLAUDE_PLUGIN_ROOT}/hooks/security_reminder_hook.py\""
           }
         ]
       }
@@ -27,7 +29,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/sg-python.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/security_reminder_hook.py\""
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/sg-python.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/security_reminder_hook.py\"",
+            "commandWindows": "python -X utf8 \"${CLAUDE_PLUGIN_ROOT}/hooks/security_reminder_hook.py\""
           }
         ],
         "matcher": "Edit|Write|MultiEdit|NotebookEdit"
@@ -40,7 +43,8 @@
             "if": "Bash(git commit:*)",
             "asyncRewake": true,
             "rewakeMessage": "Background security review of commit — address or acknowledge the findings below, then continue with the user's original request or continue waiting for their reply:",
-            "rewakeSummary": "Commit security review found issues"
+            "rewakeSummary": "Commit security review found issues",
+            "commandWindows": "python -X utf8 \"${CLAUDE_PLUGIN_ROOT}/hooks/security_reminder_hook.py\""
           },
           {
             "type": "command",
@@ -48,7 +52,8 @@
             "if": "Bash(git -C * commit *)",
             "asyncRewake": true,
             "rewakeMessage": "Background security review of commit — address or acknowledge the findings below, then continue with the user's original request or continue waiting for their reply:",
-            "rewakeSummary": "Commit security review found issues"
+            "rewakeSummary": "Commit security review found issues",
+            "commandWindows": "python -X utf8 \"${CLAUDE_PLUGIN_ROOT}/hooks/security_reminder_hook.py\""
           },
           {
             "type": "command",
@@ -56,7 +61,8 @@
             "if": "Bash(git push:*)",
             "asyncRewake": true,
             "rewakeMessage": "Background security review of pushed commits not yet reviewed — address or acknowledge the findings below, then continue with the user's original request or continue waiting for their reply:",
-            "rewakeSummary": "Push security review found issues"
+            "rewakeSummary": "Push security review found issues",
+            "commandWindows": "python -X utf8 \"${CLAUDE_PLUGIN_ROOT}/hooks/security_reminder_hook.py\""
           },
           {
             "type": "command",
@@ -64,7 +70,8 @@
             "if": "Bash(git -C * push*)",
             "asyncRewake": true,
             "rewakeMessage": "Background security review of pushed commits not yet reviewed — address or acknowledge the findings below, then continue with the user's original request or continue waiting for their reply:",
-            "rewakeSummary": "Push security review found issues"
+            "rewakeSummary": "Push security review found issues",
+            "commandWindows": "python -X utf8 \"${CLAUDE_PLUGIN_ROOT}/hooks/security_reminder_hook.py\""
           },
           {
             "type": "command",
@@ -72,7 +79,8 @@
             "if": "Bash(gt create:*)",
             "asyncRewake": true,
             "rewakeMessage": "Background security review of commit — address or acknowledge the findings below, then continue with the user's original request or continue waiting for their reply:",
-            "rewakeSummary": "Commit security review found issues"
+            "rewakeSummary": "Commit security review found issues",
+            "commandWindows": "python -X utf8 \"${CLAUDE_PLUGIN_ROOT}/hooks/security_reminder_hook.py\""
           },
           {
             "type": "command",
@@ -80,7 +88,8 @@
             "if": "Bash(gt modify:*)",
             "asyncRewake": true,
             "rewakeMessage": "Background security review of commit — address or acknowledge the findings below, then continue with the user's original request or continue waiting for their reply:",
-            "rewakeSummary": "Commit security review found issues"
+            "rewakeSummary": "Commit security review found issues",
+            "commandWindows": "python -X utf8 \"${CLAUDE_PLUGIN_ROOT}/hooks/security_reminder_hook.py\""
           },
           {
             "type": "command",
@@ -88,7 +97,8 @@
             "if": "Bash(gt submit:*)",
             "asyncRewake": true,
             "rewakeMessage": "Background security review of pushed commits not yet reviewed — address or acknowledge the findings below, then continue with the user's original request or continue waiting for their reply:",
-            "rewakeSummary": "Push security review found issues"
+            "rewakeSummary": "Push security review found issues",
+            "commandWindows": "python -X utf8 \"${CLAUDE_PLUGIN_ROOT}/hooks/security_reminder_hook.py\""
           }
         ],
         "matcher": "Bash"
@@ -102,7 +112,8 @@
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/sg-python.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/security_reminder_hook.py\"",
             "asyncRewake": true,
             "rewakeMessage": "Background security review feedback — address or acknowledge the findings below, then continue with the user's original request or continue waiting for their reply. This is supplementary, not a replacement for your previous response:",
-            "rewakeSummary": "Background security review found issues"
+            "rewakeSummary": "Background security review found issues",
+            "commandWindows": "python -X utf8 \"${CLAUDE_PLUGIN_ROOT}/hooks/security_reminder_hook.py\""
           }
         ]
       }
@@ -115,7 +126,8 @@
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/sg-python.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/security_reminder_hook.py\"",
             "asyncRewake": true,
             "rewakeMessage": "Background security review feedback — address or acknowledge the findings below, then continue with the user's original request or continue waiting for their reply. This is supplementary, not a replacement for your previous response:",
-            "rewakeSummary": "Background security review found issues"
+            "rewakeSummary": "Background security review found issues",
+            "commandWindows": "python -X utf8 \"${CLAUDE_PLUGIN_ROOT}/hooks/security_reminder_hook.py\""
           }
         ]
       }

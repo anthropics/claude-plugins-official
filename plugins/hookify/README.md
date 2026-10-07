@@ -338,3 +338,7 @@ Found a useful rule pattern? Consider sharing example files via PR!
 ## License
 
 MIT License
+
+## Windows hooks
+
+Native Windows hook commands use `python -X utf8`; install Python and make `python` available on PATH. POSIX hosts retain the `python3` commands.
