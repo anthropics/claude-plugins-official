@@ -108,7 +108,7 @@ This is a best-effort assistive tool, not a guarantee. Treat findings as suggest
 
 **Plugin doesn't seem to fire** — check that `~/.claude/claude-security-guidance.md` (or hook activity) shows in debug logs. Run Claude Code with `--debug-file /tmp/claude/debug.txt` and grep for `security_reminder_hook`. The plugin also writes its own log to `~/.claude/security/log.txt`.
 
-**Review never finds anything** — verify your API path works. On 3P providers, if you set `SECURITY_REVIEW_MODEL`, check it is a provider-specific id your account can invoke. On LLM gateways, check the gateway's logs for `POST /v1/messages` traffic from the plugin.
+**Review never finds anything** — verify your API path works. When a commit or push review gets no usable answer from the model, Claude is told once per session for each kind of review and failure (for example "Commit security review did not complete: …"), and the reason is logged. If a commit whose review failed is pushed later from Claude Code, the push review checks it. On 3P providers, if you set `SECURITY_REVIEW_MODEL`, check it is a provider-specific id your account can invoke. On LLM gateways, check the gateway's logs for `POST /v1/messages` traffic from the plugin.
 
 **Too many false positives** — set `SECURITY_REVIEW_MODEL` to a cheaper model (`claude-sonnet-5-5`) and re-evaluate; if precision is the priority, stay on the default.
 

@@ -24,6 +24,7 @@ import os
 import re
 import sys
 import tempfile
+import threading
 import time
 import urllib.request
 from typing import Optional, Tuple, Dict, Any, List
@@ -152,6 +153,24 @@ CLAUDE_CODE_SYSTEM_PROMPT = "You are a Claude agent, built on Anthropic's Claude
 # for "API failed" vs "API succeeded with no findings". Reset at the start of
 # each call. None = no error; int = HTTP status code; -1 = network/timeout;
 _last_call_claude_http_error = None
+
+# Outcome of this thread's last analyze_code_security call. Per thread because
+# the commit review's race runs that call on a thread of its own.
+_review_status = threading.local()
+
+
+def last_review_failed() -> bool:
+    """True when this thread's last analyze_code_security call got no verdict
+    from the model (every call failed, or the reply could not be read), which
+    a caller must not treat as "nothing found"."""
+    return getattr(_review_status, "failed", False)
+
+
+def last_review_status() -> Optional[int]:
+    """A copy of the module-wide _last_call_claude_http_error, taken when this
+    thread's last analyze_code_security call got no verdict (an overlapping call
+    on another thread can change the global); None if the reply was unreadable."""
+    return getattr(_review_status, "status", None)
 
 
 # =====================================================================
@@ -1111,7 +1130,11 @@ def analyze_code_security(files: List[Tuple[str, str]], is_diff: bool = False, p
     previous_findings: list of category strings from earlier stop hook firings this turn,
         used to prompt the reviewer to verify those issues were actually fixed.
     Returns (formatted guidance string or None, list of vuln dicts with severity/category).
+    Also returns (None, []) when the model gave no verdict; last_review_failed()
+    tells the two apart.
     """
+    _review_status.failed = False
+    _review_status.status = None
     if not HAS_API_CREDENTIALS or not files:
         return None, []
 
@@ -1229,11 +1252,21 @@ Respond with a JSON object. If vulnerabilities are found, set hasVulnerabilities
     }
 
     prompt += extensibility.guidance_block()
-    analysis = _call_claude_dual_or(prompt, output_schema,
-                                    bool_key="hasVulnerabilities",
-                                    list_key="vulnerabilities",
-                                    cacheable_prefix=_CODE_REVIEW_RUBRIC)
-    if not analysis or not analysis.get("hasVulnerabilities") or not analysis.get("vulnerabilities"):
+    try:
+        analysis = _call_claude_dual_or(prompt, output_schema,
+                                        bool_key="hasVulnerabilities",
+                                        list_key="vulnerabilities",
+                                        cacheable_prefix=_CODE_REVIEW_RUBRIC)
+    except Exception as e:
+        debug_log(f"LLM code review: call raised {type(e).__name__}: {e}")
+        analysis = None
+    # A reply without the schema's required flag is not a verdict either.
+    if not isinstance(analysis, dict) or "hasVulnerabilities" not in analysis:
+        _review_status.failed = True
+        _review_status.status = _last_call_claude_http_error
+        debug_log("LLM code review: no verdict from the model")
+        return None, []
+    if not analysis.get("hasVulnerabilities") or not analysis.get("vulnerabilities"):
         debug_log("LLM code review: no vulnerabilities found")
         return None, []
 
