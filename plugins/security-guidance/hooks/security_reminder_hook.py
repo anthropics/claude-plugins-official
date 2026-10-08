@@ -228,31 +228,22 @@ def emit_metrics(
     task-notification one-liner. Must be in the same JSON line as the metrics
     because CC stops scanning stdout after the first {-prefixed line.
 
-    `additional_context` (asyncRewake findings): model-visible guidance text.
-    Delivery channel depends on `hook_event_name` because CC's hook-output
-    contract is NOT symmetric across events:
+    `additional_context` (asyncRewake findings, exit-2 callers only):
+    model-visible guidance text, written to stderr for every event. CC's
+    asyncRewake delivery reads `stderr || stdout` for the model-visible body
+    and only scans stdout JSON for metrics+rewakeSummary — it never reads
+    additionalContext on this path. stdout keeps one valid JSON line so
+    metrics + rewakeSummary survive:
 
-      - PostToolUse (commit-review, push-sweep): surfaced via the modern
-        hookSpecificOutput.additionalContext protocol. `PostToolUse` is a
-        member of CC's hookSpecificOutput discriminated union
-        (coreSchemas.ts), so the JSON validates and metrics/rewakeSummary
-        are consumed. See #1375 / #1783 for why this replaced the legacy
-        stderr + exit(2) shape for PostToolUse.
+      - Stop / SubagentStop: also top-level decision:"block" + reason, for
+        the sync-fallback path (single-shot `claude -p`, where asyncRewake
+        degrades to a sync Stop hook that reads decision/reason). There is
+        no `Stop` member in CC's hookSpecificOutput union, so that field
+        must not be used here.
 
-      - Stop / SubagentStop: there is NO `Stop` member in that union, so
-        emitting hookSpecificOutput{hookEventName:"Stop"} makes the whole
-        line fail isSyncHookJSONOutput validation — which on the asyncRewake
-        path silently drops metrics AND rewakeSummary, and (because the
-        legacy stderr write was removed) leaks the raw JSON to the model as
-        the rewake body. CC's asyncRewake delivery actually reads
-        `stderr || stdout` for the model-visible body and only scans stdout
-        JSON for metrics+rewakeSummary — it never reads additionalContext
-        on this path. So for Stop we use the documented clean pattern:
-        guidance on stderr, valid JSON (metrics + rewakeSummary +
-        top-level decision/reason) on stdout. The top-level decision:"block"
-        + reason also covers the sync-fallback path (single-shot `claude -p`,
-        where asyncRewake degrades to a sync Stop hook that reads
-        decision/reason). See #2159.
+      - PostToolUse (commit-review, push-sweep): stderr only. In the
+        sync-fallback path CC shows the model an exit-2 PostToolUse hook's
+        stderr, so additionalContext would repeat the text.
 
     Empty/None additional_context emits neither channel (back-compat for
     metrics-only callers).
@@ -263,8 +254,8 @@ def emit_metrics(
     surface; systemMessage adds a per-fire override when the static
     rewakeMessage isn't specific enough for the finding being shown.
 
-    `hook_event_name` (used only when additional_context is set): selects the
-    delivery channel above. Defaults to "PostToolUse" (commit-review and
+    `hook_event_name` (used only when additional_context is set): whether to
+    add decision/reason as above. Defaults to "PostToolUse" (commit-review and
     push-sweep are the most common callers); handle_stop_hook passes "Stop".
     """
     head = {}
@@ -277,23 +268,13 @@ def emit_metrics(
     if rewake_summary:
         out["rewakeSummary"] = rewake_summary
     if additional_context:
+        # Guidance on stderr, the asyncRewake body channel (`stderr || stdout`).
+        sys.stderr.write(additional_context)
+        sys.stderr.flush()
         if hook_event_name in ("Stop", "SubagentStop"):
-            # Stop is NOT in CC's hookSpecificOutput union — emitting it there
-            # fails schema validation and drops metrics+rewakeSummary (#2159).
-            # Clean pattern: guidance on stderr (the asyncRewake body channel,
-            # delivered via `stderr || stdout`), top-level decision/reason for
-            # the sync-fallback path. stdout JSON stays valid so metrics +
-            # rewakeSummary survive.
-            sys.stderr.write(additional_context)
-            sys.stderr.flush()
+            # Sync-fallback path for Stop reads decision/reason.
             out["decision"] = "block"
             out["reason"] = additional_context
-        else:
-            # PostToolUse et al. — valid union member; modern protocol.
-            out["hookSpecificOutput"] = {
-                "hookEventName": hook_event_name,
-                "additionalContext": additional_context,
-            }
     if system_message:
         out["systemMessage"] = system_message
     print(json.dumps(out), flush=True)
@@ -1525,9 +1506,8 @@ def handle_commit_review_posttooluse(input_data):
             sev[s] += 1
 
     # Rebuild guidance from new_vulns only — concrete_guidance from the LLM
-    # still lists deduped entries. Pass via additional_context so CC surfaces
-    # the reason via hookSpecificOutput.additionalContext instead of empty
-    # stdout (#1783) / stderr-only "json output validation failed" (#1375).
+    # still lists deduped entries. emit_metrics writes it to stderr, the body
+    # of the asyncRewake notice.
     _commit_guidance = (PROVENANCE_BANNER + "\n\n"
                         + _format_vulns_guidance(new_vulns)
                         + CONTINUATION_SUFFIX + "\n")
@@ -1542,8 +1522,6 @@ def handle_commit_review_posttooluse(input_data):
 
     # exit(2) is preserved per the asyncRewake protocol — it's what CC
     # uses as the "force fix" signal that triggers the rewakeMessage flow.
-    # The stderr.write was removed; additional_context above now carries
-    # the same text via the modern JSON channel. See #1358/#1375/#1783.
     sys.exit(2)
 
 def handle_push_sweep_posttooluse(input_data):
@@ -1819,9 +1797,9 @@ def handle_push_sweep_posttooluse(input_data):
     # to the per-commit fires for agentic detail). rewake_summary must ride
     # this line (CC reads only the first {-prefixed stdout line); the emit
     # is deferred to the two exit points below so the with-vulns path can
-    # also pass additional_context in the same JSON line (#1375/#1783) —
-    # the by-design "CC keeps only the first JSON line" constraint means
-    # we can't emit twice. Builds the shared metrics dict here; vulns path
+    # also pass additional_context in the same emit_metrics call — the
+    # by-design "CC keeps only the first JSON line" constraint means we
+    # can't emit twice. Builds the shared metrics dict here; vulns path
     # adds additional_context, no-vulns path emits as-is.
     _push_metrics = {
         **_base, "pushed": len(push_range), "unreviewed": len(tail),
@@ -1887,9 +1865,9 @@ def handle_push_sweep_posttooluse(input_data):
     else:
         guidance = concrete_guidance or _format_vulns_guidance(reported) or ""
     # Emit metrics + additional_context together — single JSON line is the
-    # contract CC's hook parser expects. exit(2) preserved as the asyncRewake
-    # "force fix" trigger (see comment near handle_commit_review_posttooluse).
-    # See #1358 / #1375 / #1783.
+    # contract CC's hook parser expects; the guidance itself goes to stderr.
+    # exit(2) preserved as the asyncRewake "force fix" trigger (see comment
+    # near handle_commit_review_posttooluse).
     emit_metrics(_push_metrics, rewake_summary=_push_rewake_summary,
                  additional_context=(PROVENANCE_BANNER + "\n\n"
                                      + guidance + CONTINUATION_SUFFIX + "\n"),
@@ -2155,11 +2133,9 @@ def handle_stop_hook(input_data):
         # untracked_baseline_n is the signal for whether the UPS-time
         # untracked-snapshot capture actually ran.
         sweep_trimmed = {k: v for k, v in sweep.items() if k != "warn_unresolved_mask"}
-        # Pass guidance via additional_context so CC surfaces the findings via
-        # hookSpecificOutput.additionalContext instead of stderr-only (which
-        # was the cause of "json output validation failed" / empty-reason UI in
-        # #1375 / #1783). exit(2) preserved as the asyncRewake "force fix"
-        # signal — that's the documented mechanism. See #1358 / #1375 / #1783.
+        # Guidance goes to stderr plus top-level decision/reason (see
+        # emit_metrics). exit(2) preserved as the asyncRewake "force fix"
+        # signal — that's the documented mechanism.
         emit_metrics({
             "vulns_found": len(vulns),
             "untracked_baseline_n": len(untracked_at_baseline),
