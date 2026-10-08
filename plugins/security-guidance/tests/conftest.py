@@ -212,3 +212,81 @@ def ups_payload(cwd, session_id="s1"):
         "prompt": "hi",
         "cwd": str(cwd),
     }
+
+
+# ── a local Anthropic-compatible endpoint the hook can be pointed at ──────
+
+class _Gateway(http.server.BaseHTTPRequestHandler):
+    """An Anthropic-compatible endpoint. With `required` set it answers 401
+    unless that header arrives, like a LiteLLM proxy keyed on a custom header."""
+
+    def _handle(self):
+        n = int(self.headers.get("Content-Length") or 0)
+        if n:
+            self.rfile.read(n)
+        srv = self.server
+        srv.requests.append((self.command, self.path, {k.lower(): v for k, v in self.headers.items()}))
+        name, value = srv.required or (None, None)
+        if name and self.headers.get(name) != value:
+            return self._send(401, {"type": "error", "error": {
+                "type": "authentication_error", "message": "Invalid proxy server token"}})
+        if srv.status != 200:
+            return self._send(srv.status, {"type": "error", "error": {"type": "api_error"}})
+        if self.command == "GET":
+            return self._send(200, {"data": [{"id": "claude-opus-5-5"}], "has_more": False})
+        text = (srv.reply if srv.reply is not None else json.dumps(
+            {"hasVulnerabilities": bool(srv.vulns), "vulnerabilities": srv.vulns}))
+        self._send(200, {
+            "id": "msg_stub", "type": "message", "role": "assistant",
+            "model": "stub", "stop_reason": "end_turn",
+            "content": [{"type": "text", "text": text}],
+            "usage": {"input_tokens": 1, "output_tokens": 1},
+        })
+
+    do_GET = do_POST = do_HEAD = _handle
+
+    def _send(self, status, payload):
+        body = json.dumps(payload).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *a):
+        pass
+
+
+@pytest.fixture
+def gateway():
+    srv = http.server.HTTPServer(("127.0.0.1", 0), _Gateway)
+    srv.requests, srv.required, srv.status, srv.reply, srv.vulns = [], None, 200, None, []
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        yield srv
+    finally:
+        srv.shutdown()
+
+
+@pytest.fixture
+def env(hook_env, gateway):
+    e = dict(hook_env)
+    e["ANTHROPIC_BASE_URL"] = f"http://127.0.0.1:{gateway.server_port}"
+    e.pop("SECURITY_REVIEW_MODEL", None)
+    return e
+
+
+@pytest.fixture
+def failing_inner_cli(tmp_path):
+    """An inner CLI that prints a warning on stderr and exits 1; the review
+    then falls back to a single-shot call."""
+    cli = tmp_path / "claude"
+    cli.write_text("#!/bin/sh\necho 'claude.ai connectors are disabled' >&2\nexit 1\n")
+    cli.chmod(0o755)
+    return str(cli)
+
+
+@pytest.fixture
+def agentic_env(env, failing_inner_cli):
+    pytest.importorskip("claude_agent_sdk")
+    return {**env, "SG_AGENTIC_COMMIT_REVIEW": "1", "SG_AGENTIC_CLI_PATH": failing_inner_cli}
