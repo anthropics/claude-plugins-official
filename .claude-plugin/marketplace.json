@@ -1189,7 +1189,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/CrowdStrike/foundry-skills.git",
-        "sha": "7f7d46687c16a9a37c9b08ad58ad58999aabe497"
+        "sha": "61572f38592d47c747e2595182459781bf0bc679"
       },
       "homepage": "https://github.com/CrowdStrike/foundry-skills"
     },
@@ -1203,7 +1203,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/CrowdStrike/fusion-skills.git",
-        "sha": "3e15710a94b712473e87ce7cd7c43d026156a3f3"
+        "sha": "38527dc5afa970543859c31ca5dbf69352bfaa28"
       },
       "homepage": "https://github.com/CrowdStrike/fusion-skills"
     },
