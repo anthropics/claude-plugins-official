@@ -1851,7 +1851,7 @@
     {
       "name": "hostinger",
       "displayName": "Hostinger",
-      "description": "Deploy, manage and monitor Hostinger services — Websites, Domains, Ecommerce, Email Marketing, Subscriptions & Payments, and VPS. Authenticate via browser (OAuth) or API token.",
+      "description": "Deploy, manage and monitor your Hostinger services directly from Claude Code. The plugin connects Claude to Hostinger's remote MCP server, so you can ship sites and apps, manage domains and DNS, run WordPress and operate VPS servers without leaving your coding environment. There's nothing to install on your machine: no Node.js, no npm, no local server. Key features include one-prompt deployments for static sites, Node.js apps (built on Hostinger), full WordPress site imports, and WordPress plugins and themes, plus static and PHP sites on the Agency Plan. Beyond deployments, Claude can search and register domains, edit DNS records and snapshots, check build logs, and manage mailboxes, online stores, email marketing contacts, subscriptions and orders. It can also control VPS firewalls, snapshots and monitoring. Sign in through your browser (OAuth) on first use, or set a `HOSTINGER_API_TOKEN` from hPanel. How to use: there are no commands to memorize. Describe what you want and Claude picks the right tool or deployment skill. Try \"deploy my static site to Hostinger\", \"deploy this Next.js app to example.com\", \"create an A record pointing example.com to 1.2.3.4\", or \"show VPS metrics for the last 24 hours.\"",
       "author": {
         "name": "Hostinger"
       },
