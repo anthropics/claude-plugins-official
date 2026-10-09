@@ -20,11 +20,14 @@ Two reassignable globals here are read by handlers in
 import glob
 import hashlib
 import json
+import logging
 import os
 import re
 import sys
 import tempfile
+import threading
 import time
+import traceback
 import urllib.request
 from typing import Optional, Tuple, Dict, Any, List
 
@@ -546,6 +549,7 @@ def _call_claude_via_sdk(prompt, output_schema, *, max_tokens=16000, model=None)
             _record_http_error(-1)
             return None
 
+    _send_sdk_logs_to_debug_log()
     cli_path = os.environ.get("SG_AGENTIC_CLI_PATH") or None
     default_model = default_review_model()
     chosen_model = model or default_model
@@ -1279,6 +1283,32 @@ _FINDINGS_SCHEMA = review_api.FINDINGS_SCHEMA
 _SURVIVED_SCHEMA = review_api.SURVIVED_SCHEMA
 
 
+class _DebugLogHandler(logging.Handler):
+    def emit(self, record):
+        try:
+            text = record.getMessage()
+            if record.exc_info:
+                text += " | " + "".join(
+                    traceback.format_exception_only(*record.exc_info[:2])).strip()
+        except Exception:
+            return  # never handleError(): it prints to stderr
+        debug_log(f"agent sdk: {text}")
+
+
+_sdk_log_lock = threading.Lock()
+
+
+def _send_sdk_logs_to_debug_log() -> None:
+    """Route the Agent SDK's own log records to the debug log, and stop them
+    propagating. With no handler, Python prints its errors to this hook's
+    stderr, which Claude Code shows Claude as the review notice."""
+    sdk_logger = logging.getLogger("claude_agent_sdk")
+    with _sdk_log_lock:
+        if not any(isinstance(h, _DebugLogHandler) for h in sdk_logger.handlers):
+            sdk_logger.addHandler(_DebugLogHandler())
+            sdk_logger.propagate = False
+
+
 def _agentic_spawn_env() -> Dict[str, str]:
     """opts.env for the SDK-spawned inner `claude` CLI.
 
@@ -1377,6 +1407,7 @@ def agentic_review(
             debug_log(f"agentic_review: SDK unavailable ({e}); falling back")
             return None, [], {"agentic_fallback": f"import:{type(e).__name__}"}
 
+    _send_sdk_logs_to_debug_log()
     # Overridable via SG_AGENTIC_MODEL.
     model = os.environ.get("SG_AGENTIC_MODEL") or _CLI_OPUS_ALIAS
     max_turns = int(os.environ.get("SG_AGENTIC_MAX_TURNS", "18"))
@@ -1461,6 +1492,17 @@ def agentic_review(
         except Exception:
             pass
 
+    # Without a callback the inner CLI writes to this hook's stderr, which
+    # Claude Code shows Claude as the review notice. Log it instead.
+    child_stderr_lines = [0]
+
+    def _on_child_stderr(line: str) -> None:
+        child_stderr_lines[0] += 1
+        if child_stderr_lines[0] <= 20:
+            debug_log(f"agentic reviewer's CLI stderr | {str(line).rstrip()}")
+        elif child_stderr_lines[0] == 21:
+            debug_log("agentic reviewer's CLI stderr | (further lines not logged)")
+
     async def _arun(system: str, prompt: str, *, schema: Dict[str, Any],
                     turns: Optional[int] = None
                     ) -> Tuple[Optional[Dict[str, Any]], int, Optional[str]]:
@@ -1517,6 +1559,7 @@ def agentic_review(
             # the review run end-to-end; the others are belt-and-suspenders
             # for the same fd-passing pattern.
             env=_agentic_spawn_env(),
+            stderr=_on_child_stderr,
         )
         n = 0
         structured: Optional[Dict[str, Any]] = None
