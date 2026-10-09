@@ -267,6 +267,38 @@ def _cap_files_for_prompt(files):
 _auth_prefer_token = False
 
 
+# A valid HTTP header name (an RFC 9110 token).
+_HEADER_NAME = re.compile(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+")
+_custom_header_lines_skipped = set()
+
+
+def _custom_headers() -> List[Tuple[str, str]]:
+    """ANTHROPIC_CUSTOM_HEADERS as (name, value) pairs, parsed the way Claude
+    Code parses it: one `Name: Value` per line, split at the first colon,
+    trimmed, lines with no name dropped. Lines http.client cannot send (an
+    invalid name, a carriage return or non-Latin-1 text in the value) are
+    skipped. Values are never logged: they are often credentials."""
+    pairs = []
+    raw = os.environ.get("ANTHROPIC_CUSTOM_HEADERS", "")
+    for number, line in enumerate(re.split(r"\r?\n", raw), 1):
+        name, sep, value = line.partition(":")
+        name, value = name.strip(), value.strip()
+        if not sep or not name:
+            continue
+        try:
+            value.encode("latin-1")
+            sendable = bool(_HEADER_NAME.fullmatch(name)) and "\r" not in value
+        except UnicodeEncodeError:
+            sendable = False
+        if not sendable:
+            if number not in _custom_header_lines_skipped:
+                _custom_header_lines_skipped.add(number)
+                debug_log(f"ANTHROPIC_CUSTOM_HEADERS: skipped line {number}, not a valid HTTP header")
+            continue
+        pairs.append((name, value))
+    return pairs
+
+
 def _build_auth_headers(use_token, betas=("structured-outputs-2025-11-13",)):
     betas = list(betas)
     headers = {
@@ -278,6 +310,18 @@ def _build_auth_headers(use_token, betas=("structured-outputs-2025-11-13",)):
         betas.append("oauth-2025-04-20")
     else:
         headers["x-api-key"] = ANTHROPIC_API_KEY
+    for name, value in _custom_headers():
+        lowered = name.lower()
+        if lowered == "anthropic-beta":
+            # Not sent: the review needs none of the user's betas, and Claude
+            # Code drops anthropic-beta lines when the organization's
+            # compliance policy disables experimental betas.
+            continue
+        # As in Claude Code, a custom line wins over a header of the same
+        # name that the plugin set, including the credential header.
+        for existing in [k for k in headers if k.lower() == lowered]:
+            del headers[existing]
+        headers[name] = value
     if betas:
         headers["anthropic-beta"] = ",".join(betas)
     return headers
