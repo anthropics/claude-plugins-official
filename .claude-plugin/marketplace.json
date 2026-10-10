@@ -478,7 +478,7 @@
         "url": "https://github.com/aws/agent-toolkit-for-aws.git",
         "path": "plugins/aws-startup-advisor",
         "ref": "main",
-        "sha": "613dc216a1cf0836b81a28d7f3a81f2b72034394"
+        "sha": "188af2f810ce4df1b699cb55dd02f28bfa8eb2c8"
       },
       "homepage": "https://github.com/aws/agent-toolkit-for-aws"
     },
