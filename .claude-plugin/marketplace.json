@@ -4421,6 +4421,18 @@
         "sha": "10573bac239b7062a476667eaa574d400335c70e"
       },
       "homepage": "https://github.com/amzn/selling-partner-agentic-toolkit"
+    },
+    {
+      "name": "context-lens",
+      "description": "Browse and search exactly what is in the context window, request by request",
+      "version": "0.1.0",
+      "author": {
+        "name": "Anthropic",
+        "email": "support@anthropic.com"
+      },
+      "source": "./plugins/context-lens",
+      "category": "development",
+      "homepage": "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/context-lens"
     }
   ]
 }
