@@ -106,19 +106,6 @@
           }
         ]
       }
-    ],
-    "SubagentStop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/sg-python.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/security_reminder_hook.py\"",
-            "asyncRewake": true,
-            "rewakeMessage": "Background security review feedback — address or acknowledge the findings below, then continue with the user's original request or continue waiting for their reply. This is supplementary, not a replacement for your previous response:",
-            "rewakeSummary": "Background security review found issues"
-          }
-        ]
-      }
     ]
   }
 }

@@ -15,7 +15,8 @@
     "qodo-skills": "qodo",
     "atlassian-forge-skills": "forge-skills",
     "azure-skills": "azure",
-    "sonarqube-agent-plugins": "sonarqube"
+    "sonarqube-agent-plugins": "sonarqube",
+    "data-agent-kit-starter-pack": "data-agent-kit"
   },
   "plugins": [
     {
@@ -433,7 +434,7 @@
         "url": "https://github.com/aws/agent-toolkit-for-aws.git",
         "path": "plugins/aws-core",
         "ref": "main",
-        "sha": "0d6167ad2e6dfb858098c4162fe74d04c975532f"
+        "sha": "34b3eccfd8b619ea0cb4ba04a9be9dfefebd94e7"
       },
       "homepage": "https://github.com/aws/agent-toolkit-for-aws"
     },
@@ -705,7 +706,7 @@
         "url": "https://github.com/carta/plugins.git",
         "path": "plugins/carta-cap-table",
         "ref": "main",
-        "sha": "6ab81016389cac69e03ed79114d75f31bc8e7bfd"
+        "sha": "43e49ed3c0cae18cbda4cdad94756ac85d50190b"
       },
       "homepage": "https://carta.com"
     },
@@ -721,7 +722,7 @@
         "url": "https://github.com/carta/plugins.git",
         "path": "plugins/carta-crm",
         "ref": "main",
-        "sha": "6ab81016389cac69e03ed79114d75f31bc8e7bfd"
+        "sha": "43e49ed3c0cae18cbda4cdad94756ac85d50190b"
       },
       "homepage": "https://carta.com"
     },
@@ -1189,7 +1190,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/CrowdStrike/foundry-skills.git",
-        "sha": "7f7d46687c16a9a37c9b08ad58ad58999aabe497"
+        "sha": "61572f38592d47c747e2595182459781bf0bc679"
       },
       "homepage": "https://github.com/CrowdStrike/foundry-skills"
     },
@@ -1203,7 +1204,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/CrowdStrike/fusion-skills.git",
-        "sha": "3e15710a94b712473e87ce7cd7c43d026156a3f3"
+        "sha": "38527dc5afa970543859c31ca5dbf69352bfaa28"
       },
       "homepage": "https://github.com/CrowdStrike/fusion-skills"
     },
@@ -1265,7 +1266,7 @@
       "homepage": "https://github.com/astronomer/agents"
     },
     {
-      "name": "data-agent-kit-starter-pack",
+      "name": "data-agent-kit",
       "description": "This plugin provides a specialized suite of skills for data engineers and database practitioners working on Google Cloud. It acts as an expert assistant, allowing you to use natural language prompts in your preferred coding agent to architect complex data pipelines, transform data with dbt, write Spark and BigQuery SQL notebooks, and orchestrate end-to-end workflows across GCP's data ecosystem.",
       "author": {
         "name": "Google LLC"
@@ -1273,10 +1274,10 @@
       "category": "development",
       "source": {
         "source": "url",
-        "url": "https://github.com/gemini-cli-extensions/data-agent-kit-starter-pack.git",
-        "sha": "2df10e25bbf7dba2570dce1b2e2e77870143969e"
+        "url": "https://github.com/GoogleCloudPlatform/data-agent-kit-plugin.git",
+        "sha": "83c53b5f129cdeecabe149ff4ba82645d3e51745"
       },
-      "homepage": "https://github.com/gemini-cli-extensions/data-agent-kit-starter-pack"
+      "homepage": "https://cloud.google.com/products/data-agent-kit"
     },
     {
       "name": "data-engineering",
@@ -1576,7 +1577,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/figma/mcp-server-guide.git",
-        "sha": "172920731eedf414e9b22ae60017d9a5b6c9f81f"
+        "sha": "f0493295acf5f7cbdebcbcc483c06de814420cb1"
       },
       "homepage": "https://github.com/figma/mcp-server-guide"
     },
@@ -1647,7 +1648,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/fullstorydev/fullstory-skills.git",
-        "sha": "b20614e2d08d7a7c70775bb62b5af640f60b024b"
+        "sha": "ca872d97f5c35dc41ee2eecfc6e392a5895ac171"
       },
       "homepage": "https://www.fullstory.com"
     },
@@ -1851,7 +1852,7 @@
     {
       "name": "hostinger",
       "displayName": "Hostinger",
-      "description": "Deploy, manage and monitor Hostinger services — Websites, Domains, Ecommerce, Email Marketing, Subscriptions & Payments, and VPS. Authenticate via browser (OAuth) or API token.",
+      "description": "Deploy, manage and monitor your Hostinger services directly from Claude Code. The plugin connects Claude to Hostinger's remote MCP server, so you can ship sites and apps, manage domains and DNS, run WordPress and operate VPS servers without leaving your coding environment. There's nothing to install on your machine: no Node.js, no npm, no local server. Key features include one-prompt deployments for static sites, Node.js apps (built on Hostinger), full WordPress site imports, and WordPress plugins and themes, plus static and PHP sites on the Agency Plan. Beyond deployments, Claude can search and register domains, edit DNS records and snapshots, check build logs, and manage mailboxes, online stores, email marketing contacts, subscriptions and orders. It can also control VPS firewalls, snapshots and monitoring. Sign in through your browser (OAuth) on first use, or set a `HOSTINGER_API_TOKEN` from hPanel. How to use: there are no commands to memorize. Describe what you want and Claude picks the right tool or deployment skill. Try \"deploy my static site to Hostinger\", \"deploy this Next.js app to example.com\", \"create an A record pointing example.com to 1.2.3.4\", or \"show VPS metrics for the last 24 hours.\"",
       "author": {
         "name": "Hostinger"
       },
@@ -1937,7 +1938,7 @@
         "url": "https://github.com/incident-io/skills.git",
         "path": "plugins/incident-io",
         "ref": "main",
-        "sha": "443f47164eda1f93108ebd908843925f681954ef"
+        "sha": "c8e50a4a7a06a5c9abb20ec08ddfc85bad6d61b8"
       },
       "homepage": "https://incident.io"
     },
@@ -2954,7 +2955,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/PostHog/ai-plugin.git",
-        "sha": "469d1773e9cb55cb2d0cffd0a91e12bbeff8d32e"
+        "sha": "e0fbf5e742fb4242c4ea509b395b2e343642f0b7"
       },
       "homepage": "https://posthog.com/docs/model-context-protocol"
     },
@@ -3092,7 +3093,7 @@
         "url": "https://github.com/qodo-ai/qodo-skills.git",
         "path": "packages/qodo",
         "ref": "main",
-        "sha": "7dd3e7ec7706005651a3f7adb014d9ff8f2d52ea"
+        "sha": "866d301dfbec39d5bb18bde72ac0dc770cc759a1"
       },
       "homepage": "https://github.com/qodo-ai/qodo-skills.git"
     },
@@ -3110,7 +3111,7 @@
         "url": "https://github.com/qodo-ai/qodo-skills.git",
         "path": "packages/qodo-standards",
         "ref": "main",
-        "sha": "7dd3e7ec7706005651a3f7adb014d9ff8f2d52ea"
+        "sha": "866d301dfbec39d5bb18bde72ac0dc770cc759a1"
       },
       "homepage": "https://github.com/qodo-ai/qodo-skills.git"
     },
@@ -3366,7 +3367,7 @@
         "url": "https://github.com/forcedotcom/sf-skills.git",
         "path": "plugins/builder/salesforce-development",
         "ref": "main",
-        "sha": "c217b703b3e5a3c279f1a510d8703161b14bd0a5"
+        "sha": "3c15867bdb9dacd515960174c661c706d041bb63"
       },
       "homepage": "https://github.com/forcedotcom/sf-skills/tree/main/plugins/builder/salesforce-development"
     },
@@ -3484,7 +3485,7 @@
     {
       "name": "security-guidance",
       "description": "Security review for Claude-generated code. Pattern-based warnings on edits, LLM-powered diff review on Stop, and an agentic commit reviewer that catches injection, XSS, SSRF, hardcoded secrets, and 25+ other vulnerability classes.",
-      "version": "2.0.9",
+      "version": "2.0.13",
       "author": {
         "name": "Anthropic",
         "email": "support@anthropic.com"
@@ -3649,7 +3650,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/slackapi/slack-mcp-plugin.git",
-        "sha": "8044341769fa84f85ee952dceddb67ef165ab110"
+        "sha": "b073ebc2fc500b52e781f5fd17ebb9ad462363dc"
       },
       "homepage": "https://github.com/slackapi/slack-mcp-plugin/tree/main"
     },
@@ -3665,7 +3666,7 @@
         "url": "https://github.com/Snowflake-Labs/snowflake-ai-kit.git",
         "path": "plugins/cortex-code",
         "ref": "main",
-        "sha": "0c54225ea50b44c2ae07e1f378bf401e88b33c33"
+        "sha": "e2a3cbb45a9a62b5648266c5777c1b2edb3f8579"
       },
       "homepage": "https://docs.snowflake.com/en/user-guide/cortex-code"
     },

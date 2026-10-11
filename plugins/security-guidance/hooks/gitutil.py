@@ -37,12 +37,23 @@ GIT_CMD = [
     # reflog %gs subjects, ls-files, status, etc. — without per-site
     # flag duplication. See #2082, #2099.
     "-c", "core.quotePath=false",
+    # A work-tree `git diff` that meets stat-stale entries (mtime changed,
+    # content same) rewrites the index under index.lock, GIT_OPTIONAL_LOCKS or
+    # not. Off, every diff here only reads the index, so none needs a copy.
+    "-c", "diff.autoRefreshIndex=false",
 ]
 
 SAFE_GIT_CONFIG = (
     ("core.fsmonitor", "false"),
     ("core.hooksPath", "/dev/null"),
 )
+
+# The hook's git runs in the background beside the session's own git. Without
+# this, `git status` holds .git/index.lock while it writes back a refreshed
+# index: a concurrent `git add` fails, and a timeout kill leaves the lock.
+SAFE_GIT_ENV = {
+    "GIT_OPTIONAL_LOCKS": "0",
+}
 
 
 def git_config_env(pairs, base=None):
@@ -61,6 +72,7 @@ def git_config_env(pairs, base=None):
 
 def apply_safe_git_env():
     os.environ.update(git_config_env(SAFE_GIT_CONFIG))
+    os.environ.update(SAFE_GIT_ENV)
 
 
 def _git_rev_parse_head(cwd):
@@ -131,31 +143,295 @@ def _diff_pathspec(cwd, paths):
     return ["--"] + rel if rel else []
 
 
+_TEMP_INDEX_PREFIX = "security_hook_idx_"
+# A copy is named <prefix>pid<hook pid>_<8 random chars>, so a later run can
+# tell that the hook which made it is gone. Names from earlier releases have
+# only the 8 random characters and never match.
+_OWNER_PID = re.compile(re.escape(_TEMP_INDEX_PREFIX) + r"pid(\d+)_[^.]{8}(?:\.|$)")
+# A live copy is in use for under a minute (a couple of bounded git calls), so
+# anything this old belongs to a run that was killed.
+_TEMP_INDEX_STALE_S = 1800
+# Unlinking index-sized files is slow; a large backlog drains over several
+# calls instead of stalling one hook past its timeout.
+_SWEEP_BUDGET_S = 2
+
+
+def _owner_is_gone(name):
+    """True when `name` records the pid of the hook that made it and no such
+    process exists. A reused pid reads as alive: the file then waits for the
+    age limit. Never probes on Windows, where os.kill would end the process."""
+    if not hasattr(os, "getuid"):
+        return False
+    m = _OWNER_PID.match(name)
+    if not m:
+        return False
+    try:
+        os.kill(int(m.group(1)), 0)
+    except ProcessLookupError:
+        return True
+    except (OSError, OverflowError, ValueError):
+        return False
+    return False
+
+
+def _sweep_stale_indexes(dirpath, uid):
+    """Delete index copies in `dirpath` that a killed run left behind. Only
+    regular files owned by `uid` (None: no ownership check) are touched.
+
+    A copy goes as soon as the hook that made it is gone: a killed hook can
+    leave one per run, and index-sized files fill a disk long before the age
+    limit. The age limit covers names without a pid and reused pids.
+
+    Age is the newer of mtime and ctime: a copy keeps .git/index's mtime,
+    which may be days old, so mtime alone would delete a file that another
+    running hook is still using."""
+    import stat
+    import time
+    cutoff = time.time() - _TEMP_INDEX_STALE_S
+    deadline = time.monotonic() + _SWEEP_BUDGET_S
+    try:
+        names = os.listdir(dirpath)
+    except OSError:
+        return
+    for name in names:
+        if not name.startswith(_TEMP_INDEX_PREFIX):
+            continue
+        p = os.path.join(dirpath, name)
+        try:
+            st = os.lstat(p)
+            if not stat.S_ISREG(st.st_mode):
+                continue
+            if uid is not None and st.st_uid != uid:
+                continue
+            if max(st.st_mtime, st.st_ctime) < cutoff or _owner_is_gone(name):
+                os.unlink(p)
+                if time.monotonic() > deadline:
+                    return
+        except OSError:
+            pass
+
+
+def _sweep_stale_stash_indexes(real_index):
+    """Delete `<index>.stash.<pid>` files a killed `git stash create` left
+    next to the real index. Releases before 2.0.10 ran it there, so a clone
+    can hold hundreds, each the size of the index, and nothing else removes
+    them. Only our own regular files past the age limit go: git keeps one for
+    seconds. `index.lock` is never touched; a live git may hold it."""
+    import stat
+    import time
+    uid = os.getuid() if hasattr(os, "getuid") else None
+    cutoff = time.time() - _TEMP_INDEX_STALE_S
+    deadline = time.monotonic() + _SWEEP_BUDGET_S
+    dirpath = os.path.dirname(real_index)
+    stale = re.compile(re.escape(os.path.basename(real_index)) + r"\.stash\.\d+$")
+    try:
+        names = os.listdir(dirpath)
+    except OSError:
+        return
+    for name in names:
+        if not stale.match(name):
+            continue
+        p = os.path.join(dirpath, name)
+        try:
+            st = os.lstat(p)
+            if not stat.S_ISREG(st.st_mode):
+                continue
+            if uid is not None and st.st_uid != uid:
+                continue
+            if max(st.st_mtime, st.st_ctime) < cutoff:
+                os.unlink(p)
+                if time.monotonic() > deadline:
+                    return
+        except OSError:
+            pass
+
+
+# Index copies this process has made and not yet removed.
+_live_copies = set()
+
+# A hook working on a copy needs up to three times the index's size for a
+# moment (the copy, and git's rewrite and stash index next to it). With many
+# agents in one clone that alone can fill a disk, so only so many hooks per
+# user work on a copy at once; the others wait, then go without.
+_MAX_LIVE_COPIES = 8
+_SLOT_WAIT_S = 5
+
+
+def _copy_slots(tmpdir, index_bytes):
+    """How many hooks may work on a copy at once: what fits into a quarter of
+    the free space at three times the index each, from 1 to
+    _MAX_LIVE_COPIES."""
+    import shutil
+    try:
+        free = shutil.disk_usage(tmpdir).free
+    except OSError:
+        return 1
+    return max(1, min(_MAX_LIVE_COPIES, free // (12 * max(index_bytes, 1))))
+
+
+@contextlib.contextmanager
+def _copy_slot(tmpdir, index_bytes=0):
+    """Hold one of the copy slots; yields False when none came free in
+    _SLOT_WAIT_S. A slot is an flock, so the kernel frees it when its holder
+    dies, however it dies. No cap without flock or a private dir."""
+    import time
+    try:
+        import fcntl
+    except ImportError:
+        fcntl = None
+    if fcntl is None or tmpdir is None:
+        yield True
+        return
+    deadline = time.monotonic() + _SLOT_WAIT_S
+    held = None
+    while held is None:
+        for i in range(_copy_slots(tmpdir, index_bytes)):
+            try:
+                fd = os.open(os.path.join(tmpdir, f"slot{i}.lock"),
+                             os.O_RDWR | os.O_CREAT, 0o600)
+            except OSError:
+                continue
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                held = fd
+                break
+            except OSError:
+                os.close(fd)
+        if held is None:
+            if time.monotonic() >= deadline:
+                break
+            time.sleep(0.1)
+    try:
+        yield held is not None
+    finally:
+        if held is not None:
+            os.close(held)
+
+
+def _remove_copy(tmp_index):
+    """Remove an index copy and the files git wrote next to it."""
+    import glob
+    for p in glob.glob(glob.escape(tmp_index) + "*"):
+        try:
+            os.unlink(p)
+        except OSError:
+            pass
+
+
+def remove_copies_on_termination():
+    """Remove this process's index copies when it is told to terminate.
+    Python's default SIGTERM action ends the process without running
+    `finally`, which left an index-sized file behind each time."""
+    import signal
+
+    def _on_term(signum, _frame):
+        for tmp_index in list(_live_copies):
+            _remove_copy(tmp_index)
+        os._exit(128 + signum)
+
+    try:
+        signal.signal(signal.SIGTERM, _on_term)
+    except (ValueError, OSError, AttributeError):
+        pass  # not the main thread, or no SIGTERM here
+
+
+def _hook_tmpdir():
+    """Private per-user directory for throwaway index copies, or None to use
+    the bare temp dir.
+
+    An index copy can be hundreds of MB and a killed hook cannot clean up, so
+    copies live in one 0700 directory and anything stale is swept on entry,
+    here and in the bare temp dir. The name is predictable and the temp dir
+    may be shared, so anything that is not a real directory we own is
+    refused. Windows has no uid and its temp dir is already per-user."""
+    import stat
+    import tempfile
+    base = tempfile.gettempdir()
+    uid = os.getuid() if hasattr(os, "getuid") else None
+    _sweep_stale_indexes(base, uid)
+    if uid is None:
+        return None
+    d = os.path.join(base, f"claude-security-guidance-{uid}")
+    try:
+        os.mkdir(d, 0o700)
+    except FileExistsError:
+        pass
+    except OSError:
+        return None
+    try:
+        st = os.lstat(d)
+    except OSError:
+        return None
+    if not stat.S_ISDIR(st.st_mode) or st.st_uid != uid:
+        return None
+    try:
+        os.chmod(d, 0o700)
+    except OSError:
+        pass
+    _sweep_stale_indexes(d, uid)
+    return d
+
+
 @contextlib.contextmanager
 def _temp_index(cwd, untracked_paths=None):
     """Yield an env dict pointing GIT_INDEX_FILE at a throwaway copy of the
     repo's index with `git add --intent-to-add` applied, so untracked files
     show up in subsequent `git diff` calls without touching the user's real
-    index. Yields None if no index can be found (bare repo / not a repo); the
-    caller should fall back to a plain diff. Always cleans up the temp file.
+    index. Yields None if no index can be found (bare repo / not a repo) or
+    no copy slot came free; the caller should fall back to a plain diff.
+    Always cleans up the temp file.
 
     Perf: when `untracked_paths` is given, only those paths are added (O(n)
     in untracked count). The default `add -N .` stats every file in the
     worktree — slow in large repos vs fast targeted scan. v2 callers
     already know the untracked set from `git status --porcelain`, so they
-    pass it; v1 keeps the whole-tree scan since it has no prior list."""
-    import shutil
-    import tempfile
+    pass it; v1 keeps the whole-tree scan since it has no prior list.
 
+    Cleanup removes `<tmp_index>*`, not just the copy: git writes
+    `<index>.lock` and `<index>.stash.<pid>` next to the index it is given and
+    cannot remove them itself when a subprocess timeout kills it."""
     real_index = _find_git_index(cwd)
     if not real_index:
         yield None
         return
 
-    tmp_fd, tmp_index = tempfile.mkstemp(prefix="security_hook_idx_")
-    os.close(tmp_fd)
+    _sweep_stale_stash_indexes(real_index)
+    tmpdir = _hook_tmpdir()
     try:
-        shutil.copy2(real_index, tmp_index)
+        index_bytes = os.path.getsize(real_index)
+    except OSError:
+        index_bytes = 0
+    with _copy_slot(tmpdir, index_bytes) as got_slot:
+        if not got_slot:
+            debug_log("no index copy slot came free; going without a copy")
+            yield None
+            return
+        with _copied_index(cwd, real_index, tmpdir, untracked_paths) as env:
+            yield env
+
+
+@contextlib.contextmanager
+def _copied_index(cwd, real_index, tmpdir, untracked_paths):
+    import shutil
+    import tempfile
+
+    tmp_fd, tmp_index = tempfile.mkstemp(
+        prefix=f"{_TEMP_INDEX_PREFIX}pid{os.getpid()}_", dir=tmpdir)
+    os.close(tmp_fd)
+    _live_copies.add(tmp_index)
+    try:
+        # A hard link where the filesystem allows it: no bytes are copied, and
+        # git never writes an index in place (it renames a new file over it),
+        # so the real index cannot change through the link. Either way the
+        # copy must keep .git/index's mtime (copy2, not copyfile): git
+        # re-reads any file whose mtime is not older than the index file's,
+        # and with a fresh mtime it would miss a same-size edit made in the
+        # same second as the last index write.
+        try:
+            os.unlink(tmp_index)
+            os.link(real_index, tmp_index)
+        except (OSError, NotImplementedError, AttributeError):
+            shutil.copy2(real_index, tmp_index)
         env = {**os.environ, "GIT_INDEX_FILE": tmp_index}
         if untracked_paths is None:
             add_args = ["."]
@@ -182,10 +458,8 @@ def _temp_index(cwd, untracked_paths=None):
             )
         yield env
     finally:
-        try:
-            os.unlink(tmp_index)
-        except OSError:
-            pass
+        _remove_copy(tmp_index)
+        _live_copies.discard(tmp_index)
 
 
 def _git_toplevel(cwd):
@@ -378,7 +652,11 @@ def _git_name_only(cwd, base, include_untracked=False):
     or None if git failed (unresolvable ref, not a repo, timeout). Callers
     must distinguish None (error → don't trust as a filter) from set()
     (genuinely nothing changed). `-c core.quotePath=false -z` keeps non-ASCII
-    and space-containing paths intact."""
+    and space-containing paths intact.
+
+    Against the work tree the set can also hold a file whose stat changed and
+    whose content did not: the diff does not refresh the index. Callers
+    intersect with `git status`, which compares content."""
     # Decode stdout/stderr as UTF-8 with errors="replace" instead of using
     # text=True. core.quotePath=false makes git emit raw UTF-8 for non-ASCII
     # paths, and text=True on Windows decodes via cp1252 strict — a non-ASCII
@@ -400,6 +678,8 @@ def _git_name_only(cwd, base, include_untracked=False):
         return {p for p in stdout.split("\0") if p}
 
     try:
+        # The diff only reads the index (diff.autoRefreshIndex is off in
+        # GIT_CMD); a copy is for `add -N` alone.
         if not include_untracked:
             return _run(None)
         with _temp_index(cwd) as env:
@@ -506,10 +786,15 @@ def get_git_diff(cwd, baseline_sha, full_context=False, paths=None, untracked_pa
     # core.quotePath=false comes from GIT_CMD globally (see definition).
     cmd = [*GIT_CMD, "diff", "--no-color", "--no-ext-diff", "--no-textconv", baseline_sha] + (["--unified=99999"] if full_context else []) + pathspec
     try:
-        with _temp_index(cwd, untracked_paths) as env:
-            # env is None when no index could be found (bare repo / not a
-            # repo) — diff still runs, just without untracked-file support.
-            result = subprocess.run(cmd, cwd=cwd, capture_output=True, timeout=30, env=env)
+        if untracked_paths is not None and not untracked_paths:
+            # Nothing to `add -N`, and the diff only reads the index.
+            result = subprocess.run(cmd, cwd=cwd, capture_output=True, timeout=30)
+        else:
+            with _temp_index(cwd, untracked_paths) as env:
+                # env is None when there is no index (bare repo / not a repo)
+                # or no copy slot — diff still runs, just without
+                # untracked-file support.
+                result = subprocess.run(cmd, cwd=cwd, capture_output=True, timeout=30, env=env)
         if result.returncode != 0:
             debug_log(f"git diff failed: {result.stderr[:200].decode('utf-8', errors='replace')}")
             return None

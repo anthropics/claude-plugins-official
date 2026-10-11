@@ -222,9 +222,11 @@ class TestRegexes:
 class TestHooksJson:
     def test_matchers_and_events(self):
         cfg = json.loads((HOOKS_DIR / "hooks.json").read_text())
-        assert "SubagentStop" in cfg["hooks"]
-        assert cfg["hooks"]["SubagentStop"][0]["hooks"][0]["command"] == \
-            cfg["hooks"]["Stop"][0]["hooks"][0]["command"]
+        # Stop already reviews what subagents changed during the turn.
+        assert "SubagentStop" not in cfg["hooks"]
+        stop = cfg["hooks"]["Stop"][0]["hooks"][0]
+        assert stop["command"].endswith('security_reminder_hook.py"')
+        assert stop["asyncRewake"] is True
         bash = [g for g in cfg["hooks"]["PostToolUse"] if g.get("matcher") == "Bash"][0]
         ifs = {h.get("if") for h in bash["hooks"]}
         assert {"Bash(git commit:*)", "Bash(git push:*)", "Bash(git -C * commit *)",
