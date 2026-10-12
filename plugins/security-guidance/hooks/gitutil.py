@@ -972,7 +972,7 @@ def extract_file_paths_from_diff(diff_output):
         return []
 
     paths = []
-    file_diffs = diff_output.split("diff --git ")
+    file_diffs = re.split(r"(?m)^diff --git ", diff_output)
 
     for file_diff in file_diffs:
         if not file_diff.strip():
@@ -999,7 +999,7 @@ def parse_diff_into_files(diff_output):
         return []
 
     files = []
-    file_diffs = diff_output.split("diff --git ")
+    file_diffs = re.split(r"(?m)^diff --git ", diff_output)
 
     for file_diff in file_diffs:
         if not file_diff.strip():
