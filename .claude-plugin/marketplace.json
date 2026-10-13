@@ -3054,8 +3054,11 @@
       "strict": false,
       "lspServers": {
         "pyright": {
-          "command": "pyright-langserver",
+          "command": "node",
           "args": [
+            "${CLAUDE_PLUGIN_ROOT}/scripts/launch-server.mjs",
+            "pyright",
+            "langserver.index.js",
             "--stdio"
           ],
           "extensionToLanguage": {
@@ -3959,8 +3962,11 @@
       "strict": false,
       "lspServers": {
         "typescript": {
-          "command": "typescript-language-server",
+          "command": "node",
           "args": [
+            "${CLAUDE_PLUGIN_ROOT}/scripts/launch-server.mjs",
+            "typescript-language-server",
+            "lib/cli.mjs",
             "--stdio"
           ],
           "extensionToLanguage": {
