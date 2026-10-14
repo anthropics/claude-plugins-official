@@ -3093,14 +3093,14 @@
         "url": "https://github.com/qodo-ai/qodo-skills.git",
         "path": "packages/qodo",
         "ref": "main",
-        "sha": "866d301dfbec39d5bb18bde72ac0dc770cc759a1"
+        "sha": "b8c21854199c538b1c35c981c12a93bab4839ef2"
       },
       "homepage": "https://github.com/qodo-ai/qodo-skills.git"
     },
     {
       "name": "qodo-standards",
       "displayName": "Qodo Standards",
-      "description": "Optional Qodo rules discovery and standards administration workflows.",
+      "description": "Optional Qodo standards discovery and review rules/skills administration workflows.",
       "author": {
         "name": "Qodo",
         "email": "support@qodo.ai"
@@ -3111,7 +3111,7 @@
         "url": "https://github.com/qodo-ai/qodo-skills.git",
         "path": "packages/qodo-standards",
         "ref": "main",
-        "sha": "866d301dfbec39d5bb18bde72ac0dc770cc759a1"
+        "sha": "b8c21854199c538b1c35c981c12a93bab4839ef2"
       },
       "homepage": "https://github.com/qodo-ai/qodo-skills.git"
     },
