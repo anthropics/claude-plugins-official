@@ -170,8 +170,13 @@ def get_baseline_file_content(session_id, file_path, cwd):
             rel_path = os.path.relpath(abs_path, cwd_abs)
         except ValueError:
             return None
+        # `<rev>:<path>` is read from the repo root unless the path starts
+        # with `./`, and takes forward slashes only. Without both, the lookup
+        # fails for a session started below the repo root, and on Windows for
+        # any file that is not directly in the session directory.
+        rel_path = rel_path.replace(os.sep, "/")
         result = subprocess.run(
-            [*GIT_CMD, "show", f"{baseline_sha}:{rel_path}"],
+            [*GIT_CMD, "show", f"{baseline_sha}:./{rel_path}"],
             cwd=cwd, capture_output=True, timeout=5
         )
         if result.returncode == 0:
