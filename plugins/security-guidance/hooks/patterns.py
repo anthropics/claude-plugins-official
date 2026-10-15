@@ -9,7 +9,15 @@ from enum import IntEnum
 
 _JS_EXTS = (".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".mts", ".cts", ".vue", ".svelte")
 _PY_EXTS = (".py", ".pyi", ".ipynb")
-_DOC_EXTS = (".md", ".mdx", ".txt", ".rst", ".json", ".yaml", ".yml")
+# Prose only: .mdx compiles to JSX and YAML/JSON carry real settings, so
+# rules that should still see those skip _PROSE_EXTS rather than _DOC_EXTS.
+_PROSE_EXTS = (".md", ".markdown", ".txt", ".rst")
+_DOC_EXTS = _PROSE_EXTS + (".mdx", ".json", ".yaml", ".yml")
+_PROSE_AND_JS_EXTS = _PROSE_EXTS + _JS_EXTS
+
+
+def _not_prose(path):
+    return not path.lower().endswith(_PROSE_EXTS)
 
 
 _UNSAFE_DESERIALIZATION_REMINDER = """⚠️ Security Warning: Loading pickle data (or equivalents: cPickle, cloudpickle, dill, marshal, shelve, joblib, pandas.read_pickle, numpy with allow_pickle=True) from untrusted sources allows arbitrary code execution.
@@ -96,16 +104,20 @@ Only use exec() if you absolutely need shell features and the input is guarantee
         "ruleName": "new_function_injection",
         # JS-only construct: gate to JS/TS files so docs/.md and other prose
         # mentioning "new Function" don't trip the warning.
+        # Regex, not a substring: `new FunctionRegistry()` is not the constructor.
         "path_filter": lambda p: p.endswith(_JS_EXTS),
-        "substrings": ["new Function"],
+        "regex": r"\bnew\s+Function(?![\w$])",
         "reminder": "\u26a0\ufe0f Security Warning: Using new Function() with string interpolation is a CODE INJECTION vulnerability. If any variable is concatenated or interpolated into the function body string, an attacker controlling that variable can execute arbitrary code. Use safe alternatives: for property access use obj[key] or array.reduce((o, k) => o[k], root); for computation use a safe expression parser. NEVER interpolate untrusted strings into new Function() bodies.",
     },
     {
         "ruleName": "eval_injection",
         # Lookbehind excludes `.` so method calls like PyTorch model.eval(),
-        # redis.eval(), spec.eval() don't match. Skip doc/prose files.
+        # redis.eval(), spec.eval() don't match, and `$` so Playwright's
+        # page.$eval() / page.$$eval() don't either. AngularJS scope.$eval()
+        # does evaluate an expression string, so it keeps its own alternative.
+        # Skip doc/prose files.
         "path_filter": lambda p: not p.endswith(_DOC_EXTS),
-        "regex": r"(?<![a-zA-Z0-9_\.])eval\(",
+        "regex": r"(?<![a-zA-Z0-9_$\.])eval\(|[sS]cope\.\$eval\(",
         "reminder": "⚠️ Security Warning: eval() executes arbitrary code and is a major security risk. Use JSON.parse() for data, ast.literal_eval() for Python literals, or a safe expression parser. If this is safe or is explicitly needed, briefly document that in a comment before continuing.",
     },
     {
@@ -127,8 +139,9 @@ Only use exec() if you absolutely need shell features and the input is guarantee
         # Browser DOM API: only meaningful in JS/TS source. Closes FPs like
         # docs/example HTML, playground/self-contained skills that hardcode
         # innerHTML strings with zero user input (#410).
+        # `=(?!=)` matches assignment only, not `==` / `===` comparisons.
         "path_filter": lambda p: p.endswith(_JS_EXTS),
-        "substrings": [".innerHTML =", ".innerHTML="],
+        "regex": r"\.innerHTML\s*=(?!=)",
         "reminder": "⚠️ Security Warning: Setting innerHTML with untrusted content can lead to XSS vulnerabilities. Use textContent for plain text or safe DOM methods for HTML content. If you need HTML support, consider using an HTML sanitizer library such as DOMPurify.",
     },
     {
@@ -149,6 +162,7 @@ Only use exec() if you absolutely need shell features and the input is guarantee
     },
     {
         "ruleName": "python_subprocess_shell",
+        "path_filter": _not_prose,
         "regex": r"subprocess\.(?:run|call|Popen|check_output|check_call)\(.*shell\s*=\s*True",
         "reminder": """⚠️ Security Warning: Using subprocess with shell=True enables command injection.
 
@@ -203,6 +217,7 @@ Additionally, validate user inputs:
     },
     {
         "ruleName": "tls_verification_disabled",
+        "path_filter": _not_prose,
         "regex": r"\bverify\s*=\s*False\b|rejectUnauthorized\s*:\s*false|InsecureSkipVerify\s*:\s*true|NODE_TLS_REJECT_UNAUTHORIZED\s*=\s*[\x22\x27]?0|ssl\._create_unverified_context|check_hostname\s*=\s*False",
         "reminder": "⚠️ Security Warning: Don't disable TLS verification. This allows MITM attacks. For self-signed dev certs, add the CA to your trust store or use a properly-issued cert.",
     },
@@ -218,6 +233,8 @@ Additionally, validate user inputs:
     },
     {
         "ruleName": "xml_unsafe_parse",
+        # Python stdlib parsers: `ET.parse(` in JS/TS is some unrelated object.
+        "path_filter": lambda p: not p.lower().endswith(_PROSE_AND_JS_EXTS),
         "regex": r"\b(xml\.etree\.ElementTree|ElementTree|ET)\.(parse|fromstring|XML)\s*\(|\bminidom\.(parse|parseString)\s*\(|\bxml\.sax\.(parse|make_parser)\b",
         "reminder": "⚠️ Security Warning: Use defusedxml.ElementTree. Python's stdlib XML parsers are vulnerable to XXE (external entity) and billion-laughs attacks by default.",
     },
@@ -230,7 +247,7 @@ Additionally, validate user inputs:
         "ruleName": "outerHTML_xss",
         # Browser DOM API: only meaningful in JS/TS source.
         "path_filter": lambda p: p.endswith(_JS_EXTS),
-        "substrings": [".outerHTML =", ".outerHTML="],
+        "regex": r"\.outerHTML\s*=(?!=)",
         "reminder": "⚠️ Security Warning: Use textContent or sanitize with DOMPurify. outerHTML assignment is an XSS sink equivalent to innerHTML.",
     },
     {
@@ -242,6 +259,7 @@ Additionally, validate user inputs:
     },
     {
         "ruleName": "script_src_without_sri",
+        "path_filter": _not_prose,
         # Detect remote code execution via dynamic import/eval of fetched content.
         # Negative lookahead after src checks for integrity= anywhere in the remaining tag.
         "regex": (
