@@ -106,7 +106,7 @@ probe() {
     exec "$@" -c 'import os, sys; t = (sys.argv[1:] or [""])[0]; sys.exit(3) if t and not (os.path.isfile(t) and os.access(t, os.R_OK)) else print(f"{sys.version_info[0]}.{sys.version_info[1]}")' "$SG_TARGET" 2>/dev/null
 }
 
-# Use as `v=$(probe ...) || { note_unreadable "<name>"; continue; }`.
+# Use as `ask ... || { note_unreadable "<name>"; continue; }` (see ask below).
 note_unreadable() {
     [ $? -eq 3 ] && sg_unreadable="$sg_unreadable|$1|"
     return 0
@@ -117,6 +117,49 @@ note_unreadable() {
 # when the interpreter does not exist, so missing names are skipped first.
 on_path() {
     command -v "$1" >/dev/null 2>&1
+}
+
+# How long the probes took, for the launcher_probe_max_ms / launcher_probe_ms
+# metrics the hook reports. Measurement only: `ask` is `v=$(probe ...)` with a
+# clock around it, and changes neither which interpreter runs nor how long a
+# probe may take. EPOCHREALTIME needs bash 5; older bash (macOS /bin/bash) only
+# has whole seconds, where a difference of 1 can be a few milliseconds: there
+# a single probe counts from 2 s, and the total is first probe to last.
+unset SG_LAUNCHER_PROBE_MS SG_LAUNCHER_PROBE_MAX_MS
+sg_probe_ms=0
+sg_probe_max_ms=0
+sg_probe_first=""
+sg_coarse=""
+sg_clock() {
+    # Sets $sg_now (ms) without starting a process.
+    case "${EPOCHREALTIME:-}" in
+        [0-9]*[.,][0-9][0-9][0-9][0-9][0-9][0-9])  # the decimal point follows the locale
+            sg_now=${EPOCHREALTIME//[!0-9]/}
+            sg_now=$((10#$sg_now / 1000)) ;;
+        *)
+            sg_coarse=1
+            sg_now=$((SECONDS * 1000)) ;;
+    esac
+}
+ask() {
+    # Sets $v; same exit status as probe.
+    local rc=0 t0 ms
+    sg_clock; t0=$sg_now
+    [ -n "$sg_probe_first" ] || sg_probe_first=$t0
+    v=$(probe "$@") || rc=$?
+    sg_clock; ms=$((sg_now - t0))
+    if [ -n "$sg_coarse" ]; then
+        [ "$ms" -ge 2000 ] || ms=0
+        sg_probe_ms=$((sg_now - sg_probe_first))
+        [ "$sg_probe_ms" -ge 2000 ] || sg_probe_ms=0
+    elif [ "$ms" -gt 0 ]; then
+        sg_probe_ms=$((sg_probe_ms + ms))
+    fi
+    [ "$ms" -le "$sg_probe_max_ms" ] || sg_probe_max_ms=$ms
+    if [ "$sg_probe_ms" -gt 0 ]; then
+        export SG_LAUNCHER_PROBE_MS=$sg_probe_ms SG_LAUNCHER_PROBE_MAX_MS=$sg_probe_max_ms
+    fi
+    return $rc
 }
 
 # True iff arg is a "M.m" version string >= 3.10. claude_agent_sdk requires
@@ -138,7 +181,7 @@ is_sdk_compatible() {
 # available wins; the user doesn't have to PATH-prefer it.
 for cmd in "python3.13" "python3.12" "python3.11" "python3.10"; do
     on_path "$cmd" || continue
-    v=$(probe "$cmd") || { note_unreadable "$cmd"; continue; }
+    ask "$cmd" || { note_unreadable "$cmd"; continue; }
     v=${v%$'\r'}
     if is_sdk_compatible "$v"; then
         exec "$cmd" "$@"
@@ -153,7 +196,7 @@ for cmd in "python3" "python" "py -3"; do
     # shellcheck disable=SC2086
     on_path $cmd || continue
     # shellcheck disable=SC2086
-    v=$(probe $cmd) || { note_unreadable "$cmd"; continue; }
+    ask $cmd || { note_unreadable "$cmd"; continue; }
     v=${v%$'\r'}
     if is_sdk_compatible "$v"; then
         # shellcheck disable=SC2086
@@ -212,7 +255,7 @@ sg_tried="|"
 for cmd in "${sg_candidates[@]}"; do
     case "$sg_tried" in *"|$cmd|"*) continue ;; esac
     sg_tried="$sg_tried$cmd|"
-    v=$(probe "$cmd") || { note_unreadable "$cmd"; continue; }
+    ask "$cmd" || { note_unreadable "$cmd"; continue; }
     v=${v%$'\r'}
     if is_sdk_compatible "$v"; then
         exec "$cmd" "$@"

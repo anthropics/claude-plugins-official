@@ -287,6 +287,26 @@ def _log_usage(usage):
     )
 
 
+def launcher_probe_metrics():
+    """How long sg-python.sh waited for interpreters to answer its probe.
+
+    Only when this launch's probes took a second or more together, so ordinary
+    rows carry no extra keys: `launcher_probe_ms` is all of them,
+    `launcher_probe_max_ms` the slowest one. Both are capped at an hour (the
+    launcher reads the wall clock, which can jump). Read once: the variables
+    are removed so child processes do not report this launch as their own.
+    """
+    try:
+        slowest = int(os.environ.pop("SG_LAUNCHER_PROBE_MAX_MS", ""))
+        total = int(os.environ.pop("SG_LAUNCHER_PROBE_MS", ""))
+    except ValueError:
+        return {}
+    if total < 1000 or slowest > total:
+        return {}
+    cap = 3_600_000
+    return {"launcher_probe_ms": min(total, cap), "launcher_probe_max_ms": min(slowest, cap)}
+
+
 def _usage_metrics():
     """Snapshot the accumulator as metric keys. Returns {} when no API calls
     AND no HTTP errors were made so skip-path emits don't burn key budget.

@@ -27,7 +27,10 @@ from pathlib import Path
 # → ~/.claude/security. See _base.state_dir for resolution precedence. Re-aliased
 # here to match the existing local name (state_dir was already a local var in
 # main() and _maybe_emit_user_notice).
-from _base import portable_output, state_dir as _resolve_state_dir, write_hook_output
+from _base import (
+    launcher_probe_metrics, portable_output, state_dir as _resolve_state_dir,
+    write_hook_output,
+)
 
 # Outcome codes for the sdk_bootstrap metric. Values are stable for telemetry.
 NOOP_SYSTEM = 0      # claude_agent_sdk already importable in system python
@@ -853,6 +856,7 @@ if __name__ == "__main__":
     # not read the plugin files.
     if os.environ.get("SG_LAUNCHER_FALLBACK") == "1":
         metrics["launcher_fallback"] = 1
+    metrics.update(launcher_probe_metrics())
     response: dict[str, object] = {"metrics": metrics}
     # One-time user-visible notice when the agentic reviewer is dead on
     # arrival. Uses hookSpecificOutput.additionalContext (SessionStart's
