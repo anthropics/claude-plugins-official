@@ -190,6 +190,12 @@ MAX_STOP_HOOK_FIRINGS = int(os.environ.get("MAX_STOP_HOOK_FIRINGS", "3"))
 # diff; unbounded diffs burn tokens and risk 400 on context length.
 MAX_DIFF_FILES = int(os.environ.get("MAX_DIFF_FILES", "30"))
 
+# Changed paths past which the Stop review is skipped before any diff. A set
+# this large is a repo at $HOME or an unignored cache, not edits; no platform
+# takes that many paths in one git command, and only resolving them takes
+# seconds.
+MAX_REVIEW_SET_PATHS = int(os.environ.get("MAX_REVIEW_SET_PATHS", "100000"))
+
 # Appended to all exit(2) guidance so the asyncRewake auto-turn doesn't
 # cause the model to abandon the user's original request.
 CONTINUATION_SUFFIX = (
@@ -2173,6 +2179,10 @@ def handle_stop_hook(input_data):
         debug_log("Stop hook: empty review set")
         _skip(9, touched_paths_count=len(touched_paths))
     debug_log(f"Stop hook: review_set={len(review_paths)} base={diff_base[:12]} dirty_now={v2_metrics['dirty_now_count']} changed_since={v2_metrics['changed_since_count']}")
+    if len(review_paths) > MAX_REVIEW_SET_PATHS:
+        debug_log(f"Stop hook: pathological review set (more than "
+                  f"{MAX_REVIEW_SET_PATHS} paths), skipping")
+        _skip(8)
     # Run from repo_root so the toplevel-relative review_paths resolve.
     # Diff CONTENT against the turn-start stash (baseline_sha) so the LLM
     # sees only this-turn edits — diffing against HEAD includes the user's

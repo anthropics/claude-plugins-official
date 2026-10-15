@@ -15,9 +15,12 @@ Functions that DO compose patched leaves (``compute_v2_review_set``,
 ``security_reminder_hook.py`` for that reason.
 """
 import contextlib
+import errno
 import os
 import re
 import subprocess
+import sys
+import time
 
 from _base import debug_log
 
@@ -141,6 +144,78 @@ def _diff_pathspec(cwd, paths):
             continue
         rel.append(r)
     return ["--"] + rel if rel else []
+
+
+# Bytes of file paths per git call once a path list has proved too long for
+# one command. Windows caps a whole command line at 32,767 characters;
+# elsewhere the limit is about 1 MB (macOS) or 2 MB (Linux), environment
+# included.
+_MAX_PATH_ARGS_BYTES = (
+    20000 if sys.platform in ("win32", "cygwin", "msys") else 500000)
+# More commands than this and the path list is not worth diffing: each one
+# matches its paths against the whole index, and a set that large is thrown
+# away as pathological after the diff anyway.
+_MAX_PATH_BATCHES = 4
+
+
+def _path_batches(paths):
+    batch, size = [], 0
+    for p in paths:
+        # The exec limit also counts a terminator and a pointer per argument.
+        n = len(os.fsencode(p)) + 9
+        if batch and size + n > _MAX_PATH_ARGS_BYTES:
+            yield batch
+            batch, size = [], 0
+        batch.append(p)
+        size += n
+    if batch:
+        yield batch
+
+
+def _too_many_args(e):
+    """The OS refused to start the command because its arguments are too
+    long. Windows reports ERROR_FILENAME_EXCED_RANGE, which Python turns into
+    a FileNotFoundError."""
+    return e.errno == errno.E2BIG or getattr(e, "winerror", None) == 206
+
+
+def _run_git_on_review_paths(args, paths, timeout, **kwargs):
+    """Run `git <args> -- <paths>` for the Stop review; return the results.
+
+    One command with every path whenever the OS takes it. When the OS refuses
+    the argument list as too long, only reviewable source paths are kept (the
+    review drops the rest from the diff anyway) and they go out in as few
+    commands as they need, all within `timeout` seconds together. If even
+    those need more than _MAX_PATH_BATCHES commands, the refusal is raised
+    again.
+
+    After a refusal, `git diff` pairs a rename only when both of its paths
+    are reviewable source and in the same command; otherwise it shows as a
+    delete or an add.
+    """
+    cmd = [*GIT_CMD, *args, "--"]
+    paths = list(paths)
+    deadline = time.monotonic() + timeout
+    try:
+        return [subprocess.run(cmd + paths, capture_output=True,
+                               timeout=timeout, **kwargs)]
+    except OSError as e:
+        if not _too_many_args(e):
+            raise
+        too_long = e
+    batches = list(_path_batches([p for p in paths if _is_reviewable_source(p)]))
+    debug_log(f"git {args[0]}: {len(paths)} paths do not fit one command; "
+              f"{len(batches)} command(s) for the reviewable ones")
+    if len(batches) > _MAX_PATH_BATCHES:
+        raise too_long
+    results = []
+    for batch in batches:
+        left = deadline - time.monotonic()
+        if left <= 0:
+            raise subprocess.TimeoutExpired(cmd, timeout)
+        results.append(subprocess.run(cmd + batch, capture_output=True,
+                                      timeout=left, **kwargs))
+    return results
 
 
 _TEMP_INDEX_PREFIX = "security_hook_idx_"
@@ -443,7 +518,7 @@ def _copied_index(cwd, real_index, tmpdir, untracked_paths):
             # filter to surviving paths (lexists so dangling symlinks count).
             surviving = [p for p in untracked_paths
                          if os.path.lexists(os.path.join(cwd, p))]
-            add_args = ["--"] + surviving if surviving else None
+            add_args = surviving or None
         else:
             add_args = None
         if add_args:
@@ -451,11 +526,8 @@ def _copied_index(cwd, real_index, tmpdir, untracked_paths):
             # still spawns reader threads that decode stderr — git error
             # messages can reference non-ASCII filenames and crash on
             # cp1252. See #2099. Drop text=True so bytes stay raw.
-            subprocess.run(
-                [*GIT_CMD, "add", "--intent-to-add"] + add_args,
-                cwd=cwd, capture_output=True, timeout=10,
-                env=env,
-            )
+            _run_git_on_review_paths(["add", "--intent-to-add"], add_args,
+                                     timeout=10, cwd=cwd, env=env)
         yield env
     finally:
         _remove_copy(tmp_index)
@@ -772,6 +844,8 @@ def get_git_diff(cwd, baseline_sha, full_context=False, paths=None, untracked_pa
 
     If `paths` is given, the diff is restricted to those paths (relative to
     cwd; absolute paths are converted, paths outside cwd are dropped).
+    A path list too long for one command is cut down to reviewable source
+    files: see _run_git_on_review_paths.
     `untracked_paths` (repo-root-relative) is forwarded to _temp_index so it
     can add only those files instead of scanning the whole worktree.
     """
@@ -784,22 +858,29 @@ def get_git_diff(cwd, baseline_sha, full_context=False, paths=None, untracked_pa
         return ""
 
     # core.quotePath=false comes from GIT_CMD globally (see definition).
-    cmd = [*GIT_CMD, "diff", "--no-color", "--no-ext-diff", "--no-textconv", baseline_sha] + (["--unified=99999"] if full_context else []) + pathspec
+    args = ["diff", "--no-color", "--no-ext-diff", "--no-textconv", baseline_sha] + (["--unified=99999"] if full_context else [])
+
+    def _run(env):
+        if pathspec:
+            results = _run_git_on_review_paths(args, pathspec[1:], timeout=30, cwd=cwd, env=env)
+        else:
+            results = [subprocess.run([*GIT_CMD, *args], cwd=cwd, capture_output=True, timeout=30, env=env)]
+        for result in results:
+            if result.returncode != 0:
+                debug_log(f"git diff failed: {result.stderr[:200].decode('utf-8', errors='replace')}")
+                return None
+        # Decode with errors='replace' so binary diffs don't crash
+        return b"".join(r.stdout for r in results).decode("utf-8", errors="replace")
+
     try:
         if untracked_paths is not None and not untracked_paths:
             # Nothing to `add -N`, and the diff only reads the index.
-            result = subprocess.run(cmd, cwd=cwd, capture_output=True, timeout=30)
-        else:
-            with _temp_index(cwd, untracked_paths) as env:
-                # env is None when there is no index (bare repo / not a repo)
-                # or no copy slot — diff still runs, just without
-                # untracked-file support.
-                result = subprocess.run(cmd, cwd=cwd, capture_output=True, timeout=30, env=env)
-        if result.returncode != 0:
-            debug_log(f"git diff failed: {result.stderr[:200].decode('utf-8', errors='replace')}")
-            return None
-        # Decode with errors='replace' so binary diffs don't crash
-        return result.stdout.decode("utf-8", errors="replace")
+            return _run(None)
+        with _temp_index(cwd, untracked_paths) as env:
+            # env is None when there is no index (bare repo / not a repo)
+            # or no copy slot — diff still runs, just without
+            # untracked-file support.
+            return _run(env)
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
         debug_log(f"git diff error: {e}")
         return None
