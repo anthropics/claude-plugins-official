@@ -86,6 +86,7 @@ from _base import (  # noqa: E402,F401
     _USAGE_CONTEXT, _log_usage,
     state_dir as _resolve_state_dir,
     write_hook_output as _write_hook_output,
+    llm_reviews_switched_off, agent_sdk_installed,
 )
 import extensibility  # noqa: E402
 from patterns import (  # noqa: E402,F401
@@ -2483,11 +2484,14 @@ def _maybe_bootstrap_agent_sdk_async():
     is idempotent and O_EXCL-locked, so concurrent/repeat spawns are safe;
     the throttle file only avoids spawning dozens of subprocesses during
     the build window. No-ops in ~10ms on local installs (SDK already
-    importable).
+    importable, or already installed under the state dir, which is not on
+    sys.path here) and when the environment turns the LLM reviews off.
     """
     try:
         import importlib.util
         if importlib.util.find_spec("claude_agent_sdk") is not None:
+            return
+        if llm_reviews_switched_off() or agent_sdk_installed(_resolve_state_dir()):
             return
         import time as _t
         try:

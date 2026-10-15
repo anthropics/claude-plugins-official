@@ -17,7 +17,6 @@ Two reassignable globals here are read by handlers in
 ``_last_review_truncated_bytes``. Handlers reference them as ``llm.X`` (not via
 ``from``-import) so they observe reassignment.
 """
-import glob
 import hashlib
 import json
 import logging
@@ -34,7 +33,7 @@ from typing import Optional, Tuple, Dict, Any, List
 
 import extensibility
 import review_api
-from _base import debug_log, _record_usage, _record_http_error, _PV, PROVENANCE_TAG, state_dir as _resolve_state_dir  # noqa: F401
+from _base import debug_log, _record_usage, _record_http_error, _PV, PROVENANCE_TAG, state_dir as _resolve_state_dir, agent_sdk_site_dirs  # noqa: F401
 from session_state import with_locked_state
 from gitutil import git_config_env, SAFE_GIT_CONFIG
 
@@ -59,17 +58,13 @@ def _inject_agent_sdk_venv_into_syspath(state_dir):
     fails with `ModuleNotFoundError: pywintypes` and the agentic reviewer
     falls back to single-shot silently. Replicate what site.py would do.
     """
-    venv_root = os.path.join(state_dir, "agent-sdk-venv")
-    candidates = (
-        glob.glob(os.path.join(venv_root, "lib", "python*", "site-packages"))
-        + glob.glob(os.path.join(venv_root, "Lib", "site-packages"))
-        # `pip install --target` fallback (ensure_agent_sdk BUILT_TARGET, used
-        # when venv can't bootstrap pip): a FLAT layout — packages sit directly
-        # in agent-sdk-libs/, not under a site-packages subdir. See #2154
-        # follow-up. The pywin32 .pth bootstrap below applies here too (target
-        # installs don't process .pth at runtime, same as a manual venv insert).
-        + [os.path.join(state_dir, "agent-sdk-libs")]
-    )
+    # `agent-sdk-libs` is the `pip install --target` fallback
+    # (ensure_agent_sdk BUILT_TARGET, used when venv can't bootstrap pip): a
+    # FLAT layout, packages sit directly in it, not under a site-packages
+    # subdir. See #2154 follow-up. The pywin32 .pth bootstrap below applies
+    # there too (target installs don't process .pth at runtime, same as a
+    # manual venv insert).
+    candidates = agent_sdk_site_dirs(state_dir)
     added = False
     for sp in candidates:
         if not os.path.isdir(sp) or sp in sys.path:

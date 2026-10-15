@@ -5,6 +5,7 @@ This module exists so that ``patterns``/``session_state``/``gitutil`` can use
 ``debug_log`` without importing ``security_reminder_hook`` (which would be a
 circular import). It must stay free of any other intra-plugin imports.
 """
+import glob
 import json
 import os
 import re
@@ -38,6 +39,47 @@ def state_dir():
     if cc_config:
         return os.path.expanduser(os.path.join(cc_config, "security"))
     return os.path.expanduser("~/.claude/security")
+
+
+def llm_reviews_switched_off():
+    """True when the environment turns off every review that calls a model:
+    the kill switch (SECURITY_GUIDANCE_DISABLE=1 / ENABLE_SECURITY_REMINDER=0),
+    ENABLE_CODE_SECURITY_REVIEW=0, or ENABLE_STOP_REVIEW=0 together with
+    ENABLE_COMMIT_REVIEW=0. Nothing loads the agent SDK then, so nothing
+    should install it. Same reading of each variable as
+    security_reminder_hook.py."""
+    env = os.environ.get
+    if env("SECURITY_GUIDANCE_DISABLE", "").strip().lower() in ("1", "true", "yes", "on"):
+        return True
+    if env("ENABLE_SECURITY_REMINDER", "1") == "0":
+        return True
+    if env("ENABLE_CODE_SECURITY_REVIEW", "1") == "0":
+        return True
+    return env("ENABLE_STOP_REVIEW", "1") == "0" and env("ENABLE_COMMIT_REVIEW", "1") == "0"
+
+
+def agent_sdk_site_dirs(state_dir):
+    """Directories under the state dir that ensure_agent_sdk.py installs the
+    agent SDK into and llm.py adds to sys.path: the venv's site-packages
+    (POSIX `lib/pythonX.Y/site-packages`, Windows `Lib/site-packages`) and
+    the flat `pip install --target` fallback."""
+    venv_root = os.path.join(state_dir, "agent-sdk-venv")
+    return (
+        glob.glob(os.path.join(venv_root, "lib", "python*", "site-packages"))
+        + glob.glob(os.path.join(venv_root, "Lib", "site-packages"))
+        + [os.path.join(state_dir, "agent-sdk-libs")]
+    )
+
+
+def agent_sdk_installed(state_dir):
+    """True iff one of those directories holds a finished install of the SDK:
+    its package and the metadata pip writes once the package is unpacked. A
+    file check only, no import."""
+    return any(
+        os.path.isfile(os.path.join(d, "claude_agent_sdk", "__init__.py"))
+        and glob.glob(os.path.join(d, "claude_agent_sdk-*.dist-info"))
+        for d in agent_sdk_site_dirs(state_dir)
+    )
 
 
 # Debug log file. Lives under the plugin state dir (default ~/.claude/security/)

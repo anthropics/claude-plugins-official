@@ -28,6 +28,7 @@ from pathlib import Path
 # here to match the existing local name (state_dir was already a local var in
 # main() and _maybe_emit_user_notice).
 from _base import portable_output, state_dir as _resolve_state_dir, write_hook_output
+from _base import llm_reviews_switched_off
 
 # Outcome codes for the sdk_bootstrap metric. Values are stable for telemetry.
 NOOP_SYSTEM = 0      # claude_agent_sdk already importable in system python
@@ -55,6 +56,9 @@ SKIP_COOLDOWN = 9    # a recent build was signal-killed (memory pressure) — no
                      # repro confirmed the dominant Linux BUILD_FAILED is a
                      # SIGKILL/SIGSEGV of the memory-heavy venv+pip subprocess
                      # (rc<0, empty streams). See #2154 follow-up.
+SKIP_REVIEWS_OFF = 10  # the environment turns off every review that would
+                       # load the SDK (kill switch included), so nothing is
+                       # installed. See #5331.
 
 # How long to skip rebuilds after a signal kill. Retries at most once per
 # window so a machine whose memory frees up still recovers (just not every
@@ -392,6 +396,20 @@ def _pip_err_from_stderr(stderr_b):
     return f"other:{tail}" if tail else "other"
 
 
+# A package directory that has lost its files still imports, as a namespace
+# package, so a bare `import claude_agent_sdk` calls an emptied install
+# healthy and it is never rebuilt. A real install has a __file__; the probe
+# exits with _PROBE_EMPTIED when there is none. See #6612.
+_PROBE_EMPTIED = 3
+_SDK_IMPORT_PROBE = (
+    "import sys, claude_agent_sdk; "
+    f"sys.exit(0 if getattr(claude_agent_sdk, '__file__', None) else {_PROBE_EMPTIED})"
+)
+
+# Set by main() when the venv's probe exited with _PROBE_EMPTIED.
+_venv_was_emptied = False
+
+
 def _target_dir(state_dir) -> Path:
     return Path(state_dir) / "agent-sdk-libs"
 
@@ -407,7 +425,7 @@ def _target_sdk_importable(state_dir) -> bool:
     try:
         r = subprocess.run(
             [sys.executable, "-c",
-             "import sys; sys.path.insert(0, sys.argv[1]); import claude_agent_sdk",
+             "import sys; sys.path.insert(0, sys.argv[1]); " + _SDK_IMPORT_PROBE,
              str(target)],
             capture_output=True, timeout=10,
         )
@@ -453,6 +471,79 @@ def _build_via_target(state_dir) -> tuple[int, str, str]:
         return BUILD_FAILED, "pip_target", f"exc:{type(e).__name__}"
 
 
+def _near_git_repo() -> bool:
+    """Whether the session's directory is in a git work tree (a `.git` entry
+    here or above) or directly holds one (a workspace of repositories). The
+    reviews the SDK serves only run on a repository."""
+    try:
+        top = d = os.path.abspath(os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
+        while True:
+            if os.path.exists(os.path.join(d, ".git")):
+                return True
+            parent = os.path.dirname(d)
+            if parent == d:
+                break
+            d = parent
+        with os.scandir(top) as entries:
+            for i, entry in enumerate(entries):
+                if i >= 500:
+                    return True  # too large to say; not counted
+                if entry.is_dir() and os.path.exists(os.path.join(entry.path, ".git")):
+                    return True
+        return False
+    except OSError:
+        return True
+
+
+def _venv_python_version(venv) -> int:
+    """The Python the venv was built with, as major*100+minor (312), read
+    from its pyvenv.cfg; 0 if unknown."""
+    try:
+        for line in (Path(venv) / "pyvenv.cfg").read_text(errors="replace").splitlines():
+            key, _, value = line.partition("=")
+            if key.strip() in ("version", "version_info"):
+                major, minor = value.strip().split(".")[:2]
+                return int(major) * 100 + int(minor)
+    except (OSError, ValueError):
+        pass
+    return 0
+
+
+def _install_context_metrics(outcome, state_dir) -> dict:
+    """Counts that size open questions about the private SDK install; no
+    behaviour depends on them. Only when set, and the first three only on
+    rows where the install exists.
+
+    sdk_no_creds / sdk_no_git: the session holds the install while the
+    reviews it serves cannot run, for lack of model credentials or of a git
+    repository. Should the build wait for those? See #5331.
+
+    sdk_venv_py: the venv was built by another Python version than the one
+    running the hooks, which is the one that loads it; its compiled
+    dependencies do not load there. See #5706.
+
+    sdk_venv_emptied: the venv's SDK package directory had lost its files
+    and this run went on to rebuild it, whatever the outcome. See #6612."""
+    out = {}
+    if _venv_was_emptied:
+        out["sdk_venv_emptied"] = 1
+    if outcome not in (NOOP_VENV, BUILT, BUILT_TARGET, NOOP_TARGET):
+        return out
+    try:
+        import llm
+        if not llm.HAS_API_CREDENTIALS:
+            out["sdk_no_creds"] = 1
+    except Exception:
+        pass
+    if not _near_git_repo():
+        out["sdk_no_git"] = 1
+    if outcome == NOOP_VENV:
+        built_by = _venv_python_version(Path(state_dir) / "agent-sdk-venv")
+        if built_by and built_by != sys.version_info[0] * 100 + sys.version_info[1]:
+            out["sdk_venv_py"] = built_by
+    return out
+
+
 def _sdk_on_syspath() -> bool:
     # find_spec is ~10ms; actually importing the SDK pulls in
     # transitive deps and costs ~800ms — too heavy for a
@@ -481,6 +572,15 @@ def main() -> tuple[int, str, str]:
     err_phase / err_kind are non-empty only on BUILD_FAILED — they let
     telemetry split bootstrap failures by root cause.
     """
+    global _venv_was_emptied
+    _venv_was_emptied = False
+    # The SDK only serves the LLM reviews. With those switched off, or the
+    # whole plugin (SECURITY_GUIDANCE_DISABLE=1), a venv of a few hundred MB
+    # would be built for code that never runs, and the notice below would
+    # advertise a reviewer the user turned off. See #5331.
+    if llm_reviews_switched_off():
+        return SKIP_REVIEWS_OFF, "", ""
+
     # Honesty check (fixes the misleading NOOP_VENV in #2071): the SDK
     # requires Python >=3.10 and uses 3.10+ syntax (match statements,
     # PEP 604 unions). On a 3.9 hook interpreter we CANNOT import it no
@@ -533,11 +633,12 @@ def main() -> tuple[int, str, str]:
     if venv_py.exists():
         try:
             r = subprocess.run(
-                [str(venv_py), "-c", "import claude_agent_sdk"],
+                [str(venv_py), "-c", _SDK_IMPORT_PROBE],
                 capture_output=True, timeout=10,
             )
             if r.returncode == 0:
                 return NOOP_VENV, "", ""
+            _venv_was_emptied = r.returncode == _PROBE_EMPTIED
         except Exception:
             pass  # broken venv; rebuild below
 
@@ -846,6 +947,7 @@ if __name__ == "__main__":
     # HOOK_PY_INCOMPATIBLE (whose "py_3.9" err_kind otherwise collapses to
     # err=99, losing the version). Cheap — no subprocess, just sys.version_info.
     metrics["sdk_hook_py"] = sys.version_info[0] * 100 + sys.version_info[1]
+    metrics.update(_install_context_metrics(outcome, _resolve_state_dir()))
     pv = _plugin_version_int()
     if pv:
         metrics["pv"] = pv
