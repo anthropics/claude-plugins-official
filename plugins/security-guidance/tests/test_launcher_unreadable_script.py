@@ -185,7 +185,8 @@ def test_hook_reports_launcher_fallback(workspace, hook_env, flag):
     env.pop("SG_LAUNCHER_FALLBACK", None)
     if flag:
         env["SG_LAUNCHER_FALLBACK"] = flag
-    rc, out, _ = run_hook(stop_payload(workspace), env)
+    _, repo = workspace
+    rc, out, _ = run_hook(stop_payload(repo), env)
     assert rc == 0
     m = metrics_of(out)
     assert m is not None

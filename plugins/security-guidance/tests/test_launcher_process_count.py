@@ -72,9 +72,10 @@ def test_only_installed_interpreters_are_probed(box):
     _add(box, "python", PYTHON, "3.12")
     r = _run(box, "hook.py", trace=True)
     assert r.stdout.splitlines() == ["ran:python", "arg:hook.py"]
-    # xtrace marks what runs in a subshell with "++": only the one probe did.
-    probes = [line for line in r.stderr.splitlines() if line.startswith("++ probe ")]
-    assert probes == ["++ probe python"]
+    probes = [line for line in r.stderr.splitlines() if line.startswith("+ probe ")]
+    assert probes == ["+ probe python"]
+    # xtrace marks what runs in a child process with "++": only that probe did.
+    assert len([line for line in r.stderr.splitlines() if line.startswith("++")]) == 1
     assert _starts(box) == ["python probe", "python hook.py"]
 
 

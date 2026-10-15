@@ -849,6 +849,9 @@ if __name__ == "__main__":
     # not read the plugin files.
     if os.environ.get("SG_LAUNCHER_FALLBACK") == "1":
         metrics["launcher_fallback"] = 1
+    # sg-python.sh skipped this many interpreter names: no answer in time.
+    if os.environ.get("SG_LAUNCHER_PROBE_TIMEOUTS", "").isdecimal():
+        metrics["launcher_probe_timeout"] = min(int(os.environ["SG_LAUNCHER_PROBE_TIMEOUTS"]), 99)
     response: dict[str, object] = {"metrics": metrics}
     # One-time user-visible notice when the agentic reviewer is dead on
     # arrival. Uses hookSpecificOutput.additionalContext (SessionStart's
