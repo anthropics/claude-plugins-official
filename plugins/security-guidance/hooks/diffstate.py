@@ -8,6 +8,7 @@ to work without retargeting.
 """
 import os
 import subprocess
+import sys
 import time
 
 from _base import debug_log, _PV
@@ -104,8 +105,17 @@ def consume_stop_state(session_id, clear=True):
             "fire_count_expired": expired and state.get("stop_hook_fire_count", 0) > 0,
             "previous_findings": [] if findings_expired else list(state.get("previous_findings", [])),
             "reviewed_diff_hash": state.get("reviewed_diff_hash"),
+            "baseline_fail": state.get("baseline_fail") or 0,
         }
+        # touched_paths is cleared per Stop, but one baseline can be
+        # reviewed by several Stops (rewakes). turn_touched keeps every path
+        # recorded since the baseline; only telemetry reads it.
+        turn = list(dict.fromkeys(
+            [p for p in state.get("turn_touched", []) if isinstance(p, str)]
+            + snap["touched_paths"]))[-200:]
+        snap["turn_touched"] = turn
         if clear:
+            state["turn_touched"] = turn
             state["touched_paths"] = []
             state.pop("reviewed_diff_hash", None)
         return snap
@@ -114,8 +124,64 @@ def consume_stop_state(session_id, clear=True):
         "touched_paths": [], "baseline_sha": None, "head_at_capture": None,
         "untracked_at_baseline": {},
         "fire_count": 0, "fire_count_expired": False, "previous_findings": [],
-        "reviewed_diff_hash": None,
+        "reviewed_diff_hash": None, "baseline_fail": 0, "turn_touched": [],
     }
+
+
+# Path names compare without case where the filesystem usually does.
+_FOLD_CASE = os.name == "nt" or sys.platform == "darwin"
+
+
+def _rel_in_repo(real_root, path):
+    """`path` relative to the repo root (a real path), or None when it lies
+    outside the repo."""
+    real = os.path.realpath(path)
+    try:
+        rel = os.path.relpath(real, real_root)
+    except ValueError:  # another drive
+        return None
+    if rel == os.pardir or rel.startswith(os.pardir + os.sep):
+        return None
+    return rel.casefold() if _FOLD_CASE else rel
+
+
+def touched_scope(repo_root, cwd, touched_paths):
+    """Where the paths the session's edit tools wrote since the baseline lie:
+    (scope, repo-relative paths inside the repo). scope: 0 none recorded,
+    1 all inside the reviewed repo, 2 some outside, 3 all outside. Relative
+    paths are read against `cwd`. The list holds the newest 200 paths, so
+    this is approximate past that. Telemetry only."""
+    root = os.path.realpath(repo_root)
+    inside, outside = set(), 0
+    for p in touched_paths:
+        rel = _rel_in_repo(root, os.path.join(cwd or root, p))
+        if rel is None:
+            outside += 1
+        else:
+            inside.add(rel)
+    if not touched_paths:
+        return 0, inside
+    if not outside:
+        return 1, inside
+    return (2 if inside else 3), inside
+
+
+def review_scope_code(repo_root, scope, inside, files, base_fail):
+    """One number, for telemetry only, saying how a Stop review relates to
+    what the session's edit tools wrote since the baseline:
+
+        base_fail * 100000 + scope * 10000 + min(untouched, 9999)
+
+    scope and inside: from touched_scope. untouched: how many of `files`
+    (repo-root-relative or absolute) no edit tool wrote. base_fail: 0 the
+    review diffed against a real turn-start snapshot, 1 and 2 see
+    last_baseline_fail, 3 there was no usable snapshot. Packed into one key
+    and sent even when 0, so a row without it was cut by the metrics key cap
+    or had no repo."""
+    root = os.path.realpath(repo_root)
+    untouched = sum(1 for f in files
+                    if _rel_in_repo(root, os.path.join(root, f)) not in inside)
+    return int(base_fail or 0) * 100000 + scope * 10000 + min(untouched, 9999)
 
 
 def record_reviewed_diff(session_id, diff_hash):
@@ -181,6 +247,14 @@ def get_baseline_file_content(session_id, file_path, cwd):
         return None
 
 
+# How the last capture_git_baseline call got its SHA: 0 a real snapshot,
+# 1 `stash create` failed and HEAD was returned, 2 no index copy and HEAD was
+# returned. With 1 or 2 the next Stop review cannot tell the turn's changes
+# from uncommitted work that was already there. Stored with baseline_sha.
+# Telemetry only.
+last_baseline_fail = 0
+
+
 def capture_git_baseline(cwd):
     """
     Capture a git ref representing the current working tree state.
@@ -206,6 +280,8 @@ def capture_git_baseline(cwd):
     # with `Ávila_report.txt` triggers a quotePath/locale warning) would
     # trip the stderr reader thread on Windows cp1252. Decode both streams
     # leniently for symmetry with _list_untracked. See #2056.
+    global last_baseline_fail
+    last_baseline_fail = 0
     try:
         # Check if HEAD exists (i.e., repo has at least one commit)
         head_check = subprocess.run(
@@ -227,6 +303,10 @@ def capture_git_baseline(cwd):
                     cwd=cwd, capture_output=True, timeout=15, env=env
                 )
                 sha = (result.stdout or b"").decode("utf-8", errors="replace").strip()
+                if not sha and result.returncode != 0:
+                    last_baseline_fail = 1
+            else:
+                last_baseline_fail = 2
         if sha:
             return sha
 
