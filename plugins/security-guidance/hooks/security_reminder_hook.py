@@ -403,7 +403,10 @@ def record_pending_warnings(session_id, file_path, rule_names):
 def sweep_pending_warnings(session_id):
     """
     Stop-hook final sweep. Re-read every file in pending_warnings, re-check
-    patterns, and return (fixed, unresolved, unresolved_mask). Clears state.
+    patterns, and return (fixed, unresolved, unresolved_mask, fired_mask).
+    fired_mask has a bit for every built-in rule that matched an edit since
+    the last sweep (whether or not its reminder was shown again), so the two
+    masks give, per rule, fired and still matching. Clears state.
     A file that's been deleted counts as fixed — the dangerous code is gone.
     Never raises — this is telemetry and must not break the Stop hook.
     """
@@ -411,18 +414,24 @@ def sweep_pending_warnings(session_id):
         try:
             pending = state.get("pending_warnings")
             if not isinstance(pending, dict) or not pending:
-                return 0, 0, 0
+                return 0, 0, 0, 0
 
             by_file = {}
             for key in pending:
                 if not isinstance(key, str) or ":" not in key:
                     continue
                 fp, _, rule = key.rpartition(":")
+                if fp.endswith(":user"):
+                    # User rules are named "user:<name>"; keep them apart
+                    # from a built-in rule of the same name.
+                    fp, rule = fp[:-len(":user")], "user:" + rule
                 by_file.setdefault(fp, set()).add(rule)
 
             unresolved = []
+            fired = set()
             fixed = 0
             for fp, rules in by_file.items():
+                fired |= rules
                 try:
                     with open(fp, "r", errors="replace") as f:
                         still_matching = {r for r, _ in check_patterns(fp, f.read())}
@@ -438,13 +447,14 @@ def sweep_pending_warnings(session_id):
             # Filter to known rules so a renamed/removed rule in old state
             # doesn't KeyError rule_names_to_mask.
             known = [r for r in unresolved if r in _RULE_NAME_TO_ID]
-            return fixed, len(unresolved), rule_names_to_mask(known)
+            return (fixed, len(unresolved), rule_names_to_mask(known),
+                    rule_names_to_mask(fired))
         except Exception as e:
             debug_log(f"sweep_pending_warnings failed: {e}")
-            return 0, 0, 0
+            return 0, 0, 0, 0
 
     result = with_locked_state(session_id, _sweep)
-    return result if result is not None else (0, 0, 0)
+    return result if result is not None else (0, 0, 0, 0)
 
 # =====================================================================
 # Git baseline management
@@ -2094,13 +2104,24 @@ def handle_stop_hook(input_data):
     # Sweep pattern-warning outcomes (pure local work; stop_hook_active is
     # already guaranteed False here so no double-count guard needed).
     sweep = {}
-    warn_fixed, warn_unresolved, warn_unresolved_mask = sweep_pending_warnings(session_id)
+    (warn_fixed, warn_unresolved, warn_unresolved_mask,
+     warn_fired_mask) = sweep_pending_warnings(session_id)
     if warn_fixed or warn_unresolved:
         sweep = {
             "warn_fixed": warn_fixed,
             "warn_unresolved": warn_unresolved,
             "warn_unresolved_mask": warn_unresolved_mask,
         }
+    # The two masks also ride the tail, so the reviewed rows below, which
+    # leave `sweep` or its mask out, carry them when there is room under the
+    # key cap. Per rule they give how often it fired and how often the
+    # flagged code was still there at Stop. warn_fired_mask goes last: a row
+    # cut at the cap loses it first, and a row without it is left out of the
+    # per-rule read instead of counting its rules as fixed.
+    if warn_unresolved_mask:
+        _TAIL_METRICS["warn_unresolved_mask"] = warn_unresolved_mask
+    if warn_fired_mask:
+        _TAIL_METRICS["warn_fired_mask"] = warn_fired_mask
 
     v2_metrics = {}
 
