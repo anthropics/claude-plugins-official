@@ -208,6 +208,13 @@ type Access = {
   mentionPatterns?: string[]
   textChunkLimit?: number
   chunkMode?: 'length' | 'newline'
+  // Deliver the OWNER'S OWN messages (is_from_me) in configured groups. Default false.
+  // Self-chat already delivers the owner's input via its is_from_me=0 loopback copy, but a
+  // group over SMS/RCS produces no such copy, so without this the owner's own group messages
+  // are invisible to the assistant. The assistant's own sends are still never delivered: they
+  // are filtered by the recently-sent-text echo window. Subject to the normal group gate
+  // (requireMention / mentionPatterns), so set a mention pattern to see only directed messages.
+  deliverOwnGroupMessages?: boolean
 }
 
 // Default is allowlist, not pairing. Unlike Discord/Telegram where a bot has
@@ -251,6 +258,7 @@ function readAccessFile(): Access {
       mentionPatterns: parsed.mentionPatterns,
       textChunkLimit: parsed.textChunkLimit,
       chunkMode: parsed.chunkMode,
+      deliverOwnGroupMessages: parsed.deliverOwnGroupMessages ?? false,
     }
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return defaultAccess()
@@ -317,6 +325,10 @@ type GateInput = {
   chatGuid: string
   isGroup: boolean
   text: string
+  // The owner's own message (is_from_me), delivered only when the group opts in via
+  // deliverOwnGroupMessages. The owner is always an allowed sender, so the per-group
+  // allowFrom member restriction does not apply to them; requireMention still does.
+  fromMe?: boolean
 }
 
 type GateResult =
@@ -363,7 +375,9 @@ function gate(input: GateInput): GateResult {
   if (!policy) return { action: 'drop' }
   const groupAllowFrom = policy.allowFrom ?? []
   const requireMention = policy.requireMention ?? true
-  if (groupAllowFrom.length > 0 && !groupAllowFrom.includes(input.senderId)) {
+  // The owner is implicitly allowed in their own groups; the member allowlist only
+  // restricts other people. requireMention below still applies to the owner.
+  if (groupAllowFrom.length > 0 && !input.fromMe && !groupAllowFrom.includes(input.senderId)) {
     return { action: 'drop' }
   }
   if (requireMention && !isMentioned(input.text, access.mentionPatterns)) {
@@ -793,11 +807,22 @@ function handleInbound(r: Row): void {
   // as whitespace-only rows.
   if (!text.trim() && !hasAttachments) return
 
-  // Never deliver our own sends. In self-chat the is_from_me=1 rows are empty
-  // sent-receipts anyway — the content lands on the is_from_me=0 copy below.
-  if (r.is_from_me) return
-  if (!r.handle_id) return
-  const sender = r.handle_id
+  // Our own sends (is_from_me=1). In self-chat these are empty sent-receipts and the content
+  // arrives on the is_from_me=0 loopback copy below, so they are always dropped here. A GROUP over
+  // SMS/RCS makes no loopback copy, so the owner's own group messages exist ONLY as is_from_me=1
+  // and are invisible to the assistant unless the group opts in via deliverOwnGroupMessages.
+  // When it does: deliver the owner's own group messages, but still never deliver the assistant's
+  // OWN sends — those are filtered by the recently-sent-text echo window (trackEcho records every
+  // sendText, groups included). Anything this server did not send is the owner typing directly.
+  let ownGroupMessage = false
+  if (r.is_from_me) {
+    if (!(isGroup && loadAccess().deliverOwnGroupMessages)) return
+    if (consumeEcho(r.chat_guid, text || '\x00att')) return
+    ownGroupMessage = true
+  }
+  // A from-me row carries no handle_id; attribute it to the owner's own address.
+  if (!ownGroupMessage && !r.handle_id) return
+  const sender = ownGroupMessage ? ([...SELF][0] ?? 'me') : r.handle_id!
 
   // Self-chat: in a DM to yourself, both your typed input and our osascript
   // echoes arrive as is_from_me=0 with handle_id = your own address. Filter
@@ -812,6 +837,7 @@ function handleInbound(r: Row): void {
       chatGuid: r.chat_guid,
       isGroup,
       text,
+      fromMe: ownGroupMessage,
     })
 
     if (result.action === 'drop') return

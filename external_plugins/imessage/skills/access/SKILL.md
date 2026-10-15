@@ -119,6 +119,7 @@ Delivery config. Supported keys:
 - `textChunkLimit`: number — split replies longer than this (max 10000)
 - `chunkMode`: `length` | `newline` — hard cut vs paragraph-preferring
 - `mentionPatterns`: JSON array of regex strings — iMessage has no structured mentions, so this is the only trigger in groups
+- `deliverOwnGroupMessages`: `true` | `false` (default `false`) — also deliver the owner's OWN messages in configured groups. Self-chat already delivers owner input via its loopback copy, but a group over SMS/RCS has no loopback copy, so the owner's own group messages are otherwise invisible. The assistant's own sends are still never delivered (filtered by the recently-sent echo window). Subject to the group's `requireMention`/`mentionPatterns`, so pair it with a mention pattern to see only directed messages.
 
 Read, set the key, write, confirm.
 

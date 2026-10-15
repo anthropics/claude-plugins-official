@@ -102,7 +102,7 @@ There is no `ackReaction` or `replyToMode` on this channel.
 | `/imessage:access policy pairing` | Set `dmPolicy`. Values: `pairing`, `allowlist`, `disabled`. |
 | `/imessage:access group add "iMessage;+;chat…"` | Enable a group. Quote the GUID. Flags: `--no-mention`, `--allow a,b`. |
 | `/imessage:access group rm "iMessage;+;chat…"` | Disable a group. |
-| `/imessage:access set textChunkLimit 5000` | Set a config key: `textChunkLimit`, `chunkMode`, `mentionPatterns`. |
+| `/imessage:access set textChunkLimit 5000` | Set a config key: `textChunkLimit`, `chunkMode`, `mentionPatterns`, `deliverOwnGroupMessages`. |
 
 ## Config file
 
@@ -137,6 +137,14 @@ There is no `ackReaction` or `replyToMode` on this channel.
   "textChunkLimit": 10000,
 
   // length = cut at limit. newline = prefer paragraph boundaries.
-  "chunkMode": "newline"
+  "chunkMode": "newline",
+
+  // Also deliver YOUR OWN messages (is_from_me) in configured groups. Default false.
+  // Self-chat already delivers your input via its is_from_me=0 loopback copy, but a
+  // group over SMS/RCS makes no loopback copy, so your own group messages are otherwise
+  // invisible to the assistant. The assistant's own sends are still never delivered
+  // (filtered by the recently-sent echo window). Honors the group's requireMention /
+  // mentionPatterns, so pair it with a mention pattern to see only directed messages.
+  "deliverOwnGroupMessages": false
 }
 ```
