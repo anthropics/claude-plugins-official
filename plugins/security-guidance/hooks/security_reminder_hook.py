@@ -49,7 +49,9 @@ Other:
 - SECURITY_REVIEW_MODEL: Model for LLM review (default: the newest Opus)
 - ANTHROPIC_API_KEY: Required for LLM-based reviews
 - ANTHROPIC_AUTH_TOKEN: Alternative to API key — OAuth access token sent as Bearer auth.
-  Claude Code passes this automatically for OAuth-authenticated users.
+  Claude Code passes this to the plugin's hooks for signed-in users, unless
+  telemetry or nonessential traffic is turned off. With neither, the LLM
+  reviews are skipped and the user is told once (see README, Credentials).
 """
 
 try:
@@ -296,6 +298,72 @@ def emit_metrics(
     if system_message:
         out["systemMessage"] = system_message
     _write_hook_output(out)
+
+
+def _llm_review_off():
+    """Why no LLM review can run: (log text, extra metrics), or None."""
+    if not ENABLE_CODE_SECURITY_REVIEW:
+        return "LLM review disabled", {}
+    if not HAS_API_CREDENTIALS:
+        return "no API credentials", {"no_creds": True}
+    return None
+
+
+# Claude Code hands a signed-in user's credentials to this plugin's hooks,
+# but not in a session started with one of these set.
+_NO_CREDENTIALS_NOTICE_INTERVAL_SEC = 7 * 24 * 3600
+
+
+def _credential_withholding_env_vars():
+    names = [v for v in ("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
+                         "DISABLE_TELEMETRY") if os.environ.get(v)]
+    if os.environ.get("DO_NOT_TRACK", "").strip().lower() in (
+            "1", "true", "yes", "on"):
+        names.append("DO_NOT_TRACK")
+    return names
+
+
+def _no_credentials_notice(file_path):
+    """Text telling the user the LLM reviews are not running, or None.
+
+    Without credentials every Stop, commit and push review is skipped, and
+    nothing else tells the user. Returned for an edit inside a git repo (the
+    reviews only look at those), at most once a week per install: the marker
+    file in the state dir holds the time of the last notice. A marker that
+    can't be written means no notice rather than one on every edit. The
+    caller is the Edit/Write hook because the review hooks run in the
+    background, where Claude Code does not show a systemMessage.
+    """
+    import time as _time
+    try:
+        marker = os.path.join(_resolve_state_dir(), ".no_credentials_notice")
+        try:
+            age = _time.time() - os.path.getmtime(marker)
+            if 0 <= age < _NO_CREDENTIALS_NOTICE_INTERVAL_SEC:
+                return None
+        except OSError:
+            pass
+        if not _git_toplevel(os.path.dirname(os.path.abspath(file_path))):
+            return None
+        os.makedirs(os.path.dirname(marker), exist_ok=True)
+        with open(marker, "w"):
+            pass
+    except OSError:
+        return None
+    withheld_by = _credential_withholding_env_vars()
+    if withheld_by:
+        why = ("Claude Code does not pass your sign-in to plugins while "
+               + " or ".join(withheld_by) + " is set")
+    else:
+        why = "No Anthropic credentials were passed to the plugin's hooks"
+    rest = (", so only the pattern warnings on edits are active"
+            if ENABLE_PATTERN_RULES else "")
+    return (
+        "security-guidance: the AI security review of your changes is not "
+        f"running. {why}{rest}. See \"Credentials\" in the plugin README. "
+        "Set ENABLE_CODE_SECURITY_REVIEW=0 to turn the review off and hide "
+        "this notice, which is shown at most once a week."
+    )
 
 # =====================================================================
 # State management
@@ -1294,9 +1362,10 @@ def handle_commit_review_posttooluse(input_data):
         emit_metrics({"skipped": True, "skip_reason": 32, **_base})
         sys.exit(0)
 
-    if not ENABLE_CODE_SECURITY_REVIEW or not HAS_API_CREDENTIALS:
-        debug_log("Commit review: LLM review disabled or no API credentials")
-        emit_metrics({"skipped": True, "skip_reason": 22, **_base})
+    off = _llm_review_off()
+    if off:
+        debug_log(f"Commit review: {off[0]}")
+        emit_metrics({"skipped": True, "skip_reason": 22, **off[1], **_base})
         sys.exit(0)
 
     if not ensure_anthropic_reachable():
@@ -1756,8 +1825,9 @@ def handle_push_sweep_posttooluse(input_data):
     if interrupted:
         emit_metrics({"skipped": True, "skip_reason": 21, **_base})
         sys.exit(0)
-    if not ENABLE_CODE_SECURITY_REVIEW or not HAS_API_CREDENTIALS:
-        emit_metrics({"skipped": True, "skip_reason": 22, **_base})
+    off = _llm_review_off()
+    if off:
+        emit_metrics({"skipped": True, "skip_reason": 22, **off[1], **_base})
         sys.exit(0)
     if not cwd:
         emit_metrics({"skipped": True, "skip_reason": 25, **_base})
@@ -2160,9 +2230,10 @@ def handle_stop_hook(input_data):
         debug_log(f"Stop hook: already fired {fire_count} times (max {MAX_STOP_HOOK_FIRINGS}), skipping")
         _skip(2)
 
-    if not ENABLE_CODE_SECURITY_REVIEW or not HAS_API_CREDENTIALS:
-        debug_log("Stop hook: LLM review disabled or no API credentials")
-        _skip(3)
+    off = _llm_review_off()
+    if off:
+        debug_log(f"Stop hook: {off[0]}")
+        _skip(3, **off[1])
 
     # Stop-hook-only kill switch — placed after consume_stop_state so
     # touched_paths is still cleared each turn (a disabled Stop hook that
@@ -2600,30 +2671,31 @@ def main():
         #   rule_id:   RuleId of the first raw match (values stay small/enumerable in telemetry)
         #   rule_mask: bitmask of ALL raw matches — POPCOUNT gives raw hit count,
         #              (mask >> N) & 1 tests for a specific rule
+        output = {}
         if raw_pattern_matches:
             raw_names = [r for r, _ in raw_pattern_matches]
-            output = {"metrics": {
+            output["metrics"] = {
                 "pattern_hits": len(all_guidance),
                 # User-defined patterns (rule_name="user:*") have no static
                 # RuleId; emit -1 so the metrics pipeline can distinguish.
                 "rule_id": int(_RULE_NAME_TO_ID.get(raw_names[0], -1)),
                 "rule_mask": rule_names_to_mask(raw_names),
                 **({"pv": _PV} if _PV else {}),
-            }}
-            if all_guidance:
-                output["hookSpecificOutput"] = {
-                    "hookEventName": "PostToolUse",
-                    "additionalContext": PROVENANCE_TAG + "\n\n" + "\n\n".join(all_guidance),
-                }
+            }
+        if all_guidance:
+            output["hookSpecificOutput"] = {
+                "hookEventName": "PostToolUse",
+                "additionalContext": PROVENANCE_TAG + "\n\n" + "\n\n".join(all_guidance),
+            }
+        # The LLM reviews are on but can't run: say so.
+        if (ENABLE_CODE_SECURITY_REVIEW and not HAS_API_CREDENTIALS
+                and (ENABLE_STOP_REVIEW or COMMIT_REVIEW_ENABLED
+                     or PUSH_SWEEP_ENABLED)):
+            notice = _no_credentials_notice(file_path)
+            if notice:
+                output["systemMessage"] = notice
+        if output:
             _write_hook_output(output)
-        elif all_guidance:
-            # Defensive: pattern rules disabled but guidance somehow set (shouldn't happen)
-            print(json.dumps({
-                "hookSpecificOutput": {
-                    "hookEventName": "PostToolUse",
-                    "additionalContext": PROVENANCE_TAG + "\n\n" + "\n\n".join(all_guidance),
-                }
-            }))
 
     sys.exit(0)
 
