@@ -29,6 +29,7 @@ import { randomBytes } from 'crypto'
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, statSync, renameSync, realpathSync } from 'fs'
 import { homedir } from 'os'
 import { join, basename, sep } from 'path'
+import { fromMeGroupAction, passesGroupAllowFrom } from './group-delivery'
 
 const STATIC = process.env.IMESSAGE_ACCESS_MODE === 'static'
 const APPEND_SIGNATURE = process.env.IMESSAGE_APPEND_SIGNATURE !== 'false'
@@ -377,7 +378,7 @@ function gate(input: GateInput): GateResult {
   const requireMention = policy.requireMention ?? true
   // The owner is implicitly allowed in their own groups; the member allowlist only
   // restricts other people. requireMention below still applies to the owner.
-  if (groupAllowFrom.length > 0 && !input.fromMe && !groupAllowFrom.includes(input.senderId)) {
+  if (!passesGroupAllowFrom(groupAllowFrom, input.senderId, !!input.fromMe)) {
     return { action: 'drop' }
   }
   if (requireMention && !isMentioned(input.text, access.mentionPatterns)) {
@@ -816,8 +817,12 @@ function handleInbound(r: Row): void {
   // sendText, groups included). Anything this server did not send is the owner typing directly.
   let ownGroupMessage = false
   if (r.is_from_me) {
-    if (!(isGroup && loadAccess().deliverOwnGroupMessages)) return
-    if (consumeEcho(r.chat_guid, text || '\x00att')) return
+    const deliverOwn = loadAccess().deliverOwnGroupMessages ?? false
+    // Fast-drop before touching the echo window: consumeEcho has a side effect (it deletes the
+    // matched entry), so only consult it on the opted-in group path that actually needs it.
+    if (!isGroup || !deliverOwn) return
+    const isRecentEcho = consumeEcho(r.chat_guid, text || '\x00att')
+    if (fromMeGroupAction(isGroup, deliverOwn, isRecentEcho) === 'drop') return
     ownGroupMessage = true
   }
   // A from-me row carries no handle_id; attribute it to the owner's own address.
