@@ -135,7 +135,8 @@ is_sdk_compatible() {
 # Pass 1 — try minor-versioned binaries in descending order. These are only
 # present if the user explicitly installed them (Homebrew / python.org / pyenv),
 # so picking one here always upgrades over the system `python3`. Highest
-# available wins; the user doesn't have to PATH-prefer it.
+# of these wins; the user doesn't have to PATH-prefer it. Releases newer
+# than this list are pass 2b.
 for cmd in "python3.13" "python3.12" "python3.11" "python3.10"; do
     on_path "$cmd" || continue
     v=$(probe "$cmd") || { note_unreadable "$cmd"; continue; }
@@ -163,6 +164,22 @@ for cmd in "python3" "python" "py -3"; do
     case "$v" in
         [0-9]*.[0-9]*) [ -n "$sg_older" ] || sg_older="$cmd" ;;
     esac
+done
+
+# Pass 2b — minor versions newer than the pass 1 list, so a machine whose
+# only SDK-compatible Python is a recent release (system `python3` 3.9 next to
+# Homebrew's python3.14) is not left on pass 3. Tried only when nothing
+# above is compatible: an interpreter that already works is never traded for
+# a newer one, which may not have the SDK or wheels for its dependencies yet.
+# Oldest first for the same reason. Missing names cost no process (on_path).
+# See #4907, #5024.
+for cmd in "python3.14" "python3.15" "python3.16" "python3.17" "python3.18" "python3.19"; do
+    on_path "$cmd" || continue
+    v=$(probe "$cmd") || { note_unreadable "$cmd"; continue; }
+    v=${v%$'\r'}
+    if is_sdk_compatible "$v"; then
+        exec "$cmd" "$@"
+    fi
 done
 
 # Pass 3 — fallback to any Python 3, even <3.10. Pattern-based checks
@@ -237,7 +254,7 @@ if [ -n "$sg_unreadable" ]; then
     exit 1
 fi
 echo "security-guidance: no working Python 3 interpreter found." >&2
-echo "  tried: python3.13, python3.12, python3.11, python3.10, python3, python, py -3" >&2
+echo "  tried: python3.13 to python3.10, python3, python, py -3, python3.14 to python3.19" >&2
 echo "  on Windows, install Python from https://python.org (NOT the Microsoft Store)" >&2
 echo "  on macOS, install Python 3.10+ via Homebrew (\`brew install python\`)" >&2
 exit 1
