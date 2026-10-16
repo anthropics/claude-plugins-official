@@ -676,7 +676,7 @@
         "url": "https://github.com/canva-sdks/canva-skills.git",
         "path": "plugins/canva",
         "ref": "main",
-        "sha": "b56291ea0a36d0a941e1478b47959be5f1771dee"
+        "sha": "bfcbc681560f6031e9949ea52f81e20beb87e39e"
       },
       "homepage": "https://www.canva.com"
     },
