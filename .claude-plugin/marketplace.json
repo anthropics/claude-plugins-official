@@ -531,7 +531,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/microsoft/azure-sql-database-container.git",
-        "sha": "c1e8167e4c1d5979d7fc4a6ea11a6ce885a9398b"
+        "sha": "e3af4eac0f71a2e9265d086d6825af5310be57f8"
       },
       "homepage": "https://github.com/microsoft/azure-sql-database-container"
     },
@@ -3628,7 +3628,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/Shopify/Shopify-AI-Toolkit.git",
-        "sha": "26d0623f98a5f27c1e8449d0e230259879cd9257"
+        "sha": "57e293be70c7b754429b392e054105272433729d"
       },
       "homepage": "https://shopify.dev"
     },
