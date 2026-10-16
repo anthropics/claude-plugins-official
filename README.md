@@ -19,7 +19,7 @@ or browse for the plugin in `/plugin > Discover`
 
 ## Contributing
 
-### Internal Plugins
+### Internal Plugins 
 
 Internal plugins are developed by Anthropic team members. See `/plugins/example-plugin` for a reference implementation.
 
