@@ -2565,7 +2565,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/netlify/context-and-tools.git",
-        "sha": "0830047fec55c33ea3f360b528c2039b9d96d97f"
+        "sha": "dc9ebf1b994420a4791e9d5d7cd68f62e07a0a41"
       },
       "homepage": "https://github.com/netlify/context-and-tools"
     },
@@ -3628,7 +3628,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/Shopify/Shopify-AI-Toolkit.git",
-        "sha": "26d0623f98a5f27c1e8449d0e230259879cd9257"
+        "sha": "57e293be70c7b754429b392e054105272433729d"
       },
       "homepage": "https://shopify.dev"
     },
