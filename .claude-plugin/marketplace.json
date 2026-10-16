@@ -3628,7 +3628,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/Shopify/Shopify-AI-Toolkit.git",
-        "sha": "26d0623f98a5f27c1e8449d0e230259879cd9257"
+        "sha": "57e293be70c7b754429b392e054105272433729d"
       },
       "homepage": "https://shopify.dev"
     },
@@ -3680,7 +3680,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/SonarSource/sonarqube-agent-plugins.git",
-        "sha": "f194f77ab688c2a82b74a7c50023c552899c21ed"
+        "sha": "5a9356d957db063e4d2cf87511b44cc1ba88dc99"
       },
       "homepage": "https://www.sonarsource.com"
     },
