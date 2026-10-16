@@ -1,0 +1,17 @@
+# launch-shape-waivers.txt — package-grained exceptions to the scan-plugins
+# static pin check (floating auto-exec npx/uvx/bunx/pipx launcher specs in a
+# plugin's .mcp.json). See the scan-plugins action README for the mechanism.
+#
+# Line format: `<entry-name> <package-prefix> [<package-prefix>…]  # rationale`
+#   - a prefix ending in "/" waives any package whose name STARTS with it (a
+#     scope, e.g. `@vendor/`); any other prefix must EQUAL the package name.
+#   - EVERY floating spec declared by the entry must match a granted prefix or
+#     the finding stands — a later-added third-party floating launcher on a
+#     waived entry is still flagged.
+#   - a bare entry name with no prefixes never waives.
+#   - waivers are maintainer-adjudicated only; the bar is that the floating
+#     package is the plugin vendor's OWN published package (same trust domain
+#     as the pinned source repo), evidenced in the rationale.
+
+azure @azure/  # first-party scope: the @azure npm scope is published by the same vendor as the entry's pinned source repo (npm repository field -> github.com/microsoft/mcp). Granted 2026-08-04.
+ui5-modernization chrome-devtools-mcp  # maintainer-granted exception, 2026-08-09 (package is a widely-used vendor-published devtools bridge; not the plugin vendor's own scope). Re-review by 2026-11-09.
