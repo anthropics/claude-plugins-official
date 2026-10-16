@@ -2691,7 +2691,7 @@
         "url": "https://github.com/NVIDIA/skills.git",
         "path": "plugins/nvidia-skills",
         "ref": "main",
-        "sha": "8c2a4ca03c385b80f9e6cd624007d56a19d14e81"
+        "sha": "029363a2023c0b24b1a75ddbeac11cd286d74afb"
       },
       "homepage": "https://build.nvidia.com/skills/"
     },
@@ -3628,7 +3628,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/Shopify/Shopify-AI-Toolkit.git",
-        "sha": "26d0623f98a5f27c1e8449d0e230259879cd9257"
+        "sha": "57e293be70c7b754429b392e054105272433729d"
       },
       "homepage": "https://shopify.dev"
     },
