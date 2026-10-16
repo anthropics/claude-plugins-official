@@ -25,6 +25,11 @@ import gitutil
     "private_dot_netrc",
     "dot_aws/credentials",
     "Deploy_RSA",
+    ".credentials.json",
+    ".claude/.credentials.json",
+    "private_dot_claude/private_dot_credentials.json",
+    ".claude.json",
+    "dot_claude.json",
 ])
 def test_secret_shaped_names_are_not_reviewable(path):
     assert gitutil._is_secret_shaped(path)
@@ -44,6 +49,8 @@ def test_secret_shaped_names_are_not_reviewable(path):
     "bin/deploy",
     "Dockerfile.dev",
     "executable_backup.sh",
+    "config/credentials.json",
+    "src/claude.json",
 ])
 def test_ordinary_source_stays_reviewable(path):
     assert not gitutil._is_secret_shaped(path)
@@ -92,4 +99,17 @@ def test_stop_hook_reports_how_many_files_it_left_out(tmp_path, hook_env, stub_a
     (repo / ".env.local").write_text("TOKEN=abc\n")
     _rc, stdout, _err = run_hook(stop_payload(repo), hook_env)
     assert metrics_of(stdout).get("secret_shaped_skipped") == 2
+    assert stub_api.calls == []
+
+
+@pytest.mark.parametrize("name", [".credentials.json", ".claude.json"])
+def test_claude_code_files_rewritten_during_the_turn_are_not_sent(tmp_path, hook_env, stub_api, name):
+    repo = make_repo(tmp_path / "repo")
+    (repo / name).write_text('{"accessToken": "old"}\n')
+    run_hook(ups_payload(repo), hook_env)
+    (repo / name).write_text('{"accessToken": "new-and-longer"}\n')
+    later = (repo / name).stat().st_mtime + 5
+    os.utime(repo / name, (later, later))
+    _rc, stdout, _err = run_hook(stop_payload(repo), hook_env)
+    assert metrics_of(stdout).get("secret_shaped_skipped") == 1
     assert stub_api.calls == []

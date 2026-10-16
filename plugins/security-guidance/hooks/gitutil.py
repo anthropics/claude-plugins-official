@@ -874,9 +874,12 @@ _SSH_PRIVATE_KEY_BASENAMES = frozenset((
     'id_ed25519_sk', 'id_xmss',
 ))
 _PRIVATE_KEY_NAME_SUFFIXES = ('_rsa', '_dsa', '_ecdsa', '_ed25519')
+# `.credentials.json` and `.claude.json` are Claude Code's own files: sign-in
+# tokens, a saved API key, MCP server secrets. Claude Code rewrites them as it
+# runs, so they show up as changed when its config directory is a git repo.
 _CREDENTIAL_BASENAMES = frozenset((
     'credentials', '.netrc', '.pgpass', '.npmrc', '.pypirc',
-    '.git-credentials', '.dockercfg',
+    '.git-credentials', '.dockercfg', '.credentials.json', '.claude.json',
 ))
 # chezmoi encodes a target file's attributes as stacked name prefixes
 # (`private_dot_netrc`, `encrypted_private_token`); `dot_` stands for a
