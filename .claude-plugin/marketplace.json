@@ -3628,7 +3628,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/Shopify/Shopify-AI-Toolkit.git",
-        "sha": "26d0623f98a5f27c1e8449d0e230259879cd9257"
+        "sha": "57e293be70c7b754429b392e054105272433729d"
       },
       "homepage": "https://shopify.dev"
     },
@@ -3988,7 +3988,7 @@
         "url": "https://github.com/SAP/ui-theme-designer-plugins-for-coding-agents.git",
         "path": "plugins/ui-theme-designer",
         "ref": "main",
-        "sha": "04a0a217e129422f8a995c5a9dd31712e5a32f47"
+        "sha": "3eff5832700d85e550b28a3ae58c1763382e405a"
       },
       "homepage": "https://github.com/SAP/ui-theme-designer-plugins-for-coding-agents"
     },
