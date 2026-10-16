@@ -2769,7 +2769,7 @@
         "url": "https://github.com/growthxai/output.git",
         "path": "coding_assistants/claude/plugins/outputai",
         "ref": "main",
-        "sha": "a4f6bd40ab0e3a51f524c1dc07524f33fe6999ad"
+        "sha": "2032ff617a62840ae786f0721ebb2941c5e2bd00"
       },
       "homepage": "https://output.ai"
     },
@@ -3628,7 +3628,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/Shopify/Shopify-AI-Toolkit.git",
-        "sha": "26d0623f98a5f27c1e8449d0e230259879cd9257"
+        "sha": "57e293be70c7b754429b392e054105272433729d"
       },
       "homepage": "https://shopify.dev"
     },
