@@ -175,13 +175,16 @@ def _load_user_patterns(cwd: Optional[str]) -> List[Dict[str, Any]]:
         # try each supported extension.
         for ext in (".yaml", ".yml", ".json"):
             candidate = path + ext
-            data = _read_config(candidate)
-            if data is None:
+            # One unusable file is skipped on its own, so the rules from the
+            # other locations still load.
+            try:
+                found = _rules_from_file(candidate, label)
+            except Exception as e:
+                debug_log(f"extensibility: skipping {candidate}: {type(e).__name__}: {e}")
                 continue
-            for entry in (data or {}).get("patterns", []):
-                rule = _validate_pattern(entry, source=label)
-                if rule:
-                    rules.append(rule)
+            if found is None:
+                continue
+            rules.extend(found)
             break  # found one extension; don't double-load .yaml AND .json
         if len(rules) >= PATTERN_MAX_RULES:
             break
@@ -191,8 +194,32 @@ def _load_user_patterns(cwd: Optional[str]) -> List[Dict[str, Any]]:
     return rules
 
 
+def _rules_from_file(path: str, label: str) -> Optional[List[Dict[str, Any]]]:
+    """The valid rules in one config file, or None when the file is missing
+    or does not hold a mapping with a ``patterns`` list."""
+    data = _read_config(path)
+    if data is None:
+        return None
+    entries = data.get("patterns", [])
+    if entries is None:
+        entries = []
+    if not isinstance(entries, list):
+        debug_log(
+            f"extensibility: skipping {path}: 'patterns' must be a list, "
+            f"got {type(entries).__name__}"
+        )
+        return None
+    rules = []
+    for entry in entries:
+        rule = _validate_pattern(entry, source=label)
+        if rule:
+            rules.append(rule)
+    return rules
+
+
 def _read_config(path: str) -> Optional[Dict[str, Any]]:
-    """Read a YAML or JSON config file. Returns None on missing/malformed."""
+    """Read a YAML or JSON config file. Returns None on missing/malformed,
+    and when the file parses to something other than a mapping."""
     try:
         with open(path, encoding="utf-8") as f:
             raw = f.read()
@@ -202,7 +229,7 @@ def _read_config(path: str) -> Optional[Dict[str, Any]]:
         return None
     if path.endswith(".json"):
         try:
-            return json.loads(raw)
+            return _mapping_or_none(path, json.loads(raw))
         except ValueError as e:
             debug_log(f"extensibility: skipping {path}: invalid JSON: {e}")
             return None
@@ -213,10 +240,24 @@ def _read_config(path: str) -> Optional[Dict[str, Any]]:
         debug_log(f"extensibility: skipping {path}: PyYAML not installed (use .json)")
         return None
     try:
-        return yaml.safe_load(raw)
+        return _mapping_or_none(path, yaml.safe_load(raw))
     except yaml.YAMLError as e:  # type: ignore
         debug_log(f"extensibility: skipping {path}: invalid YAML: {e}")
         return None
+
+
+def _mapping_or_none(path: str, data: Any) -> Optional[Dict[str, Any]]:
+    """A config file must hold a mapping. A scalar or a list is valid YAML or
+    JSON too (e.g. the pattern list written without its ``patterns:`` key);
+    skip that one file so the other locations still load."""
+    if isinstance(data, dict):
+        return data
+    if data is not None:
+        debug_log(
+            f"extensibility: skipping {path}: expected a mapping, "
+            f"got {type(data).__name__}"
+        )
+    return None
 
 
 def _validate_pattern(entry: Any, source: str) -> Optional[Dict[str, Any]]:
@@ -250,7 +291,7 @@ def _validate_pattern(entry: Any, source: str) -> Optional[Dict[str, Any]]:
         try:
             rule["regex"] = regex
             re.compile(regex)
-        except re.error as e:
+        except (re.error, OverflowError, RecursionError) as e:
             debug_log(f"extensibility: skipping {name}: invalid regex: {e}")
             return None
 
