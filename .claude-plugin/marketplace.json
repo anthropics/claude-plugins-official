@@ -3502,7 +3502,7 @@
         "source": "git-subdir",
         "url": "https://github.com/semgrep/mcp-marketplace.git",
         "path": "plugin",
-        "sha": "b58f407c6ac0f5fe47dee8301602f2e290a8ecfb"
+        "sha": "df34196583f0c71afc9f7f2c0bdadebf1d9d3e8e"
       },
       "homepage": "https://github.com/semgrep/mcp-marketplace.git"
     },
@@ -3628,7 +3628,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/Shopify/Shopify-AI-Toolkit.git",
-        "sha": "26d0623f98a5f27c1e8449d0e230259879cd9257"
+        "sha": "57e293be70c7b754429b392e054105272433729d"
       },
       "homepage": "https://shopify.dev"
     },
