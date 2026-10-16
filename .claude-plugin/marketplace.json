@@ -2204,7 +2204,7 @@
         "url": "https://github.com/pydantic/skills.git",
         "path": "plugins/logfire",
         "ref": "main",
-        "sha": "238d97102650c1caa51f35027aee13c469c59542"
+        "sha": "585b93fc80c755b88cc23746bb6797c53adc0674"
       },
       "homepage": "https://github.com/pydantic/skills/tree/main/plugins/logfire"
     },
