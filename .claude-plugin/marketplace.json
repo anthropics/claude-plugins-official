@@ -138,7 +138,7 @@
         "url": "https://github.com/airwallex/airwallex-marketplace.git",
         "path": "plugins/airwallex-dev",
         "ref": "master",
-        "sha": "b418b9913e4919f85257aa1e25319e59464e8fae"
+        "sha": "877551077786664d1cbeb32013443291c66e69e6"
       },
       "homepage": "https://www.airwallex.com/docs"
     },
@@ -3628,7 +3628,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/Shopify/Shopify-AI-Toolkit.git",
-        "sha": "26d0623f98a5f27c1e8449d0e230259879cd9257"
+        "sha": "57e293be70c7b754429b392e054105272433729d"
       },
       "homepage": "https://shopify.dev"
     },
