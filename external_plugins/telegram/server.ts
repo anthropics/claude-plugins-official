@@ -461,7 +461,7 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
         type: 'object',
         properties: {
           chat_id: { type: 'string' },
-          text: { type: 'string' },
+          text: { type: 'string', description: 'Message text. Optional when files are provided.' },
           reply_to: {
             type: 'string',
             description: 'Message ID to thread under. Use message_id from the inbound <channel> block.',
@@ -477,7 +477,7 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
             description: "Rendering mode. 'markdownv2' enables Telegram formatting (bold, italic, code, links). Caller must escape special chars per MarkdownV2 rules. Default: 'text' (plain, no escaping needed).",
           },
         },
-        required: ['chat_id', 'text'],
+        required: ['chat_id'],
       },
     },
     {
@@ -531,9 +531,13 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
     switch (req.params.name) {
       case 'reply': {
         const chat_id = args.chat_id as string
-        const text = args.text as string
+        const text = (args.text as string | undefined) ?? ''
         const reply_to = args.reply_to != null ? Number(args.reply_to) : undefined
         const files = (args.files as string[] | undefined) ?? []
+        //if either text is empty or image is not pasted 
+        if (text.trim().length === 0 && files.length === 0) {
+          throw new Error('reply needs text or files')
+        }
         const format = (args.format as string | undefined) ?? 'text'
         const parseMode = format === 'markdownv2' ? 'MarkdownV2' as const : undefined
 
@@ -551,7 +555,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         const limit = Math.max(1, Math.min(access.textChunkLimit ?? MAX_CHUNK_LIMIT, MAX_CHUNK_LIMIT))
         const mode = access.chunkMode ?? 'length'
         const replyMode = access.replyToMode ?? 'first'
-        const chunks = chunk(text, limit, mode)
+        const chunks = text.trim().length > 0 ? chunk(text, limit, mode) : []
         const sentIds: number[] = []
 
         try {
