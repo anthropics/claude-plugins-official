@@ -17,6 +17,17 @@ To install, run `/plugin install {plugin-name}@claude-plugins-official`
 
 or browse for the plugin in `/plugin > Discover`
 
+### GitHub and GitLab integrations
+
+The marketplace includes plugins for both GitHub and GitLab. In Claude Code, open `/plugin > Discover` and install `github` and/or `gitlab`, or run:
+
+```
+/plugin install github@claude-plugins-official
+/plugin install gitlab@claude-plugins-official
+```
+
+The GitHub plugin connects to GitHub for repository, issue, and pull request tasks. The GitLab plugin connects to GitLab for repository, issue, merge request, CI/CD pipeline, and wiki tasks. Follow any sign-in or authorization prompts shown by Claude Code to finish connecting your account.
+
 ## Contributing
 
 ### Internal Plugins
