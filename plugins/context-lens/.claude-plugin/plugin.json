@@ -1,0 +1,17 @@
+{
+  "name": "context-lens",
+  "version": "0.1.0",
+  "description": "Browse and search exactly what is in the context window, request by request",
+  "author": {
+    "name": "Anthropic",
+    "email": "support@anthropic.com"
+  },
+  "license": "Apache-2.0",
+  "keywords": [
+    "context",
+    "context-window",
+    "debugging",
+    "mod"
+  ],
+  "types": "./types/index.d.ts"
+}
