@@ -3318,7 +3318,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/runwayml/skills.git",
-        "sha": "e3dffc15498e9588e7815f37b9ecf10e8bc2c902"
+        "sha": "4d6c53d40cc21c2a449e5b769718f95026d21709"
       },
       "homepage": "https://runwayml.com"
     },
