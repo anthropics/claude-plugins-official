@@ -472,10 +472,29 @@ def sweep_pending_warnings(session_id):
 # Pattern matching
 # =====================================================================
 
+def _notebook_cell_sources(content):
+    """Cell sources of a saved notebook, or None when content is not one (a
+    single cell's source, say)."""
+    if not isinstance(content, str) or not content.lstrip("\ufeff \t\r\n").startswith("{"):
+        return None
+    try:
+        sources = [cell.get("source", "") for cell in json.loads(content.lstrip("\ufeff"))["cells"]]
+        return "\n".join(src if isinstance(src, str) else "".join(src) for src in sources)
+    except Exception:
+        return None
+
 def check_patterns(file_path, content):
     """Check if file path or content matches any security patterns. Returns ALL matches."""
     normalized_path = file_path.lstrip("/")
     matches = []
+
+    # A saved notebook is JSON: its string escapes hide code from the rules
+    # ("\nos.system(" has no word boundary) and its outputs can run to
+    # megabytes. Check the cells as written instead.
+    if normalized_path.endswith(".ipynb"):
+        cell_sources = _notebook_cell_sources(content)
+        if cell_sources is not None:
+            content = cell_sources
 
     for pattern in list(SECURITY_PATTERNS) + extensibility.user_patterns():
         # path_filter is a gate: when present, the rule only applies to
@@ -515,7 +534,7 @@ def check_patterns(file_path, content):
 
     return matches
 
-def extract_content_from_input(tool_name, tool_input):
+def extract_content_from_input(tool_name, tool_input, tool_response=None):
     """Extract content to check from tool input based on tool type."""
     if tool_name == "Write":
         return tool_input.get("content", "")
@@ -526,6 +545,15 @@ def extract_content_from_input(tool_name, tool_input):
         if edits:
             return " ".join(edit.get("new_string", "") for edit in edits)
         return ""
+    elif tool_name == "NotebookEdit":
+        # A deleted cell adds no code. A failed edit comes back as an error
+        # in the response, with the notebook unchanged.
+        if tool_input.get("edit_mode") == "delete":
+            return ""
+        if isinstance(tool_response, dict) and tool_response.get("error"):
+            return ""
+        new_source = tool_input.get("new_source", "")
+        return new_source if isinstance(new_source, str) else ""
     return ""
 
 # =====================================================================
@@ -2621,7 +2649,8 @@ def main():
 
         record_touched_path(session_id, file_path)
 
-        content = extract_content_from_input(tool_name, tool_input)
+        content = extract_content_from_input(
+            tool_name, tool_input, input_data.get("tool_response"))
 
         all_guidance = []
         raw_pattern_matches = []
