@@ -2,6 +2,10 @@
   "name": "telegram",
   "description": "Telegram channel for Claude Code \u2014 messaging bridge with built-in access control. Manage pairing, allowlists, and policy via /telegram:access.",
   "version": "0.0.7",
+  "author": {
+    "name": "Anthropic",
+    "email": "support@anthropic.com"
+  },
   "keywords": [
     "telegram",
     "messaging",

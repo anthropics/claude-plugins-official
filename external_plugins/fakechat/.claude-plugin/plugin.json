@@ -2,6 +2,10 @@
   "name": "fakechat",
   "description": "Localhost iMessage-style web chat for Claude Code \u2014 test surface with file upload and edits. No tokens, no access control.",
   "version": "0.0.1",
+  "author": {
+    "name": "Anthropic",
+    "email": "support@anthropic.com"
+  },
   "keywords": [
     "fakechat",
     "web",
