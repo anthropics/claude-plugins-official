@@ -34,6 +34,13 @@ function quoteSpecialValues(text: string): string {
         result.push(line);
         continue;
       }
+      // Block scalar headers (|, >, with optional chomping/indentation
+      // modifiers, e.g. "|", ">-", "|2-") introduce a multi-line value.
+      // Quoting them would break the document they start.
+      if (/^[|>][-+\d]*$/.test(value.trim())) {
+        result.push(line);
+        continue;
+      }
       // Skip already-quoted values
       if (
         (value.startsWith('"') && value.endsWith('"')) ||
