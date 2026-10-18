@@ -18,9 +18,17 @@ import contextlib
 import os
 import re
 import subprocess
+import threading
 
 from _base import debug_log
 
+# Bounds on what the review reads. The review used to read every diff whole and cap
+# file counts only afterwards; a turn that wrote ~1 GB of data files cost
+# 2-17 GB per hook process.
+MAX_GIT_OUTPUT_BYTES = int(os.environ.get("SG_MAX_GIT_OUTPUT_BYTES", str(32 * 1024 * 1024)))
+MAX_REVIEW_FILE_BYTES = int(os.environ.get("SG_MAX_REVIEW_FILE_BYTES", str(512 * 1024)))
+MAX_FILE_DIFF_BYTES = 2 * MAX_REVIEW_FILE_BYTES
+_REVIEW_PATH_CAP = int(os.environ.get("MAX_DIFF_FILES", "30"))
 
 GIT_CMD = [
     "git",
@@ -536,20 +544,48 @@ def _git_diff_range(repo_root, base, head="HEAD"):
     but on failure (timeout, non-zero exit, missing git) it must NOT mark
     them reviewed — otherwise unreviewed commits get permanently silenced.
     """
-    try:
-        # GIT_CMD globally passes core.quotePath=false (see definition) so
-        # non-ASCII paths in `diff --git a/... b/...` headers come through as
-        # raw UTF-8, not C-quoted. Required by the downstream
-        # parse_diff_into_files / extract_file_paths_from_diff regex.
-        r = subprocess.run(
-            [*GIT_CMD, "diff", "-p", "--no-color", "--no-ext-diff", "--no-textconv", base, head],
-            cwd=repo_root, capture_output=True, timeout=30,
-        )
-        if r.returncode != 0:
-            return None
-        return r.stdout.decode("utf-8", errors="replace")
-    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+    # GIT_CMD globally passes core.quotePath=false (see definition) so
+    # non-ASCII paths in `diff --git a/... b/...` headers come through as
+    # raw UTF-8, not C-quoted. Required by the downstream
+    # parse_diff_into_files / extract_file_paths_from_diff regex.
+    rc, stdout = _run_capped(
+        [*GIT_CMD, "diff", "-p", "--no-color", "--no-ext-diff", "--no-textconv", base, head],
+        repo_root,
+    )
+    if rc != 0:
         return None
+    return stdout.decode("utf-8", errors="replace")
+
+
+def _run_capped(cmd, cwd, env=None, timeout=30, max_bytes=None):
+    """(returncode, stdout bytes) of a git call, reading at most `max_bytes`.
+    (None, None) when the output passes the cap, the call times out, or git
+    cannot start — the caller treats all three as a failed call."""
+    if max_bytes is None:
+        max_bytes = MAX_GIT_OUTPUT_BYTES
+    try:
+        p = subprocess.Popen(cmd, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
+                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    except (FileNotFoundError, OSError):
+        return None, None
+    timer = threading.Timer(timeout, p.kill)
+    timer.start()
+    chunks, n, over = [], 0, False
+    try:
+        for b in iter(lambda: p.stdout.read(1 << 20), b""):
+            n += len(b)
+            if n > max_bytes:
+                over = True
+                p.kill()
+                break
+            chunks.append(b)
+        p.stdout.close()
+        rc = p.wait()
+    finally:
+        timer.cancel()
+    if over or rc < 0:
+        return None, None
+    return rc, b"".join(chunks)
 
 
 def _detect_main_branch(repo_root):
@@ -791,25 +827,50 @@ def get_git_diff(cwd, baseline_sha, full_context=False, paths=None, untracked_pa
         return ""
 
     # core.quotePath=false comes from GIT_CMD globally (see definition).
-    cmd = [*GIT_CMD, "diff", "--no-color", "--no-ext-diff", "--no-textconv", baseline_sha] + (["--unified=99999"] if full_context else []) + pathspec
+    cmd = [*GIT_CMD, "diff", "--no-color", "--no-ext-diff", "--no-textconv", baseline_sha] + (["--unified=99999"] if full_context else [])
+    if pathspec:
+        # One file per git call, so memory holds one file's diff at a time
+        # plus the accumulated (capped) result.
+        rels = _bound_review_paths(cwd, pathspec[1:])
+        if not rels:
+            return ""
+        if untracked_paths is not None:
+            keep = set(rels)
+            untracked_paths = [p for p in untracked_paths if p in keep]
+        cmds = [cmd + ["--", r] for r in rels]
+    else:
+        cmds = [cmd]
     try:
         if untracked_paths is not None and not untracked_paths:
             # Nothing to `add -N`, and the diff only reads the index.
-            result = subprocess.run(cmd, cwd=cwd, capture_output=True, timeout=30)
-        else:
-            with _temp_index(cwd, untracked_paths) as env:
-                # env is None when there is no index (bare repo / not a repo)
-                # or no copy slot — diff still runs, just without
-                # untracked-file support.
-                result = subprocess.run(cmd, cwd=cwd, capture_output=True, timeout=30, env=env)
-        if result.returncode != 0:
-            debug_log(f"git diff failed: {result.stderr[:200].decode('utf-8', errors='replace')}")
-            return None
-        # Decode with errors='replace' so binary diffs don't crash
-        return result.stdout.decode("utf-8", errors="replace")
-    except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
+            return _diff_sequentially(cmds, cwd, None)
+        with _temp_index(cwd, untracked_paths) as env:
+            # env is None when there is no index (bare repo / not a repo)
+            # or no copy slot — diff still runs, just without
+            # untracked-file support.
+            return _diff_sequentially(cmds, cwd, env)
+    except OSError as e:
         debug_log(f"git diff error: {e}")
         return None
+
+
+def _diff_sequentially(cmds, cwd, env):
+    per_call = MAX_FILE_DIFF_BYTES if len(cmds) > 1 else MAX_GIT_OUTPUT_BYTES
+    out = []
+    for c in cmds:
+        rc, stdout = _run_capped(c, cwd, env=env, max_bytes=per_call)
+        if rc is None:
+            if len(cmds) > 1:
+                debug_log(f"git diff: {c[-1]!r} over {per_call} bytes or timed out, skipped")
+                continue
+            debug_log("git diff: output over cap or timed out")
+            return None
+        if rc != 0:
+            debug_log(f"git diff failed rc={rc}")
+            return None
+        out.append(stdout)
+    # Decode with errors='replace' so binary diffs don't crash
+    return b"".join(out).decode("utf-8", errors="replace")
 
 
 # Source file extensions worth reviewing for security
@@ -965,6 +1026,46 @@ _LOW_PRIORITY_PATH_TOKENS = (
 )
 
 
+def _path_priority(fp):
+    low = fp.lower()
+    # Prepend "/" so leading-slash patterns in _LOW_PRIORITY_PATH_TOKENS
+    # match top-level dirs (git diff paths are repo-root-relative, e.g.
+    # `migrations/001.py` not `/migrations/001.py`). Same trick as
+    # _is_reviewable_source.
+    low_slashed = "/" + low
+    risk = sum(1 for t in _SECURITY_RISK_PATH_TOKENS if t in low)
+    low_prio = (
+        fp.endswith(_LOW_PRIORITY_SUFFIXES)
+        or any(t in low_slashed for t in _LOW_PRIORITY_PATH_TOKENS)
+    )
+    return (risk, not low_prio)
+
+
+def _bound_review_paths(cwd, rels, cap=_REVIEW_PATH_CAP):
+    """Pick the paths worth diffing BEFORE any diff is read: reviewable
+    source only, no file over MAX_REVIEW_FILE_BYTES, and at most `cap` ranked
+    by path risk. Returns [] for the pathological >10*cap case, which the
+    caller used to detect only after buffering every file's diff."""
+    kept = []
+    for rel in rels:
+        if not _is_reviewable_source(rel):
+            continue
+        try:
+            size = os.path.getsize(os.path.join(cwd, rel))
+        except OSError:
+            size = 0  # deleted: the per-file output cap bounds it instead
+        if size > MAX_REVIEW_FILE_BYTES:
+            continue
+        kept.append(rel)
+    if len(kept) > 10 * cap:
+        debug_log(f"review paths: {len(kept)} reviewable files > {10 * cap}, skipping before diff")
+        return []
+    if len(kept) > cap:
+        debug_log(f"review paths: prioritized to {cap} of {len(kept)} reviewable files before diff")
+        kept = sorted(kept, key=_path_priority, reverse=True)[:cap]
+    return kept
+
+
 def _prioritize_diff_files(diff_files, cap):
     """When `diff_files` exceeds `cap`, return the top-`cap` by security
     relevance plus the count dropped. Otherwise return (diff_files, 0).
@@ -982,22 +1083,11 @@ def _prioritize_diff_files(diff_files, cap):
 
     def _score(item):
         fp, content = item
-        low = fp.lower()
-        # Prepend "/" so leading-slash patterns in _LOW_PRIORITY_PATH_TOKENS
-        # match top-level dirs (git diff paths are repo-root-relative, e.g.
-        # `migrations/001.py` not `/migrations/001.py`). Same trick as
-        # _is_reviewable_source.
-        low_slashed = "/" + low
-        risk = sum(1 for t in _SECURITY_RISK_PATH_TOKENS if t in low)
-        low_prio = (
-            fp.endswith(_LOW_PRIORITY_SUFFIXES)
-            or any(t in low_slashed for t in _LOW_PRIORITY_PATH_TOKENS)
-        )
         # added_lines: count('\n+') over-counts by including '+++' header and
         # any literal '+' at line start in context, but it's a consistent
         # ordinal across files in the same diff which is all we need.
         added = content.count("\n+")
-        return (risk, not low_prio, added)
+        return (*_path_priority(fp), added)
 
     ranked = sorted(diff_files, key=_score, reverse=True)
     return ranked[:cap], len(diff_files) - cap

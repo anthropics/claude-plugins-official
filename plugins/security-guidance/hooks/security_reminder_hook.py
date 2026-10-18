@@ -1458,37 +1458,31 @@ def handle_commit_review_posttooluse(input_data):
     diff_files = []
     resolved = 0
     for sha in shas:
-        try:
-            # core.quotePath=false: emit raw UTF-8 in `diff --git a/... b/...`
-            # headers so non-ASCII paths aren't C-quoted past the downstream
-            # parse_diff_into_files regex (sibling of #2056 / #2075). See #2082.
-            # core.quotePath=false comes from GIT_CMD globally (see gitutil.py).
-            if pre_amend_sha:
-                # Delta review: pre-amend → post-amend. `git diff` (not show)
-                # so the output is a pure unified diff with no commit header.
-                result = subprocess.run(
-                    [*GIT_CMD, "diff", "--no-color", "--no-ext-diff", "--no-textconv",
-                     pre_amend_sha, sha, "--"],
-                    cwd=repo_root, capture_output=True, timeout=15
-                )
-            else:
-                result = subprocess.run(
-                    [*GIT_CMD, "show", "-p", "--no-color", "--no-ext-diff", "--no-textconv", sha, "--"],
-                    cwd=repo_root, capture_output=True, timeout=15
-                )
-        except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
+        # core.quotePath=false: emit raw UTF-8 in `diff --git a/... b/...`
+        # headers so non-ASCII paths aren't C-quoted past the downstream
+        # parse_diff_into_files regex (sibling of #2056 / #2075). See #2082.
+        # core.quotePath=false comes from GIT_CMD globally (see gitutil.py).
+        if pre_amend_sha:
+            # Delta review: pre-amend → post-amend. `git diff` (not show)
+            # so the output is a pure unified diff with no commit header.
+            _rc, _out = gitutil._run_capped(
+                [*GIT_CMD, "diff", "--no-color", "--no-ext-diff", "--no-textconv",
+                 pre_amend_sha, sha, "--"],
+                repo_root, timeout=15)
+        else:
+            _rc, _out = gitutil._run_capped(
+                [*GIT_CMD, "show", "-p", "--no-color", "--no-ext-diff", "--no-textconv", sha, "--"],
+                repo_root, timeout=15)
+        if _rc != 0:
+            # SHA not in this repo (cross-repo commit), already gc'd, or the
+            # commit's diff is over the read cap. Better to skip than to fall
+            # back to HEAD and review the wrong commit.
             _cmd = "git diff" if pre_amend_sha else "git show"
-            debug_log(f"Commit review: {_cmd} {sha} error: {e}")
-            continue
-        if result.returncode != 0:
-            # SHA not in this repo (cross-repo commit) or already gc'd. Better
-            # to skip than to fall back to HEAD and review the wrong commit.
-            _cmd = "git diff" if pre_amend_sha else "git show"
-            debug_log(f"Commit review: {_cmd} {sha} rc={result.returncode}")
+            debug_log(f"Commit review: {_cmd} {sha} rc={_rc}")
             continue
         resolved += 1
         diff_files.extend(parse_diff_into_files(
-            result.stdout.decode("utf-8", errors="replace")))
+            _out.decode("utf-8", errors="replace")))
 
     # Dedup by path. The widened reflog scan can return >1 SHA (e.g.
     # `git commit && git commit --amend` within 120s); a path that appears in
