@@ -1,0 +1,20 @@
+{
+  "name": "php-lsp",
+  "version": "1.0.0",
+  "description": "PHP language server (Intelephense) for code intelligence",
+  "author": {
+    "name": "Anthropic",
+    "email": "support@anthropic.com"
+  },
+  "lspServers": {
+    "intelephense": {
+      "command": "intelephense",
+      "args": [
+        "--stdio"
+      ],
+      "extensionToLanguage": {
+        ".php": "php"
+      }
+    }
+  }
+}

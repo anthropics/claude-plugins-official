@@ -1,0 +1,21 @@
+{
+  "name": "ruby-lsp",
+  "version": "1.0.0",
+  "description": "Ruby language server for code intelligence and analysis",
+  "author": {
+    "name": "Anthropic",
+    "email": "support@anthropic.com"
+  },
+  "lspServers": {
+    "ruby-lsp": {
+      "command": "ruby-lsp",
+      "extensionToLanguage": {
+        ".rb": "ruby",
+        ".rake": "ruby",
+        ".gemspec": "ruby",
+        ".ru": "ruby",
+        ".erb": "erb"
+      }
+    }
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "name": "pyright-lsp",
+  "version": "1.0.0",
+  "description": "Python language server (Pyright) for type checking and code intelligence",
+  "author": {
+    "name": "Anthropic",
+    "email": "support@anthropic.com"
+  },
+  "lspServers": {
+    "pyright": {
+      "command": "pyright-langserver",
+      "args": [
+        "--stdio"
+      ],
+      "extensionToLanguage": {
+        ".py": "python",
+        ".pyi": "python"
+      }
+    }
+  }
+}

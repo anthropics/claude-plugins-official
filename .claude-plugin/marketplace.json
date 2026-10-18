@@ -1,5 +1,5 @@
 {
-  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
   "name": "claude-plugins-official",
   "description": "Directory of popular Claude Code extensions including development tools, productivity plugins, and MCP integrations",
   "owner": {
@@ -34,6 +34,21 @@
         "sha": "faf5305385de8afed9468904e8639be737aff39e"
       },
       "homepage": "https://42crunch.com"
+    },
+    {
+      "name": "activecampaign",
+      "displayName": "ActiveCampaign",
+      "description": "Marketing automation, CRM, and email marketing powered by ActiveCampaign. Manage contacts, campaigns, automations, deals, and get AI-powered marketing insights — all from Claude.",
+      "author": {
+        "name": "ActiveCampaign"
+      },
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/ActiveCampaign/activecampaign-plugin.git",
+        "sha": "0ff858728bc52aee335d5475b0d4eb5f3a9589b0"
+      },
+      "homepage": "https://www.activecampaign.com"
     },
     {
       "name": "adobe-for-creativity",
@@ -212,6 +227,21 @@
         "sha": "097fe8ad56d8a1d5e2c81d7880adf145553cf244"
       },
       "homepage": "https://github.com/awslabs/agent-plugins"
+    },
+    {
+      "name": "amazon-selling-partner",
+      "displayName": "Amazon Selling Partner",
+      "description": "Connect your Amazon Seller Central account to Claude. Ask about sales, inventory, and listing performance and get recommendations grounded in your own data, then review and approve every listing, inventory or FBA action before it runs. Bundles the Amazon Selling Partner MCP server (Seller Central OAuth on first use). Currently in beta.",
+      "author": {
+        "name": "Amazon"
+      },
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/amzn/selling-partner-agentic-toolkit.git",
+        "sha": "10573bac239b7062a476667eaa574d400335c70e"
+      },
+      "homepage": "https://github.com/amzn/selling-partner-agentic-toolkit"
     },
     {
       "name": "amd-skills",
@@ -577,6 +607,20 @@
       "homepage": "https://github.com/gemini-cli-extensions/bigquery-data-analytics"
     },
     {
+      "name": "blackrock-advisor-center-plugin",
+      "description": "BlackRock Advisor Center 360° skills for financial advisors: portfolio review, opportunity and fund-health checks, guided benchmark selection, guided portfolio building, wealth projections, and routing to Advisor Center web workflows. Requires the BlackRock Advisor Center connector and an Advisor Center account.",
+      "author": {
+        "name": "BlackRock Advisor Center"
+      },
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/blackrock/advisor-center-agent-skills.git",
+        "sha": "591c758960c18c26fe8342ddb8ad3ba4dcfac6fe"
+      },
+      "homepage": "https://github.com/blackrock/advisor-center-agent-skills"
+    },
+    {
       "name": "boltz",
       "description": "Predict structures, screen molecules and proteins, and design binders with Boltz from Claude Code.",
       "author": {
@@ -591,20 +635,6 @@
         "sha": "beafb3c16236347ab10fb54f78a5da49cbf7c7bb"
       },
       "homepage": "https://boltz.bio"
-    },
-    {
-      "name": "blackrock-advisor-center-plugin",
-      "description": "BlackRock Advisor Center 360° skills for financial advisors: portfolio review, opportunity and fund-health checks, guided benchmark selection, guided portfolio building, wealth projections, and routing to Advisor Center web workflows. Requires the BlackRock Advisor Center connector and an Advisor Center account.",
-      "author": {
-        "name": "BlackRock Advisor Center"
-      },
-      "category": "productivity",
-      "source": {
-        "source": "url",
-        "url": "https://github.com/blackrock/advisor-center-agent-skills.git",
-        "sha": "591c758960c18c26fe8342ddb8ad3ba4dcfac6fe"
-      },
-      "homepage": "https://github.com/blackrock/advisor-center-agent-skills"
     },
     {
       "name": "box",
@@ -649,6 +679,16 @@
         "sha": "4749bcbfe456e5384b98281a8a66119352197f59"
       },
       "homepage": "https://browser-use.com"
+    },
+    {
+      "name": "build-with-wordpress",
+      "description": "Craft production-grade WordPress sites and applications. Everything from themes and plugins to commerce and deployment.",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/Automattic/claude-code-wordpress.com.git",
+        "sha": "052ca970df2c577d7c651e784935186ff93e6779"
+      },
+      "homepage": "https://developer.wordpress.com/wordpress-com-claude-code-plugin/"
     },
     {
       "name": "buildkite",
@@ -861,27 +901,7 @@
         "email": "support@anthropic.com"
       },
       "source": "./plugins/clangd-lsp",
-      "category": "development",
-      "strict": false,
-      "lspServers": {
-        "clangd": {
-          "command": "clangd",
-          "args": [
-            "--background-index"
-          ],
-          "extensionToLanguage": {
-            ".c": "c",
-            ".h": "c",
-            ".cpp": "cpp",
-            ".cc": "cpp",
-            ".cxx": "cpp",
-            ".hpp": "cpp",
-            ".hxx": "cpp",
-            ".C": "cpp",
-            ".H": "cpp"
-          }
-        }
-      }
+      "category": "development"
     },
     {
       "name": "claude-code-setup",
@@ -1217,16 +1237,7 @@
         "email": "support@anthropic.com"
       },
       "source": "./plugins/csharp-lsp",
-      "category": "development",
-      "strict": false,
-      "lspServers": {
-        "csharp-ls": {
-          "command": "csharp-ls",
-          "extensionToLanguage": {
-            ".cs": "csharp"
-          }
-        }
-      }
+      "category": "development"
     },
     {
       "name": "cwc-makers",
@@ -1496,6 +1507,21 @@
       "homepage": "https://duendesoftware.com"
     },
     {
+      "name": "dynatrace",
+      "displayName": "Dynatrace",
+      "description": "Dynatrace observability skills: DQL query patterns, application and infrastructure monitoring, log analysis, problem investigation, and incident response workflows, with the Dynatrace MCP server for live platform access.",
+      "author": {
+        "name": "Dynatrace"
+      },
+      "category": "monitoring",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/Dynatrace/dynatrace-for-ai.git",
+        "sha": "4f9aa71f9802aa6db0a4069ae5619eb3392ff411"
+      },
+      "homepage": "https://www.dynatrace.com/hub/detail/claude-code-cli/"
+    },
+    {
       "name": "exa",
       "description": "Exa AI web search, deep research, and content extraction. Provides MCP tools and research skills for comprehensive web search, people discovery, company research, academic papers, and more.",
       "author": {
@@ -1718,16 +1744,7 @@
         "email": "support@anthropic.com"
       },
       "source": "./plugins/gopls-lsp",
-      "category": "development",
-      "strict": false,
-      "lspServers": {
-        "gopls": {
-          "command": "gopls",
-          "extensionToLanguage": {
-            ".go": "go"
-          }
-        }
-      }
+      "category": "development"
     },
     {
       "name": "govtribe",
@@ -1865,6 +1882,23 @@
       "homepage": "https://www.hostinger.com"
     },
     {
+      "name": "hubspot-sales",
+      "displayName": "HubSpot Sales",
+      "description": "Run your HubSpot sales workflow directly from Claude. Adds skills that cover the full sales day: import contacts and deals into HubSpot, get a prioritised morning brief, prep for any call with full CRM context, draft personalised follow-ups grounded in deal history, log calls and update records by describing what happened, and review your pipeline to surface stalling deals. Everything writes back to HubSpot.",
+      "author": {
+        "name": "HubSpot"
+      },
+      "category": "productivity",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/HubSpot/hubspot-mcp-plugins.git",
+        "path": "HubSpot-Sales",
+        "ref": "main",
+        "sha": "a0c59600fc1ddcf03ceca71aebf0c28aa55f49e3"
+      },
+      "homepage": "https://www.hubspot.com"
+    },
+    {
       "name": "huggingface-skills",
       "description": "Build, train, evaluate, and use open source AI models, datasets, and spaces.",
       "category": "development",
@@ -1992,17 +2026,7 @@
         "email": "support@anthropic.com"
       },
       "source": "./plugins/jdtls-lsp",
-      "category": "development",
-      "strict": false,
-      "lspServers": {
-        "jdtls": {
-          "command": "jdtls",
-          "extensionToLanguage": {
-            ".java": "java"
-          },
-          "startupTimeout": 120000
-        }
-      }
+      "category": "development"
     },
     {
       "name": "jfrog",
@@ -2042,21 +2066,21 @@
         "email": "support@anthropic.com"
       },
       "source": "./plugins/kotlin-lsp",
-      "category": "development",
-      "strict": false,
-      "lspServers": {
-        "kotlin-lsp": {
-          "command": "kotlin-lsp",
-          "args": [
-            "--stdio"
-          ],
-          "extensionToLanguage": {
-            ".kt": "kotlin",
-            ".kts": "kotlin"
-          },
-          "startupTimeout": 120000
-        }
-      }
+      "category": "development"
+    },
+    {
+      "name": "langfuse",
+      "description": "Skills for working with Langfuse, the open-source LLM engineering platform for tracing, prompt management, and evaluation.",
+      "author": {
+        "name": "Langfuse"
+      },
+      "category": "monitoring",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/langfuse/skills.git",
+        "sha": "b86532b77f16f1e27c7cffa32bb632aa3cd9a352"
+      },
+      "homepage": "https://langfuse.com"
     },
     {
       "name": "langfuse-observability",
@@ -2261,16 +2285,7 @@
         "email": "support@anthropic.com"
       },
       "source": "./plugins/lua-lsp",
-      "category": "development",
-      "strict": false,
-      "lspServers": {
-        "lua": {
-          "command": "lua-language-server",
-          "extensionToLanguage": {
-            ".lua": "lua"
-          }
-        }
-      }
+      "category": "development"
     },
     {
       "name": "lumen",
@@ -2473,20 +2488,6 @@
       "homepage": "https://miro.com"
     },
     {
-      "name": "modern-web-guidance",
-      "description": "Keep your coding agent up to date with the latest web best practices",
-      "author": {
-        "name": "Google Chrome"
-      },
-      "category": "development",
-      "source": {
-        "source": "url",
-        "url": "https://github.com/GoogleChrome/modern-web-guidance.git",
-        "sha": "b31dc0a43ff5d19bcf386a3476a216f3b39a6f55"
-      },
-      "homepage": "https://goo.gle/modern-web-guidance"
-    },
-    {
       "name": "mlflow",
       "description": "Skills for tracing, evaluating, and improving AI agents with MLflow. Supports the full agent improvement loop: instrument → trace → evaluate → iterate → validate.",
       "author": {
@@ -2499,6 +2500,20 @@
         "sha": "51a42ea2b07fadb45fb34c7cecf0c87edbe05686"
       },
       "homepage": "https://mlflow.org/"
+    },
+    {
+      "name": "modern-web-guidance",
+      "description": "Keep your coding agent up to date with the latest web best practices",
+      "author": {
+        "name": "Google Chrome"
+      },
+      "category": "development",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/GoogleChrome/modern-web-guidance.git",
+        "sha": "b31dc0a43ff5d19bcf386a3476a216f3b39a6f55"
+      },
+      "homepage": "https://goo.gle/modern-web-guidance"
     },
     {
       "name": "monday-crm",
@@ -2855,19 +2870,7 @@
         "email": "support@anthropic.com"
       },
       "source": "./plugins/php-lsp",
-      "category": "development",
-      "strict": false,
-      "lspServers": {
-        "intelephense": {
-          "command": "intelephense",
-          "args": [
-            "--stdio"
-          ],
-          "extensionToLanguage": {
-            ".php": "php"
-          }
-        }
-      }
+      "category": "development"
     },
     {
       "name": "pigment",
@@ -3050,20 +3053,7 @@
         "email": "support@anthropic.com"
       },
       "source": "./plugins/pyright-lsp",
-      "category": "development",
-      "strict": false,
-      "lspServers": {
-        "pyright": {
-          "command": "pyright-langserver",
-          "args": [
-            "--stdio"
-          ],
-          "extensionToLanguage": {
-            ".py": "python",
-            ".pyi": "python"
-          }
-        }
-      }
+      "category": "development"
     },
     {
       "name": "qdrant-skills",
@@ -3293,20 +3283,7 @@
         "email": "support@anthropic.com"
       },
       "source": "./plugins/ruby-lsp",
-      "category": "development",
-      "strict": false,
-      "lspServers": {
-        "ruby-lsp": {
-          "command": "ruby-lsp",
-          "extensionToLanguage": {
-            ".rb": "ruby",
-            ".rake": "ruby",
-            ".gemspec": "ruby",
-            ".ru": "ruby",
-            ".erb": "erb"
-          }
-        }
-      }
+      "category": "development"
     },
     {
       "name": "runway-api",
@@ -3331,16 +3308,7 @@
         "email": "support@anthropic.com"
       },
       "source": "./plugins/rust-analyzer-lsp",
-      "category": "development",
-      "strict": false,
-      "lspServers": {
-        "rust-analyzer": {
-          "command": "rust-analyzer",
-          "extensionToLanguage": {
-            ".rs": "rust"
-          }
-        }
-      }
+      "category": "development"
     },
     {
       "name": "sagemaker-ai",
@@ -3732,22 +3700,6 @@
       "homepage": "https://github.com/spotify/ads-claude-plugin"
     },
     {
-      "name": "stackhawk-hawkscan",
-      "description": "Configure, run, and interpret HawkScan DAST results inside Claude Code. Generates stackhawk.yml configs, runs scans via CLI or Docker, and transforms security findings into prioritized fix tasks for your coding agent.",
-      "author": {
-        "name": "StackHawk"
-      },
-      "category": "security",
-      "source": {
-        "source": "git-subdir",
-        "url": "https://github.com/stackhawk/agent-skills.git",
-        "path": "plugins/hawkscan",
-        "ref": "main",
-        "sha": "66cac9baa5883a1007575faf1b22855a1124834a"
-      },
-      "homepage": "https://docs.stackhawk.com/ai-security/"
-    },
-    {
       "name": "stackhawk-api",
       "description": "Query the StackHawk platform API for security posture reporting, findings analysis, and app management. Guides agents through authentication, data retrieval, and result presentation.",
       "author": {
@@ -3760,6 +3712,22 @@
         "path": "plugins/api",
         "ref": "main",
         "sha": "d0eea864c42f7c2e872334bb3df424daa1fbaadc"
+      },
+      "homepage": "https://docs.stackhawk.com/ai-security/"
+    },
+    {
+      "name": "stackhawk-hawkscan",
+      "description": "Configure, run, and interpret HawkScan DAST results inside Claude Code. Generates stackhawk.yml configs, runs scans via CLI or Docker, and transforms security findings into prioritized fix tasks for your coding agent.",
+      "author": {
+        "name": "StackHawk"
+      },
+      "category": "security",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/stackhawk/agent-skills.git",
+        "path": "plugins/hawkscan",
+        "ref": "main",
+        "sha": "66cac9baa5883a1007575faf1b22855a1124834a"
       },
       "homepage": "https://docs.stackhawk.com/ai-security/"
     },
@@ -3846,16 +3814,7 @@
         "email": "support@anthropic.com"
       },
       "source": "./plugins/swift-lsp",
-      "category": "development",
-      "strict": false,
-      "lspServers": {
-        "sourcekit-lsp": {
-          "command": "sourcekit-lsp",
-          "extensionToLanguage": {
-            ".swift": "swift"
-          }
-        }
-      }
+      "category": "development"
     },
     {
       "name": "synthflow",
@@ -3955,26 +3914,7 @@
         "email": "support@anthropic.com"
       },
       "source": "./plugins/typescript-lsp",
-      "category": "development",
-      "strict": false,
-      "lspServers": {
-        "typescript": {
-          "command": "typescript-language-server",
-          "args": [
-            "--stdio"
-          ],
-          "extensionToLanguage": {
-            ".ts": "typescript",
-            ".tsx": "typescriptreact",
-            ".js": "javascript",
-            ".jsx": "javascriptreact",
-            ".mts": "typescript",
-            ".cts": "typescript",
-            ".mjs": "javascript",
-            ".cjs": "javascript"
-          }
-        }
-      }
+      "category": "development"
     },
     {
       "name": "ui-theme-designer",
@@ -4187,6 +4127,21 @@
       "homepage": "https://windsor.ai"
     },
     {
+      "name": "wingspan",
+      "displayName": "Wingspan",
+      "description": "Ask Claude about the contractors you pay through Wingspan, what you owe them, and what is holding up a payment, then onboard contractors and log payments as drafts, with a preview before anything is written. Requires a Wingspan account; bundles the Wingspan MCP server (OAuth on first use).",
+      "author": {
+        "name": "Wingspan"
+      },
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/wingspanHQ/mcp-claude-plugin.git",
+        "sha": "7f99cb3d1789a91390fa7abf1571328736b5e0a6"
+      },
+      "homepage": "https://github.com/wingspanHQ/mcp-claude-plugin"
+    },
+    {
       "name": "wix",
       "description": "Build, manage, and deploy Wix sites and apps. CLI development skills for dashboard extensions, backend APIs, site widgets, and service plugins with the Wix Design System, plus MCP server for site management.",
       "category": "development",
@@ -4196,16 +4151,6 @@
         "sha": "8fc544d319c4a4dfc7ccf3ba4adf328e1fa9866f"
       },
       "homepage": "https://dev.wix.com/docs/wix-cli/guides/development/about-wix-skills"
-    },
-    {
-      "name": "build-with-wordpress",
-      "description": "Craft production-grade WordPress sites and applications. Everything from themes and plugins to commerce and deployment.",
-      "source": {
-        "source": "url",
-        "url": "https://github.com/Automattic/claude-code-wordpress.com.git",
-        "sha": "052ca970df2c577d7c651e784935186ff93e6779"
-      },
-      "homepage": "https://developer.wordpress.com/wordpress-com-claude-code-plugin/"
     },
     {
       "name": "workos",
@@ -4319,20 +4264,6 @@
       "homepage": "https://github.com/zscaler/zscaler-mcp-server"
     },
     {
-      "name": "langfuse",
-      "description": "Skills for working with Langfuse, the open-source LLM engineering platform for tracing, prompt management, and evaluation.",
-      "author": {
-        "name": "Langfuse"
-      },
-      "category": "monitoring",
-      "source": {
-        "source": "url",
-        "url": "https://github.com/langfuse/skills.git",
-        "sha": "b86532b77f16f1e27c7cffa32bb632aa3cd9a352"
-      },
-      "homepage": "https://langfuse.com"
-    },
-    {
       "name": "zyte-web-data",
       "description": "Web scraping skills for Claude Code powered by the Zyte API — scrape sites, generate and run Scrapy spiders, define extraction schemas, and ship to Scrapy Cloud.",
       "author": {
@@ -4345,83 +4276,6 @@
         "sha": "d03e241729ebc3bf397e4303d654e8189b9e8185"
       },
       "homepage": "https://www.zyte.com"
-    },
-    {
-      "name": "activecampaign",
-      "displayName": "ActiveCampaign",
-      "description": "Marketing automation, CRM, and email marketing powered by ActiveCampaign. Manage contacts, campaigns, automations, deals, and get AI-powered marketing insights — all from Claude.",
-      "author": {
-        "name": "ActiveCampaign"
-      },
-      "category": "productivity",
-      "source": {
-        "source": "url",
-        "url": "https://github.com/ActiveCampaign/activecampaign-plugin.git",
-        "sha": "0ff858728bc52aee335d5475b0d4eb5f3a9589b0"
-      },
-      "homepage": "https://www.activecampaign.com"
-    },
-    {
-      "name": "hubspot-sales",
-      "displayName": "HubSpot Sales",
-      "description": "Run your HubSpot sales workflow directly from Claude. Adds skills that cover the full sales day: import contacts and deals into HubSpot, get a prioritised morning brief, prep for any call with full CRM context, draft personalised follow-ups grounded in deal history, log calls and update records by describing what happened, and review your pipeline to surface stalling deals. Everything writes back to HubSpot.",
-      "author": {
-        "name": "HubSpot"
-      },
-      "category": "productivity",
-      "source": {
-        "source": "git-subdir",
-        "url": "https://github.com/HubSpot/hubspot-mcp-plugins.git",
-        "path": "HubSpot-Sales",
-        "ref": "main",
-        "sha": "a0c59600fc1ddcf03ceca71aebf0c28aa55f49e3"
-      },
-      "homepage": "https://www.hubspot.com"
-    },
-    {
-      "name": "dynatrace",
-      "displayName": "Dynatrace",
-      "description": "Dynatrace observability skills: DQL query patterns, application and infrastructure monitoring, log analysis, problem investigation, and incident response workflows, with the Dynatrace MCP server for live platform access.",
-      "author": {
-        "name": "Dynatrace"
-      },
-      "category": "monitoring",
-      "source": {
-        "source": "url",
-        "url": "https://github.com/Dynatrace/dynatrace-for-ai.git",
-        "sha": "4f9aa71f9802aa6db0a4069ae5619eb3392ff411"
-      },
-      "homepage": "https://www.dynatrace.com/hub/detail/claude-code-cli/"
-    },
-    {
-      "name": "wingspan",
-      "displayName": "Wingspan",
-      "description": "Ask Claude about the contractors you pay through Wingspan, what you owe them, and what is holding up a payment, then onboard contractors and log payments as drafts, with a preview before anything is written. Requires a Wingspan account; bundles the Wingspan MCP server (OAuth on first use).",
-      "author": {
-        "name": "Wingspan"
-      },
-      "category": "productivity",
-      "source": {
-        "source": "url",
-        "url": "https://github.com/wingspanHQ/mcp-claude-plugin.git",
-        "sha": "7f99cb3d1789a91390fa7abf1571328736b5e0a6"
-      },
-      "homepage": "https://github.com/wingspanHQ/mcp-claude-plugin"
-    },
-    {
-      "name": "amazon-selling-partner",
-      "displayName": "Amazon Selling Partner",
-      "description": "Connect your Amazon Seller Central account to Claude. Ask about sales, inventory, and listing performance and get recommendations grounded in your own data, then review and approve every listing, inventory or FBA action before it runs. Bundles the Amazon Selling Partner MCP server (Seller Central OAuth on first use). Currently in beta.",
-      "author": {
-        "name": "Amazon"
-      },
-      "category": "productivity",
-      "source": {
-        "source": "url",
-        "url": "https://github.com/amzn/selling-partner-agentic-toolkit.git",
-        "sha": "10573bac239b7062a476667eaa574d400335c70e"
-      },
-      "homepage": "https://github.com/amzn/selling-partner-agentic-toolkit"
     }
   ]
 }
