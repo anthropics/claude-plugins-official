@@ -84,7 +84,8 @@ jobs:
         with:
           marketplace-path: .claude-plugin/marketplace.json
           # Official curated marketplace: SHA-pin (I5) is a HARD error.
-          # I8/I11 are warnings until the 15 known vendored-path/name issues
-          # are cleaned up (see PR body); tighten to "I1 I3" after.
-          warn-invariants: "I1 I3 I8 I11"
+          # The I8/I11 vendored-path/name cleanup (the 15 known issues from
+          # #1762) is done; as #1762 directs, tighten the tolerated warnings
+          # to "I1 I3".
+          warn-invariants: "I1 I3"
           claude-cli-version: latest

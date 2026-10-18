@@ -8,18 +8,16 @@ name: Scan Plugins
 # scan setup at the step level when nothing scan-relevant changed. The check
 # always reports.
 #
-# Verdict cache: each (plugin, sha) pair is scanned at most once. The bump
-# workflow force-resets bump/plugin-shas every night, which makes the same
-# SHAs reappear in the diff on consecutive nights — without a cache, the
-# scan would re-burn ~90s of Claude time per entry per night. The cache is
-# keyed on the policy hash so a prompt or schema change invalidates all
-# verdicts and triggers a clean re-scan.
+# Verdict cache: each (plugin, sha) pair is scanned at most once. A bump
+# that is closed without merging is retried on a later nightly sweep at the
+# same upstream SHA, and manual re-dispatches revisit the same SHAs —
+# without a cache, each pass would re-burn ~90s of Claude time per entry.
+# The cache is keyed on the policy hash so a prompt or schema change
+# invalidates all verdicts and triggers a clean re-scan.
 #
-# Failure handling: a cached `passes:false` verdict still fails the job. The
-# Revert Failed Bumps workflow (revert-failed-bumps.yml) reacts to that by
-# dropping the failing entries from the bump PR, so one bad upstream can't
-# block the rest. After the revert, the re-dispatched scan finds only
-# cached-pass entries and goes green in seconds.
+# Failure handling: a cached `passes:false` verdict still fails the job, so
+# that entry's bump PR stays blocked on its required `scan` check. Bumps are
+# per-entry PRs, so a bad upstream only ever holds back its own PR.
 
 on:
   pull_request:
@@ -192,7 +190,7 @@ jobs:
         id: scan
         # Capture the action's per-entry outputs even when it exits nonzero.
         # The verdict (cached + fresh) is what gates the job, not the action's
-        # exit code, and the revert workflow needs the artifact even on failure.
+        # exit code, and the verdicts must reach the run report even on failure.
         continue-on-error: true
         # Pinned to claude-plugins-community#34 (WIF input support).
         # TODO: re-pin to a main-branch SHA once #34 merges.
@@ -213,8 +211,7 @@ jobs:
       # Merge fresh verdicts into the cache and assemble this run's full
       # verdict set (cached + fresh) for downstream consumers. Runs even when
       # the scan step failed so that fail verdicts are also cached — that is
-      # what lets the revert workflow drop them and what stops the same
-      # failing SHA from being re-scanned every night.
+      # what stops the same failing SHA from being re-scanned every night.
       - name: Merge verdicts and assemble run report
         if: steps.changes.outputs.relevant == 'true'
         id: report
@@ -286,8 +283,8 @@ jobs:
           mv "$CACHE_DIR/verdicts.json.tmp" "$CACHE_DIR/verdicts.json"
 
           # The full per-entry verdict for THIS run's diff: cached verdicts
-          # plus freshly-scanned verdicts. The revert workflow consumes the
-          # `failed` list to know exactly which SHAs to drop.
+          # plus freshly-scanned verdicts. run-failed.json (names only) is
+          # derived from it and travels with the uploaded artifact.
           jq -c -s \
             '(.[0] | map({name, sha: .source.sha, passes: .verdict.passes,
                           summary: (.verdict.summary // ""),
@@ -337,9 +334,9 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
-      # Used by revert-failed-bumps.yml to know which entries to drop. Always
-      # uploaded when relevant so the revert workflow can distinguish "scan
-      # found policy failures" from "scan never ran" (infra error → no revert).
+      # The emit-verdict job downloads this to post the per-entry sticky
+      # comments on the bump PR. Always uploaded when relevant; a missing
+      # artifact means the scan never reached the point of producing verdicts.
       - name: Upload scan verdicts artifact
         if: steps.changes.outputs.relevant == 'true'
         uses: actions/upload-artifact@v4
@@ -375,8 +372,8 @@ jobs:
           fi
           # The action can also fail without a policy verdict (clone error,
           # API error, schema mismatch). With zero parsed failures and a
-          # nonzero exit, that is an infra error — fail loudly so the revert
-          # workflow does NOT misread it as "everything passed".
+          # nonzero exit, that is an infra error — fail loudly so it is never
+          # mistaken for "everything passed".
           if [[ "$SCAN_OUTCOME" == "failure" ]]; then
             echo "::error::Scan step failed without a parseable policy verdict (likely an infra error)."
             exit 1
