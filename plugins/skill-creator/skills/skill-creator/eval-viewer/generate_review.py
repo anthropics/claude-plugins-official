@@ -276,7 +276,16 @@ def generate_html(
     if benchmark:
         embedded["benchmark"] = benchmark
 
-    data_json = json.dumps(embedded)
+    # The JSON is inlined into a <script> block, so characters that can change
+    # how the HTML parser reads it (e.g. "</script>" in eval output) must be
+    # escaped. \u003c, \u003e and \u0026 are valid JSON/JS escapes and decode
+    # back to the original characters.
+    data_json = (
+        json.dumps(embedded)
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+        .replace("&", "\\u0026")
+    )
 
     return template.replace("/*__EMBEDDED_DATA__*/", f"const EMBEDDED_DATA = {data_json};")
 
