@@ -9,6 +9,7 @@ to work without retargeting.
 import os
 import subprocess
 import sys
+import unicodedata
 import time
 
 from _base import debug_log, _PV
@@ -17,7 +18,7 @@ from gitutil import (
     _git_dir, _git_toplevel, _git_status_porcelain,
     _git_rev_parse_head, _is_ancestor, _git_name_only, _temp_index,
 )
-from session_state import with_locked_state
+from session_state import load_state, with_locked_state
 from extensibility import _same_dir
 
 
@@ -57,6 +58,10 @@ def load_baseline_sha(session_id):
     return with_locked_state(session_id, _load)
 
 
+# record_touched_path and turn_touched keep the newest paths only.
+TOUCHED_PATHS_CAP = 200
+
+
 def record_touched_path(session_id, file_path):
     """Append a file path to the touched_paths list (deduped, capped at 200).
 
@@ -69,8 +74,8 @@ def record_touched_path(session_id, file_path):
         paths = state.setdefault("touched_paths", [])
         if file_path not in paths:
             paths.append(file_path)
-            if len(paths) > 200:
-                del paths[:len(paths) - 200]
+            if len(paths) > TOUCHED_PATHS_CAP:
+                del paths[:len(paths) - TOUCHED_PATHS_CAP]
     with_locked_state(session_id, _record)
 
 
@@ -117,10 +122,11 @@ def consume_stop_state(session_id, clear=True):
         }
         # touched_paths is cleared per Stop, but one baseline can be
         # reviewed by several Stops (rewakes). turn_touched keeps every path
-        # recorded since the baseline; only telemetry reads it.
+        # recorded since the prompt hook's baseline. Read by the scope
+        # metric and, through touched_since_prompt, by the no-edit-record note.
         turn = list(dict.fromkeys(
             [p for p in state.get("turn_touched", []) if isinstance(p, str)]
-            + snap["touched_paths"]))[-200:]
+            + snap["touched_paths"]))[-TOUCHED_PATHS_CAP:]
         snap["turn_touched"] = turn
         if clear:
             state["turn_touched"] = turn
@@ -140,6 +146,26 @@ def consume_stop_state(session_id, clear=True):
     }
 
 
+def touched_since_prompt(session_id):
+    """(paths, complete): every path the session's edit tools recorded since
+    the prompt hook's baseline, read now and without consuming or writing
+    anything, so edits recorded while a Stop review runs are in it.
+    `complete` is False when the list is known to be missing paths: the
+    state file was lost or overwritten since the last Stop, or it could not
+    be read. Callers check the length against TOUCHED_PATHS_CAP."""
+    try:
+        state = load_state(session_id)
+    except Exception:
+        return [], False
+    if not isinstance(state, dict):
+        return [], False
+    paths = list(dict.fromkeys(
+        [p for p in state.get("turn_touched", []) if isinstance(p, str)]
+        + [p for p in state.get("touched_paths", []) if isinstance(p, str)]))
+    lost = state.get("state_resets") or state.get("state_overwrites")
+    return paths, not lost
+
+
 # Path names compare without case where the filesystem usually does.
 _FOLD_CASE = os.name == "nt" or sys.platform == "darwin"
 
@@ -148,13 +174,21 @@ def _rel_in_repo(real_root, path):
     """`path` relative to the repo root (a real path), or None when it lies
     outside the repo."""
     real = os.path.realpath(path)
+    if sys.platform == "darwin":
+        # git and the file system can spell one name composed and decomposed.
+        real = unicodedata.normalize("NFC", real)
+        real_root = unicodedata.normalize("NFC", real_root)
+    if _FOLD_CASE:
+        # Fold before comparing: realpath keeps the case a path was typed in,
+        # so the repo folder itself can be spelled differently too.
+        real, real_root = real.casefold(), real_root.casefold()
     try:
         rel = os.path.relpath(real, real_root)
     except ValueError:  # another drive
         return None
     if rel == os.pardir or rel.startswith(os.pardir + os.sep):
         return None
-    return rel.casefold() if _FOLD_CASE else rel
+    return rel
 
 
 def touched_scope(repo_root, cwd, touched_paths):
@@ -162,7 +196,7 @@ def touched_scope(repo_root, cwd, touched_paths):
     (scope, repo-relative paths inside the repo). scope: 0 none recorded,
     1 all inside the reviewed repo, 2 some outside, 3 all outside. Relative
     paths are read against `cwd`. The list holds the newest 200 paths, so
-    this is approximate past that. Telemetry only."""
+    this is approximate past that."""
     root = os.path.realpath(repo_root)
     inside, outside = set(), 0
     for p in touched_paths:
@@ -196,6 +230,44 @@ def review_scope_code(repo_root, scope, inside, files, base_fail):
     return int(base_fail or 0) * 100000 + scope * 10000 + min(untouched, 9999)
 
 
+def findings_without_edit_record(session_id, at_stop_start, repo_root, cwd,
+                                 finding_paths, reviewed):
+    """Which findings are in a reviewed file for which there is no record of
+    this session's edit tools writing it since the prompt: (those files as
+    the review named them, in order and without repeats; how many findings
+    they hold). The count is -1, with no files, when the record is known to
+    be incomplete: lost state, or more paths than the list keeps.
+
+    `at_stop_start`: turn_touched as the Stop began; a prompt that arrives
+    while the review runs resets the stored list. A finding path that is not
+    one of the `reviewed` files, or that cannot be resolved, is left out."""
+    since, complete = touched_since_prompt(session_id)
+    touched = list(dict.fromkeys(list(at_stop_start) + since))
+    if not complete or len(touched) >= TOUCHED_PATHS_CAP:
+        return [], -1
+    _, inside = touched_scope(repo_root, cwd, touched)
+    root = os.path.realpath(repo_root)
+
+    def rel(f):
+        try:
+            return _rel_in_repo(root, os.path.join(root, f))
+        except (ValueError, OSError):  # NUL, or a name the OS cannot encode
+            return None
+    candidates = {}
+    for f in reviewed:
+        r = rel(f)
+        if r is not None and r not in inside:
+            candidates.setdefault(r, f)
+    names, count = [], 0
+    for f in finding_paths:
+        r = rel(f) if isinstance(f, str) and f else None
+        if r in candidates:
+            count += 1
+            if candidates[r] not in names:
+                names.append(candidates[r])
+    return names, count
+
+
 def record_reviewed_diff(session_id, diff_hash):
     def _save(state):
         state["reviewed_diff_hash"] = diff_hash
@@ -218,8 +290,8 @@ def restore_unreviewed_stop_state(session_id, paths, baseline_sha):
     def _restore(state):
         existing = state.get("touched_paths", [])
         merged = list(dict.fromkeys(list(paths) + list(existing)))
-        if len(merged) > 200:
-            merged = merged[:200]
+        if len(merged) > TOUCHED_PATHS_CAP:
+            merged = merged[:TOUCHED_PATHS_CAP]
         state["touched_paths"] = merged
         if baseline_sha and not state.get("baseline_sha"):
             state["baseline_sha"] = baseline_sha

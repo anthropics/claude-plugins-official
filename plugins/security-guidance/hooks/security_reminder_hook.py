@@ -126,6 +126,7 @@ from diffstate import (  # noqa: E402,F401
     _full_shas, _mark_inflight, _load_inflight_shas, _reviewed_after_inflight,
     UNTRACKED_BASELINE_CAP, _list_untracked, compute_v2_review_set,
     touched_scope, review_scope_code,
+    findings_without_edit_record,
     baseline_origin, baseline_origin_metric, FOREIGN_ORIGINS,
     KEPT_NO_CAPTURE, KEPT_UNREVIEWED,
 )
@@ -216,6 +217,35 @@ CONTINUATION_SUFFIX = (
     "review is supplementary feedback, not a replacement for your previous "
     "response."
 )
+
+# Added to a Stop finding in a file with no record of this session's edit
+# tools writing it since the prompt. The review set comes from git, so it can
+# hold another session's or process's work in the same checkout, and without
+# a turn-start snapshot also earlier work. The record is not proof (a shell
+# command leaves none, and a record can be lost), so the note states only
+# what is known and leaves the decision to the session.
+NO_EDIT_RECORD_NOTE = (
+    "\n\nNote: this review has no record of this session's edit tools "
+    "writing {files} since the last prompt. It reviews every change it "
+    "finds in the checkout, so that change may have been made another way: "
+    "by a shell command, in an earlier turn, or by another process or "
+    "session working in this checkout. If it is not your change, leave the "
+    "file as it is and tell the user about the finding instead of fixing "
+    "it. If it is your change, handle the finding as usual."
+)
+NO_EDIT_RECORD_NOTE_MAX_FILES = 10
+
+
+def _no_edit_record_note(names):
+    """The note for `names` (from findings_without_edit_record), or ""."""
+    if not names:
+        return ""
+    shown = ", ".join(f"`{n}`" for n in names[:NO_EDIT_RECORD_NOTE_MAX_FILES])
+    if len(names) > NO_EDIT_RECORD_NOTE_MAX_FILES:
+        shown += (f" and {len(names) - NO_EDIT_RECORD_NOTE_MAX_FILES} more of "
+                  "the files above")
+    return NO_EDIT_RECORD_NOTE.format(files=shown)
+
 
 # Extra keys emit_metrics appends to every row this invocation emits.
 _TAIL_METRICS: Dict[str, Any] = {}
@@ -2693,6 +2723,27 @@ def handle_stop_hook(input_data):
         if new_sha:
             debug_log(f"Updated git baseline after stop hook: {new_sha[:12]}")
 
+        # Say so when a finding is in a file with no record of the session's
+        # edit tools writing it. Not when the state file was already found
+        # lost at the start of this Stop. Never fails the delivery.
+        no_record_note = ""
+        try:
+            if v2_metrics.get("dirty_now_count", -1) >= 0:
+                names, n_no_record = [], -1
+                if not (snap.get("state_resets") or snap.get("state_overwrites")):
+                    names, n_no_record = findings_without_edit_record(
+                        session_id, snap["turn_touched"], repo_root,
+                        input_data.get("cwd", ""),
+                        [v.get("filePath") for v in vulns],
+                        [fp for fp, _ in diff_files])
+                no_record_note = _no_edit_record_note(names)
+                # Findings in such files; -1 when the record was incomplete
+                # and no note was added. Sent even when 0, as the last key
+                # of the row, so a row without it was cut by the key cap.
+                _TAIL_METRICS["finding_no_edit_record"] = n_no_record
+        except Exception as e:
+            debug_log(f"no-edit-record note skipped: {e}")
+
         sev = {"critical": 0, "high": 0, "medium": 0}
         for v in vulns:
             s = v.get("severity", "medium")
@@ -2724,7 +2775,8 @@ def handle_stop_hook(input_data):
                if gitutil._secret_shaped_skipped else {}),
         }, rewake_summary=_format_vulns_summary(vulns),
            additional_context=(PROVENANCE_BANNER + "\n\n"
-                               + concrete_guidance + CONTINUATION_SUFFIX + "\n"),
+                               + concrete_guidance + no_record_note
+                               + CONTINUATION_SUFFIX + "\n"),
            hook_event_name=hook_event_name)
         sys.exit(2)
 
