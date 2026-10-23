@@ -3037,7 +3037,7 @@
         "url": "https://github.com/pydantic/skills.git",
         "path": "plugins/ai",
         "ref": "main",
-        "sha": "238d97102650c1caa51f35027aee13c469c59542"
+        "sha": "390a5a072281f38b69e7a7527628206f34eb1a7f"
       },
       "homepage": "https://github.com/pydantic/skills/tree/main/plugins/ai"
     },
