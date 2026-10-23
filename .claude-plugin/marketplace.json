@@ -3942,7 +3942,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/twilio/ai.git",
-        "sha": "8aba46fb65dc8d9a20f4b301a68352064b4159a5"
+        "sha": "803790a281f0ef11d2928ffb41bc8422237fb434"
       },
       "homepage": "https://www.twilio.com"
     },
