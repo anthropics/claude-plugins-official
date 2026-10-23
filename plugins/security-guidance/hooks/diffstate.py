@@ -6,12 +6,13 @@ there so callers keep resolving bare names through the hook module's
 globals — tests that ``monkeypatch.setattr(hook, "<fn>", …)`` continue
 to work without retargeting.
 """
+import hashlib
 import os
 import subprocess
 import sys
 import time
 
-from _base import debug_log, _PV
+from _base import debug_log, portable_output, _PV
 from gitutil import (
     GIT_CMD,
     _git_dir, _git_toplevel, _git_status_porcelain,
@@ -501,6 +502,164 @@ def _append_reviewed_shas(repo_root, shas, vulns_found=0):
                 f.writelines(lines)
         except OSError:
             pass
+
+
+# ─── repeated-diff count ────────────────────────────────────────────────────
+#
+# Count only. A change that comes back under a new commit (undo and re-commit,
+# rebase before the first push) is unknown to the reviewed-shas record and is
+# reviewed again. These helpers say how often that happens, by remembering a
+# hash of each reviewed hunk next to the reviewed-shas file. Nothing here
+# decides whether a review runs, and nothing here waits on another process
+# for more than a moment.
+
+_SEEN_DIFFS_BASENAME = "sg-reviewed-diffs"
+_SEEN_DIFFS_TTL_S = 7 * 24 * 3600
+# Past this size the record is cut back to its newest half.
+_SEEN_DIFFS_TRIM_BYTES = 1024 * 1024
+_SEEN_DIFFS_MAX_KEYS = 500
+_SEEN_DIFFS_LOCK_TRIES = 10
+
+# `diff_seen` values, weakest first. A review reports the weakest of its
+# hunks: 3 means every hunk already had a finished review in this clone.
+DIFF_SEEN_ERROR = -1      # the record could not be read or written
+DIFF_SEEN_NO = 0          # some hunk was never reviewed
+DIFF_SEEN_UNFINISHED = 1  # a review of it started and has no verdict (yet)
+DIFF_SEEN_OTHER_TREE = 2  # finished, on different repo contents
+DIFF_SEEN_SAME_TREE = 3   # finished, on the same tree
+
+
+def _hunk_keys(diff_files):
+    """One hash per hunk: the path plus the hunk's lines, context included.
+
+    The `@@` line is left out, so a hunk keeps its key when a rebase only
+    moves it; the same edit next to different code gets a different key.
+    """
+    keys = {}
+    for path, content in diff_files:
+        hunks, cur = [], []
+        for ln in content.split("\n"):
+            if ln.startswith("@@"):
+                hunks.append(cur)
+                cur = []
+            else:
+                cur.append(ln)
+        hunks.append(cur)
+        for body in hunks:
+            # A file's last hunk ends with the diff's trailing blank line.
+            while body and not body[-1]:
+                body.pop()
+            if not body:
+                continue
+            h = hashlib.sha256(path.encode("utf-8", "replace"))
+            h.update(b"\0")
+            h.update("\n".join(body).encode("utf-8", "replace"))
+            keys[h.hexdigest()[:16]] = None
+    keys = list(keys)
+    if len(keys) > _SEEN_DIFFS_MAX_KEYS:
+        # Keep the record small: the hunks past the cap share one key, so
+        # they only match the same set of hunks again.
+        rest = hashlib.sha256(" ".join(keys[_SEEN_DIFFS_MAX_KEYS - 1:]).encode("ascii"))
+        keys = keys[:_SEEN_DIFFS_MAX_KEYS - 1] + [rest.hexdigest()[:16]]
+    return keys
+
+
+def _seen_lock(fd):
+    """True: locked. False: another process kept it. None: no flock here."""
+    for _ in range(_SEEN_DIFFS_LOCK_TRIES):
+        try:
+            if _flock_nb(fd, exclusive=True):
+                return True
+        except (ImportError, OSError):
+            return None
+        time.sleep(0.05)
+    return False
+
+
+def _append_diff_row(f, locked, token, done):
+    """Append one record for the review to `f`, the record opened "a+b"."""
+    _, keys, tree = token
+    row = f"{int(time.time())}\t{tree}\t{int(done)}\t{' '.join(keys)}\n".encode("ascii")
+    size = f.seek(0, os.SEEK_END)
+    if size:
+        f.seek(size - 1)
+        if f.read(1) != b"\n":
+            row = b"\n" + row  # a torn last record must not swallow this one
+    # Cutting the record back rewrites it: not while another process holds
+    # the lock. Without flock at all, bounded beats exact.
+    if locked is not False and size + len(row) > _SEEN_DIFFS_TRIM_BYTES:
+        f.seek(0)
+        keep, room = [], _SEEN_DIFFS_TRIM_BYTES // 2
+        for ln in reversed(f.read().splitlines(keepends=True)):
+            room -= len(ln)
+            if room < 0:
+                break
+            keep.append(ln)
+        f.seek(0)
+        f.truncate()
+        row = b"".join(reversed(keep)) + row
+    f.write(row)
+    f.flush()
+
+
+def _diff_review_started(repo_root, diff_files, tip="HEAD"):
+    """Note that a review of `diff_files`, a diff ending at `tip`, is starting.
+
+    Returns (token, metrics). `metrics` is {"diff_seen": <DIFF_SEEN_* code>}:
+    whether this clone already reviewed every hunk of this diff. `token` goes
+    to `_diff_review_done` once the review has a verdict. Never raises.
+    """
+    if portable_output() or not diff_files:
+        # No metrics leave the hook in portable mode, so nothing to count.
+        return None, {}
+    try:
+        gd = _git_dir(repo_root)
+        keys = _hunk_keys(diff_files)
+        if not gd or not keys:
+            raise ValueError("no git dir" if not gd else "no hunks")
+        token = (os.path.join(gd, _SEEN_DIFFS_BASENAME), keys,
+                 "".join(_full_shas(repo_root, [tip + "^{tree}"])[:1]))
+        tree = token[2]
+        now = time.time()
+        best = dict.fromkeys(keys, DIFF_SEEN_NO)
+        # Read and note under one lock, so two reviews of one diff that start
+        # together cannot both miss each other.
+        with open(token[0], "a+b") as f:
+            locked = _seen_lock(f.fileno())
+            if locked is False:
+                raise OSError("record is locked")
+            f.seek(0)
+            for ln in f.read().decode("ascii", "replace").splitlines():
+                row = ln.split("\t")
+                if len(row) != 4 or not row[0].isdigit() or len(row[0]) > 12:
+                    continue
+                if now - int(row[0]) > _SEEN_DIFFS_TTL_S:
+                    continue
+                if row[2] != "1":
+                    seen = DIFF_SEEN_UNFINISHED
+                elif tree and row[1] == tree:
+                    seen = DIFF_SEEN_SAME_TREE
+                else:
+                    seen = DIFF_SEEN_OTHER_TREE
+                for k in row[3].split(" "):
+                    if best.get(k, seen) < seen:
+                        best[k] = seen
+            _append_diff_row(f, locked, token, done=False)
+        return token, {"diff_seen": min(best.values())}
+    except Exception as e:
+        debug_log(f"Repeated-diff count: not counted ({type(e).__name__}: {e})")
+        return None, {"diff_seen": DIFF_SEEN_ERROR}
+
+
+def _diff_review_done(token):
+    """Note that the review `token` came from got a verdict. Never raises."""
+    if not token:
+        return
+    try:
+        with open(token[0], "a+b") as f:
+            _append_diff_row(f, _seen_lock(f.fileno()), token, done=True)
+    except Exception as e:
+        debug_log(f"Repeated-diff count: verdict not noted ({type(e).__name__}: {e})")
 
 
 # ─── in-flight review markers ───────────────────────────────────────────────

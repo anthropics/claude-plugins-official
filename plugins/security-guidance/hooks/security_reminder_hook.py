@@ -124,6 +124,7 @@ from diffstate import (  # noqa: E402,F401
     _REVIEWED_SHAS_BASENAME, _REVIEWED_SHAS_CAP,
     _reviewed_shas_path, _load_reviewed_shas, _append_reviewed_shas,
     _full_shas, _mark_inflight, _load_inflight_shas, _reviewed_after_inflight,
+    _diff_review_started, _diff_review_done,
     UNTRACKED_BASELINE_CAP, _list_untracked, compute_v2_review_set,
     touched_scope, review_scope_code,
     baseline_origin, baseline_origin_metric, FOREIGN_ORIGINS,
@@ -219,6 +220,10 @@ CONTINUATION_SUFFIX = (
 
 # Extra keys emit_metrics appends to every row this invocation emits.
 _TAIL_METRICS: Dict[str, Any] = {}
+# Of those, the ones that go after the others whenever they were set: a row
+# over CC's key cap loses them before any older review key. Only the launcher
+# keys below come later; those are also on every smaller row of the session.
+_LAST_METRIC_KEYS = ("diff_seen",)
 
 # The launcher's slow interpreter probes, if any. After everything else.
 _LAUNCHER_METRICS: Dict[str, Any] = launcher_probe_metrics()
@@ -324,6 +329,9 @@ def emit_metrics(
         # managed-mcp.json) and the review was started again without it.
         tail["strict_mcp_off"] = 1
     tail.update(_TAIL_METRICS)
+    for k in _LAST_METRIC_KEYS:
+        if k in tail:
+            tail[k] = tail.pop(k)
     tail.update(_LAUNCHER_METRICS)
     metrics = {**metrics, **{k: v for k, v in tail.items() if k not in metrics}}
     out = {"metrics": metrics}
@@ -1760,6 +1768,10 @@ def handle_commit_review_posttooluse(input_data):
     # Tell a push review (or the next commit's reflog scan) that these commits
     # are being reviewed, so it does not start a second review of them.
     _mark_inflight(repo_root, _full_shas(repo_root, shas))
+    # Count only: keyed on what the reviewer is sent, after the byte caps.
+    _diff_token, _seen_m = _diff_review_started(
+        repo_root, _cap_files_for_prompt(diff_files), tip=shas[0])
+    _TAIL_METRICS.update(_seen_m)
 
     review_start = _time.time()
 
@@ -1863,6 +1875,7 @@ def handle_commit_review_posttooluse(input_data):
         _append_reviewed_shas(repo_root, full_shas, vulns_found=len(vulns or []))
     except Exception:
         pass
+    _diff_review_done(_diff_token)
 
     if not concrete_guidance:
         debug_log("Commit review: no security issues found")
@@ -2190,6 +2203,9 @@ def handle_push_sweep_posttooluse(input_data):
         sys.exit(0)
 
     _mark_inflight(repo_root, tail)
+    _diff_token, _seen_m = _diff_review_started(
+        repo_root, _cap_files_for_prompt(diff_files))
+    _TAIL_METRICS.update(_seen_m)
 
     import time as _time
     now = _time.time()
@@ -2235,6 +2251,7 @@ def handle_push_sweep_posttooluse(input_data):
 
     # The tail is now covered by this net-diff review.
     _append_reviewed_shas(repo_root, tail, vulns_found=len(vulns or []))
+    _diff_review_done(_diff_token)
 
     new_vulns, n_deduped = _dedup_against_state(
         session_id, vulns or [], prompted=_finding_keys(previous_findings)
