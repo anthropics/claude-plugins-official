@@ -2547,9 +2547,11 @@ def handle_stop_hook(input_data):
         debug_log(f"Stop hook: diff against {content_base[:12]} failed — falling back to {diff_base}")
         diff_output = get_git_diff(repo_root, diff_base, full_context=False,
                                    paths=review_paths, untracked_paths=untracked)
-    # Only when it happened: MiB of git diff output read, reviewable files
-    # whose diff was cut while reading it, diffs that hit the timeout.
-    for _k, _v in (("diff_mb", gitutil._diff_read["bytes"] >> 20),
+    # Only when it happened: a failed `git add -N` (first, so a row at CC's key
+    # cap keeps it), MiB of git diff output read, reviewable files whose diff
+    # was cut while reading it, diffs that hit the timeout.
+    for _k, _v in (("add_fail", gitutil._add_failed["code"]),
+                   ("diff_mb", gitutil._diff_read["bytes"] >> 20),
                    ("diff_cut_files", gitutil._diff_read["cut_files"]),
                    ("diff_timeout", gitutil._diff_read["timeouts"])):
         if _v:

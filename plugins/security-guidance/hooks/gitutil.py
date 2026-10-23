@@ -249,6 +249,15 @@ def _path_batches(paths, budget=None):
 # long once cut down) or "none_reviewable".
 _path_list_too_long = set()
 
+# A failed `git add --intent-to-add` during this hook run, for the Stop hook's
+# metrics: kind * 100000 + the paths the add was given. One number because a
+# review row is near CC's key cap. A failed add leaves the new files out of the
+# diff, so a turn that only added files looks like a turn with no changes; a
+# timeout loses the whole diff. kind: 1 git could not write the empty blob to
+# the object store, 2 any other git error, 3 timeout. A git that speaks another
+# language counts as 2.
+_add_failed = {"code": 0}
+
 
 def _too_many_args(e):
     """The OS refused to start the command because its arguments are too
@@ -542,6 +551,10 @@ def _hook_tmpdir():
     return d
 
 
+def _note_add_failure(kind, paths):
+    _add_failed["code"] = kind * 100000 + min(len(paths), 99999)
+
+
 @contextlib.contextmanager
 def _temp_index(cwd, untracked_paths=None):
     """Yield an env dict pointing GIT_INDEX_FILE at a throwaway copy of the
@@ -632,12 +645,20 @@ def _copied_index(cwd, top, real_index, tmpdir, untracked_paths):
             # still spawns reader threads that decode stderr — git error
             # messages can reference non-ASCII filenames and crash on
             # cp1252. See #2099. Drop text=True so bytes stay raw.
-            _run_git_on_review_paths(
-                ["add", "--intent-to-add"], add_args, timeout=10, cwd=cwd,
-                # The paths are file names, not patterns, for this git add
-                # only: an untracked file named `:(glob)**` must add only
-                # itself.
-                env={**env, "GIT_LITERAL_PATHSPECS": "1"})
+            try:
+                results = _run_git_on_review_paths(
+                    ["add", "--intent-to-add"], add_args, timeout=10, cwd=cwd,
+                    # The paths are file names, not patterns, for this git add
+                    # only: an untracked file named `:(glob)**` must add only
+                    # itself.
+                    env={**env, "GIT_LITERAL_PATHSPECS": "1"})
+            except subprocess.TimeoutExpired:
+                _note_add_failure(3, add_args)
+                raise
+            failed = next((r for r in results if r.returncode != 0), None)
+            if failed:
+                _note_add_failure(1 if b"empty blob" in failed.stderr else 2, add_args)
+                debug_log(f"git add -N failed: {failed.stderr[:200].decode('utf-8', errors='replace')}")
             # A whole-tree add puts a nested repository back.
             if untracked_paths is None and not _drop_gitlinks(top, env, tmp_index):
                 yield None
