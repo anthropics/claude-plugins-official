@@ -103,6 +103,50 @@ def apply_safe_git_env():
     os.environ.update(SAFE_GIT_ENV)
 
 
+def index_entry_count(path):
+    """The entry count in an index file's header (signature, version, count),
+    or None if it cannot be read. A split or sparse index holds fewer entries
+    than the repository has tracked files."""
+    try:
+        with open(path, "rb") as f:
+            header = f.read(12)
+    except OSError:
+        return None
+    if header[:4] == b"DIRC" and len(header) == 12:
+        return int.from_bytes(header[8:12], "big")
+    return None
+
+
+def windows_drive_mount(path, mountinfo):
+    """Whether `path` is on a Windows drive mounted into WSL, given the text
+    of /proc/self/mountinfo. Every file status there is a round trip to the
+    Windows host."""
+    best, best_type = "", ""
+    for line in mountinfo.splitlines():
+        # id parent dev root mountpoint options [tags] - fstype source options
+        before, _, after = line.partition(" - ")
+        fields, tail = before.split(), after.split()
+        if len(fields) < 5 or not tail:
+            continue
+        point = re.sub(r"\\([0-7]{3})", lambda m: chr(int(m[1], 8)), fields[4])
+        inside = path == point or path.startswith(point.rstrip("/") + "/")
+        if inside and len(point) >= len(best):
+            best, best_type = point, tail[0]
+    return best_type in ("9p", "drvfs", "virtiofs")
+
+
+def on_windows_drive(path):
+    """windows_drive_mount for this machine. False anywhere but WSL."""
+    try:
+        with open("/proc/sys/kernel/osrelease") as f:
+            if "microsoft" not in f.read().lower():
+                return False
+        with open("/proc/self/mountinfo") as f:
+            return windows_drive_mount(os.path.realpath(path), f.read())
+    except (OSError, ValueError):
+        return False
+
+
 def _git_rev_parse_head(cwd):
     """Return the current HEAD SHA, or None if not a git repo / no commits."""
     try:

@@ -16,6 +16,7 @@ from gitutil import (
     GIT_CMD,
     _git_dir, _git_toplevel, _git_status_porcelain,
     _git_rev_parse_head, _is_ancestor, _git_name_only, _temp_index,
+    index_entry_count,
 )
 from session_state import with_locked_state
 from extensibility import _same_dir
@@ -322,6 +323,8 @@ def get_baseline_file_content(session_id, file_path, cwd):
 # from uncommitted work that was already there. Stored with baseline_sha.
 # Telemetry only.
 last_baseline_fail = 0
+# Entries in the index the last capture copied, None if unknown. Telemetry only.
+last_index_entries = None
 
 
 def capture_git_baseline(cwd):
@@ -350,8 +353,9 @@ def capture_git_baseline(cwd):
     # with `Ávila_report.txt` triggers a quotePath/locale warning) would
     # trip the stderr reader thread on Windows cp1252. Decode both streams
     # leniently for symmetry with _list_untracked. See #2056.
-    global last_baseline_fail
+    global last_baseline_fail, last_index_entries
     last_baseline_fail = 0
+    last_index_entries = None
     try:
         # Check if HEAD exists (i.e., repo has at least one commit)
         head_check = subprocess.run(
@@ -369,6 +373,7 @@ def capture_git_baseline(cwd):
             # env is None when no usable index copy could be made: fall
             # back to HEAD.
             if env is not None:
+                last_index_entries = index_entry_count(env["GIT_INDEX_FILE"])
                 result = subprocess.run(
                     [*GIT_CMD, "stash", "create"],
                     cwd=cwd, capture_output=True, timeout=15, env=env

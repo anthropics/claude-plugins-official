@@ -87,7 +87,7 @@ from _base import (  # noqa: E402,F401
     _PRICE_PER_MTOK, _PRICE_DEFAULT, _record_usage, _usage_metrics,
     _USAGE_CONTEXT, _log_usage,
     launcher_probe_metrics, state_dir as _resolve_state_dir,
-    write_hook_output as _write_hook_output,
+    write_hook_output as _write_hook_output, portable_output,
     llm_reviews_switched_off, agent_sdk_installed,
 )
 import extensibility  # noqa: E402
@@ -103,6 +103,7 @@ from session_state import (  # noqa: E402,F401
 )
 from gitutil import (  # noqa: E402,F401
     GIT_CMD, apply_safe_git_env, remove_copies_on_termination,
+    on_windows_drive,
     _git_rev_parse_head, _find_git_index, _diff_pathspec, _temp_index,
     _git_toplevel, _git_dir, _git_rev_list_range, _git_diff_range,
     _git_toplevel_and_head, _git_head_at,
@@ -680,6 +681,31 @@ def _store_baseline_fail(state, fail):
         state.pop("baseline_fail", None)
 
 
+# A prompt waits for this hook, so one this slow is worth a metrics row. Faster
+# prompts send none: the row would be one more event per prompt for every user.
+SLOW_PROMPT_MS = 1000
+
+
+def _slow_prompt_metrics(cwd, total, baseline, untracked, captured, baseline_fail):
+    """The metrics row for a slow prompt. Times are seconds, spent in
+    handle_user_prompt_submit (the launcher reports its own). Counts and flags
+    only, never a path. Telemetry only."""
+    metrics = {
+        "ups_ms": int(total * 1000),
+        "ups_baseline_ms": int(baseline * 1000),
+        "ups_untracked_ms": int(untracked * 1000),
+    }
+    if diffstate.last_index_entries is not None:
+        metrics["ups_index_entries"] = diffstate.last_index_entries
+    if on_windows_drive(cwd):
+        metrics["ups_wsl_drive"] = 1
+    if not captured:
+        metrics["ups_no_baseline"] = 1
+    if baseline_fail:
+        metrics["ups_baseline_fail"] = baseline_fail
+    return metrics
+
+
 def handle_user_prompt_submit(input_data):
     """
     Handle UserPromptSubmit — capture git baseline SHA.
@@ -692,6 +718,8 @@ def handle_user_prompt_submit(input_data):
     to be lost when the wipe landed before Stop's state read.
 
     """
+    import time as _time
+    started = _time.monotonic()
     cwd = input_data.get("cwd", "")
     if not cwd:
         debug_log("UPS: no cwd, skipping baseline capture")
@@ -704,17 +732,25 @@ def handle_user_prompt_submit(input_data):
     # nothing, so only the stash baseline (still read by the Write pattern
     # filter) is captured.
     snapshot_untracked = ENABLE_STOP_REVIEW and ENABLE_CODE_SECURITY_REVIEW
+    spent = {"baseline": 0.0, "untracked": 0.0}
+
+    def _timed(key, fn, repo_cwd):
+        began = _time.monotonic()
+        try:
+            return fn(repo_cwd)
+        finally:
+            spent[key] += _time.monotonic() - began
 
     def _capture(repo_cwd):
         if not snapshot_untracked:
-            return capture_git_baseline(repo_cwd), None
+            return _timed("baseline", capture_git_baseline, repo_cwd), None
         # stash-create and ls-files both walk the worktree (~2-5s each in a
         # very large repo). Run them concurrently so UPS latency stays
         # ≈ max(both).
         import concurrent.futures as _cf
         with _cf.ThreadPoolExecutor(max_workers=2) as _ex:
-            _f_sha = _ex.submit(capture_git_baseline, repo_cwd)
-            _f_ut = _ex.submit(_list_untracked, repo_cwd)
+            _f_sha = _ex.submit(_timed, "baseline", capture_git_baseline, repo_cwd)
+            _f_ut = _ex.submit(_timed, "untracked", _list_untracked, repo_cwd)
             # Taken whether or not the stash produced a SHA. `git stash
             # create` returns empty when there are no TRACKED changes, but
             # pre-existing untracked files still need to be excluded from the
@@ -723,7 +759,6 @@ def handle_user_prompt_submit(input_data):
             # something tracked is dirtied.
             return _f_sha.result(), _f_ut.result() or {}
 
-    import time as _time
     captured_at = _time.time()
     sha, untracked_now = _capture(cwd)
     # No repo here and none remembered: the listing above failed, it did not
@@ -812,6 +847,13 @@ def handle_user_prompt_submit(input_data):
         # invocation failure. See #2099.
         debug_log(f"Failed to capture git baseline (cwd={cwd!r}) — not a git repo, "
                   f"or git invocation failed (check log entries above)")
+
+    total = _time.monotonic() - started
+    debug_log(f"UPS: took {total:.2f}s (baseline {spent['baseline']:.2f}s, "
+              f"untracked {spent['untracked']:.2f}s)")
+    if (total * 1000 >= SLOW_PROMPT_MS or _LAUNCHER_METRICS) and not portable_output():
+        emit_metrics(_slow_prompt_metrics(
+            cwd, total, spent["baseline"], spent["untracked"], bool(sha), baseline_fail))
 
     sys.exit(0)
 
