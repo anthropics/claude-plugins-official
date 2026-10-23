@@ -1071,6 +1071,22 @@
       "homepage": "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/code-simplifier"
     },
     {
+      "name": "codebase-documentor-for-aws",
+      "description": "Analyze codebases to generate structured technical documentation with source-of-truth citations. Optimized for AWS workloads using CDK, CloudFormation, and Terraform.",
+      "author": {
+        "name": "Amazon Web Services"
+      },
+      "category": "development",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/awslabs/agent-plugins.git",
+        "path": "plugins/codebase-documentor-for-aws",
+        "ref": "main",
+        "sha": "fbefb3764e67558fe10ac834dd85db49734aa9b6"
+      },
+      "homepage": "https://github.com/awslabs/agent-plugins"
+    },
+    {
       "name": "coderabbit",
       "description": "Your code review partner. CodeRabbit provides external validation using a specialized AI architecture and 40+ integrated static analyzers—offering a different perspective that catches bugs, security vulnerabilities, logic errors, and edge cases. Context-aware analysis via AST parsing and codegraph relationships. Automatically incorporates CLAUDE.md and project coding guidelines into reviews. Useful after writing or modifying code, before commits, when implementing complex or security-sensitive logic, or when a second opinion would increase confidence in the changes. Returns specific findings with suggested fixes that can be applied immediately. Free to use.",
       "category": "productivity",
