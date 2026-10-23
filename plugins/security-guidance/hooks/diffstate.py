@@ -511,14 +511,19 @@ def _append_reviewed_shas(repo_root, shas, vulns_found=0):
 # through a second full review. So a review first takes an exclusive flock on
 # `sg-inflight-<sha>`, next to the reviewed-shas file, and holds it until its
 # process ends; other reviews leave a locked commit to it. The kernel drops
-# the lock however the holder dies, so a killed review blocks nobody. Without
-# flock (native Windows Python, some network filesystems) there are no
+# the lock however the holder dies, so a killed review blocks nobody. Native
+# Windows Python has no flock; there the same lock is taken with LockFileEx.
+# Where files cannot be locked (some network filesystems) there are no
 # markers and nothing changes.
 
 _INFLIGHT_PREFIX = "sg-inflight-"
 # A marker file nobody holds (a killed review's) is removed once this old.
 _INFLIGHT_GC_AGE_S = 3600
 _inflight_held = {}
+# Windows refuses to delete a file that is open, so a marker is closed first
+# there. Elsewhere it is deleted while still locked, so nobody can lock a
+# file that is about to go.
+_UNLINK_BEFORE_CLOSE = os.name != "nt"
 
 
 def _full_shas(repo_root, shas):
@@ -537,11 +542,60 @@ def _full_shas(repo_root, shas):
     return out
 
 
+_win_lock_file_ex = None
+
+
+def _win_lock_nb(fd, exclusive):
+    """`_flock_nb` for native Windows Python, with LockFileEx.
+
+    Shared and exclusive as with flock, never waits, and Windows drops the
+    lock when the handle is closed or the holder's process ends. Windows
+    locks stop other processes reading the locked bytes, so the byte locked
+    is one far past the end of the (empty) marker: copying a repository while
+    a review runs still reads the marker.
+    """
+    global _win_lock_file_ex
+    import errno
+    try:
+        import ctypes
+        import msvcrt
+        if _win_lock_file_ex is None:
+            from ctypes import wintypes
+
+            class _Overlapped(ctypes.Structure):
+                _fields_ = [("Internal", ctypes.c_void_p), ("InternalHigh", ctypes.c_void_p),
+                            ("Offset", wintypes.DWORD), ("OffsetHigh", wintypes.DWORD),
+                            ("hEvent", wintypes.HANDLE)]
+
+            fn = ctypes.WinDLL("kernel32", use_last_error=True).LockFileEx
+            fn.argtypes = [wintypes.HANDLE, wintypes.DWORD, wintypes.DWORD, wintypes.DWORD,
+                           wintypes.DWORD, ctypes.POINTER(_Overlapped)]
+            fn.restype = wintypes.BOOL
+            _win_lock_file_ex = (fn, _Overlapped)
+    except (ImportError, AttributeError, OSError) as e:
+        raise OSError(errno.ENOLCK, f"no file locking in this Python ({e})")
+    fn, _Overlapped = _win_lock_file_ex
+    fail_immediately, exclusive_lock = 0x1, 0x2
+    where = _Overlapped(Offset=0, OffsetHigh=0x7FFFFFFF)
+    if fn(msvcrt.get_osfhandle(fd), fail_immediately | (exclusive_lock if exclusive else 0),
+          0, 1, 0, ctypes.byref(where)):
+        return True
+    err = ctypes.get_last_error()
+    if err == 33:  # ERROR_LOCK_VIOLATION: another handle holds it
+        return False
+    raise OSError(errno.ENOLCK, f"LockFileEx failed (WinError {err})")
+
+
 def _flock_nb(fd, exclusive):
     """True when the lock was taken, False when another process holds it.
     Raises OSError when the file cannot be locked at all."""
     import errno
-    import fcntl
+    if os.name == "nt":
+        return _win_lock_nb(fd, exclusive)
+    try:
+        import fcntl
+    except ImportError as e:
+        raise OSError(errno.ENOLCK, f"no file locking in this Python ({e})")
     try:
         fcntl.flock(fd, (fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH) | fcntl.LOCK_NB)
         return True
@@ -551,16 +605,36 @@ def _flock_nb(fd, exclusive):
         raise
 
 
+def _again_if_refused(op, *args):
+    """`op(*args)`, tried a few times where another process having the file
+    open for a moment refuses it (Windows). Raises the last OSError."""
+    import time as _time
+    tries = 1 if _UNLINK_BEFORE_CLOSE else 3
+    for attempt in range(tries):
+        try:
+            return op(*args)
+        except PermissionError:
+            if attempt == tries - 1:
+                raise
+            _time.sleep(0.01)
+
+
+def _drop_marker(p, fd, unlink=True):
+    """Close a marker this process has open and, with `unlink`, delete it, in
+    the order this platform needs. Never raises. A delete that stays refused
+    leaves an unlocked file, which is swept once old."""
+    steps = [(_again_if_refused, os.unlink, p)] if unlink else []
+    steps.insert(len(steps) if _UNLINK_BEFORE_CLOSE else 0, (os.close, fd))
+    for step, *args in steps:
+        try:
+            step(*args)
+        except OSError:
+            pass
+
+
 def _release_inflight():
     for p, fd in list(_inflight_held.items()):
-        try:
-            os.unlink(p)
-        except OSError:
-            pass
-        try:
-            os.close(fd)
-        except OSError:
-            pass
+        _drop_marker(p, fd)
     _inflight_held.clear()
 
 
@@ -579,11 +653,10 @@ def _sweep_inflight(gd):
         except OSError:
             continue
         try:
-            if _flock_nb(fd, exclusive=True):
-                os.unlink(p)
+            unheld = _flock_nb(fd, exclusive=True)
         except OSError:
-            pass
-        os.close(fd)
+            unheld = False
+        _drop_marker(p, fd, unlink=unheld)
 
 
 def _mark_inflight(repo_root, shas):
@@ -591,7 +664,6 @@ def _mark_inflight(repo_root, shas):
     run, until the process ends. Best-effort; never raises. A commit another
     live review holds stays with that review."""
     try:
-        import fcntl  # noqa: F401
         gd = _git_dir(repo_root)
         if not gd:
             return
@@ -600,17 +672,26 @@ def _mark_inflight(repo_root, shas):
             p = os.path.join(gd, _INFLIGHT_PREFIX + sha)
             if not _is_full_sha(sha) or p in _inflight_held:
                 continue
-            fd = os.open(p, os.O_RDWR | os.O_CREAT, 0o600)
             try:
-                # The inode check: a holder unlinks its marker when it ends,
-                # and a lock on that unlinked file would claim nothing.
-                held = (_flock_nb(fd, exclusive=True)
-                        and os.fstat(fd).st_ino == os.stat(p).st_ino)
+                fd = _again_if_refused(os.open, p, os.O_RDWR | os.O_CREAT, 0o600)
+            except OSError:
+                # One marker that cannot be opened does not cost the others
+                # their claim.
+                continue
+            try:
+                held = _flock_nb(fd, exclusive=True)
             except OSError:
                 # Cannot lock here at all: leave no file that reads as held.
-                os.close(fd)
-                os.unlink(p)
+                _drop_marker(p, fd)
                 return
+            if held and _UNLINK_BEFORE_CLOSE:
+                # The inode check: a holder unlinks its marker when it ends,
+                # and a lock on that unlinked file would claim nothing. Not
+                # where an open file cannot be unlinked in the first place.
+                try:
+                    held = os.fstat(fd).st_ino == os.stat(p).st_ino
+                except OSError:
+                    held = False
             if not held:
                 os.close(fd)
                 continue
@@ -626,10 +707,6 @@ def _mark_inflight(repo_root, shas):
 def _load_inflight_shas(repo_root, shas, _gd=None):
     """Which of `shas` another live review in this clone holds right now."""
     out = set()
-    try:
-        import fcntl  # noqa: F401
-    except ImportError:
-        return out
     gd = _gd or _git_dir(repo_root)
     if not gd:
         return out

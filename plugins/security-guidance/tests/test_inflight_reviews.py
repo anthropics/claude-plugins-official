@@ -14,12 +14,15 @@ from conftest import (
 
 import diffstate
 
-pytest.importorskip("fcntl")
+_HOOKS_DIR = os.path.dirname(diffstate.__file__)
 
+# Locks the way a review does on this platform: flock, or LockFileEx on Windows.
 _HOLD = (
-    "import fcntl, os, sys, time\n"
+    "import os, sys, time\n"
+    "sys.path.insert(0, sys.argv[3])\n"
+    "import diffstate\n"
     "fd = os.open(sys.argv[1], os.O_RDWR | os.O_CREAT, 0o600)\n"
-    "fcntl.flock(fd, fcntl.LOCK_EX)\n"
+    "assert diffstate._flock_nb(fd, exclusive=True)\n"
     "print('held', flush=True)\n"
     "time.sleep(float(sys.argv[2]))\n"
 )
@@ -29,8 +32,9 @@ _HOLD = (
 def _held_by_another_review(repo, sha, seconds=60):
     """A marker on `sha` that a live process holds, as a running review does."""
     marker = repo / ".git" / f"sg-inflight-{sha}"
-    p = subprocess.Popen([sys.executable, "-c", _HOLD, str(marker), str(seconds)],
-                         stdout=subprocess.PIPE, text=True)
+    p = subprocess.Popen(
+        [sys.executable, "-c", _HOLD, str(marker), str(seconds), _HOOKS_DIR],
+        stdout=subprocess.PIPE, text=True)
     try:
         assert p.stdout.readline().strip() == "held"
         yield marker
@@ -238,7 +242,7 @@ def test_own_marker_is_held_until_released(tmp_path):
             "print(sorted(diffstate._load_inflight_shas(sys.argv[2], [sys.argv[3]])))"
         )
         seen = subprocess.run(
-            [sys.executable, "-c", probe, os.path.dirname(diffstate.__file__), str(repo), sha],
+            [sys.executable, "-c", probe, _HOOKS_DIR, str(repo), sha],
             capture_output=True, text=True).stdout.strip()
         assert seen == str([sha])
         reviewed, waited = diffstate._reviewed_after_inflight(str(repo), [sha], 5)
@@ -246,3 +250,129 @@ def test_own_marker_is_held_until_released(tmp_path):
     finally:
         diffstate._release_inflight()
     assert not marker.exists()
+
+
+def test_marker_is_closed_before_it_is_deleted_where_open_files_cannot_be(tmp_path, monkeypatch):
+    # The order used on Windows, where deleting an open file is refused.
+    repo = make_repo(tmp_path / "repo")
+    sha = git(repo, "rev-parse", "HEAD").strip()
+    marker = repo / ".git" / f"sg-inflight-{sha}"
+    monkeypatch.setattr(diffstate, "_UNLINK_BEFORE_CLOSE", False)
+    open_at_delete, refusals = [], [2]
+
+    def delete_like_windows(p, fd):
+        try:
+            os.fstat(fd)
+            open_at_delete.append(True)
+        except OSError:
+            open_at_delete.append(False)
+        if refusals[0]:
+            # Another review asking about the marker has it open just now.
+            refusals[0] -= 1
+            raise PermissionError(13, "The process cannot access the file")
+        real_unlink(p)
+
+    real_unlink = os.unlink
+    try:
+        diffstate._mark_inflight(str(repo), [sha])
+        (fd,) = diffstate._inflight_held.values()
+        monkeypatch.setattr(diffstate.os, "unlink", lambda p: delete_like_windows(p, fd))
+        diffstate._release_inflight()
+    finally:
+        monkeypatch.setattr(diffstate.os, "unlink", real_unlink)
+        diffstate._release_inflight()
+    assert open_at_delete == [False, False, False] and not marker.exists()
+
+    # An old leftover goes the same way.
+    marker.write_text("")
+    old = time.time() - diffstate._INFLIGHT_GC_AGE_S - 5
+    os.utime(marker, (old, old))
+    diffstate._mark_inflight(str(repo), [])
+    assert not marker.exists()
+
+
+def test_no_markers_in_a_python_without_file_locks(tmp_path, monkeypatch):
+    if os.name == "nt":
+        pytest.skip("Windows locks with LockFileEx")
+    repo = make_repo(tmp_path / "repo")
+    sha = git(repo, "rev-parse", "HEAD").strip()
+    monkeypatch.setitem(sys.modules, "fcntl", None)
+    diffstate._mark_inflight(str(repo), [sha])
+    assert _markers(repo) == [] and diffstate._inflight_held == {}
+    (repo / ".git" / f"sg-inflight-{sha}").write_text("")
+    assert diffstate._load_inflight_shas(str(repo), [sha]) == set()
+
+
+def test_one_marker_that_cannot_be_claimed_does_not_stop_the_others(tmp_path, monkeypatch):
+    repo = make_repo(tmp_path / "repo")
+    first = git(repo, "rev-parse", "HEAD").strip()
+    second, _ = commit_file(repo, "b.py", "b = 1\n")
+    third, _ = commit_file(repo, "c.py", "c = 1\n")
+    # Cannot be opened at all.
+    (repo / ".git" / f"sg-inflight-{first}").mkdir()
+    # Its last holder deletes it between this review's open and its lock.
+    real_flock_nb = diffstate._flock_nb
+
+    def holder_ends_first(fd, exclusive):
+        taken = real_flock_nb(fd, exclusive)
+        gone = repo / ".git" / f"sg-inflight-{second}"
+        if gone.exists() and os.name != "nt":
+            gone.unlink()
+        return taken
+    monkeypatch.setattr(diffstate, "_flock_nb", holder_ends_first)
+    try:
+        diffstate._mark_inflight(str(repo), [first, second, third])
+        held = [os.path.basename(p) for p in diffstate._inflight_held]
+        assert f"sg-inflight-{third}" in held and f"sg-inflight-{first}" not in held
+        if os.name != "nt":
+            assert held == [f"sg-inflight-{third}"]
+    finally:
+        diffstate._release_inflight()
+
+
+class _FakeKernel32:
+    """LockFileEx as kernel32 has it, for the code path only Windows runs."""
+
+    def __init__(self):
+        self.calls, self.result, self.error = [], 1, 0
+
+        def LockFileEx(handle, flags, reserved, low, high, overlapped):
+            ov = overlapped._obj
+            self.calls.append((handle, flags, low, high, ov.Offset, ov.OffsetHigh))
+            return self.result
+        self.LockFileEx = LockFileEx
+
+
+@pytest.fixture
+def kernel32(monkeypatch):
+    import ctypes
+    import types
+    fake = _FakeKernel32()
+    monkeypatch.setattr(ctypes, "WinDLL", lambda name, use_last_error=False: fake, raising=False)
+    monkeypatch.setattr(ctypes, "get_last_error", lambda: fake.error, raising=False)
+    monkeypatch.setitem(sys.modules, "msvcrt",
+                        types.SimpleNamespace(get_osfhandle=lambda fd: 1000 + fd))
+    monkeypatch.setattr(diffstate, "_win_lock_file_ex", None)
+    return fake
+
+
+def test_windows_lock_call(kernel32):
+    assert diffstate._win_lock_nb(7, exclusive=True) is True
+    assert diffstate._win_lock_nb(7, exclusive=False) is True
+    # Fail-immediately, exclusive or shared, one byte far past the end of the
+    # file so that reading the marker is never refused.
+    assert kernel32.calls == [(1007, 0x3, 1, 0, 0, 0x7FFFFFFF), (1007, 0x1, 1, 0, 0, 0x7FFFFFFF)]
+    kernel32.result, kernel32.error = 0, 33
+    assert diffstate._win_lock_nb(7, exclusive=True) is False
+    for other_error in (5, 6, 997):
+        kernel32.error = other_error
+        with pytest.raises(OSError):
+            diffstate._win_lock_nb(7, exclusive=True)
+
+
+def test_windows_lock_is_off_where_the_call_is_missing(monkeypatch):
+    import ctypes
+    monkeypatch.delattr(ctypes, "WinDLL", raising=False)
+    monkeypatch.setattr(diffstate, "_win_lock_file_ex", None)
+    with pytest.raises(OSError):
+        diffstate._win_lock_nb(7, exclusive=True)
