@@ -341,7 +341,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/atlassian-labs/twg-plugins.git",
-        "sha": "b3336ef63d45e2636ff411a922ed602244e0f3db"
+        "sha": "014ddfe1b9b3e95e191ca07cce7802a981e435d5"
       },
       "homepage": "https://developer.atlassian.com/cloud/twg-cli/"
     },
