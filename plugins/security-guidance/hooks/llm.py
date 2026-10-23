@@ -39,7 +39,7 @@ except ImportError:  # a Python built without TLS
 
 import extensibility
 import review_api
-from _base import debug_log, _record_usage, _record_http_error, _PV, PROVENANCE_TAG, state_dir as _resolve_state_dir, agent_sdk_site_dirs  # noqa: F401
+from _base import debug_log, _record_usage, _record_http_error, _record_net_error, _clear_net_error, _PV, PROVENANCE_TAG, state_dir as _resolve_state_dir, agent_sdk_site_dirs  # noqa: F401
 from session_state import load_state, with_locked_state
 from gitutil import git_config_env, SAFE_GIT_CONFIG
 
@@ -289,8 +289,118 @@ def _probe_anthropic(timeout: float = 5.0) -> bool:
             return True
     except urllib.error.HTTPError:
         return True  # got a status code → connected
-    except (urllib.error.URLError, TimeoutError, OSError):
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        _record_net_error(_net_error_code(e))
         return False
+
+
+# =====================================================================
+# Why a call got no HTTP response
+# =====================================================================
+# Classes for the `net_err` metric. Measure only: nothing reads these to
+# decide what the plugin does.
+NET_ERR_CERT_VERIFY = 1   # the server certificate did not verify
+NET_ERR_TLS = 2           # any other TLS failure, including a default context that cannot be built
+NET_ERR_DNS = 3           # the host name did not resolve
+NET_ERR_CONNECT = 4       # refused, reset, closed early or unreachable
+NET_ERR_TIMEOUT = 5
+NET_ERR_PROXY = 6         # the proxy refused the tunnel
+NET_ERR_OTHER = 7         # another failure from the HTTP client
+NET_ERR_INNER_CLI = 9     # the review ran through a CLI, which failed
+NET_ERR_INNER_CLI_TIMEOUT = 10
+NET_ERR_NO_SDK = 11       # the review needed the agent SDK, which could not be imported
+
+_NET_FLAG_NO_CA_ON_DISK = 1   # Python's default CA file and directory are missing or empty
+_NET_FLAG_PROXY = 2           # the request would go through a proxy
+_NET_FLAG_NODE_EXTRA_CA = 4   # NODE_EXTRA_CA_CERTS is set (Python does not read it)
+_NET_FLAG_SSL_CERT_ENV = 8    # SSL_CERT_FILE or SSL_CERT_DIR is set
+
+
+def _net_error_class(exc) -> Tuple[int, int]:
+    """(class, X.509 verify code) for an exception from an API call; class 0
+    for one that is not a network failure. The verify code is OpenSSL's
+    (20 = issuer not found locally, 19 = self-signed certificate in the
+    chain, 10 = expired), 0 when the class is not NET_ERR_CERT_VERIFY."""
+    import errno
+    import http.client
+    import socket
+    try:
+        import ssl
+        cert_error, tls_error = ssl.SSLCertVerificationError, ssl.SSLError
+    except ImportError:
+        cert_error = tls_error = ()
+    reason = getattr(exc, "reason", None)
+    err = reason if isinstance(reason, BaseException) else exc
+    if isinstance(err, cert_error):
+        code = getattr(err, "verify_code", 0)
+        return NET_ERR_CERT_VERIFY, code if isinstance(code, int) and 0 < code < 100 else 0
+    if isinstance(err, tls_error):
+        return NET_ERR_TLS, 0
+    if isinstance(err, socket.gaierror):
+        return NET_ERR_DNS, 0
+    if isinstance(err, OSError):
+        text = str(err).lower()
+        if "tunnel connection failed" in text:
+            return NET_ERR_PROXY, 0
+        if isinstance(err, TimeoutError) or "timed out" in text:
+            return NET_ERR_TIMEOUT, 0
+        if isinstance(err, ConnectionError) or err.errno in (
+                errno.ENETUNREACH, errno.EHOSTUNREACH, errno.ENETDOWN,
+                errno.EHOSTDOWN, errno.EADDRNOTAVAIL):
+            return NET_ERR_CONNECT, 0
+        return NET_ERR_OTHER, 0
+    if isinstance(err, http.client.HTTPException) or isinstance(exc, urllib.error.URLError):
+        return NET_ERR_OTHER, 0
+    return 0, 0
+
+
+def _net_error_flags(tls: bool) -> int:
+    """What the machine's setup says about a failed call. Each check is
+    best effort: one that cannot be made leaves its flag off."""
+    flags = 0
+    if tls:
+        try:
+            import ssl
+            paths = ssl.get_default_verify_paths()
+            has_file = bool(paths.cafile) and os.path.getsize(paths.cafile) > 0
+            has_dir = False
+            if paths.capath:
+                with os.scandir(paths.capath) as it:
+                    has_dir = any(True for _ in it)
+            # Windows also reads the system store, which this cannot see.
+            if not has_file and not has_dir and sys.platform != "win32":
+                flags |= _NET_FLAG_NO_CA_ON_DISK
+        except Exception:
+            pass
+        if os.environ.get("NODE_EXTRA_CA_CERTS"):
+            flags |= _NET_FLAG_NODE_EXTRA_CA
+        if os.environ.get("SSL_CERT_FILE") or os.environ.get("SSL_CERT_DIR"):
+            flags |= _NET_FLAG_SSL_CERT_ENV
+    try:
+        url = urllib.parse.urlsplit(_anthropic_base_url())
+        # As urllib chooses: the proxy for the URL's scheme, bypass by host:port.
+        if (urllib.request.getproxies().get(url.scheme)
+                and not urllib.request.proxy_bypass(url.netloc.rpartition("@")[2])):
+            flags |= _NET_FLAG_PROXY
+    except Exception:
+        pass
+    return flags
+
+
+def _net_error_code(exc) -> int:
+    """`net_err` for an exception: class + 100 * verify code + 10000 * flags,
+    or 0 for an exception that is not a network failure."""
+    try:
+        cls, verify = _net_error_class(exc)
+    except Exception:
+        return 0
+    if not cls:
+        return 0
+    try:
+        flags = _net_error_flags(cls in (NET_ERR_CERT_VERIFY, NET_ERR_TLS))
+    except Exception:
+        flags = 0
+    return cls + 100 * verify + 10000 * flags
 
 
 def _strip_anthropic_from_no_proxy() -> None:
@@ -834,6 +944,7 @@ def _call_claude_via_sdk(prompt, output_schema, *, max_tokens=16000, model=None,
     """
     global _last_call_claude_http_error, _gateway_review_timed_out
     _last_call_claude_http_error = None
+    _clear_net_error()
     route = "gateway" if cli_path else "3P"
 
     try:
@@ -862,6 +973,7 @@ def _call_claude_via_sdk(prompt, output_schema, *, max_tokens=16000, model=None,
             debug_log(f"{route} sdk-single-turn: SDK unavailable ({e})")
             _last_call_claude_http_error = -1
             _record_http_error(-1)
+            _record_net_error(NET_ERR_NO_SDK)
             return None
 
     _send_sdk_logs_to_debug_log()
@@ -946,12 +1058,14 @@ def _call_claude_via_sdk(prompt, output_schema, *, max_tokens=16000, model=None,
             _gateway_review_timed_out = True
         _last_call_claude_http_error = -1
         _record_http_error(-1)
+        _record_net_error(NET_ERR_INNER_CLI_TIMEOUT)
         return None
     except Exception as e:
         debug_log(f"{route} sdk-single-turn: query failed ({e})")
         _log_child_stderr()
         _last_call_claude_http_error = -1
         _record_http_error(-1)
+        _record_net_error(NET_ERR_INNER_CLI)
         return None
 
 
@@ -974,6 +1088,7 @@ def _call_claude(prompt, output_schema, thinking_budget=10000, max_tokens=16000,
     """
     global _last_call_claude_http_error
     _last_call_claude_http_error = None
+    _clear_net_error()
 
     if _is_3p_provider():
         # On Bedrock/Vertex/Foundry/Mantle the api.anthropic.com path below
@@ -1092,6 +1207,7 @@ def _call_claude(prompt, output_schema, thinking_budget=10000, max_tokens=16000,
                 debug_log(f"Request failed after retries: {e}")
                 _last_call_claude_http_error = -1
                 _record_http_error(-1)
+                _record_net_error(_net_error_code(e))
                 return None
 
     if not response_data:
@@ -1590,6 +1706,7 @@ Respond with a JSON object. If vulnerabilities are found, set hasVulnerabilities
                                         cacheable_prefix=_CODE_REVIEW_RUBRIC)
     except Exception as e:
         debug_log(f"LLM code review: call raised {type(e).__name__}: {e}")
+        _record_net_error(_net_error_code(e))
         analysis = None
     # A reply without the schema's required flag is not a verdict either.
     if not isinstance(analysis, dict) or "hasVulnerabilities" not in analysis:

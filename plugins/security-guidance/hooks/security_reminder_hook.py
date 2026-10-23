@@ -84,7 +84,7 @@ from _base import (  # noqa: E402,F401
     DEBUG_LOG_FILE, DEBUG_LOG_MAX_BYTES, debug_log,
     PROVENANCE_TAG, PROVENANCE_BANNER,
     _read_plugin_version_int, _PV, _USAGE, _USAGE_LOCK,
-    _PRICE_PER_MTOK, _PRICE_DEFAULT, _record_usage, _usage_metrics,
+    _PRICE_PER_MTOK, _PRICE_DEFAULT, _record_usage, _usage_metrics, _net_error_metric,
     _USAGE_CONTEXT, _log_usage,
     launcher_probe_metrics, state_dir as _resolve_state_dir,
     write_hook_output as _write_hook_output,
@@ -304,6 +304,12 @@ def emit_metrics(
         head["launcher_fallback"] = 1
     usage = _usage_metrics()
     head.update(usage)
+    # Why the last call got no HTTP response (api_error -1 says only that it
+    # did not). Ahead of the row's own keys: on a failed review this is the
+    # key that says what failed, so it is not the one to lose to the key cap.
+    net_err = _net_error_metric()
+    if net_err:
+        head["net_err"] = net_err
     if head:
         metrics = {**head, **metrics}
     # Diagnostic keys go last, so they are the first dropped when a row is

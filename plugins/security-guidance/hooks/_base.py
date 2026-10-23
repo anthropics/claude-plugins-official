@@ -212,6 +212,7 @@ _USAGE = {
     # reported it manually.
     "http_err_last": 0,    # most recent HTTP error code this invocation
     "http_err_count": 0,   # total HTTP errors (4xx + 5xx + network)
+    "net_err": 0,          # why the last call got no HTTP response, 0 if it got one
     # For the usage log line only: model ids as recorded (the requested alias
     # on the Agent SDK path), and whether any call had no price-table entry.
     "models": [],
@@ -298,6 +299,33 @@ def _record_http_error(status):
     with _USAGE_LOCK:
         _USAGE["http_err_last"] = s
         _USAGE["http_err_count"] += 1
+
+
+def _record_net_error(code):
+    """Record why an LLM API call got no HTTP response: the packed code from
+    llm._net_error_code. `api_error` -1 cannot tell a certificate failure
+    from a refused connection or a timeout, and a failure the HTTP client
+    raises outside its own error type (a default TLS context that cannot be
+    built, a connection closed before the reply) has no `api_error` at all.
+    Emitted as `net_err` on the row of a hook whose last call failed this
+    way; a later call clears it."""
+    try:
+        c = int(code)
+    except (TypeError, ValueError):
+        return
+    if c > 0:
+        with _USAGE_LOCK:
+            _USAGE["net_err"] = c
+
+
+def _clear_net_error():
+    with _USAGE_LOCK:
+        _USAGE["net_err"] = 0
+
+
+def _net_error_metric():
+    with _USAGE_LOCK:
+        return _USAGE.get("net_err", 0)
 
 
 # Set by main() and the review handlers: which review this invocation runs

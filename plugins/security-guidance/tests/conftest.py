@@ -68,6 +68,15 @@ VULN_PY = (
 )
 
 
+@pytest.fixture(autouse=True)
+def _no_net_err_from_an_earlier_test():
+    """A hook is one process per event; tests that call it in-process share
+    the module's record of the last failed call."""
+    import _base
+    _base._USAGE["net_err"] = 0
+    yield
+
+
 @pytest.fixture
 def workspace(tmp_path):
     ws = tmp_path / "ws"
