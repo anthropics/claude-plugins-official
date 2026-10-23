@@ -993,6 +993,18 @@ def _git_reflog_recent_commits(repo_root, max_age_s=120, max_n=5):
     return fresh, stale
 
 
+# New name -> secret-shaped old name, for the renames and copies git reported
+# during this hook run. The Stop review limits its diff to a list of paths:
+# with only the new name in it, git shows the secret's content as a new file,
+# and the diff parsers cannot tell it came from a name they leave out.
+_secret_rename_origins = {}
+
+
+def _note_rename(old_path, new_path):
+    if _is_secret_shaped(old_path):
+        _secret_rename_origins[new_path] = old_path
+
+
 def _git_name_only(cwd, base, include_untracked=False):
     """Return the set of repo-root-relative paths that differ from `base`,
     or None if git failed (unresolvable ref, not a repo, timeout). Callers
@@ -1012,7 +1024,7 @@ def _git_name_only(cwd, base, include_untracked=False):
     def _run(env):
         # core.quotePath=false comes from GIT_CMD globally (see definition).
         result = subprocess.run(
-            [*GIT_CMD, "diff", IGNORE_SUBMODULES, "--name-only", "-z", base],
+            [*GIT_CMD, "diff", IGNORE_SUBMODULES, "--name-status", "-z", base],
             cwd=cwd, capture_output=True, timeout=30,
             env=env,
         )
@@ -1021,7 +1033,18 @@ def _git_name_only(cwd, base, include_untracked=False):
             debug_log(f"_git_name_only({base!r}) rc={result.returncode}: {stderr_str[:200]}")
             return None
         stdout = (result.stdout or b"").decode("utf-8", errors="replace")
-        return {p for p in stdout.split("\0") if p}
+        # Fields are `status\0path\0`, or `R<score>\0old\0new\0` for a rename
+        # or copy, which is listed by its new name only.
+        fields = stdout.split("\0")
+        names = set()
+        i = 0
+        while i + 1 < len(fields):
+            if fields[i][:1] in ("R", "C") and i + 2 < len(fields):
+                _note_rename(fields[i + 1], fields[i + 2])
+                i += 1
+            names.add(fields[i + 1])
+            i += 2
+        return names
 
     try:
         # The diff only reads the index (diff.autoRefreshIndex is off in
@@ -1082,6 +1105,8 @@ def _git_status_porcelain(cwd):
                 # 2-char-status entry.
                 if "R" in xy or "C" in xy:
                     i += 1
+                    if i < len(entries):
+                        _note_rename(entries[i], path)
             i += 1
         return tracked, untracked
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError, ValueError) as e:
