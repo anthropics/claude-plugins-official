@@ -2664,7 +2664,7 @@
         "url": "https://github.com/Noibu/ai-plugin.git",
         "path": "src",
         "ref": "main",
-        "sha": "9fa2eddc3a86937b7956dedfaab32fac6cabf868"
+        "sha": "5efbd41ede655f90b5ed319bfd55acff0510c818"
       },
       "homepage": "https://help.noibu.com/articles/3918362002-overview-of-the-noibu-plugin-for-claude"
     },
