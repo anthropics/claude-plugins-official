@@ -884,7 +884,7 @@ def _call_claude_via_sdk(prompt, output_schema, *, max_tokens=16000, model=None,
             system_prompt=CLAUDE_CODE_SYSTEM_PROMPT,
             cli_path=cli_path,
             allowed_tools=[],
-            extra_args=_only_tools_args(),
+            extra_args={**_only_tools_args(), **_reviewer_session_args()},
             setting_sources=[],
             max_turns=2,
             model=chosen_model,
@@ -1669,6 +1669,32 @@ def _send_sdk_logs_to_debug_log() -> None:
             sdk_logger.propagate = False
 
 
+# Claude Code older than 2.0.63 exits at startup with "unknown option" when
+# given --no-session-persistence. The flag is sent until an inner CLI
+# refuses it.
+_SESSION_FLAG = "no-session-persistence"
+_send_session_flag = True
+
+
+def _reviewer_session_args() -> Dict[str, Optional[str]]:
+    """Extra CLI flags for the SDK-spawned inner `claude`.
+
+    Review runs are one-shot and never resumed, so by default the inner CLI
+    is told not to save them as session transcripts (they hold the full
+    review prompt, including diff hunks). SECURITY_GUIDANCE_PERSIST_SESSIONS=1
+    keeps the transcripts, e.g. to debug a review.
+    """
+    keep = os.environ.get("SECURITY_GUIDANCE_PERSIST_SESSIONS", "").strip().lower()
+    if not _send_session_flag or keep in ("1", "on", "true", "yes"):
+        return {}
+    return {_SESSION_FLAG: None}
+
+
+def _names_session_flag(stderr_line: Any) -> bool:
+    text = str(stderr_line)
+    return _SESSION_FLAG in text and "unknown option" in text.lower()
+
+
 # The agentic reviewer reads a diff it must not trust, so it gets
 # file-reading tools and nothing else.
 _REVIEWER_TOOLS = ("Read", "Grep", "Glob")
@@ -1703,22 +1729,40 @@ def _names_strict_mcp_flag(stderr_line: Any) -> bool:
     return "--strict-mcp-config" in str(stderr_line)
 
 
+def _refused_flags(stderr_lines: List[Any]) -> List[str]:
+    """Which of the flags this plugin can leave out the lines refuse."""
+    refused = []
+    if any(_names_strict_mcp_flag(l) for l in stderr_lines):
+        refused.append("--strict-mcp-config")
+    if any(_names_session_flag(l) for l in stderr_lines):
+        refused.append("--" + _SESSION_FLAG)
+    return refused
+
+
 def _run_inner_cli(start: Callable[[], Any], stderr_lines: List[str]) -> Any:
     """start() runs one inner CLI to its result; stderr_lines receives what
     that CLI writes to stderr. A start the CLI refused over
-    --strict-mcp-config is made once more without the flag, and the flag is
-    left out for the rest of this process."""
-    global _send_strict_mcp
-    del stderr_lines[:]
-    try:
-        return start()
-    except Exception:
-        if not any(_names_strict_mcp_flag(l) for l in stderr_lines):
-            raise
-        _send_strict_mcp = False
-        debug_log("inner CLI refused --strict-mcp-config; starting it again without the flag")
+    --strict-mcp-config or --no-session-persistence is made again without
+    that flag, and the flag is left out for the rest of this process. A CLI
+    names one flag per start, so one that refuses both is started three
+    times."""
+    global _send_strict_mcp, _send_session_flag
+    left_out: List[str] = []
+    while True:
         del stderr_lines[:]
-        return start()
+        try:
+            return start()
+        except Exception:
+            refused = [f for f in _refused_flags(stderr_lines) if f not in left_out]
+            if not refused:
+                raise
+            if "--strict-mcp-config" in refused:
+                _send_strict_mcp = False
+            if "--" + _SESSION_FLAG in refused:
+                _send_session_flag = False
+            left_out += refused
+            debug_log(f"inner CLI refused {' and '.join(refused)}; "
+                      "starting it again without")
 
 
 def _agentic_spawn_env() -> Dict[str, str]:
@@ -1902,15 +1946,15 @@ def _agentic_review(
     # Without a callback the inner CLI writes to this hook's stderr, which
     # Claude Code shows Claude as the review notice. Log it instead.
     child_stderr_lines = [0]
-    # Lines of the current start that name --strict-mcp-config (_run_inner_cli).
+    # Lines of the current start that refuse a flag (_run_inner_cli).
     flag_refusals: List[str] = []
 
     def _child_stderr_metric() -> Dict[str, int]:
         return {"child_stderr": child_stderr_lines[0]} if child_stderr_lines[0] else {}
 
     def _on_child_stderr(line: str) -> None:
-        if _names_strict_mcp_flag(line):
-            # Not counted: where the flag is refused, every review gets this
+        if _refused_flags([line]):
+            # Not counted: where a flag is refused, every review gets this
             # line once, from the start that is then made again.
             flag_refusals.append(str(line))
             debug_log(f"agentic reviewer's CLI stderr | {str(line).rstrip()}")
@@ -1936,7 +1980,8 @@ def _agentic_review(
             # Pre-approved, and the only tools the reviewer has: no
             # permission mode can then let it write, run or fetch anything.
             allowed_tools=list(_REVIEWER_TOOLS),
-            extra_args=_only_tools_args(_REVIEWER_TOOLS),
+            extra_args={**_only_tools_args(_REVIEWER_TOOLS),
+                        **_reviewer_session_args()},
             setting_sources=[],
             max_turns=turns if turns is not None else max_turns,
             model=model,

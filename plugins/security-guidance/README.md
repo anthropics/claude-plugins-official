@@ -68,6 +68,7 @@ Claude Code does not pass your sign-in to plugins in a session started with `CLA
 | `ENABLE_CODE_SECURITY_REVIEW=0` | on | Disable all LLM reviews (Stop hook + commit/push) |
 | `ENABLE_STOP_REVIEW=0` | on | Disable only the Stop-hook diff review, keeping commit/push reviews. Useful for multi-agent / shared-worktree setups where another agent can move HEAD between a worker's turns |
 | `ENABLE_COMMIT_REVIEW=0` | on | Disable layer 3 (agentic commit review) |
+| `SECURITY_GUIDANCE_PERSIST_SESSIONS=1` | unset | Keep the reviewer's own Claude Code runs as session transcripts (see [Privacy and data handling](#privacy-and-data-handling)) |
 
 ### Hook output for other hosts
 
@@ -120,6 +121,8 @@ Where that data goes depends on your Claude Code configuration:
 
 The plugin writes its own debug log to `~/.claude/security/log.txt` (override with `SECURITY_GUIDANCE_DEBUG_LOG`). The log contains diffstate metadata, finding categories, the Agent SDK's own warnings and errors, and up to 20 lines of stderr from each Claude Code run the plugin starts for a review (20 in all for each agentic commit review, which starts several runs) — no full file contents or model prompts — and rotates at 1 MB. Nothing is uploaded.
 
+The agentic commit reviewer, and every review on a 3rd-party provider, runs an inner Claude Code through the Agent SDK. The plugin starts it with `--no-session-persistence`, so these runs are not saved as session transcripts under `~/.claude/projects/`. Set `SECURITY_GUIDANCE_PERSIST_SESSIONS=1` to keep them, for example to debug a review; a saved transcript contains the full review prompt, including diff hunks, and is removed by Claude Code's normal session cleanup (`cleanupPeriodDays`). A Claude Code older than 2.0.63 does not have the flag; the review then runs without it and is saved as before.
+
 ### Review usage and cost
 
 The LLM reviews use your API path, so they cost tokens (or subscription usage) on top of your own session. The default reviewer is the newest Opus model. On the Anthropic API path the diff review on Stop calls the API directly, so it does not appear in Claude Code's own cost figures or transcripts. After each review the plugin writes one line to its debug log:
@@ -142,6 +145,8 @@ This is a best-effort assistive tool, not a guarantee. Treat findings as suggest
 ## Troubleshooting
 
 **Plugin doesn't seem to fire** — check that `~/.claude/claude-security-guidance.md` (or hook activity) shows in debug logs. Run Claude Code with `--debug-file /tmp/claude/debug.txt` and grep for `security_reminder_hook`. The plugin also writes its own log to `~/.claude/security/log.txt`.
+
+**Looking into one commit review** — set `SECURITY_GUIDANCE_PERSIST_SESSIONS=1` before the run; the reviewer's prompt, tool calls and answer are then kept as session transcripts under `~/.claude/projects/`.
 
 **Review never finds anything** — verify your API path works, and that credentials reach the plugin (see [Credentials](#credentials)): `~/.claude/security/log.txt` says `no API credentials` when they don't. When a commit or push review gets no usable answer from the model, Claude is told once per session for each kind of review and failure (for example "Commit security review did not complete: …"), and the reason is logged. If a commit whose review failed is pushed later from Claude Code, the push review checks it. On 3P providers, if you set `SECURITY_REVIEW_MODEL`, check it is a provider-specific id your account can invoke. On LLM gateways, check the gateway's logs for `POST /v1/messages` traffic from the plugin. In a session signed in to a Claude apps gateway with `/login`, reviews run only when `claude auth status` shows the gateway and that you are logged in. They run through the Claude Code at `~/.local/bin/claude`, where the native installer puts it on macOS and Linux. On Windows, or for any other install, set `SG_AGENTIC_CLI_PATH` to its full path.
 
