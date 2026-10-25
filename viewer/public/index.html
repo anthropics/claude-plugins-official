@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Claude Code Plugins Directory — Explorer & Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="background-glows">
+    <div class="glow glow-1"></div>
+    <div class="glow glow-2"></div>
+    <div class="glow glow-3"></div>
+  </div>
+
+  <header class="navbar">
+    <div class="brand">
+      <div class="logo-icon">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+        </svg>
+      </div>
+      <div>
+        <h1 class="brand-title">Claude Code Plugins <span class="badge-official">Official</span></h1>
+        <p class="brand-subtitle">Curated Marketplace Catalog & Architecture Explorer</p>
+      </div>
+    </div>
+    <div class="header-actions">
+      <div class="status-indicator">
+        <span class="pulse-dot"></span>
+        <span id="repo-status">Localhost Server Connected</span>
+      </div>
+      <a href="https://github.com/sameer10237/claude-plugins-official" target="_blank" class="btn btn-secondary">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
+        </svg>
+        GitHub Fork
+      </a>
+    </div>
+  </header>
+
+  <!-- Metric Counters -->
+  <section class="metrics-grid">
+    <div class="metric-card">
+      <span class="metric-label">Published Plugins</span>
+      <span class="metric-val" id="metric-plugins">...</span>
+      <span class="metric-sub">Across 14 categories</span>
+    </div>
+    <div class="metric-card">
+      <span class="metric-label">Anthropic / Internal</span>
+      <span class="metric-val" id="metric-vendored">...</span>
+      <span class="metric-sub">First-party & vendored</span>
+    </div>
+    <div class="metric-card">
+      <span class="metric-label">Remote Git Sources</span>
+      <span class="metric-val" id="metric-remote">...</span>
+      <span class="metric-sub">Direct URL & Git-Subdirs</span>
+    </div>
+    <div class="metric-card">
+      <span class="metric-label">Repository Commits</span>
+      <span class="metric-val" id="metric-commits">...</span>
+      <span class="metric-sub">Branch: <strong id="metric-branch">main</strong></span>
+    </div>
+  </section>
+
+  <!-- Navigation Tabs -->
+  <nav class="tab-bar">
+    <button class="tab-btn active" data-tab="explorer">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="3" y="3" width="7" height="7"></rect>
+        <rect x="14" y="3" width="7" height="7"></rect>
+        <rect x="14" y="14" width="7" height="7"></rect>
+        <rect x="3" y="14" width="7" height="7"></rect>
+      </svg>
+      Marketplace Explorer
+    </button>
+    <button class="tab-btn" data-tab="commits">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="4"></circle>
+        <line x1="1.05" y1="12" x2="7" y2="12"></line>
+        <line x1="17.01" y1="12" x2="22.96" y2="12"></line>
+      </svg>
+      Commit Stream (15-Batch)
+    </button>
+    <button class="tab-btn" data-tab="workflows">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+      </svg>
+      Security & Workflows (9)
+    </button>
+  </nav>
+
+  <!-- TAB: EXPLORER -->
+  <main id="tab-explorer" class="tab-content active">
+    <div class="controls-bar">
+      <div class="search-wrap">
+        <svg class="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+        <input type="text" id="search-input" placeholder="Search 315 plugins by name, description, author, or keyword..." autocomplete="off">
+        <button id="search-clear" class="btn-clear hidden">&times;</button>
+      </div>
+
+      <div class="filter-dropdowns">
+        <select id="source-filter">
+          <option value="all">All Source Types</option>
+          <option value="vendored">Vendored (Local)</option>
+          <option value="git-subdir">Git Monorepos (git-subdir)</option>
+          <option value="url">Remote Git Repos (url)</option>
+        </select>
+        <select id="sort-filter">
+          <option value="name-asc">Sort: Name (A-Z)</option>
+          <option value="name-desc">Sort: Name (Z-A)</option>
+          <option value="category">Sort: Category</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Category Pills -->
+    <div class="category-pills" id="category-pills">
+      <button class="pill active" data-category="all">All (<span id="cat-all-count">315</span>)</button>
+    </div>
+
+    <!-- Results Info -->
+    <div class="results-header">
+      <span id="results-count">Showing 315 plugins</span>
+      <span class="hint-install">Tip: Click any plugin to inspect details and copy the installation command</span>
+    </div>
+
+    <!-- Plugins Grid -->
+    <div class="plugins-grid" id="plugins-grid">
+      <!-- Cards rendered via JS -->
+    </div>
+  </main>
+
+  <!-- TAB: COMMITS -->
+  <section id="tab-commits" class="tab-content">
+    <div class="commit-header">
+      <div>
+        <h2 class="section-title">Git Commit Stream</h2>
+        <p class="section-desc">Paging in 15-commit batches. Over 4,630 commits recorded on <span class="code-pill">main</span>.</p>
+      </div>
+      <div class="commit-actions">
+        <button id="btn-prev-commits" class="btn btn-secondary" disabled>← Previous 15</button>
+        <span id="commits-batch-label" class="batch-label">Commits 1 - 15</span>
+        <button id="btn-next-commits" class="btn btn-secondary">Next 15 →</button>
+      </div>
+    </div>
+
+    <div class="commits-timeline" id="commits-timeline">
+      <!-- Commits rendered via JS -->
+    </div>
+  </section>
+
+  <!-- TAB: WORKFLOWS -->
+  <section id="tab-workflows" class="tab-content">
+    <div class="workflows-header">
+      <h2 class="section-title">Automated CI/CD & Security Workflows</h2>
+      <p class="section-desc">The 9 GitHub Actions workflows securing and managing the official Claude Code plugins ecosystem.</p>
+    </div>
+
+    <div class="workflows-grid">
+      <div class="workflow-card">
+        <div class="wf-badge cron">Daily Cron / Dispatch</div>
+        <h3 class="wf-title">bump-plugin-shas.yml</h3>
+        <p class="wf-desc">Runs <code>discover_bumps.py</code> daily at 07:23 UTC against external repositories. Opens isolated PRs per plugin with a 60-bump daily budget.</p>
+      </div>
+      <div class="workflow-card">
+        <div class="wf-badge review">Claude LLM Scan</div>
+        <h3 class="wf-title">scan-plugins.yml</h3>
+        <p class="wf-desc">Performs security and privacy reviews against Anthropic policy using Claude. Enforces zero cross-service credential leakage and maintains a 30-day verdict cache.</p>
+      </div>
+      <div class="workflow-card">
+        <div class="wf-badge gate">Required Gate</div>
+        <h3 class="wf-title">validate-plugins.yml</h3>
+        <p class="wf-desc">The primary merge-blocking check validating manifest JSON schema, strict commit-SHA pinning, and metadata rules.</p>
+      </div>
+      <div class="workflow-card">
+        <div class="wf-badge auto">Self-Healing</div>
+        <h3 class="wf-title">revert-failed-bumps.yml</h3>
+        <p class="wf-desc">Automatically reverts or drops failing external upstream versions from bump PRs so passing updates proceed immediately.</p>
+      </div>
+      <div class="workflow-card">
+        <div class="wf-badge network">Network Test</div>
+        <h3 class="wf-title">check-mcp-urls.yml</h3>
+        <p class="wf-desc">Verifies that all Model Context Protocol (MCP) server endpoints declared in <code>.mcp.json</code> resolve and respond to health checks.</p>
+      </div>
+      <div class="workflow-card">
+        <div class="wf-badge security">Scope Guard</div>
+        <h3 class="wf-title">external-pr-scope-guard.yml</h3>
+        <p class="wf-desc">Prevents external PRs from touching CI scripts, policy prompts, or internal plugins, ensuring PR changes remain strictly isolated.</p>
+      </div>
+      <div class="workflow-card">
+        <div class="wf-badge policy">Governance</div>
+        <h3 class="wf-title">close-external-prs.yml</h3>
+        <p class="wf-desc">Closes uncoordinated PRs and redirects partners to the official directory submission intake portal.</p>
+      </div>
+      <div class="workflow-card">
+        <div class="wf-badge linter">YAML Check</div>
+        <h3 class="wf-title">validate-frontmatter.yml</h3>
+        <p class="wf-desc">Executes <code>validate-frontmatter.ts</code> to ensure all SKILL.md documents contain compliant YAML headers.</p>
+      </div>
+      <div class="workflow-card">
+        <div class="wf-badge legal">Compliance</div>
+        <h3 class="wf-title">validate-licenses.yml</h3>
+        <p class="wf-desc">Scans for compatible open-source license files and ensures legal compliance across all listed packages.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Plugin Modal -->
+  <div id="plugin-modal" class="modal-backdrop hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title-wrap">
+          <span class="category-tag" id="modal-category">Development</span>
+          <h2 id="modal-name">plugin-name</h2>
+          <span class="author-tag" id="modal-author">by Anthropic</span>
+        </div>
+        <button id="modal-close" class="modal-close-btn">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="install-box">
+          <span class="install-label">Install in Claude Code</span>
+          <div class="copy-bar">
+            <code id="modal-install-cmd">/plugin install name@claude-plugins-official</code>
+            <button id="btn-copy-install" class="btn btn-copy">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+              Copy
+            </button>
+          </div>
+        </div>
+
+        <div class="detail-section">
+          <h4>Description</h4>
+          <p id="modal-desc" class="modal-desc-text"></p>
+        </div>
+
+        <div class="detail-section">
+          <h4>Source Configuration</h4>
+          <div id="modal-source" class="code-box"></div>
+        </div>
+
+        <div class="detail-section" id="modal-skills-section">
+          <h4>Skills Included</h4>
+          <ul id="modal-skills-list" class="skills-list"></ul>
+        </div>
+
+        <div class="detail-section" id="modal-readme-section">
+          <h4>Plugin Documentation (README)</h4>
+          <pre id="modal-readme" class="readme-box"></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer class="footer">
+    <p>Claude Code Official Plugins Marketplace &bull; Localhost Dashboard &bull; Live data from <code>.claude-plugin/marketplace.json</code></p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
