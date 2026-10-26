@@ -74,6 +74,36 @@
       "homepage": "https://github.com/SalesforceAIResearch/agentforce-adlc"
     },
     {
+      "name": "agentic-z",
+      "description": "AI agent stack for DayZ modding. Run /dayz-init for a guided setup that takes you from an empty repo to a mod loaded in DayZ. Ships specialist subagents and DayZ slash skills covering the full mod pipeline (preflight, scaffold, build PBO, launch test, types.xml, RAG indexer), plus the dayz-rag MCP server for semantic search over vanilla DayZ source.",
+      "author": {
+        "name": "DayZ n' Chill"
+      },
+      "category": "development",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/DayZ-n-Chill/Agentic-Z.git",
+        "sha": "16dadd8a27a2a1b3cc5f472cf36656a748dcee8c"
+      },
+      "homepage": "https://agentic-z.com"
+    },
+    {
+      "name": "agentic-z-panel",
+      "description": "Side panel for Agentic-Z: DayZ status at a glance and one-click buttons for mount P:, build, the build and in game checks, deploy, launch, stop, Workbench, Object Builder, test logs, the health page and the release pack, and a field that asks /dayz-ask a vanilla question, with no model tokens spent.",
+      "author": {
+        "name": "DayZ n' Chill"
+      },
+      "category": "development",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/DayZ-n-Chill/Agentic-Z.git",
+        "path": "mods/agentic-z-panel",
+        "ref": "main",
+        "sha": "16dadd8a27a2a1b3cc5f472cf36656a748dcee8c"
+      },
+      "homepage": "https://agentic-z.com"
+    },
+    {
       "name": "ai-plugins",
       "description": "Set up endorctl and use Endor Labs to scan, prioritize, and fix security risks across your software supply chain",
       "source": {
