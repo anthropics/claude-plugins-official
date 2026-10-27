@@ -4342,7 +4342,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/zytedata/claude-skills.git",
-        "sha": "d03e241729ebc3bf397e4303d654e8189b9e8185"
+        "sha": "2f27a2147f51e07337a1a72bd686a95abdc8088c"
       },
       "homepage": "https://www.zyte.com"
     },
