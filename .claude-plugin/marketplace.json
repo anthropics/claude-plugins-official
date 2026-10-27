@@ -2638,7 +2638,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/nvsecurity/nightvision-skills.git",
-        "sha": "957db6bb934839275c0f643042101bbb675ddbf7"
+        "sha": "d1b3da3caae4b9c771344d093556b9373c6f7c17"
       },
       "homepage": "https://github.com/nvsecurity/nightvision-skills"
     },
