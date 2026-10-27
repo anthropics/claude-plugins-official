@@ -194,9 +194,10 @@ jobs:
         # The verdict (cached + fresh) is what gates the job, not the action's
         # exit code, and the revert workflow needs the artifact even on failure.
         continue-on-error: true
-        # Pinned to claude-plugins-community#34 (WIF input support).
-        # TODO: re-pin to a main-branch SHA once #34 merges.
-        uses: anthropics/claude-plugins-community/.github/actions/scan-plugins@426e469f322952061102b286b378c0c9733a0934
+        # Pinned to claude-plugins-community#2361 (static pin check for
+        # auto-exec MCP launchers — detection always on, warn-only here).
+        # TODO: re-pin to the main-branch merge SHA once #2361 merges.
+        uses: anthropics/claude-plugins-community/.github/actions/scan-plugins@24a5ecd5dd88e201e185e1174b7797a4e857dd67
         with:
           # Anthropic auth via Workload Identity Federation — the action
           # mints a GitHub OIDC token (id-token: write above) and the claude
@@ -208,6 +209,10 @@ jobs:
           marketplace-path: .scan-cache/scan-targets.json
           policy-prompt: .github/policy/prompt.md
           fail-on-findings: "true"
+          # Static pin check: detection + annotation only on this surface
+          # (fail-on-unpinned-autoexec deliberately not set). Adjudicated
+          # exceptions live in the repo-local waivers file.
+          launch-shape-waivers: .github/policy/launch-shape-waivers.txt
           claude-cli-version: latest
 
       # Merge fresh verdicts into the cache and assemble this run's full
