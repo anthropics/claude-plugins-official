@@ -1916,7 +1916,7 @@
         "url": "https://github.com/taosdata/agent-skills.git",
         "path": "plugins/idmp-plugin",
         "ref": "main",
-        "sha": "bf5197716bacc38908cf8025e594d15be9e00b8c"
+        "sha": "41f06edc2027add6c2aee0abd42dd4847ca3c066"
       },
       "homepage": "https://github.com/taosdata/agent-skills"
     },
