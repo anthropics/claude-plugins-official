@@ -1275,7 +1275,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/GoogleCloudPlatform/data-agent-kit-plugin.git",
-        "sha": "83c53b5f129cdeecabe149ff4ba82645d3e51745"
+        "sha": "0dd8034c50d6bce0290b99190cd44b06fcbec2c1"
       },
       "homepage": "https://cloud.google.com/products/data-agent-kit"
     },
