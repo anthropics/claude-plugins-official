@@ -690,7 +690,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/carboneio/carbone-skill.git",
-        "sha": "25207b3f52b97872312eab997ee5c62cc5c9542d"
+        "sha": "b367df6c6296e2b63f5b30de72cfd5de63601a46"
       },
       "homepage": "https://carbone.io"
     },
