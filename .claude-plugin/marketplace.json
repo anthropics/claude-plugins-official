@@ -3013,7 +3013,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/prisma/claude-plugin.git",
-        "sha": "815dbc4a045a29e3b81510ba0e3ab806f1baaf0e"
+        "sha": "82edd74d81892bcccf7294cbbf76752d76391da5"
       },
       "homepage": "https://prisma.io"
     },
