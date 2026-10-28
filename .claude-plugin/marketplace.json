@@ -1033,7 +1033,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/cockroachdb/claude-plugin.git",
-        "sha": "6c96c6394a61f366e8ec1b7cec2281e97507cbff"
+        "sha": "df34a85848cdae38914ff13a5e70fcbd0d41db99"
       },
       "homepage": "https://github.com/cockroachdb/claude-plugin"
     },
