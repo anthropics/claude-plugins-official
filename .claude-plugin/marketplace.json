@@ -2525,7 +2525,7 @@
         "url": "https://github.com/mongodb/agent-skills.git",
         "path": "plugins/mongodb",
         "ref": "main",
-        "sha": "c370a63b27075008a92134686b24af3817edeb00"
+        "sha": "68be65bfb25a68712d7a961bd75bc068c5e02ac4"
       },
       "homepage": "https://www.mongodb.com/docs/mcp-server/overview/"
     },
