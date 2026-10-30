@@ -378,6 +378,16 @@ def launcher_probe_metrics():
     return {"launcher_probe_ms": min(total, cap), "launcher_probe_max_ms": min(slowest, cap)}
 
 
+def launcher_direct_metric():
+    """`launcher_direct` when sg-python.sh ran this hook with the interpreter
+    behind a packaged Windows alias instead of the alias: 1 from the path it
+    remembered (one process for the hook), 2 when it had just worked that
+    path out. Read once, like the probe timings.
+    """
+    how = os.environ.pop("SG_LAUNCHER_DIRECT", "")
+    return {"launcher_direct": int(how)} if how in ("1", "2") else {}
+
+
 def _usage_metrics():
     """Snapshot the accumulator as metric keys. Returns {} when no API calls
     AND no HTTP errors were made so skip-path emits don't burn key budget.

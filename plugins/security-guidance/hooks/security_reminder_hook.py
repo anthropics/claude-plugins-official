@@ -86,7 +86,7 @@ from _base import (  # noqa: E402,F401
     _read_plugin_version_int, _PV, _USAGE, _USAGE_LOCK,
     _PRICE_PER_MTOK, _PRICE_DEFAULT, _record_usage, _usage_metrics, _net_error_metric,
     _USAGE_CONTEXT, _log_usage,
-    launcher_probe_metrics, state_dir as _resolve_state_dir,
+    launcher_direct_metric, launcher_probe_metrics, state_dir as _resolve_state_dir,
     write_hook_output as _write_hook_output, portable_output,
     llm_reviews_switched_off, agent_sdk_installed,
 )
@@ -228,6 +228,8 @@ _LAST_METRIC_KEYS = ("diff_seen",)
 
 # The launcher's slow interpreter probes, if any. After the keys above.
 _LAUNCHER_METRICS: Dict[str, Any] = launcher_probe_metrics()
+# Whether the launcher skipped a packaged alias. Only on rows sent anyway.
+_LAUNCHER_DIRECT: Dict[str, Any] = launcher_direct_metric()
 
 # Reviewer context diagnostics from llm.agentic_review, most useful first.
 _REVIEWER_CONTEXT_KEYS = ("rv_cwd_gone", "rv_tool_err", "rv_tool_calls")
@@ -357,6 +359,8 @@ def emit_metrics(
             tail[k] = tail.pop(k)
     tail.update(_LAUNCHER_METRICS)
     tail.update(_REVIEWER_EFFORT_METRICS)
+    # Last of all: the first key a full row loses.
+    tail.update(_LAUNCHER_DIRECT)
     metrics = {**metrics, **{k: v for k, v in tail.items() if k not in metrics}}
     out = {"metrics": metrics}
     if rewake_summary:
