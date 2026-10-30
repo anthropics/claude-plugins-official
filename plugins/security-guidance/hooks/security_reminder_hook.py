@@ -23,7 +23,7 @@ The plugin has two layers:
 
 ## How the git baseline works
 
-On each UserPromptSubmit, the plugin runs `git stash create` to get a SHA representing
+On each UserPromptSubmit, the plugin takes a snapshot commit to get a SHA representing
 the current working tree state (HEAD + any uncommitted changes). This SHA is saved to
 the session state file. When the Stop hook fires, it runs `git diff <baseline_sha>` to
 get only the changes made since that snapshot. After analysis, the baseline is updated
@@ -760,7 +760,7 @@ def handle_user_prompt_submit(input_data):
     # The untracked snapshot has one reader: the Stop-hook diff review, which
     # skips before reading it when either of these switches is off (see
     # handle_stop_hook). Listing the worktree on every prompt then buys
-    # nothing, so only the stash baseline (still read by the Write pattern
+    # nothing, so only the turn baseline (still read by the Write pattern
     # filter) is captured.
     snapshot_untracked = ENABLE_STOP_REVIEW and ENABLE_CODE_SECURITY_REVIEW
     spent = {"baseline": 0.0, "untracked": 0.0}
@@ -775,15 +775,15 @@ def handle_user_prompt_submit(input_data):
     def _capture(repo_cwd):
         if not snapshot_untracked:
             return _timed("baseline", capture_git_baseline, repo_cwd), None
-        # stash-create and ls-files both walk the worktree (~2-5s each in a
+        # the baseline snapshot and ls-files both walk the worktree (~2-5s each in a
         # very large repo). Run them concurrently so UPS latency stays
         # ≈ max(both).
         import concurrent.futures as _cf
         with _cf.ThreadPoolExecutor(max_workers=2) as _ex:
             _f_sha = _ex.submit(_timed, "baseline", capture_git_baseline, repo_cwd)
             _f_ut = _ex.submit(_timed, "untracked", _list_untracked, repo_cwd)
-            # Taken whether or not the stash produced a SHA. `git stash
-            # create` returns empty when there are no TRACKED changes, but
+            # Taken whether or not the snapshot produced a SHA. The baseline
+            # falls back to HEAD when there are no TRACKED changes, but
             # pre-existing untracked files still need to be excluded from the
             # next Stop's review_set — otherwise an untracked-only working
             # tree gets every untracked file reviewed on every turn until
@@ -851,7 +851,7 @@ def handle_user_prompt_submit(input_data):
         # When the turn began: what a Stop review in another checkout has
         # to go on.
         state["prompt_at"] = captured_at
-        # untracked_at_baseline is independent of whether the stash produced
+        # untracked_at_baseline is independent of whether the snapshot produced
         # a SHA, so compute_v2_review_set's preexisting-untracked exclusion
         # works in untracked-only trees. None means no snapshot was taken
         # (Stop review off): drop the previous one, which belongs to an older
@@ -2615,13 +2615,13 @@ def handle_stop_hook(input_data):
                   f"{MAX_REVIEW_SET_PATHS} paths), skipping")
         _skip(8)
     # Run from repo_root so the toplevel-relative review_paths resolve.
-    # Diff CONTENT against the turn-start stash (baseline_sha) so the LLM
+    # Diff CONTENT against the turn-start snapshot (baseline_sha) so the LLM
     # sees only this-turn edits — diffing against HEAD includes the user's
     # pre-turn uncommitted WIP, which inflates review_ms and can re-flag
     # the same pre-existing pattern every turn. The file LIST still comes
     # from git state (compute_v2_review_set), so Bash/subagent edits are
     # caught either way. Fall back to diff_base (HEAD/head_at_capture)
-    # when the stash is missing or pruned.
+    # when the baseline commit is missing or pruned.
     content_base = baseline_sha or diff_base
     diff_output = get_git_diff(repo_root, content_base, full_context=False,
                                paths=review_paths, untracked_paths=untracked)

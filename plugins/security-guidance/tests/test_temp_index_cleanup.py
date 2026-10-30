@@ -220,7 +220,7 @@ class TestOwnerGone:
 @pytest.mark.skipif(os.name == "nt", reason="uses signals and a /bin/sh git shim")
 class TestHookProcessKilled:
     def _start_slow_hook(self, tmp_path, hook_env, repo):
-        """Start a UserPromptSubmit hook whose `git stash create` hangs, and
+        """Start a UserPromptSubmit hook whose snapshot `git add -u` hangs, and
         return once its index copy exists."""
         import shutil
         import subprocess
@@ -233,7 +233,7 @@ class TestHookProcessKilled:
         shim = bindir / "git"
         shim.write_text(
             "#!/bin/sh\n"
-            'case "$*" in *"stash create"*) [ -n "$SLOW_GIT" ] && exec sleep 60;; esac\n'
+            'case "$*" in *"add -u"*) [ -n "$SLOW_GIT" ] && exec sleep 60;; esac\n'
             f'exec "{real_git}" "$@"\n'
         )
         shim.chmod(0o755)

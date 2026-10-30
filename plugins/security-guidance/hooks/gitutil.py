@@ -794,6 +794,11 @@ def _gitlink_paths(top, env):
     return found
 
 
+# True when the last _drop_gitlinks call removed at least one gitlink, so the
+# index copy and HEAD can no longer have the same tree even on a clean tree.
+last_dropped_gitlinks = False
+
+
 def _drop_gitlinks(top, env, tmp_index):
     """Remove the gitlink (mode 160000) entry of every nested repository from
     the index copy that `env` names, never from the real index, before
@@ -805,6 +810,8 @@ def _drop_gitlinks(top, env, tmp_index):
     `git stash create` fails on the empty directory. `top` is the work
     tree's top directory. Returns True on success, False on any failure; the
     copy must not be used then."""
+    global last_dropped_gitlinks
+    last_dropped_gitlinks = False
     try:
         if not _may_have_gitlinks(tmp_index):
             return True
@@ -829,6 +836,7 @@ def _drop_gitlinks(top, env, tmp_index):
             return False
         # Keep the mtime the copy came with; see _copied_index.
         os.utime(tmp_index, ns=(mtime_ns, mtime_ns))
+        last_dropped_gitlinks = True
         debug_log(f"gitlink entries (nested repositories) removed from the "
                   f"index copy: {len(nested)}; their contents are not reviewed")
         return True
