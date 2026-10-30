@@ -2425,7 +2425,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/MicrosoftDocs/mcp.git",
-        "sha": "f8ffde185dfd232dbf5d187c22ce299eadc3d583"
+        "sha": "f0a9478a954c9b3a7c6525a5183466902ca60731"
       },
       "homepage": "https://github.com/microsoftdocs/mcp"
     },
