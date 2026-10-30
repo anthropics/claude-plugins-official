@@ -16,7 +16,8 @@
     "atlassian-forge-skills": "forge-skills",
     "azure-skills": "azure",
     "sonarqube-agent-plugins": "sonarqube",
-    "data-agent-kit-starter-pack": "data-agent-kit"
+    "data-agent-kit-starter-pack": "data-agent-kit",
+    "sap-fiori-mcp-server": "sap-ux-fiori-tools"
   },
   "plugins": [
     {
@@ -3405,24 +3406,6 @@
       "homepage": "https://cap.cloud.sap/"
     },
     {
-      "name": "sap-fiori-mcp-server",
-      "description": "MCP server for SAP Fiori development tools for Claude Code. Build and modify SAP Fiori applications with AI assistance.",
-      "author": {
-        "name": "SAP SE",
-        "email": "ospo@sap.com",
-        "url": "https://www.sap.com"
-      },
-      "category": "development",
-      "source": {
-        "source": "git-subdir",
-        "url": "https://github.com/SAP/open-ux-tools.git",
-        "path": "packages/fiori-mcp-server",
-        "ref": "main",
-        "sha": "69e2c50833f10e6892d7c8f42b98b13133d8fdc3"
-      },
-      "homepage": "https://github.com/SAP/open-ux-tools/tree/main/packages/fiori-mcp-server"
-    },
-    {
       "name": "sap-hana-cli",
       "description": "150+ SAP HANA database tools for AI assistants. Query tables, import/export data, profile data quality, compare schemas, manage backups, monitor performance, and more. Connects to SAP HANA Cloud and on-premise databases.",
       "author": {
@@ -3453,6 +3436,24 @@
         "sha": "ce65cbf22089787599370938f43ca4b9f4567027"
       },
       "homepage": "https://help.sap.com/docs/MDK"
+    },
+    {
+      "name": "sap-ux-fiori-tools",
+      "description": "MCP server and skills for SAP Fiori development. Build, modify, and test SAP Fiori Elements applications with AI assistance.",
+      "author": {
+        "name": "SAP SE",
+        "email": "ospo@sap.com",
+        "url": "https://www.sap.com"
+      },
+      "category": "development",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/SAP/open-ux-tools.git",
+        "path": "plugins-coding-agents/fiori",
+        "ref": "main",
+        "sha": "6a2fd2458151748899e02476c4e1efd9af821103"
+      },
+      "homepage": "https://github.com/SAP/open-ux-tools/tree/main/plugins-coding-agents/fiori"
     },
     {
       "name": "save-to-spotify",
