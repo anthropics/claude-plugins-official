@@ -195,10 +195,13 @@ def _anthropic_base_url() -> str:
     Honors ANTHROPIC_BASE_URL (the convention the Anthropic SDK and CC itself
     use) so customers behind an LLM gateway (LiteLLM, Bifrost, self-hosted
     Anthropic-compatible proxy) can route the plugin's reviews through their
-    gateway. Defaults to https://api.anthropic.com. Always returns a string
-    with no trailing slash so callers can safely append /v1/messages etc.
+    gateway. Defaults to https://api.anthropic.com, also when the variable is
+    set but blank, which is how the SDK and CC read it. Always returns a
+    string with no trailing slash so callers can safely append /v1/messages
+    etc.
     """
-    return os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com").rstrip("/")
+    base = os.environ.get("ANTHROPIC_BASE_URL", "").strip()
+    return (base or "https://api.anthropic.com").rstrip("/")
 
 
 # ── Windows certificate store with an entry OpenSSL cannot read ──────────

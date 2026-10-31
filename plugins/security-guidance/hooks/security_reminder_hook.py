@@ -1385,7 +1385,7 @@ def _review_failure_reason(status):
     _RACE_TIMED_OUT.
     """
     gateway = (", or an LLM gateway may need its key in ANTHROPIC_CUSTOM_HEADERS"
-               if os.environ.get("ANTHROPIC_BASE_URL") else "")
+               if os.environ.get("ANTHROPIC_BASE_URL", "").strip() else "")
     if status == _RACE_TIMED_OUT:
         return ("timeout", "the review did not finish in time", "")
     if llm._is_3p_provider():

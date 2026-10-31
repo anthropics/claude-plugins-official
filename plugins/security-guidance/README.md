@@ -114,7 +114,7 @@ The plugin sends data to a model endpoint to perform its reviews. Specifically, 
 
 Where that data goes depends on your Claude Code configuration:
 - **Default (Anthropic API / subscription):** sent to `api.anthropic.com` and handled under Anthropic's [Commercial Terms](https://www.anthropic.com/legal/commercial-terms) and [Privacy Policy](https://www.anthropic.com/legal/privacy).
-- **LLM gateway** (`ANTHROPIC_BASE_URL` set): sent to your gateway URL instead, with the headers in `ANTHROPIC_CUSTOM_HEADERS` (except `anthropic-beta`). The gateway operator's terms apply.
+- **LLM gateway** (`ANTHROPIC_BASE_URL` set to a URL): sent to your gateway URL instead, with the headers in `ANTHROPIC_CUSTOM_HEADERS` (except `anthropic-beta`). The gateway operator's terms apply.
 - **Claude apps gateway, signed in with `/login`:** your installed Claude Code sends the reviews to the gateway, using its own stored sign-in. The plugin never reads the sign-in. The gateway operator's terms apply.
 - **3rd-party providers** (Bedrock / Vertex / Foundry / Mantle): sent to your configured provider endpoint. The provider's data-handling terms apply (e.g., AWS / GCP / Azure).
 
