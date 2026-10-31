@@ -2644,6 +2644,15 @@ def handle_stop_hook(input_data):
     if not baseline_sha:
         baseline_sha = "HEAD"
 
+    # New files a failed `git add -N` hid: when nothing gets reviewed they are
+    # put back, listed as touched so the next prompt keeps this baseline even
+    # if an edit tool never wrote them. A review of the tracked files goes on
+    # without them, rather than repeating that review every turn.
+    left_out = gitutil._new_files_left_out()
+    if left_out:
+        touched_paths = list(touched_paths) + [
+            os.path.join(repo_root, p) for p in untracked or ()]
+
     if not diff_output or not diff_output.strip():
         if "gave_up" in gitutil._path_list_too_long:
             debug_log("Stop hook: changed paths do not fit the git commands, skipping")
@@ -2652,7 +2661,7 @@ def handle_stop_hook(input_data):
             debug_log("Stop hook: no source code files among the changed paths")
             _skip(7)
         debug_log("Stop hook: no changes since baseline")
-        _skip(6)
+        _skip(6, restore=left_out)
 
     diff_hash = hashlib.sha256(diff_output.encode("utf-8", "replace")).hexdigest()
     if snap.get("reviewed_diff_hash") == diff_hash:
@@ -2663,7 +2672,7 @@ def handle_stop_hook(input_data):
     diff_files = parse_diff_into_files(diff_output)
     if not diff_files:
         debug_log("Stop hook: no source code files in diff")
-        _skip(7)
+        _skip(7, restore=left_out)
 
     # Mirror commit-review: hard-bail only on pathological diffs (>300 files,
     # usually a bad baseline), otherwise prioritize by security-risk path
