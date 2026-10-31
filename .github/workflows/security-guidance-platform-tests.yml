@@ -34,7 +34,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [windows-latest, windows-11-arm, macos-latest]
-        ref: [main, '6930']
+        ref: [main, '6965']
     defaults:
       run:
         shell: bash
