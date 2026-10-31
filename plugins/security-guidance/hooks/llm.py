@@ -17,6 +17,7 @@ Two reassignable globals here are read by handlers in
 ``_last_review_truncated_bytes``. Handlers reference them as ``llm.X`` (not via
 ``from``-import) so they observe reassignment.
 """
+import contextlib
 import hashlib
 import json
 import logging
@@ -1023,9 +1024,8 @@ def _call_claude_via_sdk(prompt, output_schema, *, max_tokens=16000, model=None,
                 _record_usage(getattr(msg, "usage", None) or {}, chosen_model,
                               cost_usd=getattr(msg, "total_cost_usd", None))
             elif getattr(msg, "subtype", None) == "api_retry":
-                data = getattr(msg, "data", None)
-                status = data.get("error_status") if isinstance(data, dict) else None
-                _retried_after.add(str(status) if isinstance(status, int) else "no response")
+                status = _api_retry_status(msg)
+                _retried_after.add(str(status) if status is not None else "no response")
         return structured
 
     # 60s ceiling: a single review request on a healthy 3P endpoint completes
@@ -1838,6 +1838,23 @@ def _run_inner_cli(start: Callable[[], Any], stderr_lines: List[str]) -> Any:
         return start()
 
 
+class _ReviewerAuthFailed(Exception):
+    """The agentic reviewer's credentials were refused; retrying cannot help."""
+
+
+# Retry notices in a row, each after a 401, at which the review stops. One is
+# normal: the CLI renews a stored login after a 401 and tries again. Not used
+# in a remote session, where the CLI waits out a short sign-in outage on purpose.
+_AGENTIC_MAX_401_RETRIES = 3
+
+
+def _api_retry_status(msg: Any) -> Optional[int]:
+    """The HTTP status of the CLI's api_retry notice, if it gives one."""
+    data = getattr(msg, "data", None)
+    status = data.get("error_status") if isinstance(data, dict) else None
+    return status if isinstance(status, int) else None
+
+
 def _agentic_spawn_env() -> Dict[str, str]:
     """opts.env for the SDK-spawned inner `claude` CLI.
 
@@ -2116,39 +2133,54 @@ def _agentic_review(
 
         # Blocks are matched by shape so older SDK builds need no extra import.
         file_tool_ids = set()
-        async for msg in query(prompt=_once(), options=opts):
-            if isinstance(msg, AssistantMessage):
-                n += 1
-                for b in getattr(msg, "content", None) or []:
-                    if (getattr(b, "name", None) in _REVIEWER_FILE_TOOLS
-                            and getattr(b, "id", None)):
-                        file_tool_ids.add(b.id)
-                        ctx["rv_tool_calls"] += 1
-            elif isinstance(msg, ResultMessage):
-                subtype = msg.subtype
-                if msg.structured_output is not None:
-                    structured = msg.structured_output
-                # SDK ResultMessage carries aggregate usage + cache-aware
-                # cost across the whole multi-turn run; prefer its cost over
-                # the price-table estimate. getattr guards older SDK builds.
-                _record_usage(getattr(msg, "usage", None) or {}, model,
-                              cost_usd=getattr(msg, "total_cost_usd", None))
-                for key, attr in (("rv_turns", "num_turns"), ("rv_api_ms", "duration_api_ms")):
-                    value = getattr(msg, attr, None)
-                    # Counting must never fail the review: anything that
-                    # is not a positive finite number adds nothing.
-                    if (isinstance(value, (int, float)) and not isinstance(value, bool)
-                            and 0 < value < float("inf")):
-                        ctx[key] += int(value)
-            else:
-                # Tool results come back as user messages.
-                content = getattr(msg, "content", None)
-                if isinstance(content, list):
-                    ctx["rv_tool_err"] += sum(
-                        1 for b in content
-                        if getattr(b, "is_error", None) is True
-                        and getattr(b, "tool_use_id", None) in file_tool_ids
-                    )
+        auth_retries = 0
+        # Closed on the way out, also on a raise, so the CLI stops with the review.
+        async with contextlib.aclosing(query(prompt=_once(), options=opts)) as messages:
+            async for msg in messages:
+                if isinstance(msg, AssistantMessage):
+                    # Old CLIs answer each refused request by asking the model
+                    # again, hundreds of times; the message is the same on all.
+                    if getattr(msg, "error", None) == "authentication_failed":
+                        raise _ReviewerAuthFailed("authentication_failed")
+                    auth_retries = 0
+                    n += 1
+                    for b in getattr(msg, "content", None) or []:
+                        if (getattr(b, "name", None) in _REVIEWER_FILE_TOOLS
+                                and getattr(b, "id", None)):
+                            file_tool_ids.add(b.id)
+                            ctx["rv_tool_calls"] += 1
+                elif isinstance(msg, ResultMessage):
+                    subtype = msg.subtype
+                    if msg.structured_output is not None:
+                        structured = msg.structured_output
+                    # SDK ResultMessage carries aggregate usage + cache-aware
+                    # cost across the whole multi-turn run; prefer its cost over
+                    # the price-table estimate. getattr guards older SDK builds.
+                    _record_usage(getattr(msg, "usage", None) or {}, model,
+                                  cost_usd=getattr(msg, "total_cost_usd", None))
+                    for key, attr in (("rv_turns", "num_turns"), ("rv_api_ms", "duration_api_ms")):
+                        value = getattr(msg, attr, None)
+                        # Counting must never fail the review: anything that
+                        # is not a positive finite number adds nothing.
+                        if (isinstance(value, (int, float)) and not isinstance(value, bool)
+                                and 0 < value < float("inf")):
+                            ctx[key] += int(value)
+                elif getattr(msg, "subtype", None) == "api_retry":
+                    # A gateway's 401 without the API's x-should-retry: false
+                    # keeps the CLI retrying for about three minutes.
+                    auth_retries = auth_retries + 1 if _api_retry_status(msg) == 401 else 0
+                    if (auth_retries >= _AGENTIC_MAX_401_RETRIES
+                            and not os.environ.get("CLAUDE_CODE_REMOTE")):
+                        raise _ReviewerAuthFailed(f"{auth_retries} retries after HTTP 401")
+                else:
+                    # Tool results come back as user messages.
+                    content = getattr(msg, "content", None)
+                    if isinstance(content, list):
+                        ctx["rv_tool_err"] += sum(
+                            1 for b in content
+                            if getattr(b, "is_error", None) is True
+                            and getattr(b, "tool_use_id", None) in file_tool_ids
+                        )
         return structured, n, subtype
 
     def _run(system: str, prompt: str, *, schema: Dict[str, Any]

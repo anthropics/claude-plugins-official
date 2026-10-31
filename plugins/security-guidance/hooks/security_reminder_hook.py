@@ -1270,6 +1270,10 @@ COMMIT_REVIEW_ENABLED = is_commit_review_enabled()
 # neither side waits for the other any longer; well inside Claude Code's
 # 10-minute hook timeout.
 _RACE_MAX_WAIT_S = 480
+# Seconds after which the review ends even if a side is still waiting on a
+# request that does not answer, with time left to tell the session before
+# Claude Code kills the hook. The inner CLI exits with the hook.
+_RACE_END_S = 570
 # api_error for a race that hit that deadline with no verdict.
 _RACE_TIMED_OUT = -2
 
@@ -1313,6 +1317,7 @@ def _agentic_review_with_race(
     agentic_done = _th.Event()
     fallback_result: Dict[str, Any] = {}
     deadline = _t.monotonic() + _RACE_MAX_WAIT_S
+    timed_out = (None, [], {"agentic": False, "review_failed": True, "api_error": _RACE_TIMED_OUT})
 
     def _agentic() -> None:
         try:
@@ -1356,7 +1361,11 @@ def _agentic_review_with_race(
     _th.Thread(target=_agentic, daemon=True).start()
     _th.Thread(target=_fallback, daemon=True).start()
 
-    winner, (g, v, m) = q.get()
+    try:
+        winner, (g, v, m) = q.get(timeout=_RACE_END_S)
+    except _queue.Empty:
+        debug_log("review race: nothing returned in time")
+        winner, (g, v, m) = "fallback", timed_out
     # What the agentic run saw of its directory, and how much work it did,
     # is kept when the fallback's result replaces it below.
     reviewer_context = (
@@ -1369,8 +1378,7 @@ def _agentic_review_with_race(
         if fallback_done.wait(timeout=max(0.0, deadline - _t.monotonic())):
             winner, (g, v, m) = "fallback", fallback_result["r"]
         else:
-            winner, (g, v, m) = "fallback", (None, [], {
-                "agentic": False, "review_failed": True, "api_error": _RACE_TIMED_OUT})
+            winner, (g, v, m) = "fallback", timed_out
     m = {**m, **reviewer_context}  # a copy: don't mutate the callee's metrics dict
     m["race_winner"] = 1 if winner == "agentic" else 2
     m["race_delay_s"] = delay_s

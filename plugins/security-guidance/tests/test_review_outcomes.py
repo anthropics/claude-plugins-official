@@ -1,5 +1,6 @@
 """A review that got no verdict is never reported as clean."""
 import json
+import threading
 import time
 
 import pytest
@@ -187,6 +188,25 @@ class TestFailedReviewIsNotClean:
             return result
         run.calls = calls
         return run
+
+    def test_review_ends_when_neither_side_returns(self, race, monkeypatch):
+        """A request that never answers holds both sides; the deadline holds anyway."""
+        monkeypatch.setattr(hook, "_RACE_MAX_WAIT_S", 0.1)
+        monkeypatch.setattr(hook, "_RACE_END_S", 0.2)
+        release = threading.Event()
+        monkeypatch.setattr(hook, "analyze_code_security", lambda *a, **k: release.wait(5))
+
+        def stuck_agentic(*a, **k):
+            release.wait(5)
+        started = time.monotonic()
+        try:
+            guidance, vulns, m = race(stuck_agentic)
+        finally:
+            release.set()
+        assert time.monotonic() - started < 2
+        assert (guidance, vulns) == (None, [])
+        assert m["review_failed"] is True
+        assert m["api_error"] == hook._RACE_TIMED_OUT
 
     def test_failed_fallback_waits_for_agentic(self, race):
         """Direct calls can fail where the agentic reviewer's CLI works (it
