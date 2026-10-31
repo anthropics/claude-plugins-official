@@ -2780,7 +2780,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/PagerDuty/claude-code-plugins.git",
-        "sha": "761cba75bd50fd561405c3b173ecf36084432089"
+        "sha": "1cda0c8535d2a1dfca8c050db8e6178f60855016"
       },
       "homepage": "https://github.com/PagerDuty/claude-code-plugins"
     },
