@@ -3601,7 +3601,7 @@
         "url": "https://github.com/pendo-io/claude-pendo-plugin.git",
         "path": "plugins/setup-mcp-agent-analytics",
         "ref": "main",
-        "sha": "a0f85260c61b93c4511f59545612323a41c3f845"
+        "sha": "608f41c6bd93a57a43a4a5507e3d91c41747beae"
       },
       "homepage": "https://github.com/pendo-io/claude-pendo-plugin/tree/main/plugins/setup-mcp-agent-analytics"
     },
