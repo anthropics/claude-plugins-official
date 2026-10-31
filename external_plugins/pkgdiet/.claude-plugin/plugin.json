@@ -1,0 +1,22 @@
+{
+  "name": "pkgdiet",
+  "displayName": "PkgDiet",
+  "version": "2.0.1",
+  "description": "Dependency policy gate and security guardrails to stop AI coding agents from installing risky npm packages.",
+  "author": {
+    "name": "Om Tajne",
+    "url": "https://github.com/om-tajne"
+  },
+  "homepage": "https://github.com/om-tajne/pkgdiet#readme",
+  "repository": "https://github.com/om-tajne/pkgdiet",
+  "license": "MIT",
+  "keywords": [
+    "security",
+    "dependencies",
+    "npm",
+    "package-gate",
+    "supply-chain-security",
+    "guardrails",
+    "mcp"
+  ]
+}

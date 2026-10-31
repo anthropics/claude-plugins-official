@@ -2909,6 +2909,16 @@
       "homepage": "https://docs.pixeltable.com"
     },
     {
+      "name": "pkgdiet",
+      "description": "Dependency policy gate and security guardrails to stop AI coding agents from installing risky npm packages.",
+      "author": {
+        "name": "Om Tajne"
+      },
+      "category": "security",
+      "source": "./external_plugins/pkgdiet",
+      "homepage": "https://github.com/om-tajne/pkgdiet#readme"
+    },
+    {
       "name": "planetscale",
       "description": "An authenticated hosted MCP server that accesses your PlanetScale organizations, databases, branches, schema, and Insights data. Query against your data, surface slow queries, and get organizational and account information.",
       "category": "database",
