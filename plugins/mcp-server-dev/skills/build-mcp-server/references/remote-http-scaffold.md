@@ -4,77 +4,81 @@ Minimal working servers in both recommended frameworks. Start here, then add too
 
 ---
 
-## TypeScript SDK (`@modelcontextprotocol/sdk`)
+## TypeScript SDK v2 (`@modelcontextprotocol/server`)
 
 ```bash
 npm init -y
-npm install @modelcontextprotocol/sdk zod express
+npm pkg set type=module
+npm install @modelcontextprotocol/server @modelcontextprotocol/express @modelcontextprotocol/node zod express
 npm install -D typescript @types/express @types/node tsx
 ```
 
 **`src/server.ts`**
 
 ```typescript
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import express from "express";
-import { z } from "zod";
+import { createMcpExpressApp } from "@modelcontextprotocol/express";
+import { toNodeHandler } from "@modelcontextprotocol/node";
+import { McpServer, createMcpHandler } from "@modelcontextprotocol/server";
+import * as z from "zod/v4";
 
-const server = new McpServer(
-  { name: "my-service", version: "0.1.0" },
-  { instructions: "Prefer search_items before calling get_item directly — IDs aren't guessable." },
-);
+// Called once per HTTP request. Always build a new McpServer here:
+// a shared instance fails as soon as two requests overlap.
+function createServer(): McpServer {
+  const server = new McpServer(
+    { name: "my-service", version: "0.1.0" },
+    { instructions: "Prefer search_items before calling get_item directly — IDs aren't guessable." },
+  );
 
-// Pattern A: one tool per action
-server.registerTool(
-  "search_items",
-  {
-    description: "Search items by keyword. Returns up to `limit` matches ranked by relevance.",
-    inputSchema: {
-      query: z.string().describe("Search keywords"),
-      limit: z.number().int().min(1).max(50).default(10),
+  // Pattern A: one tool per action
+  server.registerTool(
+    "search_items",
+    {
+      description: "Search items by keyword. Returns up to `limit` matches ranked by relevance.",
+      inputSchema: z.object({
+        query: z.string().describe("Search keywords"),
+        limit: z.number().int().min(1).max(50).default(10),
+      }),
+      annotations: { readOnlyHint: true },
     },
-    annotations: { readOnlyHint: true },
-  },
-  async ({ query, limit }, extra) => {
-    // extra.signal is an AbortSignal — check it in long loops for cancellation
-    const results = await upstreamApi.search(query, limit);
-    return {
-      content: [{ type: "text", text: JSON.stringify(results, null, 2) }],
-    };
-  },
-);
+    async ({ query, limit }, ctx) => {
+      // ctx.mcpReq.signal is an AbortSignal — check it in long loops for cancellation
+      const results = await upstreamApi.search(query, limit);
+      return {
+        content: [{ type: "text", text: JSON.stringify(results, null, 2) }],
+      };
+    },
+  );
 
-server.registerTool(
-  "get_item",
-  {
-    description: "Fetch a single item by its ID.",
-    inputSchema: { id: z.string() },
-    annotations: { readOnlyHint: true },
-  },
-  async ({ id }) => {
-    const item = await upstreamApi.get(id);
-    return { content: [{ type: "text", text: JSON.stringify(item) }] };
-  },
-);
+  server.registerTool(
+    "get_item",
+    {
+      description: "Fetch a single item by its ID.",
+      inputSchema: z.object({ id: z.string() }),
+      annotations: { readOnlyHint: true },
+    },
+    async ({ id }) => {
+      const item = await upstreamApi.get(id);
+      return { content: [{ type: "text", text: JSON.stringify(item) }] };
+    },
+  );
 
-// Streamable HTTP transport (stateless mode — simplest)
-const app = express();
-app.use(express.json());
+  return server;
+}
 
-app.post("/mcp", async (req, res) => {
-  const transport = new StreamableHTTPServerTransport({
-    sessionIdGenerator: undefined, // stateless
-  });
-  res.on("close", () => transport.close());
-  await server.connect(transport);
-  await transport.handleRequest(req, res, req.body);
-});
+// Local dev: accepts only localhost Host/Origin headers (DNS-rebinding protection).
+// Deployed: createMcpExpressApp({ host: "0.0.0.0", allowedHosts: ["mcp.example.com"] })
+const app = createMcpExpressApp();
 
-app.listen(process.env.PORT ?? 3000);
+// Streamable HTTP, stateless
+const handler = toNodeHandler(createMcpHandler(createServer));
+app.all("/mcp", (req, res) => void handler(req, res, req.body));
+
+app.listen(Number(process.env.PORT ?? 3000));
 ```
 
-**Stateless vs stateful:** The snippet above creates a fresh transport per request (stateless). Fine for most API-wrapping servers. If tools need to share state across calls in a session (rare), use a session-keyed transport map — see the SDK's `examples/server/simpleStreamableHttp.ts`.
+**Stateless by design:** `createMcpHandler` builds a fresh server per request and keeps no sessions, so it scales horizontally as-is. It serves clients on the 2026-07-28 protocol revision and older 2025-era clients from the same factory. Create API clients, pools and caches once at module scope and close over them. If tools need to share state across calls, key it on the authenticated user or an ID the tool returns — see the SDK's [sessions, state and scaling](https://ts.sdk.modelcontextprotocol.io/v2/serving/sessions-state-scaling) page.
+
+**Schemas are `z.object(...)`**, not raw `{ key: z.string() }` shapes, and Zod must be `^4.2.0`.
 
 ---
 
@@ -123,7 +127,7 @@ server.registerTool(
   "search_actions",
   {
     description: "Find available actions matching an intent. Call this first to discover what's possible. Returns action IDs, descriptions, and parameter schemas.",
-    inputSchema: { intent: z.string().describe("What you want to do, in plain English") },
+    inputSchema: z.object({ intent: z.string().describe("What you want to do, in plain English") }),
     annotations: { readOnlyHint: true },
   },
   async ({ intent }) => {
@@ -136,10 +140,10 @@ server.registerTool(
   "execute_action",
   {
     description: "Execute an action by ID. Get the ID and params schema from search_actions first.",
-    inputSchema: {
+    inputSchema: z.object({
       action_id: z.string(),
-      params: z.record(z.unknown()),
-    },
+      params: z.record(z.string(), z.unknown()),
+    }),
   },
   async ({ action_id, params }) => {
     const action = CATALOG.find(a => a.id === action_id);

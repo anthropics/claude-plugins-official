@@ -76,7 +76,7 @@ A hosted service speaking MCP over streamable HTTP. This is the **recommended pa
 
 If a tool just needs the user to confirm, pick an option, or fill a short form, **elicitation** does it with zero UI code. The server sends a flat JSON schema; the host renders a native form. Spec-native, no extra packages.
 
-**Caveat:** Host support is new (Claude Code shipped it in v2.1.76; Desktop unconfirmed). The SDK throws if the client doesn't advertise the capability. Always check `clientCapabilities.elicitation` first and have a fallback — see `references/elicitation.md` for the canonical pattern. This is the right spec-correct approach; host coverage will catch up.
+**Caveat:** Host support is new (Claude Code shipped it in v2.1.76; Desktop unconfirmed). The SDK rejects the call if the client doesn't advertise the capability. Always check the client's `elicitation` capability first and have a fallback — see `references/elicitation.md` for the canonical pattern. This is the right spec-correct approach; host coverage will catch up.
 
 Escalate to `build-mcp-app` widgets when you need: nested/complex data, scrollable/searchable lists, visual previews, live updates.
 
@@ -149,10 +149,12 @@ Recommend one of these two. Others exist but these have the best MCP-spec covera
 
 | Framework | Language | Use when |
 |---|---|---|
-| **Official TypeScript SDK** (`@modelcontextprotocol/sdk`) | TS/JS | Default choice. Best spec coverage, first to get new features. |
+| **Official TypeScript SDK v2** (`@modelcontextprotocol/server`) | TS/JS | Default choice. Best spec coverage, first to get new features. |
 | **FastMCP 3.x** (`fastmcp` on PyPI) | Python | User prefers Python, or wrapping a Python library. Decorator-based, very low boilerplate. This is jlowin's package — not the frozen FastMCP 1.0 bundled in the official `mcp` SDK. |
 
 If the user already has a language/stack in mind, go with it — both produce identical wire protocol.
+
+**Existing TypeScript project on `@modelcontextprotocol/sdk`?** That package is SDK v1, which now gets only bug and security fixes. Its imports, raw-shape schemas and `extra` handler argument differ from the v2 code in these references. Say so once, then stay on v1 unless the user wants to migrate: `npx @modelcontextprotocol/codemod@latest v1-to-v2 .` does most of it ([upgrade guide](https://ts.sdk.modelcontextprotocol.io/v2/migration/upgrade-to-v2)).
 
 ---
 
@@ -178,7 +180,7 @@ Tools are one of three server primitives. Most servers start with tools and neve
 | **Resources** | Host app (not Claude) | Exposing docs/files/data as browsable context |
 | **Prompts** | User (slash command) | Canned workflows ("/summarize-thread") |
 | **Elicitation** | Server, mid-tool | Asking user for input without building UI |
-| **Sampling** | Server, mid-tool | Need LLM inference in your tool logic |
+| **Sampling** (deprecated) | Server, mid-tool | Older hosts only — new servers call their LLM provider directly |
 
 → `references/resources-and-prompts.md`, `references/elicitation.md`, `references/server-capabilities.md`
 

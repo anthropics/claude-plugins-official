@@ -79,9 +79,9 @@ The host reads `manifest.json`, launches `server.mcp_config.command` as a **stdi
 The server itself is a standard stdio MCP server. Nothing MCPB-specific in the tool logic.
 
 ```typescript
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { z } from "zod";
+import { McpServer } from "@modelcontextprotocol/server";
+import { serveStdio } from "@modelcontextprotocol/server/stdio";
+import * as z from "zod/v4";
 import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
@@ -89,42 +89,45 @@ import { homedir } from "node:os";
 // ROOT_DIR comes from what you put in manifest's server.mcp_config.env — no auto-prefix
 const ROOT = (process.env.ROOT_DIR ?? join(homedir(), "Documents"));
 
-const server = new McpServer({ name: "local-files", version: "0.1.0" });
+function createServer(): McpServer {
+  const server = new McpServer({ name: "local-files", version: "0.1.0" });
 
-server.registerTool(
-  "list_files",
-  {
-    description: "List files in a directory under the configured root.",
-    inputSchema: { path: z.string().default(".") },
-    annotations: { readOnlyHint: true },
-  },
-  async ({ path }) => {
-    const entries = await readdir(join(ROOT, path), { withFileTypes: true });
-    const list = entries.map(e => ({ name: e.name, dir: e.isDirectory() }));
-    return { content: [{ type: "text", text: JSON.stringify(list, null, 2) }] };
-  },
-);
+  server.registerTool(
+    "list_files",
+    {
+      description: "List files in a directory under the configured root.",
+      inputSchema: z.object({ path: z.string().default(".") }),
+      annotations: { readOnlyHint: true },
+    },
+    async ({ path }) => {
+      const entries = await readdir(join(ROOT, path), { withFileTypes: true });
+      const list = entries.map(e => ({ name: e.name, dir: e.isDirectory() }));
+      return { content: [{ type: "text", text: JSON.stringify(list, null, 2) }] };
+    },
+  );
 
-server.registerTool(
-  "read_file",
-  {
-    description: "Read a file's contents. Path is relative to the configured root.",
-    inputSchema: { path: z.string() },
-    annotations: { readOnlyHint: true },
-  },
-  async ({ path }) => {
-    const text = await readFile(join(ROOT, path), "utf8");
-    return { content: [{ type: "text", text }] };
-  },
-);
+  server.registerTool(
+    "read_file",
+    {
+      description: "Read a file's contents. Path is relative to the configured root.",
+      inputSchema: z.object({ path: z.string() }),
+      annotations: { readOnlyHint: true },
+    },
+    async ({ path }) => {
+      const text = await readFile(join(ROOT, path), "utf8");
+      return { content: [{ type: "text", text }] };
+    },
+  );
 
-const transport = new StdioServerTransport();
-await server.connect(transport);
+  return server;
+}
+
+serveStdio(createServer); // never console.log — stdout carries the protocol
 ```
 
 **Sandboxing is entirely your job.** There is no manifest-level sandbox — the process runs with full user privileges. Validate paths, refuse to escape `ROOT`, allowlist spawns. See `references/local-security.md`.
 
-Before hardcoding `ROOT` from a config env var, check if the host supports `roots/list` — the spec-native way to get user-approved directories. See `references/local-security.md` for the pattern.
+Take `ROOT` from a `user_config` directory picker rather than a hardcoded path. See `references/local-security.md`.
 
 ---
 
