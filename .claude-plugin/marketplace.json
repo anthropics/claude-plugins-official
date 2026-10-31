@@ -52,6 +52,21 @@
       "homepage": "https://github.com/adobe/skills/tree/main/plugins/creative-cloud/adobe-for-creativity"
     },
     {
+      "name": "agent-observability",
+      "description": "Real-time local observability dashboard and waterfall traces for Claude Code. Monitors tokens, latency, prompt cache ROI, context saturation, and tool execution.",
+      "author": {
+        "name": "Sundaram Kumar Jha",
+        "email": "jhasundarm@gmail.com"
+      },
+      "category": "monitoring",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/sundaram2021/claude-code-observability-system.git",
+        "sha": "9017fabc59e6019a4248ff5cf9c1080f64d2f827"
+      },
+      "homepage": "https://github.com/sundaram2021/claude-code-observability-system"
+    },
+    {
       "name": "agent-sdk-dev",
       "description": "Development kit for working with the Claude Agent SDK",
       "author": {
