@@ -2512,7 +2512,7 @@
         "url": "https://github.com/mondaycom/mcp.git",
         "path": "plugins/monday-crm",
         "ref": "master",
-        "sha": "8fdc0b4af07a4b7e1059ca3f8320d64968737b8e"
+        "sha": "447ed1c2e94bb9cd799535022b0bc43354543ed8"
       },
       "homepage": "https://monday.com"
     },
