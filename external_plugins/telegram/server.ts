@@ -967,29 +967,41 @@ async function handleInbound(
 
   // image_path goes in meta only — an in-content "[image attached — read: PATH]"
   // annotation is forgeable by any allowlisted sender typing that string.
-  mcp.notification({
-    method: 'notifications/claude/channel',
-    params: {
-      content: text,
-      meta: {
-        chat_id,
-        ...(msgId != null ? { message_id: String(msgId) } : {}),
-        user: from.username ?? String(from.id),
-        user_id: String(from.id),
-        ts: new Date((ctx.message?.date ?? 0) * 1000).toISOString(),
-        ...(imagePath ? { image_path: imagePath } : {}),
-        ...(attachment ? {
-          attachment_kind: attachment.kind,
-          attachment_file_id: attachment.file_id,
-          ...(attachment.size != null ? { attachment_size: String(attachment.size) } : {}),
-          ...(attachment.mime ? { attachment_mime: attachment.mime } : {}),
-          ...(attachment.name ? { attachment_name: attachment.name } : {}),
-        } : {}),
+  //
+  // Awaited on purpose. grammy records an update as tried BEFORE the handler
+  // runs and acks it to Telegram (offset = last tried + 1) on the NEXT
+  // getUpdates, which happens as soon as this handler returns. If delivery
+  // to Claude is still pending when we return, the update is acked anyway
+  // and Telegram never redelivers it. Awaiting here keeps the next
+  // getUpdates — and therefore the ack — behind the delivery, so a stalled
+  // MCP transport leaves messages queued at Telegram instead of discarding
+  // them. The send resolves once the notification is written to the stdio
+  // transport, so this does not wait on Claude processing the message.
+  try {
+    await mcp.notification({
+      method: 'notifications/claude/channel',
+      params: {
+        content: text,
+        meta: {
+          chat_id,
+          ...(msgId != null ? { message_id: String(msgId) } : {}),
+          user: from.username ?? String(from.id),
+          user_id: String(from.id),
+          ts: new Date((ctx.message?.date ?? 0) * 1000).toISOString(),
+          ...(imagePath ? { image_path: imagePath } : {}),
+          ...(attachment ? {
+            attachment_kind: attachment.kind,
+            attachment_file_id: attachment.file_id,
+            ...(attachment.size != null ? { attachment_size: String(attachment.size) } : {}),
+            ...(attachment.mime ? { attachment_mime: attachment.mime } : {}),
+            ...(attachment.name ? { attachment_name: attachment.name } : {}),
+          } : {}),
+        },
       },
-    },
-  }).catch(err => {
+    })
+  } catch (err) {
     process.stderr.write(`telegram channel: failed to deliver inbound to Claude: ${err}\n`)
-  })
+  }
 }
 
 // Without this, any throw in a message handler stops polling permanently
