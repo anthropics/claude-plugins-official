@@ -165,3 +165,64 @@ def test_install_still_runs_when_the_folder_cannot_be_made(install):
     (install.state / "pip-tmp").write_text("in the way")
     assert boot._build_via_target(install.state)[0] == boot.BUILT_TARGET
     assert _downloaded_under(install, install.systmp) == [True]
+
+
+def test_pip_timeout_starts_a_cooldown(install):
+    assert boot.main()[0] == boot.BUILD_FAILED
+    # The next attempts (every SessionStart, and every 5 minutes from the
+    # tool hooks) do not download the SDK again.
+    outcome = boot.main()
+    assert outcome == (boot.SKIP_COOLDOWN, "", "")
+    assert len(install.calls) == 1
+    assert boot._install_context_metrics(outcome[0], install.state) == {"sdk_timeout_cooldown": 1}
+
+
+def test_timeout_of_the_fallback_install_starts_it_too(install):
+    boot._build_via_target(install.state)
+    assert boot._timeout_cooldown_remaining(install.state) > 0
+
+
+def test_timeout_cooldown_is_shorter_than_the_signal_kill_one(install):
+    boot.main()
+    assert boot._cooldown_remaining(install.state) == 0
+    assert 0 < boot._timeout_cooldown_remaining(install.state) <= 3600
+    then = time.time() - boot.PIP_TIMEOUT_COOLDOWN_SEC - 60
+    os.utime(install.state / "agent-sdk-venv.timeout", (then, then))
+    install.mode = "exit"
+    assert boot.main()[0] == boot.BUILT
+    assert len(install.calls) == 2
+
+
+def test_slow_venv_creation_does_not_start_it(install, monkeypatch):
+    def run(cmd, **kwargs):
+        if [str(c) for c in cmd][1:3] == ["-m", "venv"]:
+            raise subprocess.TimeoutExpired(cmd, kwargs["timeout"])
+        return install.run(cmd, **kwargs)
+    monkeypatch.setattr(boot.subprocess, "run", run)
+    assert boot.main() == (boot.BUILD_FAILED, "venv", "subprocess_timeout")
+    assert boot._timeout_cooldown_remaining(install.state) == 0
+
+
+def test_signal_kill_cooldown_is_not_counted_as_a_timeout(install):
+    boot._write_cooldown(install.state)
+    boot._write_cooldown(install.state, boot._PIP_TIMEOUT_MARKER)
+    outcome = boot.main()[0]
+    assert outcome == boot.SKIP_COOLDOWN
+    assert "sdk_timeout_cooldown" not in boot._install_context_metrics(outcome, install.state)
+
+
+def test_count_belongs_to_the_run_that_skipped(install):
+    boot.main()
+    assert boot.main()[0] == boot.SKIP_COOLDOWN
+    install.mode = "exit"
+    (install.state / "agent-sdk-venv.timeout").unlink()
+    outcome = boot.main()[0]
+    assert outcome == boot.BUILT
+    assert "sdk_timeout_cooldown" not in boot._install_context_metrics(outcome, install.state)
+
+
+def test_marker_from_the_future_does_not_stretch_the_cooldown(install):
+    boot._write_cooldown(install.state, boot._PIP_TIMEOUT_MARKER)
+    ahead = time.time() + 6 * 3600
+    os.utime(install.state / "agent-sdk-venv.timeout", (ahead, ahead))
+    assert boot._timeout_cooldown_remaining(install.state) == boot.PIP_TIMEOUT_COOLDOWN_SEC

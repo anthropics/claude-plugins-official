@@ -77,6 +77,8 @@ SKIP_COOLDOWN = 9    # a recent build was signal-killed (memory pressure) — no
                      # repro confirmed the dominant Linux BUILD_FAILED is a
                      # SIGKILL/SIGSEGV of the memory-heavy venv+pip subprocess
                      # (rc<0, empty streams). See #2154 follow-up.
+                     # Also, for a shorter time, after a pip install ran out
+                     # of time (sdk_timeout_cooldown says which). See #6979.
 SKIP_REVIEWS_OFF = 10  # the environment turns off every review that would
                        # load the SDK (kill switch included), so nothing is
                        # installed. See #5331.
@@ -85,6 +87,14 @@ SKIP_REVIEWS_OFF = 10  # the environment turns off every review that would
 # window so a machine whose memory frees up still recovers (just not every
 # session). Keyed by marker mtime.
 SIGNAL_KILL_COOLDOWN_SEC = 24 * 3600
+
+# How long to skip rebuilds after a pip install ran out of time. On a
+# connection too slow to fetch the SDK wheel inside the limit, every attempt
+# downloads most of the wheel and throws it away, and attempts come at every
+# SessionStart and every 5 minutes from the tool hooks. Shorter than the
+# signal-kill window because a slow or stalled connection is often temporary.
+# See #6979.
+PIP_TIMEOUT_COOLDOWN_SEC = 3600
 
 
 # Phase + err-kind integer encoding for sdk_bootstrap_phase / sdk_bootstrap_err.
@@ -241,23 +251,37 @@ def _is_signal_kill(returncode) -> bool:
     return returncode < 0 or returncode in (134, 137, 139)
 
 
-def _cooldown_remaining(state_dir) -> float:
-    """Seconds left in the signal-kill cooldown (0 if none/expired). Reads the
-    marker's mtime; a missing/unreadable marker means not in cooldown."""
-    marker = Path(state_dir) / "agent-sdk-venv.cooldown"
+_SIGNAL_KILL_MARKER = "agent-sdk-venv.cooldown"
+_PIP_TIMEOUT_MARKER = "agent-sdk-venv.timeout"
+
+
+def _marker_remaining(state_dir, name, window) -> float:
+    """Seconds left of the `window` that started at the marker's mtime; a
+    missing/unreadable marker means not in cooldown."""
     try:
-        age = time.time() - marker.stat().st_mtime
+        age = time.time() - (Path(state_dir) / name).stat().st_mtime
     except OSError:
         return 0.0
-    return max(0.0, SIGNAL_KILL_COOLDOWN_SEC - age)
+    # A marker stamped in the future (clock set back since) counts as fresh.
+    return min(float(window), max(0.0, window - age))
 
 
-def _write_cooldown(state_dir) -> None:
-    """Start/refresh the signal-kill cooldown so we stop re-attempting a build
-    that keeps getting killed every session. Best-effort."""
+def _cooldown_remaining(state_dir) -> float:
+    """Seconds left in the signal-kill cooldown (0 if none/expired)."""
+    return _marker_remaining(state_dir, _SIGNAL_KILL_MARKER, SIGNAL_KILL_COOLDOWN_SEC)
+
+
+def _timeout_cooldown_remaining(state_dir) -> float:
+    """Seconds left in the pip-timeout cooldown (0 if none/expired)."""
+    return _marker_remaining(state_dir, _PIP_TIMEOUT_MARKER, PIP_TIMEOUT_COOLDOWN_SEC)
+
+
+def _write_cooldown(state_dir, name=_SIGNAL_KILL_MARKER) -> None:
+    """Start/refresh a cooldown (the signal-kill one unless named) so we stop
+    re-attempting a build that keeps failing the same way. Best-effort."""
     try:
         Path(state_dir).mkdir(parents=True, exist_ok=True)
-        (Path(state_dir) / "agent-sdk-venv.cooldown").write_text(
+        (Path(state_dir) / name).write_text(
             time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
     except OSError:
         pass
@@ -429,6 +453,8 @@ _SDK_IMPORT_PROBE = (
 
 # Set by main() when the venv's probe exited with _PROBE_EMPTIED.
 _venv_was_emptied = False
+# Set by main() when it skipped the build for the pip-timeout cooldown.
+_skipped_for_pip_timeout = False
 
 
 def _target_dir(state_dir) -> Path:
@@ -541,6 +567,7 @@ def _build_via_target(state_dir) -> tuple[int, str, str]:
             return BUILD_FAILED, "pip_target", f"signal_killed:{e.returncode}"
         return BUILD_FAILED, "pip_target", _pip_err_from_stderr(e.stderr)
     except subprocess.TimeoutExpired:
+        _write_cooldown(state_dir, _PIP_TIMEOUT_MARKER)
         return BUILD_FAILED, "pip_target", "subprocess_timeout"
     except Exception as e:
         errno = getattr(e, "errno", None)
@@ -601,10 +628,16 @@ def _install_context_metrics(outcome, state_dir) -> dict:
     dependencies do not load there. See #5706.
 
     sdk_venv_emptied: the venv's SDK package directory had lost its files
-    and this run went on to rebuild it, whatever the outcome. See #6612."""
+    and this run went on to rebuild it, whatever the outcome. See #6612.
+
+    sdk_timeout_cooldown: this run skipped the build (SKIP_COOLDOWN) because
+    a pip install ran out of time, not because one was signal-killed. See
+    #6979."""
     out = {}
     if _venv_was_emptied:
         out["sdk_venv_emptied"] = 1
+    if _skipped_for_pip_timeout:
+        out["sdk_timeout_cooldown"] = 1
     if outcome not in (NOOP_VENV, BUILT, BUILT_TARGET, NOOP_TARGET):
         return out
     try:
@@ -650,8 +683,9 @@ def main() -> tuple[int, str, str]:
     err_phase / err_kind are non-empty only on BUILD_FAILED — they let
     telemetry split bootstrap failures by root cause.
     """
-    global _venv_was_emptied
+    global _venv_was_emptied, _skipped_for_pip_timeout
     _venv_was_emptied = False
+    _skipped_for_pip_timeout = False
     # Before any early return: nothing else ever clears the state dir.
     _sweep_pip_temp(_resolve_state_dir())
     # The SDK only serves the LLM reviews. With those switched off, or the
@@ -734,6 +768,10 @@ def main() -> tuple[int, str, str]:
     # only after all no-op probes, so a machine that later gets the SDK via
     # system/venv/target still short-circuits above.
     if _cooldown_remaining(state_dir) > 0:
+        return SKIP_COOLDOWN, "", ""
+    # Likewise after a pip install that ran out of time, for a shorter while.
+    if _timeout_cooldown_remaining(state_dir) > 0:
+        _skipped_for_pip_timeout = True
         return SKIP_COOLDOWN, "", ""
 
     err_phase = ""
@@ -873,6 +911,10 @@ def main() -> tuple[int, str, str]:
             return _build_via_target(state_dir)
         return BUILD_FAILED, err_phase, err_kind
     except subprocess.TimeoutExpired:
+        # Only the download is known to repeat; a slow `python -m venv` is
+        # more likely a busy machine, and the next attempt may be quicker.
+        if err_phase == "pip":
+            _write_cooldown(state_dir, _PIP_TIMEOUT_MARKER)
         return BUILD_FAILED, err_phase, "subprocess_timeout"
     except Exception as e:
         # Embed errno for OSError-family exceptions ("exc:OSError:28") so
@@ -906,8 +948,9 @@ def _maybe_emit_user_notice(outcome: int, pv: int) -> str | None:
 
     Currently only HOOK_PY_INCOMPATIBLE qualifies. BUILD_FAILED is
     intentionally excluded — it covers transient causes (network failure,
-    pip registry hiccup, in-flight rebuild) where the next session may
-    succeed and a permanent notice would mislead.
+    pip registry hiccup, in-flight rebuild, a download that ran out of
+    time) where a later session may succeed and a permanent notice would
+    mislead.
     """
     if outcome != HOOK_PY_INCOMPATIBLE:
         return None
