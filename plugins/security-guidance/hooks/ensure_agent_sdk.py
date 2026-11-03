@@ -455,6 +455,63 @@ def _target_sdk_importable(state_dir) -> bool:
         return False
 
 
+# pip keeps every wheel it downloads in a `pip-unpack-*` folder under the temp
+# dir and removes it only when it exits normally. An install killed at the
+# timeout (or by the OOM killer) left those folders in the system temp dir,
+# one attempt after another. See #6979. So pip gets a temp folder of its own
+# under the state dir: removed when the attempt ends, however it ends, and
+# swept on a later run when the bootstrap itself was killed first.
+_PIP_TIMEOUT_SEC = 120
+# Older than any install can be: the folder of a bootstrap that was killed.
+_PIP_TEMP_STALE_SEC = 15 * 60
+
+
+def _pip_temp_root(state_dir) -> Path:
+    return Path(state_dir) / "pip-tmp"
+
+
+def _sweep_pip_temp(state_dir) -> None:
+    """Remove pip temp folders left by a bootstrap that was killed before it
+    could remove its own. Best-effort; a folder still in use is too young."""
+    try:
+        entries = list(_pip_temp_root(state_dir).iterdir())
+    except OSError:
+        return  # the usual case: nothing was ever left
+    import shutil
+    now = time.time()
+    for entry in entries:
+        try:
+            if now - entry.stat().st_mtime > _PIP_TEMP_STALE_SEC:
+                shutil.rmtree(entry, ignore_errors=True)
+        except OSError:
+            pass
+
+
+def _run_pip_install(cmd, state_dir):
+    """Run a `pip install` command under the timeout, with its temp files in
+    a folder of ours. Raises what subprocess.run(check=True) raises. Falls
+    back to the inherited temp dir when the folder can't be made."""
+    import shutil
+    import tempfile
+    tmp = env = None
+    try:
+        root = _pip_temp_root(state_dir)
+        root.mkdir(parents=True, exist_ok=True)
+        tmp = tempfile.mkdtemp(dir=root)
+        # tempfile reads TMPDIR, TEMP, TMP in that order on every platform.
+        env = {**os.environ, "TMPDIR": tmp, "TEMP": tmp, "TMP": tmp}
+    except OSError:
+        pass
+    try:
+        return subprocess.run(
+            cmd, capture_output=True, timeout=_PIP_TIMEOUT_SEC, check=True,
+            cwd=_spawn_cwd(), env=env,
+        )
+    finally:
+        if tmp is not None:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
 def _build_via_target(state_dir) -> tuple[int, str, str]:
     """Fallback install when `python -m venv` can't bootstrap pip (ensurepip
     missing — Debian python3-venv absent, or a python.org/pyenv build without
@@ -468,12 +525,12 @@ def _build_via_target(state_dir) -> tuple[int, str, str]:
     preference (ARM64 Windows cryptography)."""
     target = _target_dir(state_dir)
     try:
-        subprocess.run(
+        _run_pip_install(
             [sys.executable, "-m", "pip", "install",
              "--target", str(target), "--upgrade",
              "--disable-pip-version-check", "--prefer-binary", "--no-cache-dir",
              "claude-agent-sdk"],
-            capture_output=True, timeout=120, check=True, cwd=_spawn_cwd(),
+            state_dir,
         )
         return BUILT_TARGET, "", ""
     except subprocess.CalledProcessError as e:
@@ -595,6 +652,8 @@ def main() -> tuple[int, str, str]:
     """
     global _venv_was_emptied
     _venv_was_emptied = False
+    # Before any early return: nothing else ever clears the state dir.
+    _sweep_pip_temp(_resolve_state_dir())
     # The SDK only serves the LLM reviews. With those switched off, or the
     # whole plugin (SECURITY_GUIDANCE_DISABLE=1), a venv of a few hundred MB
     # would be built for code that never runs, and the notice below would
@@ -712,11 +771,11 @@ def main() -> tuple[int, str, str]:
         # --no-cache-dir trims pip's peak memory (no cache read/write/unpack
         # buffering) — helps marginal low-memory machines get under the OOM
         # threshold that kills the dominant Linux builds (CCR repro).
-        subprocess.run(
+        _run_pip_install(
             [str(venv_py), "-m", "pip", "install", "--quiet",
              "--disable-pip-version-check", "--prefer-binary", "--no-cache-dir",
              "claude-agent-sdk"],
-            capture_output=True, timeout=120, check=True, cwd=_spawn_cwd(),
+            state_dir,
         )
         return BUILT, "", ""
     except subprocess.CalledProcessError as e:
