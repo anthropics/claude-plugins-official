@@ -52,6 +52,22 @@
       "homepage": "https://github.com/adobe/skills/tree/main/plugins/creative-cloud/adobe-for-creativity"
     },
     {
+      "name": "adspirer-advertising-agent",
+      "displayName": "Adspirer Advertising Agent",
+      "description": "Run Google Ads, Meta (Facebook and Instagram) Ads, TikTok Ads, LinkedIn Ads, Microsoft Advertising (Bing), Amazon Ads, Walmart Connect and ChatGPT Ads from Claude through Adspirer's hosted MCP server. Research keywords with live CPC and search volume, launch and optimize PPC, paid social and retail media campaigns, track ROAS, ACoS, CPA, CTR and cost per lead, find wasted spend, audit conversion tracking, and write on-brand ad copy. It can also read Google Analytics 4, Search Console and Tag Manager when you connect them, check tags in an ads manager you sign in to yourself (read-only), and draft email or Slack digests that are sent only after you approve each one. New campaigns are created paused, and every spend change needs your approval.",
+      "author": {
+        "name": "Adspirer",
+        "email": "support@adspirer.com"
+      },
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/Adspirer/adspirer-claude-plugin.git",
+        "sha": "e33106c5665cc95092f2d3113f345d089e50b385"
+      },
+      "homepage": "https://www.adspirer.com"
+    },
+    {
       "name": "agent-sdk-dev",
       "description": "Development kit for working with the Claude Agent SDK",
       "author": {
