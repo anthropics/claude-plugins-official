@@ -1,5 +1,12 @@
 # Claude Code Plugins Directory
 
+> [!WARNING]
+> **This marketplace is deprecated.** Plugins are now listed and served through the [Claude plugin directory](https://claude.ai/plugins), which you can also browse at [claude.com/marketplace](https://claude.com/marketplace).
+>
+> - **Submit or update a plugin:** use [claude.ai/directory/manage](https://claude.ai/directory/manage). Pull requests that add or update marketplace entries here are no longer reviewed.
+> - **Install a plugin:** use the directory. The entries in this repository's `marketplace.json` remain in place, but entries that point to other repositories stay at the versions they were last pinned to.
+> - **Source code:** some plugins in the directory are still built from the source in this repository, so it stays available.
+
 A curated directory of high-quality plugins for Claude Code.
 
 > **⚠️ Important:** Make sure you trust a plugin before installing, updating, or using it. Anthropic does not control what MCP servers, files, or other software are included in plugins and cannot verify that they will work as intended or that they won't change. See each plugin's homepage for more information.
@@ -11,11 +18,7 @@ A curated directory of high-quality plugins for Claude Code.
 
 ## Installation
 
-Plugins can be installed directly from this marketplace via Claude Code's plugin system.
-
-To install, run `/plugin install {plugin-name}@claude-plugins-official`
-
-or browse for the plugin in `/plugin > Discover`
+Install plugins from the [Claude plugin directory](https://claude.ai/plugins). This marketplace is deprecated, and installs from it (`/plugin install {plugin-name}@claude-plugins-official`) don't pick up new versions of plugins that live in other repositories.
 
 ## Contributing
 
@@ -25,7 +28,7 @@ Internal plugins are developed by Anthropic team members. See `/plugins/example-
 
 ### External Plugins
 
-Third-party partners can submit plugins for inclusion in the marketplace. External plugins must meet quality and security standards for approval. To submit a new plugin, use the [plugin directory submission form](https://clau.de/plugin-directory-submission).
+Third-party plugins are no longer added to this repository. To list a plugin, submit it at [claude.ai/directory/manage](https://claude.ai/directory/manage). Plugins must meet quality and security standards for approval.
 
 ## Plugin Structure
 
