@@ -1266,9 +1266,9 @@ def is_commit_review_enabled():
 
 COMMIT_REVIEW_ENABLED = is_commit_review_enabled()
 
-# Seconds from the start of a commit or push review's race after which
-# neither side waits for the other any longer; well inside Claude Code's
-# 10-minute hook timeout.
+# Seconds into a commit or push review after which neither side of its race
+# waits for the other any longer; well inside Claude Code's 10-minute hook
+# timeout. Time the hook spent before the race counts.
 _RACE_MAX_WAIT_S = 480
 # Seconds after which the review ends even if a side is still waiting on a
 # request that does not answer, with time left to tell the session before
@@ -1282,6 +1282,7 @@ def _agentic_review_with_race(
     diff_files: List[Tuple[str, str]],
     rel_touched: List[str],
     previous_findings: List[Dict[str, Any]],
+    spent_s: float = 0.0,
 ) -> Tuple[Optional[str], List[Dict[str, Any]], Dict[str, Any]]:
     """Race the agentic reviewer against a delayed single-shot fallback.
 
@@ -1292,6 +1293,9 @@ def _agentic_review_with_race(
     fallback started, the fallback's result (or, past the deadline, no
     verdict) is returned so the caller never starts another review. If agentic
     finishes before the delay, the fallback never runs.
+
+    `spent_s`, the time the hook already waited, comes off the delay and both
+    limits: the hook's time limit does not restart with the race.
 
     Metrics added:
       race_winner    : 1 = agentic won, 2 = fallback won (CC accepts only
@@ -1310,13 +1314,15 @@ def _agentic_review_with_race(
     if os.environ.get("SG_AGENTIC_NO_RACE") == "1":
         return agentic_review(repo_root, diff_files, rel_touched)
 
-    delay_s = int(os.environ.get("SG_AGENTIC_RACE_DELAY_S", "180"))
+    delay_s = max(0, int(os.environ.get("SG_AGENTIC_RACE_DELAY_S", "180")) - int(spent_s))
+    if spent_s:
+        debug_log(f"Review race: {spent_s:.0f}s already spent, fallback starts after {delay_s}s")
     q: "_queue.Queue[Tuple[str, Any]]" = _queue.Queue(maxsize=1)
     fallback_started = _th.Event()
     fallback_done = _th.Event()
     agentic_done = _th.Event()
     fallback_result: Dict[str, Any] = {}
-    deadline = _t.monotonic() + _RACE_MAX_WAIT_S
+    deadline = _t.monotonic() + max(0.0, _RACE_MAX_WAIT_S - spent_s)
     timed_out = (None, [], {"agentic": False, "review_failed": True, "api_error": _RACE_TIMED_OUT})
 
     def _agentic() -> None:
@@ -1362,7 +1368,7 @@ def _agentic_review_with_race(
     _th.Thread(target=_fallback, daemon=True).start()
 
     try:
-        winner, (g, v, m) = q.get(timeout=_RACE_END_S)
+        winner, (g, v, m) = q.get(timeout=max(0.0, _RACE_END_S - spent_s))
     except _queue.Empty:
         debug_log("review race: nothing returned in time")
         winner, (g, v, m) = "fallback", timed_out
@@ -2294,7 +2300,7 @@ def handle_push_sweep_posttooluse(input_data):
     rel_touched = [fp for fp, _ in diff_files]
     if _agentic_commit_review_enabled():
         concrete_guidance, vulns, agentic_metrics = _agentic_review_with_race(
-            repo_root, diff_files, rel_touched, previous_findings
+            repo_root, diff_files, rel_touched, previous_findings, spent_s=_waited,
         )
         if agentic_metrics.get("child_stderr"):
             _TAIL_METRICS["child_stderr"] = agentic_metrics["child_stderr"]
