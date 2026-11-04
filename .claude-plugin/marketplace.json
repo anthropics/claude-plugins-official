@@ -2015,7 +2015,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/jfrog/claude-plugin.git",
-        "sha": "9b1f8f6c883522a87502e5155abd593a8befe3c5"
+        "sha": "b95113795a5e9d0965ffb83d7dead0112abc97d8"
       },
       "homepage": "https://jfrog.com"
     },
