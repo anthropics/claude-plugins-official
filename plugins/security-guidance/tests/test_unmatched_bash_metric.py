@@ -4,6 +4,7 @@ import json
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -106,12 +107,35 @@ def test_text_check_on_known_strings():
         assert hook._shell_precheck_passes(_raw(command)) is passes, command
 
 
-@pytest.mark.skipif(not shutil.which("bash"), reason="needs bash")
+def _working_bash():
+    """A bash that runs a script. On Windows that is the one shipped with
+    git: the `bash` on PATH there can be the WSL launcher, which is not one."""
+    found = []
+    git = shutil.which("git")
+    if sys.platform == "win32" and git:
+        root = Path(git).resolve().parent.parent
+        found += [root / "bin" / "bash.exe", root / "usr" / "bin" / "bash.exe"]
+    if shutil.which("bash"):
+        found.append(Path(shutil.which("bash")))
+    for bash in found:
+        try:
+            r = subprocess.run([str(bash), "-c", "echo ok"], capture_output=True, timeout=30)
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if r.returncode == 0 and r.stdout.strip() == b"ok":
+            return str(bash)
+    return None
+
+
 def test_text_check_agrees_with_the_shell_pattern():
+    bash = _working_bash()
+    if not bash:
+        pytest.skip("needs a working bash")
     script = f'input=$(cat); case "$input" in {SHELL_PATTERN}) echo pass ;; *) echo skip ;; esac'
     for command, _ in CASES:
         raw = _raw(command)
-        r = subprocess.run(["bash", "-c", script], input=raw.encode(), capture_output=True, timeout=30)
+        r = subprocess.run([bash, "-c", script], input=raw.encode(), capture_output=True, timeout=30)
+        assert r.stdout.strip() in (b"pass", b"skip"), r.stderr
         assert (r.stdout.strip() == b"pass") is hook._shell_precheck_passes(raw), command
 
 
