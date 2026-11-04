@@ -8,7 +8,7 @@ name: security-guidance platform tests
 on:
   push:
     branches:
-      - mhegazy/sg-platform-tests
+      - mhegazy/sg-platform-6919
 
 permissions:
   contents: read
@@ -34,7 +34,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [windows-latest, windows-11-arm, macos-latest]
-        ref: [main, '6965']
+        ref: [main, '6919']
     defaults:
       run:
         shell: bash
