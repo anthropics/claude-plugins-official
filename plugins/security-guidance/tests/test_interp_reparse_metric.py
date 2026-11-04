@@ -141,10 +141,11 @@ def test_unreadable_folder_is_skipped():
 
 
 def test_each_folder_is_looked_at_once_and_only_up_to_the_link():
-    prefix = os.path.join(os.sep, "a", "b", "c")
+    # abspath: on Windows the metric adds the current drive.
+    prefix = os.path.abspath(os.path.join(os.sep, "a", "b", "c"))
     calls = []
     measure(exe(prefix), prefix, calls=calls)
-    assert sorted(calls) == sorted({exe(prefix), prefix, os.path.dirname(prefix), os.path.join(os.sep, "a")})
+    assert sorted(calls) == sorted({exe(prefix), prefix, os.path.dirname(prefix), os.path.dirname(os.path.dirname(prefix))})
     calls.clear()
     measure(exe(prefix), prefix, {prefix: SYMLINK}, calls=calls)
     assert calls == [exe(prefix), prefix]
