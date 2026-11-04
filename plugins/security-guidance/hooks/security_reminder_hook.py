@@ -88,7 +88,7 @@ from _base import (  # noqa: E402,F401
     _USAGE_CONTEXT, _log_usage,
     launcher_probe_metrics, state_dir as _resolve_state_dir,
     write_hook_output as _write_hook_output, portable_output,
-    llm_reviews_switched_off, agent_sdk_installed,
+    llm_reviews_switched_off, agent_sdk_installed, make_state_dir,
 )
 import extensibility  # noqa: E402
 from patterns import (  # noqa: E402,F401
@@ -422,7 +422,7 @@ def _no_credentials_notice(file_path, session_id):
             pass
         if not _git_toplevel(os.path.dirname(os.path.abspath(file_path))):
             return None
-        os.makedirs(os.path.dirname(marker), exist_ok=True)
+        make_state_dir(os.path.dirname(marker))
         with open(marker, "w"):
             pass
         # In a session signed in to a Claude apps gateway the reviews do run,
@@ -2877,7 +2877,7 @@ def _maybe_bootstrap_agent_sdk_async():
                 return
         except OSError:
             pass
-        os.makedirs(os.path.dirname(_SDK_BOOTSTRAP_THROTTLE), exist_ok=True)
+        make_state_dir(os.path.dirname(_SDK_BOOTSTRAP_THROTTLE))
         # Touch the throttle BEFORE spawning so a burst of PostToolUse
         # fires in the same second don't each spawn a subprocess.
         open(_SDK_BOOTSTRAP_THROTTLE, "w").close()

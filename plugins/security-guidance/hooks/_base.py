@@ -9,6 +9,7 @@ import glob
 import json
 import os
 import re
+import stat
 import threading
 from datetime import datetime
 
@@ -40,6 +41,26 @@ def state_dir():
     else:
         d = "~/.claude/security"
     return os.path.abspath(os.path.expanduser(d))
+
+
+def make_state_dir(d=None):
+    """Create the state dir (or `d`) with access for its user alone, and
+    narrow the default one to that if it is already there, so a umask such as
+    002 does not leave the reviewer's venv, logs and session state open to the
+    rest of a shared group. A folder named by SECURITY_WARNINGS_STATE_DIR
+    that already exists is the user's to set. Raises OSError like os.makedirs."""
+    if d is None:
+        d = state_dir()
+    os.makedirs(d, mode=0o700, exist_ok=True)
+    if (os.name != "nt" and not os.environ.get("SECURITY_WARNINGS_STATE_DIR", "").strip()
+            and os.path.abspath(d) == state_dir()):
+        try:
+            st = os.lstat(d)
+            if stat.S_ISDIR(st.st_mode) and st.st_uid == os.getuid() and st.st_mode & 0o077:
+                os.chmod(d, 0o700)
+        except OSError:
+            pass
+    return d
 
 
 def llm_reviews_switched_off():
