@@ -318,8 +318,9 @@ def test_untracked_file_name_is_not_read_as_a_pattern(outer, git_env):
     assert name in copy and "other.py" not in copy
 
 
-def test_gitlink_without_a_repository_stays_in_the_copy(outer, marker, git_env):
-    """A submodule that is not checked out: an empty directory."""
+def test_gitlink_without_a_repository_is_removed_from_the_copy(outer, marker, git_env):
+    """A submodule that is not checked out: an empty directory. Its entry goes
+    too, since a `.git` can appear there before git runs."""
     nested = _record_nested_repo(outer, marker)
     # Moved, not deleted: git's object files are read-only on Windows.
     nested.rename(outer.parent / "moved-away")
@@ -330,9 +331,16 @@ def test_gitlink_without_a_repository_stays_in_the_copy(outer, marker, git_env):
         copy = _index_entries(outer, env)
     baseline = diffstate.capture_git_baseline(str(outer))
 
-    assert "160000" in copy
-    assert baseline and baseline != git(outer, "rev-parse", "HEAD").strip()
-    assert diffstate.last_baseline_fail == 0
+    assert "160000" not in copy
+    assert "160000" in git(outer, "ls-files", "-s")
+    head = git(outer, "rev-parse", "HEAD").strip()
+    version = tuple(int(n) for n in git(outer, "--version").split()[2].split(".")[:2])
+    if version >= (2, 34):
+        assert baseline and baseline != head
+        assert diffstate.last_baseline_fail == 0
+    else:  # `git stash create` fails on the empty directory
+        assert baseline == head
+        assert diffstate.last_baseline_fail == 1
 
 
 def test_gitlinks_listed_by_a_git_without_sparse_listing(outer, marker, git_env, monkeypatch):
