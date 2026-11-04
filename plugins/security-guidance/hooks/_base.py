@@ -212,7 +212,7 @@ _USAGE = {
     # reported it manually.
     "http_err_last": 0,    # most recent HTTP error code this invocation
     "http_err_count": 0,   # total HTTP errors (4xx + 5xx + network)
-    "net_err": 0,          # why the last call got no HTTP response, 0 if it got one
+    "net_err": 0,          # why the deciding call got no HTTP response, 0 if it got one
     # For the usage log line only: model ids as recorded (the requested alias
     # on the Agent SDK path), and whether any call had no price-table entry.
     "models": [],
@@ -308,7 +308,9 @@ def _record_net_error(code):
     raises outside its own error type (a default TLS context that cannot be
     built, a connection closed before the reply) has no `api_error` at all.
     Emitted as `net_err` on the row of a hook whose last call failed this
-    way; a later call clears it."""
+    way; a later call clears it, and so does a call that gets through beside
+    it (a second probe, the other leg of a dual review, the agentic run that
+    wins a race)."""
     try:
         c = int(code)
     except (TypeError, ValueError):
