@@ -27,8 +27,39 @@ import time
 from _base import debug_log
 
 
+def _git_program(windows=os.name == "nt"):
+    """How to start git. On Windows a bare name is looked up in the process's
+    working directory before PATH, and the hooks run in the project, so a
+    `git.exe` there would start in place of the installed one. Name the first
+    git.exe on PATH instead, leaving out relative entries, the working
+    directory, and folders inside the project (unless the project holds the
+    home folder, and with it the user's own tools). With none, a path that
+    does not exist: git is reported missing, as it would be anywhere else."""
+    if not windows:
+        return "git"
+    def norm(p):
+        return os.path.normcase(os.path.normpath(p))
+    try:
+        cwd = norm(os.getcwd())
+    except OSError:
+        cwd = ""
+    home = norm(os.path.expanduser("~")) + os.sep
+    roots = [norm(r) for r in (cwd, os.environ.get("CLAUDE_PROJECT_DIR")) if r]
+    roots = [r.rstrip(os.sep) + os.sep for r in roots if not home.startswith(r.rstrip(os.sep) + os.sep)]
+    for d in os.environ.get("PATH", "").split(os.pathsep):
+        d = d.strip().strip('"')
+        if not d or not os.path.isabs(d) or norm(d) == cwd:
+            continue
+        if any((norm(d) + os.sep).startswith(r) for r in roots):
+            continue
+        path = os.path.join(d, "git.exe")
+        if os.path.isfile(path):
+            return path
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "git.exe")
+
+
 GIT_CMD = [
-    "git",
+    _git_program(),
     "-c", "core.fsmonitor=false",
     "-c", "core.hooksPath=/dev/null",
     # core.quotePath=false: emit raw UTF-8 in path-emitting commands instead
