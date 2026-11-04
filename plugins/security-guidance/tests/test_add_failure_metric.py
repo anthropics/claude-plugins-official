@@ -14,7 +14,7 @@ import pytest
 
 from conftest import (
     GIT_ENV, STUB_VULN, VULN_PY, edit_payload, git, make_repo, metrics_of, run_hook,
-    stop_payload, ups_payload,
+    stop_payload, ups_payload, write_cli,
 )
 
 import gitutil
@@ -112,16 +112,17 @@ class TestPathspecSettings:
 
 
 @pytest.mark.skipif(os.name == "nt", reason="the stand-in git is a shell script")
-def _env_refusing_add(tmp_path, hook_env, unless="false"):
-    """`hook_env` with a git that fails `add -N` unless the shell test holds."""
+def _env_refusing_add(tmp_path, hook_env, unless_set=None):
+    """`hook_env` with a git that fails `add -N`, unless `unless_set` is in its
+    environment."""
     d = tmp_path / "shim"
     d.mkdir()
-    real = shutil.which("git")
-    shim = d / "git"
-    shim.write_text(f'#!/bin/sh\n{unless} || for a in "$@"; do\n'
-                    '  [ "$a" = --intent-to-add ] && { echo "fatal: refused" >&2; exit 128; }\n'
-                    f'done\nexec "{real}" "$@"\n')
-    shim.chmod(0o755)
+    write_cli(d, "git", (
+        "import os, subprocess, sys\n"
+        f"if '--intent-to-add' in sys.argv and not os.environ.get({unless_set!r}):\n"
+        "    sys.stderr.write('fatal: refused\\n')\n"
+        "    sys.exit(128)\n"
+        f"sys.exit(subprocess.call([{shutil.which('git')!r}, *sys.argv[1:]]))\n"))
     return {**hook_env, "PATH": f"{d}{os.pathsep}{hook_env['PATH']}"}
 
 
@@ -296,7 +297,7 @@ class TestNoticeForLeftOutFiles:
         assert stub_api.calls
 
     def test_retry_that_works_says_nothing(self, repo, tmp_path, hook_env, stub_api):
-        env = _env_refusing_add(tmp_path, hook_env, unless='[ -n "$GIT_OBJECT_DIRECTORY" ]')
+        env = _env_refusing_add(tmp_path, hook_env, unless_set="GIT_OBJECT_DIRECTORY")
         run_hook(ups_payload(repo), env)
         (repo / "handlers.py").write_text(VULN_PY)
         code, out, err = run_hook(stop_payload(repo), env)
