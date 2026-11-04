@@ -243,7 +243,8 @@ class TestWhatTheSdkIsTold:
         assert self.told(sdk) == {None}
 
 
-def test_empty_name_is_no_name_off_windows():
+def test_empty_name_is_no_name_off_windows(monkeypatch):
+    monkeypatch.setattr(llm, "_WINDOWS", False)
     assert llm._cli_for_sdk("") is None
 
 
