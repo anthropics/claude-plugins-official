@@ -324,6 +324,10 @@ def emit_metrics(
     # names on PATH were launcher aliases that cannot read the plugin files.
     if os.environ.get("SG_LAUNCHER_FALLBACK") == "1":
         head["launcher_fallback"] = 1
+    if _precheck_miss:
+        # Up front: this is the key that says a text check would have lost a
+        # review, so it must not be the one cut by the key cap.
+        head["precheck_miss"] = 1
     usage = _usage_metrics()
     head.update(usage)
     # Why the last call got no HTTP response (api_error -1 says only that it
@@ -1055,6 +1059,47 @@ try:
     INFLIGHT_WAIT_S = int(os.environ.get("SG_INFLIGHT_WAIT_S", "") or 240)
 except ValueError:
     INFLIGHT_WAIT_S = 240
+
+# Word pairs a shell `case` pattern (`*git*commit*|*git*push*|...`) would look
+# for in the raw hook input: wider than _GIT_COMMIT_RE / _GIT_PUSH_RE, so a
+# command those match always contains one of these pairs in this order.
+_SHELL_PRECHECK_PAIRS = (
+    ("git", "commit"), ("git", "push"),
+    ("gt", "create"), ("gt", "modify"), ("gt", "submit"),
+)
+# One in this many unmatched Bash calls reports, to keep the row count down.
+_UNMATCHED_BASH_SAMPLE = 10
+# Set when a command that is reviewed would not have passed the text check.
+_precheck_miss = False
+
+
+def _shell_precheck_passes(raw):
+    """True when `raw` holds one of _SHELL_PRECHECK_PAIRS, first word first.
+
+    Measurement only. Tells how many hook starts that match no commit or push
+    a text check in the launcher could avoid (`precheck_skip`), and whether
+    that check would ever drop a command that is reviewed (`precheck_miss`).
+    """
+    for first, second in _SHELL_PRECHECK_PAIRS:
+        at = raw.find(first)
+        if at != -1 and raw.find(second, at + len(first)) != -1:
+            return True
+    return False
+
+
+def _unmatched_bash_sampled(input_data):
+    """Pick the same one call in _UNMATCHED_BASH_SAMPLE in every start of it.
+
+    One Bash call can start this hook once per hooks.json entry, so the choice
+    is made from the call's id: all its starts report or none do. A call with
+    no id is not reported.
+    """
+    tool_use_id = input_data.get("tool_use_id")
+    if not isinstance(tool_use_id, str) or not tool_use_id:
+        return False
+    digest = hashlib.sha256(tool_use_id.encode("utf-8", "replace")).digest()
+    return int.from_bytes(digest[:4], "big") % _UNMATCHED_BASH_SAMPLE == 0
+
 
 def _claim_bash_hook_once(input_data):
     """De-dupe across hooks.json `if` matchers firing for the same Bash call.
@@ -2977,12 +3022,27 @@ def main():
     if tool_name == "Bash" and hook_event_name == "PostToolUse":
         cmd = (input_data.get("tool_input") or {}).get("command", "") or ""
         if not (_GIT_COMMIT_RE.search(cmd) or _GIT_PUSH_RE.search(cmd)):
+            # Measurement only: this start matched no commit or push. Count
+            # it, and say whether a plain text check could have told so before
+            # Python. Both values carry the sample weight, so they sum to
+            # estimates of all such starts.
+            if _unmatched_bash_sampled(input_data) and not portable_output():
+                skip = 0 if _shell_precheck_passes(raw_input) else _UNMATCHED_BASH_SAMPLE
+                emit_metrics({"bash_no_match": _UNMATCHED_BASH_SAMPLE, "precheck_skip": skip})
             return
+        if not _shell_precheck_passes(raw_input):
+            # The text check would have dropped a command that is reviewed.
+            # Rides on whichever row this start emits; nothing is skipped.
+            global _precheck_miss
+            _precheck_miss = True
         if not _claim_bash_hook_once(input_data):
             # Another spawn for this same tool_use_id already claimed the
             # work (compound matched multiple `if` configs). Emit a single
             # metric so telemetry can count how often the de-dupe kicks in.
-            _write_hook_output({"metrics": {"bash_hook_dedup": True}})
+            dedup = {"bash_hook_dedup": True}
+            if _precheck_miss and not portable_output():
+                dedup = {"pv": _PV, "precheck_miss": 1, **dedup}
+            _write_hook_output({"metrics": dedup})
             sys.exit(0)
         if _GIT_COMMIT_RE.search(cmd):
             handle_commit_review_posttooluse(input_data)
