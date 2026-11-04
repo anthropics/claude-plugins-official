@@ -434,3 +434,61 @@ def test_windows_lock_is_off_where_the_call_is_missing(monkeypatch):
     monkeypatch.setattr(diffstate, "_win_lock_file_ex", None)
     with pytest.raises(OSError):
         diffstate._win_lock_nb(7, exclusive=True)
+
+
+_SHORT_LIMIT = (
+    "import sys\n"
+    "sys.path.insert(0, sys.argv[1])\n"
+    "import security_reminder_hook as hook\n"
+    "hook._RACE_END_S = float(sys.argv[2])\n"
+    "hook.main()\n"
+)
+
+
+def _run_with_limit(payload, env, limit_s):
+    started = time.monotonic()
+    r = subprocess.run(
+        [sys.executable, "-c", _SHORT_LIMIT, _HOOKS_DIR, str(limit_s)],
+        input=json.dumps(payload), capture_output=True, text=True, env=env, timeout=30)
+    return time.monotonic() - started, r
+
+
+def test_single_shot_after_a_fast_agentic_failure_ends_in_time(
+        tmp_path, hook_env, failing_inner_cli, stub_api):
+    """The agentic run fails before the fallback starts, and the single-shot
+    review that follows hangs: the session still hears before the hook limit."""
+    pytest.importorskip("claude_agent_sdk")
+    repo, _ = _repo_with_remote(tmp_path)
+    _, commit_out = commit_file(repo, "handlers.py", "def h(x):\n    return x\n")
+    stub_api.delay = 6
+    env = {**hook_env, "SG_AGENTIC_COMMIT_REVIEW": "1", "SG_AGENTIC_CLI_PATH": failing_inner_cli,
+           "SG_AGENTIC_RACE_DELAY_S": "60"}
+    took, r = _run_with_limit(bash_payload(repo, "git commit -m change", commit_out), env, 4)
+    assert 4 <= took < 10, r.stderr
+    assert r.returncode == 2 and "did not finish in time" in r.stderr
+    assert metrics_of(r.stdout)["agentic_fallback"] == 2
+
+
+def test_single_shot_after_a_push_wait_ends_in_time(
+        tmp_path, hook_env, failing_inner_cli, stub_api):
+    pytest.importorskip("claude_agent_sdk")
+    repo, remote = _repo_with_remote(tmp_path)
+    _, sha, _, push_out = _commit_and_push(repo, remote)
+    stub_api.delay = 10
+    env = {**hook_env, "SG_AGENTIC_COMMIT_REVIEW": "1", "SG_AGENTIC_CLI_PATH": failing_inner_cli,
+           "SG_INFLIGHT_WAIT_S": "4", "SG_AGENTIC_RACE_DELAY_S": "60"}
+    with _held_by_another_review(repo, sha):
+        took, r = _run_with_limit(bash_payload(repo, "git push origin main", push_out), env, 8)
+    assert 8 <= took < 11.5, r.stderr  # 12 s if the wait did not count
+    assert r.returncode == 2 and "did not finish in time" in r.stderr
+    assert metrics_of(r.stdout)["inflight_wait_s"] >= 4
+
+
+def test_single_shot_with_the_agentic_review_off_ends_in_time(tmp_path, hook_env, stub_api):
+    repo, _ = _repo_with_remote(tmp_path)
+    _, commit_out = commit_file(repo, "handlers.py", "def h(x):\n    return x\n")
+    stub_api.delay = 6
+    env = {**hook_env, "SG_AGENTIC_COMMIT_REVIEW": "0"}
+    took, r = _run_with_limit(bash_payload(repo, "git commit -m change", commit_out), env, 4)
+    assert 4 <= took < 10, r.stderr
+    assert r.returncode == 2 and "did not finish in time" in r.stderr

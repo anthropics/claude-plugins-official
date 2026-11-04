@@ -283,6 +283,10 @@ def _urlopen(request, timeout):
     return urllib.request.urlopen(request, timeout=timeout, context=_store_tls_context)
 
 
+def _is_remote_session() -> bool:
+    return os.environ.get("CLAUDE_CODE_REMOTE", "").lower() in ("1", "true", "yes", "on")
+
+
 def _probe_anthropic(timeout: float = 5.0) -> bool:
     req = urllib.request.Request(_anthropic_base_url() + "/", method="HEAD")
     try:
@@ -421,7 +425,7 @@ def ensure_anthropic_reachable() -> bool:
     global _anthropic_reachable
     if _anthropic_reachable is not None:
         return _anthropic_reachable
-    if os.environ.get("CLAUDE_CODE_REMOTE", "").lower() not in ("1", "true", "yes", "on"):
+    if not _is_remote_session():
         _anthropic_reachable = True
         return True
     if _probe_anthropic():
@@ -2170,7 +2174,7 @@ def _agentic_review(
                     # keeps the CLI retrying for about three minutes.
                     auth_retries = auth_retries + 1 if _api_retry_status(msg) == 401 else 0
                     if (auth_retries >= _AGENTIC_MAX_401_RETRIES
-                            and not os.environ.get("CLAUDE_CODE_REMOTE")):
+                            and not _is_remote_session()):
                         raise _ReviewerAuthFailed(f"{auth_retries} retries after HTTP 401")
                 else:
                     # Tool results come back as user messages.
