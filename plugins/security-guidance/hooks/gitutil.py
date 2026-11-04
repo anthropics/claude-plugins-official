@@ -300,8 +300,9 @@ _path_list_too_long = set()
 # timeout, 4 the retry with a private object directory worked. A git that
 # speaks another language reports a failed retry as 2. With 1 to 3 the new
 # files are not in the diff, so a turn that only added files looks like a turn
-# with no changes; a timeout loses the whole diff.
-_add_failed = {"code": 0}
+# with no changes. `left_out` says so for the last get_git_diff alone: the code
+# stays set through a fallback diff that worked.
+_add_failed = {"code": 0, "left_out": False}
 
 # Next to an index copy: where a retried `git add -N` stores the empty blob.
 _OBJECTS_DIR_SUFFIX = ".objects"
@@ -547,8 +548,10 @@ def _remove_objects_dir(path):
     import stat
 
     def writable_then_retry(func, p, _exc):
-        os.chmod(p, stat.S_IWRITE)
-        func(p)
+        # Not a link: chmod would follow it to whatever it points at.
+        if func in (os.unlink, os.rmdir) and not os.path.islink(p):
+            os.chmod(p, stat.S_IWRITE)
+            func(p)
 
     try:
         shutil.rmtree(path, onerror=writable_then_retry)
@@ -623,11 +626,7 @@ def _hook_tmpdir():
 
 def _note_add_failure(kind, paths):
     _add_failed["code"] = kind * 100000 + min(len(paths), 99999)
-
-
-def _new_files_left_out():
-    """True if a failed `git add -N` kept new files out of this run's diff."""
-    return _add_failed["code"] // 100000 in (1, 2, 3)
+    _add_failed["left_out"] = kind != 4
 
 
 def _env_with_private_objects(env, cwd, objects_dir):
@@ -675,15 +674,17 @@ def _add_new_files(cwd, paths, env, tmp_index):
     try:
         failed = add(env)
     except subprocess.TimeoutExpired:
+        # No retry: git is slow here, not refused. The diff goes on for the
+        # tracked files, so a timeout on every turn cannot stop their reviews.
         _note_add_failure(3, paths)
-        raise
+        return
     if not failed:
         return
     debug_log(f"git add -N failed: {failed.stderr[:200].decode('utf-8', errors='replace')}")
     # Whatever happens to the retry, the diff goes on for the tracked files.
     try:
         objects_dir = tmp_index + _OBJECTS_DIR_SUFFIX
-        os.mkdir(objects_dir)
+        os.mkdir(objects_dir, 0o700)
         retry_failed = add(_env_with_private_objects(env, cwd, objects_dir))
         if retry_failed:
             debug_log(f"git add -N retry failed: {retry_failed.stderr[:200].decode('utf-8', errors='replace')}")
@@ -1533,6 +1534,7 @@ def get_git_diff(cwd, baseline_sha, full_context=False, paths=None, untracked_pa
     MAX_FILE_DIFF_BYTES is cut down to its added lines.
     """
     _path_list_too_long.clear()
+    _add_failed["left_out"] = False
     pathspec = _diff_pathspec(cwd, paths)
     if paths and not pathspec:
         # Caller restricted to specific paths but none are inside this repo

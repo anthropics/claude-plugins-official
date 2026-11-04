@@ -219,6 +219,9 @@ CONTINUATION_SUFFIX = (
     "response."
 )
 
+# New files named in the notice for a failed `git add -N`.
+_LEFT_OUT_NAMES_SHOWN = 5
+
 # Extra keys emit_metrics appends to every row this invocation emits.
 _TAIL_METRICS: Dict[str, Any] = {}
 # Of those, the ones that go after the others whenever they were set: a row
@@ -1416,6 +1419,44 @@ def _review_failure_reason(status):
     return ("reply", "the model's reply could not be read", "")
 
 
+def _left_out_files_notice(session_id, repo_root, untracked, diff_output):
+    """(one line for the terminal, text for Claude) naming the source files a
+    failed `git add -N` kept out of this Stop review, or None.
+
+    Each set of files gets one notice a session: the wake ends in another Stop
+    that fails the same way, and a notice there would wake Claude for ever. So
+    no notice unless the mark is saved. Paths are JSON quoted in ASCII: a file
+    name can hold a line break.
+    """
+    in_diff = set(extract_file_paths_from_diff(diff_output or ""))
+
+    def has_content(p):
+        try:
+            return os.path.getsize(os.path.join(repo_root, p)) > 0
+        except OSError:
+            return False
+
+    names = sorted(p for p in untracked or ()
+                   if p not in in_diff and _is_reviewable_source(p) and has_content(p))
+    if not names:
+        return None
+    key = "new_files_left_out:" + hashlib.sha256(
+        "\0".join(names).encode("utf-8", "replace")).hexdigest()[:16]
+    if not atomic_check_and_mark_warning(session_id, key):
+        return None
+    if key not in load_state(session_id).get("shown_warnings", ()):
+        return None
+    _TAIL_METRICS["add_fail_told"] = len(names)
+    shown = ", ".join(json.dumps(p) for p in names[:_LEFT_OUT_NAMES_SHOWN])
+    if len(names) > _LEFT_OUT_NAMES_SHOWN:
+        shown += f" and {len(names) - _LEFT_OUT_NAMES_SHOWN} more"
+    return (f"Security review left out new files: {shown}. Log: {DEBUG_LOG_FILE}",
+            f"The security review did not see these new files, so it did not "
+            f"review them: {shown}. git could not add them to the review's "
+            f"diff. Tell the user this in one sentence, and that details are "
+            f"in {DEBUG_LOG_FILE}.")
+
+
 def _exit_review_failed(kind, session_id, metrics, status, pushed="no"):
     """End a commit ("Commit") or push ("Push") review that got no verdict.
 
@@ -2485,10 +2526,29 @@ def handle_stop_hook(input_data):
         _TAIL_METRICS["warn_fired_mask"] = warn_fired_mask
 
     v2_metrics = {}
+    left_out = False
+    restore_paths = touched_paths
+
+    def _left_out_notice():
+        # Asked for as the row goes out: the mark must not outlive a hook
+        # killed during the review.
+        if not left_out:
+            return None
+        return _left_out_files_notice(session_id, repo_root, untracked, diff_output)
+
+    def _left_out_wake():
+        """emit_metrics arguments that wake Claude to say new files were left out."""
+        notice = _left_out_notice()
+        if not notice:
+            return {}
+        return {"rewake_summary": notice[0], "hook_event_name": hook_event_name,
+                "additional_context": (PROVENANCE_BANNER + "\n\n" + notice[1]
+                                       + CONTINUATION_SUFFIX + "\n")}
 
     def _skip(reason, restore=False, **extra):
         if restore:
-            restore_unreviewed_stop_state(session_id, touched_paths, snap_baseline)
+            restore_unreviewed_stop_state(session_id, restore_paths, snap_baseline)
+        wake = _left_out_wake()
         # CC truncates metrics to 10 keys by
         # insertion order. v2_metrics (3) must precede sweep (3) so the v2
         # diagnostics survive when extra adds touched_paths_count + ip_* keys.
@@ -2500,8 +2560,8 @@ def handle_stop_hook(input_data):
                if gitutil._unparsed_diff_headers else {}),
             **({"secret_shaped_skipped": len(gitutil._secret_shaped_skipped)}
                if gitutil._secret_shaped_skipped else {}),
-        })
-        sys.exit(0)
+        }, **wake)
+        sys.exit(2 if wake else 0)
 
     # Limit stop hook firings per asyncRewake loop to prevent infinite loops.
     # fire_count auto-expires after STOP_LOOP_STATE_TTL_SEC so a stale count
@@ -2648,9 +2708,9 @@ def handle_stop_hook(input_data):
     # put back, listed as touched so the next prompt keeps this baseline even
     # if an edit tool never wrote them. A review of the tracked files goes on
     # without them, rather than repeating that review every turn.
-    left_out = gitutil._new_files_left_out()
+    left_out = gitutil._add_failed["left_out"]
     if left_out:
-        touched_paths = list(touched_paths) + [
+        restore_paths = list(touched_paths) + [
             os.path.join(repo_root, p) for p in untracked or ()]
 
     if not diff_output or not diff_output.strip():
@@ -2796,6 +2856,7 @@ def handle_stop_hook(input_data):
         # untracked_baseline_n is the signal for whether the UPS-time
         # untracked-snapshot capture actually ran.
         sweep_trimmed = {k: v for k, v in sweep.items() if k != "warn_unresolved_mask"}
+        left_out_notice = _left_out_notice()
         # Guidance goes to stderr plus top-level decision/reason (see
         # emit_metrics). exit(2) preserved as the asyncRewake "force fix"
         # signal — that's the documented mechanism.
@@ -2817,8 +2878,9 @@ def handle_stop_hook(input_data):
             **({"secret_shaped_skipped": len(gitutil._secret_shaped_skipped)}
                if gitutil._secret_shaped_skipped else {}),
         }, rewake_summary=_format_vulns_summary(vulns),
-           additional_context=(PROVENANCE_BANNER + "\n\n"
-                               + concrete_guidance + CONTINUATION_SUFFIX + "\n"),
+           additional_context=(PROVENANCE_BANNER + "\n\n" + concrete_guidance
+                               + ("\n\n" + left_out_notice[1] if left_out_notice else "")
+                               + CONTINUATION_SUFFIX + "\n"),
            hook_event_name=hook_event_name)
         sys.exit(2)
 
@@ -2826,11 +2888,12 @@ def handle_stop_hook(input_data):
     if stop_review_failed:
         debug_log(f"Stop hook: review got no verdict "
                   f"({_review_failure_reason(llm.last_review_status())[1]})")
-        restore_unreviewed_stop_state(session_id, touched_paths, snap_baseline)
+        restore_unreviewed_stop_state(session_id, restore_paths, snap_baseline)
     else:
         debug_log("Stop hook: no security issues found")
         if is_subagent:
             record_reviewed_diff(session_id, diff_hash)
+    wake = _left_out_wake()
     # CC keeps the first 20 metric keys (10 in older versions), in insertion
     # order, after the pv and usage keys emit_metrics puts first. The previous
     # **sweep,**v2_metrics tail meant the 3 v2_metrics keys were always sliced
@@ -2852,8 +2915,8 @@ def handle_stop_hook(input_data):
            if gitutil._unparsed_diff_headers else {}),
         **({"secret_shaped_skipped": len(gitutil._secret_shaped_skipped)}
            if gitutil._secret_shaped_skipped else {}),
-    })
-    sys.exit(0)
+    }, **wake)
+    sys.exit(2 if wake else 0)
 
 _SDK_BOOTSTRAP_THROTTLE = os.path.join(_resolve_state_dir(), ".sdk_bootstrap_spawned")
 
