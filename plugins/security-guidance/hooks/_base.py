@@ -9,8 +9,15 @@ import glob
 import json
 import os
 import re
+import stat
 import threading
 from datetime import datetime
+
+if os.name == "nt":
+    # Unless this variable exists, Windows looks for a program that is started
+    # by name in the working directory before PATH.
+    os.environ.setdefault("NoDefaultCurrentDirectoryInExePath", "1")
+
 
 def state_dir():
     """Return the absolute path of the plugin's state directory.
@@ -40,6 +47,26 @@ def state_dir():
     else:
         d = "~/.claude/security"
     return os.path.abspath(os.path.expanduser(d))
+
+
+def make_state_dir(d=None):
+    """Create the state dir (or `d`) with access for its user alone, and
+    narrow the default one to that if it is already there, so a umask such as
+    002 does not leave the reviewer's venv, logs and session state open to the
+    rest of a shared group. A folder named by SECURITY_WARNINGS_STATE_DIR
+    that already exists is the user's to set. Raises OSError like os.makedirs."""
+    if d is None:
+        d = state_dir()
+    os.makedirs(d, mode=0o700, exist_ok=True)
+    if (os.name != "nt" and not os.environ.get("SECURITY_WARNINGS_STATE_DIR", "").strip()
+            and os.path.abspath(d) == state_dir()):
+        try:
+            st = os.lstat(d)
+            if stat.S_ISDIR(st.st_mode) and st.st_uid == os.getuid() and st.st_mode & 0o077:
+                os.chmod(d, 0o700)
+        except OSError:
+            pass
+    return d
 
 
 def llm_reviews_switched_off():
@@ -376,6 +403,16 @@ def launcher_probe_metrics():
         return {}
     cap = 3_600_000
     return {"launcher_probe_ms": min(total, cap), "launcher_probe_max_ms": min(slowest, cap)}
+
+
+def launcher_direct_metric():
+    """`launcher_direct` when sg-python.sh ran this hook with the interpreter
+    behind a packaged Windows alias instead of the alias: 1 from the path it
+    remembered (one process for the hook), 2 when it had just worked that
+    path out. Read once, like the probe timings.
+    """
+    how = os.environ.pop("SG_LAUNCHER_DIRECT", "")
+    return {"launcher_direct": int(how)} if how in ("1", "2") else {}
 
 
 def _usage_metrics():

@@ -1176,7 +1176,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/crowdsecurity/crowdsec-skill.git",
-        "sha": "8802dbe68a0552fe55dc605b6278f57e57578526"
+        "sha": "9bca8a76de2cbf5e6b70a8b2cfeadeffe53512da"
       },
       "homepage": "https://www.crowdsec.net"
     },
@@ -1463,7 +1463,7 @@
         "url": "https://github.com/dropbox/dropbox-ai-plugins.git",
         "path": "claude",
         "ref": "main",
-        "sha": "60cea151b269e9ab47266279d80839c471e0d8c6"
+        "sha": "078f0ca36df40f054829b58731a5f86a561d9668"
       },
       "homepage": "https://www.dropbox.com"
     },
@@ -1801,10 +1801,10 @@
       "category": "development",
       "source": {
         "source": "git-subdir",
-        "url": "https://github.com/greptileai/claude-plugin.git",
+        "url": "https://github.com/greptileai/skills.git",
         "path": "plugins/greptile",
-        "ref": "greptile--v1.2.3",
-        "sha": "f0b7379ca06e40896fdae93fe166e851d1c9db67"
+        "ref": "greptile--v1.3.1",
+        "sha": "4a13eb124ab175d018869fe7cc4d203e374571dc"
       },
       "homepage": "https://www.greptile.com/docs/mcp-v2/overview"
     },
@@ -2976,7 +2976,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/postmanlabs/postman-plugin.git",
-        "sha": "c6352ef5605cd46d3f817e15c601eeb9a56c08f7"
+        "sha": "1fdd3f1e2736c7cb83780a221cb9f83641215ab7"
       },
       "homepage": "https://github.com/postmanlabs/postman-plugin"
     },
@@ -3013,7 +3013,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/prisma/claude-plugin.git",
-        "sha": "815dbc4a045a29e3b81510ba0e3ab806f1baaf0e"
+        "sha": "82edd74d81892bcccf7294cbbf76752d76391da5"
       },
       "homepage": "https://prisma.io"
     },
@@ -4074,7 +4074,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/EpicGames/unreal-engine-skills-for-claude-code-plugin.git",
-        "sha": "a6aa73ada02a9fb1f5415bec491f9942c519b297"
+        "sha": "0e27bde2b55c5d3f6948532f4296aaa3654d8f4b"
       },
       "homepage": "https://dev.epicgames.com/documentation/unreal-engine/unreal-mcp-in-unreal-editor"
     },
@@ -4249,7 +4249,7 @@
         "url": "https://github.com/zapier/zapier-mcp.git",
         "path": "plugins/zapier",
         "ref": "main",
-        "sha": "5360f152b96735712e5f925ad728732cb86888df"
+        "sha": "54a12277a12c60df51ec16cf4e4ef0b27b166649"
       },
       "homepage": "https://github.com/zapier/zapier-mcp/tree/main/plugins/zapier"
     },
