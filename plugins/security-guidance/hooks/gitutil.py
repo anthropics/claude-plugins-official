@@ -93,6 +93,10 @@ GIT_CMD = [
     # _drop_gitlinks for the commands that take no such setting.
     "-c", "diff.ignoreSubmodules=all",
     "-c", "diff.submodule=short",
+    # `git log` and `git show` print commit metadata for the hooks to parse.
+    # With log.showSignature set they would also verify each signed commit,
+    # adding lines to the output and starting the program gpg.program names.
+    "-c", "log.showSignature=false",
 ]
 
 # diff.ignoreSubmodules is a default that the repository's own settings for
@@ -105,6 +109,7 @@ SAFE_GIT_CONFIG = (
     ("core.hooksPath", "/dev/null"),
     ("diff.ignoreSubmodules", "all"),
     ("diff.submodule", "short"),
+    ("log.showSignature", "false"),
 )
 
 # The hook's git runs in the background beside the session's own git. Without
