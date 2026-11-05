@@ -1,0 +1,28 @@
+{
+  "name": "clangd-lsp",
+  "description": "C/C++ language server (clangd) for code intelligence",
+  "version": "1.0.0",
+  "author": {
+    "name": "Anthropic",
+    "email": "support@anthropic.com"
+  },
+  "lspServers": {
+    "clangd": {
+      "command": "clangd",
+      "args": [
+        "--background-index"
+      ],
+      "extensionToLanguage": {
+        ".c": "c",
+        ".h": "c",
+        ".cpp": "cpp",
+        ".cc": "cpp",
+        ".cxx": "cpp",
+        ".hpp": "cpp",
+        ".hxx": "cpp",
+        ".C": "cpp",
+        ".H": "cpp"
+      }
+    }
+  }
+}
