@@ -31,7 +31,7 @@ All configuration is via environment variables. None are required for default be
 By default both reviews run on the newest Claude Opus, and move to the next one when it is released — there is no model version to bump:
 
 - The LLM diff review asks your API endpoint (`GET /v1/models`) which Opus models it serves and uses the newest. The answer is cached for a day in the plugin's state directory. If the endpoint can't answer, the review uses `claude-opus-5-5`.
-- The agentic commit reviewer, and every review in a session signed in to a Claude apps gateway with `/login`, run through your installed Claude Code. Other reviews on Bedrock, Vertex, and Foundry run through the copy of Claude Code bundled with the Agent SDK, or `SG_AGENTIC_CLI_PATH` if set. All of them use Claude Code's `opus` alias: the model `/model opus` selects, including any `ANTHROPIC_DEFAULT_OPUS_MODEL` you have set. On a gateway that alias may name an older Opus than the newest one.
+- The agentic commit reviewer, and every review in a session signed in to a Claude apps gateway with `/login`, run through your installed Claude Code. Other reviews on Bedrock, Vertex, and Foundry run through the copy of Claude Code bundled with the Agent SDK, or `SG_AGENTIC_CLI_PATH` if set. On Windows the agentic commit reviewer runs through the bundled copy too, unless `SG_AGENTIC_CLI_PATH` is set. Where the Agent SDK has no bundled copy for Windows, those reviews run through `~\.local\bin\claude.exe`, or else a `claude.exe` on `PATH`; if there is neither, set `SG_AGENTIC_CLI_PATH`. All of them use Claude Code's `opus` alias: the model `/model opus` selects, including any `ANTHROPIC_DEFAULT_OPUS_MODEL` you have set. On a gateway that alias may name an older Opus than the newest one.
 
 To pin a model, or to use a cheaper one:
 
@@ -92,6 +92,8 @@ Drop a `claude-security-guidance.md` in any of:
 - `~/.claude/claude-security-guidance.md` — user-wide rules (when `CLAUDE_CONFIG_DIR` is set, the same file in that directory is read too)
 - `<project>/.claude/claude-security-guidance.md` — project rules, intended to be committed
 - `<project>/.claude/claude-security-guidance.local.md` — local overrides, intended to be `.gitignore`'d
+
+Project files must be regular files: a link there, or a `.claude` folder that is a link, is skipped.
 
 All three are loaded and concatenated into the LLM diff review's prompt in the order user → project → project-local. If the combined size exceeds the 8 KB prompt budget, the tail is truncated, so user-wide rules are kept and project-local rules are dropped first. The agentic commit reviewer (layer 3) does not currently read this file. Example:
 
