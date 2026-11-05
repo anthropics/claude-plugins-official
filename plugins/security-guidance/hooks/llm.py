@@ -805,11 +805,12 @@ _gateway_check_unanswered = False
 # depend on the model, so the Sonnet attempt is not made after it.
 _gateway_review_timed_out = False
 
+_WINDOWS = os.name == "nt"
+
 
 def _user_cli_path() -> Optional[str]:
-    """The user's own `claude`: SG_AGENTIC_CLI_PATH if set ("" selects the
-    SDK's bundled CLI), else the first of the absolute paths below that
-    exists, else None."""
+    """The user's own `claude`: SG_AGENTIC_CLI_PATH if set ("" names none), else
+    the first of the absolute paths below that exists, else None."""
     cli_path = os.environ.get("SG_AGENTIC_CLI_PATH")
     if cli_path is not None:
         return cli_path
@@ -821,16 +822,69 @@ def _user_cli_path() -> Optional[str]:
     # user's (potentially attacker-supplied) repo, and Windows shutil.which
     # searches cwd first — a checked-in ./claude.exe would get spawned.
     # Absolute-path probes only.
-    for p in (
-        os.environ.get("CLAUDE_CODE_EXECPATH"),
-        os.path.expanduser("~/.local/bin/claude"),
-        "/root/.local/bin/claude",
-        # Claude Code Remote container install path.
-        "/opt/claude-code/bin/claude",
-    ):
+    probes = [os.environ.get("CLAUDE_CODE_EXECPATH")]
+    if not _WINDOWS:
+        # Where Claude Code is installed on macOS and Linux.
+        probes += [
+            os.path.expanduser("~/.local/bin/claude"),
+            "/root/.local/bin/claude",
+            # Claude Code Remote container install path.
+            "/opt/claude-code/bin/claude",
+        ]
+    for p in probes:
         if p and os.path.isfile(p):
             return p
     return None
+
+
+def _windows_user_cli() -> Optional[str]:
+    """Windows: the full path of the user's claude.exe, from the native
+    installer's folder, else from PATH; None when neither has one. Skips any
+    folder that is not given as a full path, and the working directory and
+    project root, and any folder inside them (unless that root holds the home
+    folder, and with it the user's own tools)."""
+    skipped = [d for d in (os.getcwd(), os.environ.get("CLAUDE_PROJECT_DIR")) if d and os.path.isdir(d)]
+    home = os.path.expanduser("~")
+    real_home = os.path.normcase(os.path.realpath(home)).rstrip(os.sep) + os.sep
+    roots = [r.rstrip(os.sep) + os.sep for r in (os.path.normcase(os.path.realpath(d)) for d in skipped)]
+    roots = [r for r in roots if not real_home.startswith(r)]
+    home_bin = os.path.join(home, ".local", "bin")
+    for folder in [home_bin] + os.environ.get("PATH", "").split(os.pathsep):
+        folder = folder.strip().strip('"')
+        cli = os.path.join(folder, "claude.exe")
+        try:
+            real = os.path.normcase(os.path.realpath(folder))
+            # A full path is one that abspath leaves as it is.
+            if (os.path.normcase(os.path.abspath(folder)) == os.path.normcase(os.path.normpath(folder))
+                    and os.path.isfile(cli)
+                    and not any(os.path.samefile(folder, d) for d in skipped)
+                    and not any(real.startswith(r) for r in roots)):
+                return cli
+        except OSError:
+            pass
+    return None
+
+
+def _cli_for_sdk(cli_path: Optional[str]) -> Optional[str]:
+    """What to pass the Agent SDK as `cli_path`: a given one as it is. With none
+    given, the SDK chooses, except on Windows. There this names the CLI bundled
+    with the SDK, else the user's own, by its full path, and when neither exists
+    the bundled path anyway, so that the start fails."""
+    if cli_path or not _WINDOWS:
+        return cli_path or None
+    # When the SDK module has no file, any full path at which nothing exists will do.
+    sdk_file = getattr(sys.modules.get("claude_agent_sdk"), "__file__", None) or __file__
+    bundled = os.path.join(os.path.dirname(os.path.abspath(sdk_file)), "_bundled", "claude.exe")
+    if os.path.isfile(bundled):
+        return bundled
+    cli_path = _windows_user_cli()
+    if not cli_path:
+        debug_log("no Claude Code for the Agent SDK: none is bundled with it, and there is no claude.exe "
+                  "in ~\\.local\\bin or on PATH outside this project (SG_AGENTIC_CLI_PATH can name one)")
+        return bundled
+    debug_log(f"the Agent SDK has no bundled Claude Code; using {cli_path}")
+    _tolerate_unknown_sdk_messages()
+    return cli_path
 
 
 def _tolerate_unknown_sdk_messages() -> None:
@@ -980,7 +1034,7 @@ def _call_claude_via_sdk(prompt, output_schema, *, max_tokens=16000, model=None,
     if cli_path:
         _tolerate_unknown_sdk_messages()
     else:
-        cli_path = os.environ.get("SG_AGENTIC_CLI_PATH") or None
+        cli_path = _cli_for_sdk(os.environ.get("SG_AGENTIC_CLI_PATH") or None)
     default_model = default_review_model()
     chosen_model = model or default_model
 
@@ -2009,7 +2063,7 @@ def _agentic_review(
         "the findings list."
     )
 
-    # Always prefer the user's installed `claude` over the SDK's bundled CLI.
+    # Prefer the `claude` that _user_cli_path finds over the SDK's bundled CLI.
     # The bundled CLI is whatever shipped with the pip-installed SDK version
     # and can lag the user's CLI by months — protocol skew between them is a
     # top cause of agentic_fallback=2 in production (the SDK reads
@@ -2019,6 +2073,8 @@ def _agentic_review(
     cli_path = _gateway_cli or _user_cli_path()
     if cli_path:
         _tolerate_unknown_sdk_messages()
+    else:
+        cli_path = _cli_for_sdk(cli_path)
 
     # Without a callback the inner CLI writes to this hook's stderr, which
     # Claude Code shows Claude as the review notice. Log it instead.

@@ -13,6 +13,12 @@ import stat
 import threading
 from datetime import datetime
 
+if os.name == "nt":
+    # Unless this variable exists, Windows looks for a program that is started
+    # by name in the working directory before PATH.
+    os.environ.setdefault("NoDefaultCurrentDirectoryInExePath", "1")
+
+
 def state_dir():
     """Return the absolute path of the plugin's state directory.
 
