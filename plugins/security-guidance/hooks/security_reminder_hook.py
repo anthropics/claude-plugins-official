@@ -68,6 +68,7 @@ import re
 import subprocess
 import sys
 import threading
+import time
 import urllib.request
 from datetime import datetime
 from enum import IntEnum
@@ -1318,18 +1319,68 @@ def is_commit_review_enabled():
 
 COMMIT_REVIEW_ENABLED = is_commit_review_enabled()
 
-# Seconds from the start of a commit or push review's race after which
-# neither side waits for the other any longer; well inside Claude Code's
-# 10-minute hook timeout.
+_HOOK_STARTED = time.monotonic()
+
+# Seconds into the hook after which neither side of a commit or push review's
+# race waits for the other any longer; well inside Claude Code's 10-minute hook
+# timeout.
 _RACE_MAX_WAIT_S = 480
+# Seconds after which the review ends even if a side is still waiting on a
+# request that does not answer, with time left to tell the session before
+# Claude Code kills the hook. The inner CLI exits with the hook. The same limit
+# holds for a commit or push review's single-shot review outside a race.
+_RACE_END_S = 570
 # api_error for a race that hit that deadline with no verdict.
 _RACE_TIMED_OUT = -2
+
+def _hook_spent_s() -> float:
+    return time.monotonic() - _HOOK_STARTED
+
+def _single_shot_review(
+    diff_files: List[Tuple[str, str]],
+    previous_findings: List[Dict[str, Any]],
+) -> Tuple[Optional[str], List[Dict[str, Any]], Dict[str, Any]]:
+    """A single-shot review as (guidance, vulns, metrics); failures are in the
+    metrics, not raised."""
+    try:
+        g, v = analyze_code_security(
+            diff_files, is_diff=True, previous_findings=previous_findings
+        )
+        # Read on this thread: the outcome is per thread.
+        failed = llm.last_review_failed()
+        return g, v, {"agentic": False, "review_failed": failed,
+                      "api_error": llm.last_review_status() if failed else None}
+    except Exception as e:
+        debug_log(f"single-shot review crashed: {type(e).__name__}: {e}")
+        return None, [], {"agentic": False, "review_failed": True, "api_error": None}
+
+def _single_shot_review_in_time(
+    diff_files: List[Tuple[str, str]],
+    previous_findings: List[Dict[str, Any]],
+) -> Tuple[Optional[str], List[Dict[str, Any]], bool, Optional[int]]:
+    """A single-shot review outside a race, as (guidance, vulns, failed, status).
+
+    It ends at _RACE_END_S into the hook, whatever is pending.
+    """
+    done: List[Any] = []
+    worker = threading.Thread(
+        target=lambda: done.append(_single_shot_review(diff_files, previous_findings)),
+        daemon=True,
+    )
+    worker.start()
+    worker.join(timeout=max(0.0, _RACE_END_S - _hook_spent_s()))
+    if not done:
+        debug_log("single-shot review: nothing returned in time")
+        return None, [], True, _RACE_TIMED_OUT
+    g, v, m = done[0]
+    return g, v, m["review_failed"], m["api_error"]
 
 def _agentic_review_with_race(
     repo_root: str,
     diff_files: List[Tuple[str, str]],
     rel_touched: List[str],
     previous_findings: List[Dict[str, Any]],
+    spent_s: float = 0.0,
 ) -> Tuple[Optional[str], List[Dict[str, Any]], Dict[str, Any]]:
     """Race the agentic reviewer against a delayed single-shot fallback.
 
@@ -1341,10 +1392,13 @@ def _agentic_review_with_race(
     verdict) is returned so the caller never starts another review. If agentic
     finishes before the delay, the fallback never runs.
 
+    `spent_s`, the time the hook has already run, comes off the delay and both
+    limits: the hook's time limit does not restart with the race.
+
     Metrics added:
       race_winner    : 1 = agentic won, 2 = fallback won (CC accepts only
                        bool/finite-number metric values — strings would discard the dict)
-      race_delay_s   : the configured delay
+      race_delay_s   : the delay used
       race_started   : 1 if the fallback was actually launched, else 0
 
     Only the commit-review and push-sweep handlers call this — external
@@ -1358,13 +1412,16 @@ def _agentic_review_with_race(
     if os.environ.get("SG_AGENTIC_NO_RACE") == "1":
         return agentic_review(repo_root, diff_files, rel_touched)
 
-    delay_s = int(os.environ.get("SG_AGENTIC_RACE_DELAY_S", "180"))
+    delay_s = max(0, int(os.environ.get("SG_AGENTIC_RACE_DELAY_S", "180")) - int(spent_s))
+    if spent_s >= 1:
+        debug_log(f"Review race: {spent_s:.0f}s already spent, fallback starts after {delay_s}s")
     q: "_queue.Queue[Tuple[str, Any]]" = _queue.Queue(maxsize=1)
     fallback_started = _th.Event()
     fallback_done = _th.Event()
     agentic_done = _th.Event()
     fallback_result: Dict[str, Any] = {}
-    deadline = _t.monotonic() + _RACE_MAX_WAIT_S
+    deadline = _t.monotonic() + max(0.0, _RACE_MAX_WAIT_S - spent_s)
+    timed_out = (None, [], {"agentic": False, "review_failed": True, "api_error": _RACE_TIMED_OUT})
 
     def _agentic() -> None:
         try:
@@ -1382,33 +1439,26 @@ def _agentic_review_with_race(
         if agentic_done.is_set():
             return  # agentic finished within the delay — never start fallback
         fallback_started.set()
-        result = (None, [], {"agentic": False, "review_failed": True, "api_error": None})
+        result = _single_shot_review(diff_files, previous_findings)
+        fallback_result["r"] = result
+        fallback_done.set()
+        if result[2]["review_failed"]:
+            # A failed fallback does not win: the agentic review's inner
+            # CLI may still get a verdict where direct calls cannot.
+            agentic_done.wait(timeout=max(0.0, deadline - _t.monotonic()))
         try:
-            g, v = analyze_code_security(
-                diff_files, is_diff=True, previous_findings=previous_findings
-            )
-            # Read on this thread: the outcome is per thread.
-            failed = llm.last_review_failed()
-            result = (g, v, {"agentic": False, "review_failed": failed,
-                             "api_error": llm.last_review_status() if failed else None})
-        except Exception:  # pragma: no cover
+            q.put_nowait(("fallback", result))
+        except _queue.Full:
             pass
-        finally:
-            fallback_result["r"] = result
-            fallback_done.set()
-            if result[2]["review_failed"]:
-                # A failed fallback does not win: the agentic review's inner
-                # CLI may still get a verdict where direct calls cannot.
-                agentic_done.wait(timeout=max(0.0, deadline - _t.monotonic()))
-            try:
-                q.put_nowait(("fallback", result))
-            except _queue.Full:
-                pass
 
     _th.Thread(target=_agentic, daemon=True).start()
     _th.Thread(target=_fallback, daemon=True).start()
 
-    winner, (g, v, m) = q.get()
+    try:
+        winner, (g, v, m) = q.get(timeout=max(0.0, _RACE_END_S - spent_s))
+    except _queue.Empty:
+        debug_log("review race: nothing returned in time")
+        winner, (g, v, m) = "fallback", timed_out
     # What the agentic run saw of its directory, and how much work it did,
     # is kept when the fallback's result replaces it below.
     reviewer_context = (
@@ -1421,8 +1471,7 @@ def _agentic_review_with_race(
         if fallback_done.wait(timeout=max(0.0, deadline - _t.monotonic())):
             winner, (g, v, m) = "fallback", fallback_result["r"]
         else:
-            winner, (g, v, m) = "fallback", (None, [], {
-                "agentic": False, "review_failed": True, "api_error": _RACE_TIMED_OUT})
+            winner, (g, v, m) = "fallback", timed_out
     m = {**m, **reviewer_context}  # a copy: don't mutate the callee's metrics dict
     m["race_winner"] = 1 if winner == "agentic" else 2
     m["race_delay_s"] = delay_s
@@ -1935,7 +1984,7 @@ def handle_commit_review_posttooluse(input_data):
     if _agentic_commit_review_enabled():
         rel_touched = [fp for fp, _ in diff_files]
         concrete_guidance, vulns, _am = _agentic_review_with_race(
-            repo_root, diff_files, rel_touched, previous_findings
+            repo_root, diff_files, rel_touched, previous_findings, spent_s=_hook_spent_s()
         )
         agentic_metrics.update(_am)
         if _am.get("child_stderr"):
@@ -1949,17 +1998,13 @@ def handle_commit_review_posttooluse(input_data):
         # Fall back to single-shot only on agentic FAILURE (SDK/investigate
         # crash). If agentic completed and returned 0 findings, trust that.
         if agentic_metrics.get("agentic_fallback"):
-            concrete_guidance, vulns = analyze_code_security(
-                diff_files, is_diff=True, previous_findings=previous_findings
+            concrete_guidance, vulns, review_failed, api_status = _single_shot_review_in_time(
+                diff_files, previous_findings
             )
-            review_failed = llm.last_review_failed()
-            api_status = llm.last_review_status()
     else:
-        concrete_guidance, vulns = analyze_code_security(
-            diff_files, is_diff=True, previous_findings=previous_findings
+        concrete_guidance, vulns, review_failed, api_status = _single_shot_review_in_time(
+            diff_files, previous_findings
         )
-        review_failed = llm.last_review_failed()
-        api_status = llm.last_review_status()
 
     review_ms = int((_time.time() - review_start) * 1000)
     # `survived` is the raw self-refute count BEFORE the high/critical-only
@@ -2376,7 +2421,7 @@ def handle_push_sweep_posttooluse(input_data):
     rel_touched = [fp for fp, _ in diff_files]
     if _agentic_commit_review_enabled():
         concrete_guidance, vulns, agentic_metrics = _agentic_review_with_race(
-            repo_root, diff_files, rel_touched, previous_findings
+            repo_root, diff_files, rel_touched, previous_findings, spent_s=_hook_spent_s(),
         )
         if agentic_metrics.get("child_stderr"):
             _TAIL_METRICS["child_stderr"] = agentic_metrics["child_stderr"]
@@ -2384,24 +2429,20 @@ def handle_push_sweep_posttooluse(input_data):
         review_failed = bool(agentic_metrics.get("review_failed"))
         api_status = agentic_metrics.get("api_error")
         if agentic_metrics.get("agentic_fallback"):
-            concrete_guidance, vulns = analyze_code_security(
-                diff_files, is_diff=True, previous_findings=previous_findings
+            concrete_guidance, vulns, review_failed, api_status = _single_shot_review_in_time(
+                diff_files, previous_findings
             )
-            review_failed = llm.last_review_failed()
-            api_status = llm.last_review_status()
     else:
-        concrete_guidance, vulns = analyze_code_security(
-            diff_files, is_diff=True, previous_findings=previous_findings
+        concrete_guidance, vulns, review_failed, api_status = _single_shot_review_in_time(
+            diff_files, previous_findings
         )
-        review_failed = llm.last_review_failed()
-        api_status = llm.last_review_status()
         agentic_metrics = {}
     review_ms = int((_time.time() - review_start) * 1000)
     if review_failed:
         # Not marked reviewed. A later push does not re-check these commits:
         # its range starts from the new upstream.
         _exit_review_failed("Push", session_id, {
-            **_base, "pushed": len(push_range), "unreviewed": len(tail),
+            **_base, **_wait_m, "pushed": len(push_range), "unreviewed": len(tail),
             "files_reviewed": len(diff_files), "review_ms": review_ms,
         }, api_status)
 
