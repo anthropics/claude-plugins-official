@@ -60,6 +60,23 @@
           }
         ],
         "matcher": "Bash"
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/sg-python.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/security_reminder_hook.py\" commit",
+            "if": "PowerShell(git*commit*)",
+            "asyncRewake": true
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/sg-python.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/security_reminder_hook.py\" push",
+            "if": "PowerShell(git*push*)",
+            "asyncRewake": true
+          }
+        ],
+        "matcher": "PowerShell"
       }
     ],
     "Stop": [

@@ -1101,6 +1101,60 @@ def _unmatched_bash_sampled(input_data):
     return int.from_bytes(digest[:4], "big") % _UNMATCHED_BASH_SAMPLE == 0
 
 
+# `git` in any letter case, `git.exe` and a quoted path to it, which PowerShell
+# all runs as git: wider than _GIT_COMMIT_RE / _GIT_PUSH_RE on purpose. Only the
+# calls the hooks.json `if` patterns let through are seen, so `gt` and a path
+# such as `& 'C:\...\git.exe' push` mostly are not.
+_PS_GIT_RE = re.compile(
+    r"""\b(?i:git(?:\.exe["']?)?)""" + _GIT_GLOBAL_OPTS + r'\s+(commit\b(?!-)|push\b)'
+)
+# skip_reason codes of the rows below.
+_SKIP_PS = {"commit": 50, "push": 51}
+
+
+def _powershell_row(input_data, entry):
+    """Metrics for one PowerShell tool call, or None for no row.
+
+    Measurement only: commits and pushes made through the PowerShell tool are
+    not reviewed, and this says how many there are. Numbers and flags only;
+    nothing of the command or its output is kept.
+
+    `entry` is the hooks.json entry that started this process ("commit" or
+    "push"); each reports its own kind, so a call that does both gives one row
+    of each, marked `ps_both`.
+    """
+    tool_input = input_data.get("tool_input")
+    command = tool_input.get("command") if isinstance(tool_input, dict) else None
+    if not isinstance(command, str) or entry not in _SKIP_PS:
+        return None
+    found = {}
+    for m in _PS_GIT_RE.finditer(command):
+        found.setdefault(m.group(1), m.group(0))
+    if not found:
+        # Started only because Claude Code could not parse the command, or it
+        # is another git command with one of the words in it. Per start, as
+        # for Bash: one call can start both entries.
+        if _unmatched_bash_sampled(input_data):
+            return {"ps_no_match": _UNMATCHED_BASH_SAMPLE}
+        return None
+    if entry not in found:
+        return None
+    known = _GIT_COMMIT_RE if entry == "commit" else _GIT_PUSH_RE
+    resp = input_data.get("tool_response")
+    resp = resp if isinstance(resp, dict) else {}
+    op = resp.get("gitOperation")
+    return {
+        "skip_reason": _SKIP_PS[entry],
+        # Whether the Bash patterns would recognise this spelling.
+        "ps_known": bool(known.search(found[entry])),
+        # Whether Claude Code itself saw the commit or push happen.
+        "ps_op": isinstance(op, dict) and entry in op,
+        "ps_both": len(found) == 2,
+        "ps_on": ENABLE_CODE_SECURITY_REVIEW and (
+            COMMIT_REVIEW_ENABLED if entry == "commit" else PUSH_SWEEP_ENABLED),
+    }
+
+
 def _claim_bash_hook_once(input_data):
     """De-dupe across hooks.json `if` matchers firing for the same Bash call.
 
@@ -2969,6 +3023,14 @@ def main():
     tool_input = input_data.get("tool_input", {})
     hook_event_name = input_data.get("hook_event_name", "")
     debug_log(f"Processing: hook_event={hook_event_name}, tool={tool_name}")
+
+    # PostToolUse[PowerShell]: count commits and pushes, review nothing.
+    if tool_name == "PowerShell":
+        if hook_event_name == "PostToolUse" and not portable_output():
+            row = _powershell_row(input_data, sys.argv[1] if len(sys.argv) > 1 else "")
+            if row:
+                emit_metrics(row)
+        return
 
     # Load project-specific security guidance and custom patterns once
     # per invocation. Failures are non-fatal (debug-logged) so a malformed
