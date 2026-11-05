@@ -17,6 +17,7 @@ Two reassignable globals here are read by handlers in
 ``_last_review_truncated_bytes``. Handlers reference them as ``llm.X`` (not via
 ``from``-import) so they observe reassignment.
 """
+import contextlib
 import hashlib
 import json
 import logging
@@ -195,10 +196,13 @@ def _anthropic_base_url() -> str:
     Honors ANTHROPIC_BASE_URL (the convention the Anthropic SDK and CC itself
     use) so customers behind an LLM gateway (LiteLLM, Bifrost, self-hosted
     Anthropic-compatible proxy) can route the plugin's reviews through their
-    gateway. Defaults to https://api.anthropic.com. Always returns a string
-    with no trailing slash so callers can safely append /v1/messages etc.
+    gateway. Defaults to https://api.anthropic.com, also when the variable is
+    set but blank, which is how the SDK and CC read it. Always returns a
+    string with no trailing slash so callers can safely append /v1/messages
+    etc.
     """
-    return os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com").rstrip("/")
+    base = os.environ.get("ANTHROPIC_BASE_URL", "").strip()
+    return (base or "https://api.anthropic.com").rstrip("/")
 
 
 # ── Windows certificate store with an entry OpenSSL cannot read ──────────
@@ -280,6 +284,10 @@ def _urlopen(request, timeout):
     if _store_tls_context is None:
         return urllib.request.urlopen(request, timeout=timeout)
     return urllib.request.urlopen(request, timeout=timeout, context=_store_tls_context)
+
+
+def _is_remote_session() -> bool:
+    return os.environ.get("CLAUDE_CODE_REMOTE", "").lower() in ("1", "true", "yes", "on")
 
 
 def _probe_anthropic(timeout: float = 5.0) -> bool:
@@ -420,7 +428,7 @@ def ensure_anthropic_reachable() -> bool:
     global _anthropic_reachable
     if _anthropic_reachable is not None:
         return _anthropic_reachable
-    if os.environ.get("CLAUDE_CODE_REMOTE", "").lower() not in ("1", "true", "yes", "on"):
+    if not _is_remote_session():
         _anthropic_reachable = True
         return True
     if _probe_anthropic():
@@ -1050,7 +1058,7 @@ def _call_claude_via_sdk(prompt, output_schema, *, max_tokens=16000, model=None,
             system_prompt=CLAUDE_CODE_SYSTEM_PROMPT,
             cli_path=cli_path,
             allowed_tools=[],
-            extra_args=_only_tools_args(),
+            extra_args={**_only_tools_args(), **_reviewer_session_args()},
             setting_sources=[],
             max_turns=2,
             model=chosen_model,
@@ -1077,9 +1085,8 @@ def _call_claude_via_sdk(prompt, output_schema, *, max_tokens=16000, model=None,
                 _record_usage(getattr(msg, "usage", None) or {}, chosen_model,
                               cost_usd=getattr(msg, "total_cost_usd", None))
             elif getattr(msg, "subtype", None) == "api_retry":
-                data = getattr(msg, "data", None)
-                status = data.get("error_status") if isinstance(data, dict) else None
-                _retried_after.add(str(status) if isinstance(status, int) else "no response")
+                status = _api_retry_status(msg)
+                _retried_after.add(str(status) if status is not None else "no response")
         return structured
 
     # 60s ceiling: a single review request on a healthy 3P endpoint completes
@@ -1840,6 +1847,32 @@ def _send_sdk_logs_to_debug_log() -> None:
             sdk_logger.propagate = False
 
 
+# Claude Code older than 2.0.63 exits at startup with "unknown option" when
+# given --no-session-persistence. The flag is sent until an inner CLI
+# refuses it.
+_SESSION_FLAG = "no-session-persistence"
+_send_session_flag = True
+
+
+def _reviewer_session_args() -> Dict[str, Optional[str]]:
+    """Extra CLI flags for the SDK-spawned inner `claude`.
+
+    Review runs are one-shot and never resumed, so by default the inner CLI
+    is told not to save them as session transcripts (they hold the full
+    review prompt, including diff hunks). SECURITY_GUIDANCE_PERSIST_SESSIONS=1
+    keeps the transcripts, e.g. to debug a review.
+    """
+    keep = os.environ.get("SECURITY_GUIDANCE_PERSIST_SESSIONS", "").strip().lower()
+    if not _send_session_flag or keep in ("1", "on", "true", "yes"):
+        return {}
+    return {_SESSION_FLAG: None}
+
+
+def _names_session_flag(stderr_line: Any) -> bool:
+    text = str(stderr_line)
+    return _SESSION_FLAG in text and "unknown option" in text.lower()
+
+
 # The agentic reviewer reads a diff it must not trust, so it gets
 # file-reading tools and nothing else.
 _REVIEWER_TOOLS = ("Read", "Grep", "Glob")
@@ -1874,22 +1907,57 @@ def _names_strict_mcp_flag(stderr_line: Any) -> bool:
     return "--strict-mcp-config" in str(stderr_line)
 
 
+def _refused_flags(stderr_lines: List[Any]) -> List[str]:
+    """Which of the flags this plugin can leave out the lines refuse."""
+    refused = []
+    if any(_names_strict_mcp_flag(l) for l in stderr_lines):
+        refused.append("--strict-mcp-config")
+    if any(_names_session_flag(l) for l in stderr_lines):
+        refused.append("--" + _SESSION_FLAG)
+    return refused
+
+
 def _run_inner_cli(start: Callable[[], Any], stderr_lines: List[str]) -> Any:
     """start() runs one inner CLI to its result; stderr_lines receives what
     that CLI writes to stderr. A start the CLI refused over
-    --strict-mcp-config is made once more without the flag, and the flag is
-    left out for the rest of this process."""
-    global _send_strict_mcp
-    del stderr_lines[:]
-    try:
-        return start()
-    except Exception:
-        if not any(_names_strict_mcp_flag(l) for l in stderr_lines):
-            raise
-        _send_strict_mcp = False
-        debug_log("inner CLI refused --strict-mcp-config; starting it again without the flag")
+    --strict-mcp-config or --no-session-persistence is made again without
+    that flag, and the flag is left out for the rest of this process. A CLI
+    names one flag per start, so one that refuses both is started three
+    times."""
+    global _send_strict_mcp, _send_session_flag
+    left_out: List[str] = []
+    while True:
         del stderr_lines[:]
-        return start()
+        try:
+            return start()
+        except Exception:
+            refused = [f for f in _refused_flags(stderr_lines) if f not in left_out]
+            if not refused:
+                raise
+            if "--strict-mcp-config" in refused:
+                _send_strict_mcp = False
+            if "--" + _SESSION_FLAG in refused:
+                _send_session_flag = False
+            left_out += refused
+            debug_log(f"inner CLI refused {' and '.join(refused)}; "
+                      "starting it again without")
+
+
+class _ReviewerAuthFailed(Exception):
+    """The agentic reviewer's credentials were refused; retrying cannot help."""
+
+
+# Retry notices in a row, each after a 401, at which the review stops. One is
+# normal: the CLI renews a stored login after a 401 and tries again. Not used
+# in a remote session, where the CLI waits out a short sign-in outage on purpose.
+_AGENTIC_MAX_401_RETRIES = 3
+
+
+def _api_retry_status(msg: Any) -> Optional[int]:
+    """The HTTP status of the CLI's api_retry notice, if it gives one."""
+    data = getattr(msg, "data", None)
+    status = data.get("error_status") if isinstance(data, dict) else None
+    return status if isinstance(status, int) else None
 
 
 def _agentic_spawn_env() -> Dict[str, str]:
@@ -2079,15 +2147,15 @@ def _agentic_review(
     # Without a callback the inner CLI writes to this hook's stderr, which
     # Claude Code shows Claude as the review notice. Log it instead.
     child_stderr_lines = [0]
-    # Lines of the current start that name --strict-mcp-config (_run_inner_cli).
+    # Lines of the current start that refuse a flag (_run_inner_cli).
     flag_refusals: List[str] = []
 
     def _child_stderr_metric() -> Dict[str, int]:
         return {"child_stderr": child_stderr_lines[0]} if child_stderr_lines[0] else {}
 
     def _on_child_stderr(line: str) -> None:
-        if _names_strict_mcp_flag(line):
-            # Not counted: where the flag is refused, every review gets this
+        if _refused_flags([line]):
+            # Not counted: where a flag is refused, every review gets this
             # line once, from the start that is then made again.
             flag_refusals.append(str(line))
             debug_log(f"agentic reviewer's CLI stderr | {str(line).rstrip()}")
@@ -2113,7 +2181,8 @@ def _agentic_review(
             # Pre-approved, and the only tools the reviewer has: no
             # permission mode can then let it write, run or fetch anything.
             allowed_tools=list(_REVIEWER_TOOLS),
-            extra_args=_only_tools_args(_REVIEWER_TOOLS),
+            extra_args={**_only_tools_args(_REVIEWER_TOOLS),
+                        **_reviewer_session_args()},
             setting_sources=[],
             max_turns=turns if turns is not None else max_turns,
             model=model,
@@ -2172,39 +2241,54 @@ def _agentic_review(
 
         # Blocks are matched by shape so older SDK builds need no extra import.
         file_tool_ids = set()
-        async for msg in query(prompt=_once(), options=opts):
-            if isinstance(msg, AssistantMessage):
-                n += 1
-                for b in getattr(msg, "content", None) or []:
-                    if (getattr(b, "name", None) in _REVIEWER_FILE_TOOLS
-                            and getattr(b, "id", None)):
-                        file_tool_ids.add(b.id)
-                        ctx["rv_tool_calls"] += 1
-            elif isinstance(msg, ResultMessage):
-                subtype = msg.subtype
-                if msg.structured_output is not None:
-                    structured = msg.structured_output
-                # SDK ResultMessage carries aggregate usage + cache-aware
-                # cost across the whole multi-turn run; prefer its cost over
-                # the price-table estimate. getattr guards older SDK builds.
-                _record_usage(getattr(msg, "usage", None) or {}, model,
-                              cost_usd=getattr(msg, "total_cost_usd", None))
-                for key, attr in (("rv_turns", "num_turns"), ("rv_api_ms", "duration_api_ms")):
-                    value = getattr(msg, attr, None)
-                    # Counting must never fail the review: anything that
-                    # is not a positive finite number adds nothing.
-                    if (isinstance(value, (int, float)) and not isinstance(value, bool)
-                            and 0 < value < float("inf")):
-                        ctx[key] += int(value)
-            else:
-                # Tool results come back as user messages.
-                content = getattr(msg, "content", None)
-                if isinstance(content, list):
-                    ctx["rv_tool_err"] += sum(
-                        1 for b in content
-                        if getattr(b, "is_error", None) is True
-                        and getattr(b, "tool_use_id", None) in file_tool_ids
-                    )
+        auth_retries = 0
+        # Closed on the way out, also on a raise, so the CLI stops with the review.
+        async with contextlib.aclosing(query(prompt=_once(), options=opts)) as messages:
+            async for msg in messages:
+                if isinstance(msg, AssistantMessage):
+                    # Old CLIs answer each refused request by asking the model
+                    # again, hundreds of times; the message is the same on all.
+                    if getattr(msg, "error", None) == "authentication_failed":
+                        raise _ReviewerAuthFailed("authentication_failed")
+                    auth_retries = 0
+                    n += 1
+                    for b in getattr(msg, "content", None) or []:
+                        if (getattr(b, "name", None) in _REVIEWER_FILE_TOOLS
+                                and getattr(b, "id", None)):
+                            file_tool_ids.add(b.id)
+                            ctx["rv_tool_calls"] += 1
+                elif isinstance(msg, ResultMessage):
+                    subtype = msg.subtype
+                    if msg.structured_output is not None:
+                        structured = msg.structured_output
+                    # SDK ResultMessage carries aggregate usage + cache-aware
+                    # cost across the whole multi-turn run; prefer its cost over
+                    # the price-table estimate. getattr guards older SDK builds.
+                    _record_usage(getattr(msg, "usage", None) or {}, model,
+                                  cost_usd=getattr(msg, "total_cost_usd", None))
+                    for key, attr in (("rv_turns", "num_turns"), ("rv_api_ms", "duration_api_ms")):
+                        value = getattr(msg, attr, None)
+                        # Counting must never fail the review: anything that
+                        # is not a positive finite number adds nothing.
+                        if (isinstance(value, (int, float)) and not isinstance(value, bool)
+                                and 0 < value < float("inf")):
+                            ctx[key] += int(value)
+                elif getattr(msg, "subtype", None) == "api_retry":
+                    # A gateway's 401 without the API's x-should-retry: false
+                    # keeps the CLI retrying for about three minutes.
+                    auth_retries = auth_retries + 1 if _api_retry_status(msg) == 401 else 0
+                    if (auth_retries >= _AGENTIC_MAX_401_RETRIES
+                            and not _is_remote_session()):
+                        raise _ReviewerAuthFailed(f"{auth_retries} retries after HTTP 401")
+                else:
+                    # Tool results come back as user messages.
+                    content = getattr(msg, "content", None)
+                    if isinstance(content, list):
+                        ctx["rv_tool_err"] += sum(
+                            1 for b in content
+                            if getattr(b, "is_error", None) is True
+                            and getattr(b, "tool_use_id", None) in file_tool_ids
+                        )
         return structured, n, subtype
 
     def _run(system: str, prompt: str, *, schema: Dict[str, Any]
