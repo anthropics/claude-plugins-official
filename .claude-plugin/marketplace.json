@@ -1801,10 +1801,10 @@
       "category": "development",
       "source": {
         "source": "git-subdir",
-        "url": "https://github.com/greptileai/claude-plugin.git",
+        "url": "https://github.com/greptileai/skills.git",
         "path": "plugins/greptile",
-        "ref": "greptile--v1.2.3",
-        "sha": "f0b7379ca06e40896fdae93fe166e851d1c9db67"
+        "ref": "greptile--v1.3.1",
+        "sha": "4a13eb124ab175d018869fe7cc4d203e374571dc"
       },
       "homepage": "https://www.greptile.com/docs/mcp-v2/overview"
     },
