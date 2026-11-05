@@ -265,9 +265,12 @@ If the sample server was chosen, append the service:
     working_dir: /app
     volumes:
       - ./hello_server.py:/app/hello_server.py:ro
-    command: sh -c "pip install --quiet mcp && python hello_server.py"
+    command: sh -c "pip install --quiet 'mcp<2' && python hello_server.py"
     restart: unless-stopped
 ```
+
+The sample uses the MCP Python SDK 1.x `FastMCP` API, so keep the dependency
+below version 2 until the sample is migrated to the 2.x API.
 
 If the user brought their own server *and* it's containerized, add its service
 here too so it shares the Compose network with the proxy.
