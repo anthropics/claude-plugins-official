@@ -10,7 +10,7 @@ import gitutil
 from conftest import git, make_repo, metrics_of, run_hook, ups_payload
 
 SLOW = 1.2
-STASH = '*"stash create"*'
+SNAPSHOT = '*"add -u"*'
 MOUNTS = (
     "25 30 8:32 / / rw,relatime - ext4 /dev/sdc rw\n"
     "60 25 0:50 / /mnt/c rw,noatime - 9p C:\\134 rw,aname=drivers\n"
@@ -42,7 +42,7 @@ def _slow(hook_env, tmp_path, match):
 
 
 def test_slow_capture_reports_where_the_time_went(repo, hook_env, tmp_path):
-    rc, out, _ = run_hook(ups_payload(str(repo)), _slow(hook_env, tmp_path, STASH))
+    rc, out, _ = run_hook(ups_payload(str(repo)), _slow(hook_env, tmp_path, SNAPSHOT))
     m = metrics_of(out)
     assert rc == 0
     assert m["ups_ms"] >= SLOW * 1000
@@ -60,7 +60,7 @@ def test_slow_untracked_listing_is_told_apart(repo, hook_env, tmp_path):
 
 
 def test_slow_prompt_with_stop_review_off_lists_nothing(repo, hook_env, tmp_path):
-    env = {**_slow(hook_env, tmp_path, STASH), "ENABLE_STOP_REVIEW": "0"}
+    env = {**_slow(hook_env, tmp_path, SNAPSHOT), "ENABLE_STOP_REVIEW": "0"}
     m = metrics_of(run_hook(ups_payload(str(repo)), env)[1])
     assert m["ups_baseline_ms"] >= SLOW * 1000
     assert m["ups_untracked_ms"] == 0
@@ -90,7 +90,7 @@ def test_failed_snapshot_is_flagged(repo, hook_env, tmp_path):
     shim = tmp_path / "bin"
     shim.mkdir()
     (shim / "git").write_text(
-        f'#!/bin/sh\ncase "$*" in {STASH}) sleep {SLOW}; exit 1;; esac\n'
+        f'#!/bin/sh\ncase "$*" in *"write-tree"*) sleep {SLOW}; exit 1;; esac\n'
         f'exec "{shutil.which("git")}" "$@"\n')
     (shim / "git").chmod(0o755)
     env = {**hook_env, "PATH": f"{shim}{os.pathsep}{hook_env['PATH']}"}
@@ -110,14 +110,14 @@ def test_slow_launcher_is_reported_on_a_fast_prompt(repo, hook_env):
 
 
 def test_other_hosts_get_no_output(repo, hook_env, tmp_path):
-    env = {k: v for k, v in _slow(hook_env, tmp_path, STASH).items()
+    env = {k: v for k, v in _slow(hook_env, tmp_path, SNAPSHOT).items()
            if k not in ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "PLUGIN_ROOT")}
     env["SECURITY_GUIDANCE_PORTABLE_OUTPUT"] = "1"
     assert run_hook(ups_payload(str(repo)), env)[1].strip() == ""
 
 
 def test_row_holds_no_path_and_valid_keys(repo, hook_env, tmp_path):
-    _, out, _ = run_hook(ups_payload(str(repo)), _slow(hook_env, tmp_path, STASH))
+    _, out, _ = run_hook(ups_payload(str(repo)), _slow(hook_env, tmp_path, SNAPSHOT))
     assert str(repo) not in out and str(tmp_path) not in out
     metrics = json.loads(out)["metrics"]
     assert all(re.fullmatch(r"[a-z][a-z0-9_]{0,39}", k) for k in metrics)
@@ -128,7 +128,7 @@ def test_slow_capture_saves_the_same_baseline(repo, hook_env, tmp_path):
     (repo / "app.py").write_text("print('changed')\n")
     (repo / "new.txt").write_text("untracked\n")
     states = []
-    for name, env in (("fast", hook_env), ("slow", _slow(hook_env, tmp_path, STASH))):
+    for name, env in (("fast", hook_env), ("slow", _slow(hook_env, tmp_path, SNAPSHOT))):
         d = tmp_path / name
         d.mkdir()
         env = {k: v for k, v in env.items() if k != "CLAUDE_CODE_REMOTE_SESSION_ID"}

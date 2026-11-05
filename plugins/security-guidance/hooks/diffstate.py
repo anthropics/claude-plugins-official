@@ -13,6 +13,7 @@ import sys
 import time
 
 from _base import debug_log, portable_output, _PV
+import gitutil
 from gitutil import (
     GIT_CMD,
     _git_dir, _git_toplevel, _git_status_porcelain,
@@ -319,7 +320,7 @@ def get_baseline_file_content(session_id, file_path, cwd):
 
 
 # How the last capture_git_baseline call got its SHA: 0 a real snapshot,
-# 1 `stash create` failed and HEAD was returned, 2 no index copy and HEAD was
+# 1 the snapshot failed and HEAD was returned, 2 no index copy and HEAD was
 # returned. With 1 or 2 the next Stop review cannot tell the turn's changes
 # from uncommitted work that was already there. Stored with baseline_sha.
 # Telemetry only.
@@ -328,29 +329,110 @@ last_baseline_fail = 0
 last_index_entries = None
 
 
+# Who the snapshot commit is made by. Set on every commit-tree call, so the
+# user's own name never appears on a commit they did not make and a repo with
+# no identity configured still works. The commit object does land in
+# `.git/objects`, but nothing refers to it, like the one `git stash create`
+# used to make here: it is prunable from the moment it is written.
+_SNAPSHOT_IDENT = {
+    "GIT_AUTHOR_NAME": "security-guidance", "GIT_AUTHOR_EMAIL": "security-guidance@localhost",
+    "GIT_COMMITTER_NAME": "security-guidance", "GIT_COMMITTER_EMAIL": "security-guidance@localhost",
+}
+
+# The whole snapshot, not one command: `stash create` was capped at 15 s and a
+# per-command cap would let a slow filesystem hold the prompt for far longer.
+_SNAPSHOT_BUDGET_S = 15
+
+
+def _snapshot_commit(cwd, env, head_tree):
+    """A commit of every tracked change, on the index copy `env` names.
+
+    Returns its SHA, "" when nothing tracked has changed (so the caller uses
+    HEAD, `head_tree` being HEAD's tree), or None when git refused or the
+    time budget ran out.
+
+    No `--missing-ok`: git counts a partial clone's promisor blobs as
+    present, so write-tree neither fetches nor fails on one, and the
+    existence check it would turn off is worth keeping.
+    """
+    deadline = time.monotonic() + _SNAPSHOT_BUDGET_S
+
+    def run(args, extra=None):
+        left = deadline - time.monotonic()
+        if left <= 0:
+            raise subprocess.TimeoutExpired(args, _SNAPSHOT_BUDGET_S)
+        return subprocess.run(
+            [*GIT_CMD, *args], cwd=cwd, capture_output=True, timeout=left,
+            env={**env, **(extra or {})},
+        )
+
+    # No pathspec: `add -u` has staged the whole work tree, whatever directory
+    # of it `cwd` is, since git 2.0. `-- :/` would say the same but fails
+    # outright under a user's GIT_LITERAL_PATHSPECS.
+    add = run(["add", "-u"])
+    if add.returncode != 0:
+        debug_log(f"Snapshot: add -u failed: {_stderr_of(add)}")
+        return None
+    tree = run(["write-tree"])
+    sha = (tree.stdout or b"").decode("utf-8", errors="replace").strip()
+    if tree.returncode != 0 or not sha:
+        debug_log(f"Snapshot: write-tree failed: {_stderr_of(tree)}")
+        return None
+    if sha == head_tree:
+        return ""
+    if gitutil.last_dropped_gitlinks:
+        # A nested repository's entry is gone from the index copy, so the
+        # tree cannot equal HEAD's even on a clean work tree. Ask whether
+        # anything but those entries differs, rather than writing a commit
+        # object on every prompt in a repo with submodules.
+        same = run(["diff-tree", "--quiet", "--ignore-submodules=all", head_tree, sha])
+        if same.returncode == 0:
+            return ""
+    commit = run(["-c", "commit.gpgsign=false", "commit-tree", sha, "-p", "HEAD",
+                  "-m", "security-guidance turn baseline"], _SNAPSHOT_IDENT)
+    out = (commit.stdout or b"").decode("utf-8", errors="replace").strip()
+    if commit.returncode != 0 or not out:
+        debug_log(f"Snapshot: commit-tree failed: {_stderr_of(commit)}")
+        return None
+    return out
+
+
+def _stderr_of(result):
+    return (result.stderr or b"").decode("utf-8", errors="replace").strip()[:200]
+
+
 def capture_git_baseline(cwd):
     """
     Capture a git ref representing the current working tree state.
-    Uses `git stash create` which creates a commit object for the current state
-    (HEAD + uncommitted changes) without modifying the stash list or working tree.
+    Builds a commit object for the current state (HEAD + uncommitted changes)
+    without touching the stash list or the working tree: `add -u` stages every
+    tracked change into a throwaway index copy, `write-tree` turns that into a
+    tree, and `commit-tree` hangs it off HEAD.
     Falls back to HEAD if the working tree is clean.
     Returns the SHA string, or None if not in a git repo or if the repo has no commits.
 
-    `stash create` runs on a throwaway copy of the index (GIT_INDEX_FILE), so
-    its `index.lock` and `index.stash.<pid>` files land next to the copy, not
-    in `.git`: it cannot collide with a concurrent git command, and a timeout
-    kill cannot leave a lock that blocks the user's next one.
-    GIT_OPTIONAL_LOCKS does not cover stash. Copying the real index without a
-    lock is safe: git replaces it by atomic rename.
+    This was `git stash create`, which does the same thing in one command but
+    checks the work tree on a single thread, while `add -u` uses git's index
+    preload (one thread per 500 entries, up to 20). On a filesystem where each
+    file status is slow — a WSL repository on a Windows drive, a network mount
+    — that is the whole cost of the prompt: see #6854, where `stash create`
+    took 4 s on 1,424 files and never finished on 10,000.
 
-    NOTE: `git stash create` does NOT capture untracked files. UPS pairs this
+    The commands run on a throwaway copy of the index (GIT_INDEX_FILE), so
+    their `index.lock` lands next to the copy, not in `.git`: they cannot
+    collide with a concurrent git command, and a timeout kill cannot leave a
+    lock that blocks the user's next one. GIT_OPTIONAL_LOCKS does not cover
+    these. Copying the real index without a lock is safe: git replaces it by
+    atomic rename.
+
+    NOTE: the snapshot does NOT capture untracked files. UPS pairs this
     SHA with a `_list_untracked()` snapshot stored as `untracked_at_baseline`,
     and `compute_v2_review_set` subtracts that set so pre-existing untracked
     files are not reviewed as Claude-authored. UPS takes no snapshot while the
     Stop review, its only reader, is switched off.
     """
     # stdout is a SHA so text=True is safe on stdout, but a non-ASCII
-    # filename in `git stash create`'s STDERR warning (e.g. a worktree
+    # filename in git's STDERR warning (e.g. a worktree
     # with `Ávila_report.txt` triggers a quotePath/locale warning) would
     # trip the stderr reader thread on Windows cp1252. Decode both streams
     # leniently for symmetry with _list_untracked. See #2056.
@@ -358,15 +440,19 @@ def capture_git_baseline(cwd):
     last_baseline_fail = 0
     last_index_entries = None
     try:
-        # Check if HEAD exists (i.e., repo has at least one commit)
+        # HEAD's commit and its tree in one call: the commit is the answer
+        # for a clean tree, the tree is what the snapshot is compared with.
+        # A failure here means the repo has no commits — skip the review
+        # rather than create commits in the user's repo.
         head_check = subprocess.run(
-            [*GIT_CMD, "rev-parse", "HEAD"],
+            [*GIT_CMD, "rev-parse", "HEAD", "HEAD^{tree}"],
             cwd=cwd, capture_output=True, timeout=5
         )
-        if head_check.returncode != 0:
-            # No commits yet — skip review rather than creating commits in the user's repo
+        head_out = (head_check.stdout or b"").decode("utf-8", errors="replace").split()
+        if head_check.returncode != 0 or len(head_out) != 2:
             debug_log("No commits in repo, skipping baseline capture")
             return None
+        head_sha, head_tree = head_out
 
         sha = ""
         # untracked_paths=[]: a plain copy of the index, no `add -N` pass.
@@ -375,25 +461,14 @@ def capture_git_baseline(cwd):
             # back to HEAD.
             if env is not None:
                 last_index_entries = index_entry_count(env["GIT_INDEX_FILE"])
-                result = subprocess.run(
-                    [*GIT_CMD, "stash", "create"],
-                    cwd=cwd, capture_output=True, timeout=15, env=env
-                )
-                sha = (result.stdout or b"").decode("utf-8", errors="replace").strip()
-                if not sha and result.returncode != 0:
+                sha = _snapshot_commit(cwd, env, head_tree)
+                if sha is None:
                     last_baseline_fail = 1
+                    sha = ""
             else:
                 last_baseline_fail = 2
-        if sha:
-            return sha
-
-        # Working tree is clean — stash create returns empty. Use HEAD.
-        result = subprocess.run(
-            [*GIT_CMD, "rev-parse", "HEAD"],
-            cwd=cwd, capture_output=True, timeout=5
-        )
-        sha = (result.stdout or b"").decode("utf-8", errors="replace").strip()
-        return sha if sha else None
+        # No snapshot: nothing tracked has changed, or it could not be taken.
+        return sha or head_sha
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError, ValueError) as e:
         debug_log(f"Failed to capture git baseline: {e}")
         return None
@@ -997,12 +1072,12 @@ def compute_v2_review_set(cwd, baseline_sha, head_at_capture, untracked_at_basel
 
     review_set = (files dirty vs current HEAD, plus files committed this turn
     when HEAD advanced linearly) ∩ (files whose content differs from the
-    pre-turn stash baseline). The first term is immune to checkout/pull
+    pre-turn baseline). The first term is immune to checkout/pull
     ballooning; the second filters out the user's untouched pre-turn WIP.
     Falls back to dirty_now alone when no baseline is available.
 
     untracked_at_baseline: {repo-root-relative path: mtime_ns} captured at
-    UPS. `git stash create` doesn't include untracked files, so without this
+    UPS. The baseline snapshot doesn't include untracked files, so without this
     snapshot a pre-existing untracked file looks "new since baseline" forever.
     A file is excluded only if it was untracked at baseline AND its mtime is
     unchanged — an in-place edit during the turn is still reviewed.
@@ -1073,11 +1148,11 @@ def compute_v2_review_set(cwd, baseline_sha, head_at_capture, untracked_at_basel
         dirty_now |= _git_name_only(repo, f"{head_at_capture}..HEAD") or set()
         diff_base = head_at_capture
 
-    # changed_since: tracked files vs the stash baseline (no `add -N` — the
-    # stash never contained untracked files anyway), then union with
+    # changed_since: tracked files vs the turn baseline (no `add -N` — the
+    # baseline never contained untracked files anyway), then union with
     # currently-untracked. The previous `include_untracked=True` arm cost a
     # full `git add -N .` (slow in large repos) per call to surface
-    # untracked files in the diff output — but `git diff <stash>` already
+    # untracked files in the diff output — but `git diff <baseline>` already
     # lists them as "only in worktree" without that, and we have the explicit
     # set from status regardless.
     if baseline_sha:
@@ -1087,7 +1162,7 @@ def compute_v2_review_set(cwd, baseline_sha, head_at_capture, untracked_at_basel
     else:
         changed_since = None
     # changed_since is None on missing baseline OR on git error (e.g. the
-    # dangling stash SHA was pruned). Either way, don't intersect with ∅ —
+    # dangling baseline SHA was pruned). Either way, don't intersect with ∅ —
     # that would silently zero the review set. Fall back to dirty_now.
     review_set = (dirty_now & changed_since) if changed_since is not None else dirty_now
 
