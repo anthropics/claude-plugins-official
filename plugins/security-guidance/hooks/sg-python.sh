@@ -100,10 +100,12 @@ probe() {
     # the model, whose reply runs the Stop hook again: an endless loop that
     # never reviewed anything. See #6251, #5781.
     #
+    # On Windows a second line carries sys.executable (see sg_own_path).
+    #
     # Only for `$(probe ...)`: the `exec` replaces that subshell instead of
     # forking a second process from it.
     [ "${BASH_SUBSHELL:-0}" -gt 0 ] || return 1
-    exec "$@" -c 'import os, sys; t = (sys.argv[1:] or [""])[0]; sys.exit(3) if t and not (os.path.isfile(t) and os.access(t, os.R_OK)) else print(f"{sys.version_info[0]}.{sys.version_info[1]}")' "$SG_TARGET" 2>/dev/null
+    exec "$@" -c 'import os, sys; t = (sys.argv[1:] or [""])[0]; sys.exit(3) if t and not (os.path.isfile(t) and os.access(t, os.R_OK)) else print(f"{sys.version_info[0]}.{sys.version_info[1]}"); sys.platform == "win32" and sys.version_info >= (3, 10) and print(sys.executable)' "$SG_TARGET" 2>/dev/null
 }
 
 # Use as `ask ... || { note_unreadable "<name>"; continue; }` (see ask below).
@@ -142,11 +144,17 @@ sg_clock() {
     esac
 }
 ask() {
-    # Sets $v; same exit status as probe.
+    # Sets $v and $sg_exe; same exit status as probe.
     local rc=0 t0 ms
     sg_clock; t0=$sg_now
     [ -n "$sg_probe_first" ] || sg_probe_first=$t0
     v=$(probe "$@") || rc=$?
+    sg_exe=""
+    case "$v" in
+        *$'\n'*)
+            sg_exe=${v#*$'\n'}; sg_exe=${sg_exe%$'\r'}
+            v=${v%%$'\n'*} ;;
+    esac
     sg_clock; ms=$((sg_now - t0))
     if [ -n "$sg_coarse" ]; then
         [ "$ms" -ge 2000 ] || ms=0
@@ -175,6 +183,145 @@ is_sdk_compatible() {
     esac
 }
 
+# Packaged launcher aliases on Windows (python, python3 and py under
+# ...\Microsoft\WindowsApps): starting one starts more than Python. The
+# Python Install Manager's aliases make Windows check the package for an
+# update on each start, and the launcher started the chosen name twice per
+# hook, on every Edit, prompt and Stop. See anthropics/claude-code#98929.
+#
+# So when the name that answers is such an alias and its interpreter is a
+# regular file elsewhere, the hook runs with that file instead, and its path
+# is kept in the plugin's state folder (`launcher-python`) for a day. Later
+# hooks start it directly: one process, and none through the alias. The
+# remembered path is used only while PATH and the hook folder are what they
+# were when it was checked and the file is still there; anything else is the
+# full search below, which writes the entry again. A hook that fails on the
+# remembered path empties the entry, so the next one searches again; deleting
+# the file does the same by hand. One entry: sessions with different PATHs
+# take turns checking, which is still one alias start per hook instead of two.
+#
+# Not while a virtual environment is active: the alias may be answering for
+# that environment's interpreter, which other sessions should not inherit.
+#
+# Builtins only: nothing here starts a process on the remembered route.
+unset SG_LAUNCHER_DIRECT
+sg_args=("$@")
+sg_exe=""    # sys.executable from the last `ask` (Windows, Python 3.10+)
+sg_own=""    # set by sg_recall and sg_own_path
+sg_memo=""   # the entry's file; empty where none of this applies
+sg_target_dir=""
+case "${OSTYPE:-}" in
+    msys*|cygwin*)
+        if [ "${BASH_VERSINFO[0]:-0}" -ge 5 ] && [ -n "$SG_TARGET" ] && [ -z "${VIRTUAL_ENV:-}" ]; then
+            # The folder _base.state_dir() resolves to.
+            sg_home="${USERPROFILE:-${HOME:-}}"
+            sg_memo="${SECURITY_WARNINGS_STATE_DIR:-}"
+            if [ -z "$sg_memo" ] && [ -n "${CLAUDE_CONFIG_DIR:-}" ]; then
+                sg_memo="$CLAUDE_CONFIG_DIR/security"
+            fi
+            [ -n "$sg_memo" ] || sg_memo="~/.claude/security"
+            case "$sg_memo" in
+                "~"|"~"[\\/]*)
+                    if [ -n "$sg_home" ]; then sg_memo="$sg_home${sg_memo:1}"; else sg_memo=""; fi ;;
+            esac
+            [ -z "$sg_memo" ] || sg_memo="$sg_memo/launcher-python"
+            sg_target_dir="${SG_TARGET%[\\/]*}"
+        fi ;;
+esac
+
+sg_is_alias_path() {
+    case "${1,,}" in
+        */microsoft/windowsapps/*|*\\microsoft\\windowsapps\\*) return 0 ;;
+    esac
+    return 1
+}
+
+# An interpreter the remembered route may start: python*.exe by absolute
+# path, a regular file, and not an alias itself.
+sg_startable() {
+    local name="${1##*/}"
+    case "$1" in
+        /*) ;;
+        *) return 1 ;;
+    esac
+    case "${name,,}" in
+        python*.exe) ;;
+        *) return 1 ;;
+    esac
+    ! sg_is_alias_path "$1" || return 1
+    [ -f "$1" ] && [ -x "$1" ]
+}
+
+sg_recall() {
+    # Sets $sg_own to the remembered interpreter iff it may run this hook.
+    local tag saved path exe dir end age
+    [ -n "$sg_memo" ] && [ -r "$sg_memo" ] || return 1
+    {
+        IFS= read -r tag && IFS= read -r saved && IFS= read -r path &&
+            IFS= read -r exe && IFS= read -r dir && IFS= read -r end
+    } 2>/dev/null < "$sg_memo" || return 1
+    [ "$tag" = "sg-launcher-python 1" ] && [ "$end" = "end" ] || return 1
+    case "$saved" in
+        ""|*[!0-9]*|????????????*) return 1 ;;
+    esac
+    age=$((EPOCHSECONDS - 10#$saved))
+    [ "$age" -ge 0 ] && [ "$age" -lt 86400 ] || return 1
+    [ "$path" = "$PATH" ] && [ "$dir" = "$sg_target_dir" ] || return 1
+    sg_startable "$exe" && [ -r "$SG_TARGET" ] || return 1
+    sg_own="$exe"
+}
+
+sg_own_path() {
+    # $1: the name that just answered `ask` with version $v. Succeeds, with
+    # $sg_own set, iff that name is a packaged alias whose interpreter is a
+    # regular file elsewhere that reads the hook script when started by
+    # itself and is the same version. Remembers it for the next hooks.
+    local alias="" own="$sg_exe" want="$v" drive
+    [ -n "$sg_memo" ] && [ -n "$own" ] || return 1
+    hash "$1" 2>/dev/null && alias="${BASH_CMDS[$1]:-}"
+    sg_is_alias_path "$alias" || return 1
+    case "$own" in
+        [A-Za-z]:[\\/]*)
+            if [ -n "${sg_drive_mounts:-}" ]; then
+                drive="${own:0:1}"; own="/${drive,,}/${own:3}"; own="${own//\\//}"
+            else
+                own=$(cygpath -u "$own" 2>/dev/null) || return 1
+            fi ;;
+    esac
+    sg_startable "$own" || return 1
+    ask "$own" || { v=$want; return 1; }
+    v=${v%$'\r'}
+    [ "$v" = "$want" ] || { v=$want; return 1; }
+    sg_own="$own"
+    if [ -d "${sg_memo%/*}" ]; then
+        { printf '%s\n' "sg-launcher-python 1" "$EPOCHSECONDS" "$PATH" "$own" "$sg_target_dir" "end"; } \
+            2>/dev/null > "$sg_memo" || true
+    fi
+    return 0
+}
+
+# Use right before `exec <name> "$@"`: runs the hook with the interpreter
+# behind <name> instead when sg_own_path finds one, else returns.
+sg_direct() {
+    if sg_own_path "$@"; then
+        export SG_LAUNCHER_DIRECT=2
+        exec "$sg_own" "${sg_args[@]}"
+    fi
+    return 0
+}
+
+if sg_recall; then
+    export SG_LAUNCHER_DIRECT=1
+    # Not exec'd, so a failure can empty the entry: no probe checked this
+    # interpreter today, and a broken one must not fail every hook for a day.
+    sg_rc=0
+    "$sg_own" "$@" || sg_rc=$?
+    if [ "$sg_rc" -ne 0 ]; then
+        { : > "$sg_memo"; } 2>/dev/null || true
+    fi
+    exit "$sg_rc"
+fi
+
 # Pass 1 — try minor-versioned binaries in descending order. These are only
 # present if the user explicitly installed them (Homebrew / python.org / pyenv),
 # so picking one here always upgrades over the system `python3`. Highest
@@ -185,6 +332,7 @@ for cmd in "python3.13" "python3.12" "python3.11" "python3.10"; do
     ask "$cmd" || { note_unreadable "$cmd"; continue; }
     v=${v%$'\r'}
     if is_sdk_compatible "$v"; then
+        sg_direct "$cmd"
         exec "$cmd" "$@"
     fi
 done
@@ -200,6 +348,8 @@ for cmd in "python3" "python" "py -3"; do
     ask $cmd || { note_unreadable "$cmd"; continue; }
     v=${v%$'\r'}
     if is_sdk_compatible "$v"; then
+        # shellcheck disable=SC2086
+        sg_direct $cmd
         # shellcheck disable=SC2086
         exec $cmd "$@"
     fi
@@ -219,6 +369,7 @@ done
 for cmd in "python3.14" "python3.15" "python3.16" "python3.17" "python3.18" "python3.19"; do
     on_path "$cmd" || continue
     v=$(probe "$cmd") || { note_unreadable "$cmd"; continue; }
+    v=${v%%$'\n'*}
     v=${v%$'\r'}
     if is_sdk_compatible "$v"; then
         exec "$cmd" "$@"
