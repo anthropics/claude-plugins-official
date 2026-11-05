@@ -27,8 +27,39 @@ import time
 from _base import debug_log
 
 
+def _git_program(windows=os.name == "nt"):
+    """How to start git. On Windows a bare name is looked up in the process's
+    working directory before PATH, and the hooks run in the project, so a
+    `git.exe` there would start in place of the installed one. Name the first
+    git.exe on PATH instead, leaving out relative entries, the working
+    directory, and folders inside the project (unless the project holds the
+    home folder, and with it the user's own tools). With none, a path that
+    does not exist: git is reported missing, as it would be anywhere else."""
+    if not windows:
+        return "git"
+    def norm(p):
+        return os.path.normcase(os.path.normpath(p))
+    try:
+        cwd = norm(os.getcwd())
+    except OSError:
+        cwd = ""
+    home = norm(os.path.expanduser("~")) + os.sep
+    roots = [norm(r) for r in (cwd, os.environ.get("CLAUDE_PROJECT_DIR")) if r]
+    roots = [r.rstrip(os.sep) + os.sep for r in roots if not home.startswith(r.rstrip(os.sep) + os.sep)]
+    for d in os.environ.get("PATH", "").split(os.pathsep):
+        d = d.strip().strip('"')
+        if not d or not os.path.isabs(d) or norm(d) == cwd:
+            continue
+        if any((norm(d) + os.sep).startswith(r) for r in roots):
+            continue
+        path = os.path.join(d, "git.exe")
+        if os.path.isfile(path):
+            return path
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "git.exe")
+
+
 GIT_CMD = [
-    "git",
+    _git_program(),
     "-c", "core.fsmonitor=false",
     "-c", "core.hooksPath=/dev/null",
     # core.quotePath=false: emit raw UTF-8 in path-emitting commands instead
@@ -62,6 +93,10 @@ GIT_CMD = [
     # _drop_gitlinks for the commands that take no such setting.
     "-c", "diff.ignoreSubmodules=all",
     "-c", "diff.submodule=short",
+    # `git log` and `git show` print commit metadata for the hooks to parse.
+    # With log.showSignature set they would also verify each signed commit,
+    # adding lines to the output and starting the program gpg.program names.
+    "-c", "log.showSignature=false",
 ]
 
 # diff.ignoreSubmodules is a default that the repository's own settings for
@@ -74,6 +109,7 @@ SAFE_GIT_CONFIG = (
     ("core.hooksPath", "/dev/null"),
     ("diff.ignoreSubmodules", "all"),
     ("diff.submodule", "short"),
+    ("log.showSignature", "false"),
 )
 
 # The hook's git runs in the background beside the session's own git. Without
@@ -295,12 +331,17 @@ _path_list_too_long = set()
 
 # A failed `git add --intent-to-add` during this hook run, for the Stop hook's
 # metrics: kind * 100000 + the paths the add was given. One number because a
-# review row is near CC's key cap. A failed add leaves the new files out of the
-# diff, so a turn that only added files looks like a turn with no changes; a
-# timeout loses the whole diff. kind: 1 git could not write the empty blob to
-# the object store, 2 any other git error, 3 timeout. A git that speaks another
-# language counts as 2.
-_add_failed = {"code": 0}
+# review row is near CC's key cap. kind: 1 git could not write the empty blob
+# to the object store and the retry failed too, 2 any other git error, 3
+# timeout, 4 the retry with a private object directory worked. A git that
+# speaks another language reports a failed retry as 2. With 1 to 3 the new
+# files are not in the diff, so a turn that only added files looks like a turn
+# with no changes. `left_out` says so for the last get_git_diff alone: the code
+# stays set through a fallback diff that worked.
+_add_failed = {"code": 0, "left_out": False}
+
+# Next to an index copy: where a retried `git add -N` stores the empty blob.
+_OBJECTS_DIR_SUFFIX = ".objects"
 
 
 def _too_many_args(e):
@@ -398,8 +439,9 @@ def _owner_is_gone(name):
 
 
 def _sweep_stale_indexes(dirpath, uid):
-    """Delete index copies in `dirpath` that a killed run left behind. Only
-    regular files owned by `uid` (None: no ownership check) are touched.
+    """Delete index copies in `dirpath` that a killed run left behind, and
+    their private object directories. Only regular files and directories owned
+    by `uid` (None: no ownership check) are touched.
 
     A copy goes as soon as the hook that made it is gone: a killed hook can
     leave one per run, and index-sized files fill a disk long before the age
@@ -422,12 +464,16 @@ def _sweep_stale_indexes(dirpath, uid):
         p = os.path.join(dirpath, name)
         try:
             st = os.lstat(p)
-            if not stat.S_ISREG(st.st_mode):
+            is_dir = stat.S_ISDIR(st.st_mode) and name.endswith(_OBJECTS_DIR_SUFFIX)
+            if not (is_dir or stat.S_ISREG(st.st_mode)):
                 continue
             if uid is not None and st.st_uid != uid:
                 continue
             if max(st.st_mtime, st.st_ctime) < cutoff or _owner_is_gone(name):
-                os.unlink(p)
+                if is_dir:
+                    _remove_objects_dir(p)
+                else:
+                    os.unlink(p)
                 if time.monotonic() > deadline:
                     return
         except OSError:
@@ -531,6 +577,24 @@ def _copy_slot(tmpdir, index_bytes=0):
             os.close(held)
 
 
+def _remove_objects_dir(path):
+    """Remove a private object directory. git writes objects read-only, which
+    stops Windows from deleting them."""
+    import shutil
+    import stat
+
+    def writable_then_retry(func, p, _exc):
+        # Not a link: chmod would follow it to whatever it points at.
+        if func in (os.unlink, os.rmdir) and not os.path.islink(p):
+            os.chmod(p, stat.S_IWRITE)
+            func(p)
+
+    try:
+        shutil.rmtree(path, onerror=writable_then_retry)
+    except OSError:
+        pass
+
+
 def _remove_copy(tmp_index):
     """Remove an index copy and the files git wrote next to it."""
     import glob
@@ -539,6 +603,7 @@ def _remove_copy(tmp_index):
             os.unlink(p)
         except OSError:
             pass
+    _remove_objects_dir(tmp_index + _OBJECTS_DIR_SUFFIX)
 
 
 def remove_copies_on_termination():
@@ -597,6 +662,75 @@ def _hook_tmpdir():
 
 def _note_add_failure(kind, paths):
     _add_failed["code"] = kind * 100000 + min(len(paths), 99999)
+    _add_failed["left_out"] = kind != 4
+
+
+def _env_with_private_objects(env, cwd, objects_dir):
+    """`env` for a git that writes objects to `objects_dir` and still reads
+    the repository's own, wherever git says they are (a linked worktree shares
+    them). A path holding the list separator is left out, since git would
+    split it; the add then fails only if it has to read an object."""
+    out = {**env, "GIT_OBJECT_DIRECTORY": objects_dir}
+    try:
+        r = subprocess.run([*GIT_CMD, "rev-parse", "--git-path", "objects"],
+                           cwd=cwd, capture_output=True, timeout=5, env=env)
+    except (subprocess.TimeoutExpired, OSError):
+        return out
+    own = os.path.join(cwd, os.fsdecode(r.stdout).strip())
+    if r.returncode == 0 and os.pathsep not in own:
+        out["GIT_ALTERNATE_OBJECT_DIRECTORIES"] = os.pathsep.join(
+            p for p in (own, env.get("GIT_ALTERNATE_OBJECT_DIRECTORIES")) if p)
+    return out
+
+
+def _add_new_files(cwd, paths, env, tmp_index):
+    """`git add --intent-to-add` the untracked `paths` to the index copy `env`
+    names, so the diff shows them. The add has to store the empty blob, so a
+    user who cannot write the object store gets a second try that stores it in
+    a private directory next to the copy. Nothing needs that blob afterwards:
+    `git diff` reads these files from the work tree. `git stash create` would
+    fail on such an index, and only runs on a copy with nothing added.
+
+    No stdout used here (only returncode matters), but text=True still spawns
+    reader threads that decode stderr — git error messages can reference
+    non-ASCII filenames and crash on cp1252. See #2099. Drop text=True so bytes
+    stay raw."""
+    # The paths are file names, not patterns, for this git add only: an
+    # untracked file named `:(glob)**` must add only itself. git refuses that
+    # together with a glob or icase setting from the user's environment.
+    env = {k: v for k, v in env.items()
+           if k not in ("GIT_GLOB_PATHSPECS", "GIT_ICASE_PATHSPECS")}
+    env["GIT_LITERAL_PATHSPECS"] = "1"
+
+    def add(add_env):
+        results = _run_git_on_review_paths(
+            ["add", "--intent-to-add"], paths, timeout=10, cwd=cwd, env=add_env)
+        return next((r for r in results if r.returncode != 0), None)
+
+    try:
+        failed = add(env)
+    except subprocess.TimeoutExpired:
+        # No retry: git is slow here, not refused. The diff goes on for the
+        # tracked files, so a timeout on every turn cannot stop their reviews.
+        _note_add_failure(3, paths)
+        return
+    if not failed:
+        return
+    debug_log(f"git add -N failed: {failed.stderr[:200].decode('utf-8', errors='replace')}")
+    # Whatever happens to the retry, the diff goes on for the tracked files.
+    try:
+        objects_dir = tmp_index + _OBJECTS_DIR_SUFFIX
+        os.mkdir(objects_dir, 0o700)
+        retry_failed = add(_env_with_private_objects(env, cwd, objects_dir))
+        if retry_failed:
+            debug_log(f"git add -N retry failed: {retry_failed.stderr[:200].decode('utf-8', errors='replace')}")
+    except (subprocess.TimeoutExpired, OSError) as e:
+        debug_log(f"git add -N retry failed: {e}")
+        retry_failed = True
+    if retry_failed:
+        _note_add_failure(1 if b"empty blob" in failed.stderr else 2, paths)
+    else:
+        _note_add_failure(4, paths)
 
 
 @contextlib.contextmanager
@@ -685,24 +819,7 @@ def _copied_index(cwd, top, real_index, tmpdir, untracked_paths):
         else:
             add_args = None
         if add_args:
-            # No stdout used here (only returncode matters), but text=True
-            # still spawns reader threads that decode stderr — git error
-            # messages can reference non-ASCII filenames and crash on
-            # cp1252. See #2099. Drop text=True so bytes stay raw.
-            try:
-                results = _run_git_on_review_paths(
-                    ["add", "--intent-to-add"], add_args, timeout=10, cwd=cwd,
-                    # The paths are file names, not patterns, for this git add
-                    # only: an untracked file named `:(glob)**` must add only
-                    # itself.
-                    env={**env, "GIT_LITERAL_PATHSPECS": "1"})
-            except subprocess.TimeoutExpired:
-                _note_add_failure(3, add_args)
-                raise
-            failed = next((r for r in results if r.returncode != 0), None)
-            if failed:
-                _note_add_failure(1 if b"empty blob" in failed.stderr else 2, add_args)
-                debug_log(f"git add -N failed: {failed.stderr[:200].decode('utf-8', errors='replace')}")
+            _add_new_files(cwd, add_args, env, tmp_index)
             # A whole-tree add puts a nested repository back.
             if untracked_paths is None and not _drop_gitlinks(top, env, tmp_index):
                 yield None
@@ -794,26 +911,33 @@ def _gitlink_paths(top, env):
     return found
 
 
+# True when the last _drop_gitlinks call removed at least one gitlink, so the
+# index copy and HEAD can no longer have the same tree even on a clean tree.
+last_dropped_gitlinks = False
+
+
 def _drop_gitlinks(top, env, tmp_index):
     """Remove the gitlink (mode 160000) entry of every nested repository from
     the index copy that `env` names, never from the real index, before
     anything else runs on the copy. A gitlink marks a directory that is, or
     can be, another repository (see diff.ignoreSubmodules in GIT_CMD):
     `git stash create` takes no flag like IGNORE_SUBMODULES, and `git add`
-    reads the gitlinks its paths cover. An entry whose directory has no
-    `.git` stays: git starts nothing there, and without the entry an older
-    `git stash create` fails on the empty directory. `top` is the work
-    tree's top directory. Returns True on success, False on any failure; the
-    copy must not be used then."""
+    reads the gitlinks its paths cover. Every gitlink goes, including one
+    whose directory has no `.git` now: whether git starts something there is
+    decided when git runs, not here. Without the entry, `git stash create` on
+    git older than 2.34 fails on a submodule that is not checked out, and the
+    baseline falls back to HEAD. `top` is the work tree's top directory.
+    Returns True on success, False on any failure; the copy must not be used
+    then."""
+    global last_dropped_gitlinks
+    last_dropped_gitlinks = False
     try:
         if not _may_have_gitlinks(tmp_index):
             return True
         gitlinks = _gitlink_paths(top, env)
         if gitlinks is None:
             return False
-        top_b = os.fsencode(top)
-        nested = sorted(p for p in gitlinks
-                        if os.path.lexists(os.path.join(top_b, p, b".git")))
+        nested = sorted(gitlinks)
         if not nested:
             return True
         mtime_ns = os.stat(tmp_index).st_mtime_ns
@@ -829,6 +953,7 @@ def _drop_gitlinks(top, env, tmp_index):
             return False
         # Keep the mtime the copy came with; see _copied_index.
         os.utime(tmp_index, ns=(mtime_ns, mtime_ns))
+        last_dropped_gitlinks = True
         debug_log(f"gitlink entries (nested repositories) removed from the "
                   f"index copy: {len(nested)}; their contents are not reviewed")
         return True
@@ -1058,6 +1183,18 @@ def _git_reflog_recent_commits(repo_root, max_age_s=120, max_n=5):
     return fresh, stale
 
 
+# New name -> secret-shaped old name, for the renames and copies git reported
+# during this hook run. The Stop review limits its diff to a list of paths:
+# with only the new name in it, git shows the secret's content as a new file,
+# and the diff parsers cannot tell it came from a name they leave out.
+_secret_rename_origins = {}
+
+
+def _note_rename(old_path, new_path):
+    if _is_secret_shaped(old_path):
+        _secret_rename_origins[new_path] = old_path
+
+
 def _git_name_only(cwd, base, include_untracked=False):
     """Return the set of repo-root-relative paths that differ from `base`,
     or None if git failed (unresolvable ref, not a repo, timeout). Callers
@@ -1077,7 +1214,7 @@ def _git_name_only(cwd, base, include_untracked=False):
     def _run(env):
         # core.quotePath=false comes from GIT_CMD globally (see definition).
         result = subprocess.run(
-            [*GIT_CMD, "diff", IGNORE_SUBMODULES, "--name-only", "-z", base],
+            [*GIT_CMD, "diff", IGNORE_SUBMODULES, "--name-status", "-z", base],
             cwd=cwd, capture_output=True, timeout=30,
             env=env,
         )
@@ -1086,7 +1223,18 @@ def _git_name_only(cwd, base, include_untracked=False):
             debug_log(f"_git_name_only({base!r}) rc={result.returncode}: {stderr_str[:200]}")
             return None
         stdout = (result.stdout or b"").decode("utf-8", errors="replace")
-        return {p for p in stdout.split("\0") if p}
+        # Fields are `status\0path\0`, or `R<score>\0old\0new\0` for a rename
+        # or copy, which is listed by its new name only.
+        fields = stdout.split("\0")
+        names = set()
+        i = 0
+        while i + 1 < len(fields):
+            if fields[i][:1] in ("R", "C") and i + 2 < len(fields):
+                _note_rename(fields[i + 1], fields[i + 2])
+                i += 1
+            names.add(fields[i + 1])
+            i += 2
+        return names
 
     try:
         # The diff only reads the index (diff.autoRefreshIndex is off in
@@ -1147,6 +1295,8 @@ def _git_status_porcelain(cwd):
                 # 2-char-status entry.
                 if "R" in xy or "C" in xy:
                     i += 1
+                    if i < len(entries):
+                        _note_rename(entries[i], path)
             i += 1
         return tracked, untracked
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError, ValueError) as e:
@@ -1453,6 +1603,7 @@ def get_git_diff(cwd, baseline_sha, full_context=False, paths=None, untracked_pa
     MAX_FILE_DIFF_BYTES is cut down to its added lines.
     """
     _path_list_too_long.clear()
+    _add_failed["left_out"] = False
     pathspec = _diff_pathspec(cwd, paths)
     if paths and not pathspec:
         # Caller restricted to specific paths but none are inside this repo

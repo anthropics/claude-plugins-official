@@ -5,6 +5,7 @@ import http.client
 import socket
 import ssl
 import sys
+import threading
 import types
 import urllib.error
 
@@ -324,6 +325,117 @@ class TestEmittedRow:
     def test_absent_without_a_failure(self, capsys):
         hook.emit_metrics({"vulns_found": 0, "review_ms": 10})
         assert "net_err" not in self._row(capsys)
+
+
+class TestClearedOnALaterResponse:
+    """`net_err` says why the last call got no response, so a failed call
+    followed by one that got through leaves nothing on the review's row."""
+
+    @pytest.fixture(autouse=True)
+    def _clean(self, monkeypatch):
+        monkeypatch.setitem(_base._USAGE, "net_err", 0)
+        monkeypatch.setattr(llm, "_last_call_claude_http_error", None)
+
+    @pytest.fixture
+    def remote(self, direct, monkeypatch):
+        monkeypatch.setenv("CLAUDE_CODE_REMOTE", "1")
+        monkeypatch.delenv("NO_PROXY", raising=False)
+        monkeypatch.delenv("no_proxy", raising=False)
+        monkeypatch.setattr(llm, "_anthropic_reachable", None)
+
+    def _probes(self, monkeypatch, *outcomes):
+        def urlopen(request, timeout):
+            outcome = outcomes[len(calls)]
+            calls.append(request)
+            if isinstance(outcome, BaseException):
+                raise outcome
+            return _Reply("")
+        calls = []
+        monkeypatch.setattr(llm, "_urlopen", urlopen)
+        return calls
+
+    def _status(self, code):
+        return urllib.error.HTTPError("https://api.anthropic.com/", code, "x", {}, None)
+
+    @pytest.mark.parametrize("second", ["reply", "status"])
+    def test_second_probe_that_gets_through(self, remote, monkeypatch, second):
+        calls = self._probes(monkeypatch, urllib.error.URLError(ConnectionRefusedError()),
+                             None if second == "reply" else self._status(404))
+        assert llm.ensure_anthropic_reachable() is True
+        assert len(calls) == 2
+        assert _base._net_error_metric() == 0
+
+    def test_second_probe_that_fails_keeps_its_class(self, remote, monkeypatch):
+        self._probes(monkeypatch, urllib.error.URLError(ConnectionRefusedError()),
+                     urllib.error.URLError(socket.gaierror(-2, "x")))
+        assert llm.ensure_anthropic_reachable() is False
+        assert _base._net_error_metric() == llm.NET_ERR_DNS
+
+    def _race(self, monkeypatch, agentic_result):
+        """A fallback that records a refused connection and has no verdict,
+        then an agentic run that ends with `agentic_result`."""
+        tried = threading.Event()
+
+        def fallback(diff_files, is_diff, previous_findings):
+            _base._record_net_error(llm.NET_ERR_CONNECT)
+            llm._last_call_claude_http_error = -1
+            tried.set()
+            return None, []
+
+        def agentic(repo_root, diff_files, rel_touched):
+            assert tried.wait(10)
+            return agentic_result
+
+        monkeypatch.setenv("SG_AGENTIC_RACE_DELAY_S", "0")
+        monkeypatch.delenv("SG_AGENTIC_NO_RACE", raising=False)
+        monkeypatch.setattr(hook, "analyze_code_security", fallback)
+        monkeypatch.setattr(hook, "agentic_review", agentic)
+        monkeypatch.setattr(hook.llm, "last_review_failed", lambda: True)
+        monkeypatch.setattr(hook.llm, "last_review_status", lambda: -1)
+        return hook._agentic_review_with_race(".", [], [], [])
+
+    @pytest.mark.parametrize("guidance", ["findings", None])
+    def test_agentic_verdict_after_a_failed_fallback(self, monkeypatch, guidance):
+        _, _, m = self._race(monkeypatch, (guidance, [], {"agentic": True}))
+        assert (m["race_winner"], m["race_started"]) == (1, 1)
+        assert _base._net_error_metric() == 0
+        assert llm._last_call_claude_http_error is None
+
+    def test_no_verdict_from_either_side_keeps_the_class(self, monkeypatch):
+        _, _, m = self._race(monkeypatch, (None, [], {"agentic_fallback": "investigate:x"}))
+        assert m["race_winner"] == 2 and m["review_failed"]
+        assert _base._net_error_metric() == llm.NET_ERR_CONNECT
+
+    def _dual_legs(self, monkeypatch, *replies):
+        """The first leg records a refused connection before the second ends."""
+        lock, failed = threading.Lock(), threading.Event()
+        pending = list(replies)
+
+        def call(*a, **k):
+            with lock:
+                reply = pending.pop(0)
+            if reply is None:
+                _base._record_net_error(llm.NET_ERR_CONNECT)
+                llm._last_call_claude_http_error = -1
+                failed.set()
+            else:
+                assert failed.wait(10)
+            return reply
+
+        monkeypatch.setenv("SG_DUAL_OR", "on")
+        monkeypatch.setenv("SECURITY_REVIEW_MODEL", "claude-opus-5-5")
+        monkeypatch.setattr(llm, "_call_claude", call)
+        return llm._call_claude_dual_or("p", {}, bool_key="found", list_key="items")
+
+    def test_dual_review_with_one_leg_that_gets_through(self, monkeypatch):
+        merged = self._dual_legs(monkeypatch, None, {"found": False, "items": []})
+        assert merged["found"] is False
+        assert _base._net_error_metric() == 0
+        assert llm._last_call_claude_http_error is None
+
+    def test_dual_review_with_no_leg_through_keeps_the_class(self, monkeypatch):
+        assert self._dual_legs(monkeypatch, None, None) is None
+        assert _base._net_error_metric() == llm.NET_ERR_CONNECT
 
 
 def _free_port():

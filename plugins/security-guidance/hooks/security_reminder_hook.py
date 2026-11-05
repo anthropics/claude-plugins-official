@@ -23,7 +23,7 @@ The plugin has two layers:
 
 ## How the git baseline works
 
-On each UserPromptSubmit, the plugin runs `git stash create` to get a SHA representing
+On each UserPromptSubmit, the plugin takes a snapshot commit to get a SHA representing
 the current working tree state (HEAD + any uncommitted changes). This SHA is saved to
 the session state file. When the Stop hook fires, it runs `git diff <baseline_sha>` to
 get only the changes made since that snapshot. After analysis, the baseline is updated
@@ -68,6 +68,7 @@ import re
 import subprocess
 import sys
 import threading
+import time
 import urllib.request
 from datetime import datetime
 from enum import IntEnum
@@ -86,9 +87,9 @@ from _base import (  # noqa: E402,F401
     _read_plugin_version_int, _PV, _USAGE, _USAGE_LOCK,
     _PRICE_PER_MTOK, _PRICE_DEFAULT, _record_usage, _usage_metrics, _net_error_metric,
     _USAGE_CONTEXT, _log_usage,
-    launcher_probe_metrics, state_dir as _resolve_state_dir,
+    launcher_direct_metric, launcher_probe_metrics, state_dir as _resolve_state_dir,
     write_hook_output as _write_hook_output, portable_output,
-    llm_reviews_switched_off, agent_sdk_installed,
+    llm_reviews_switched_off, agent_sdk_installed, make_state_dir,
 )
 import extensibility  # noqa: E402
 from patterns import (  # noqa: E402,F401
@@ -219,6 +220,9 @@ CONTINUATION_SUFFIX = (
     "response."
 )
 
+# New files named in the notice for a failed `git add -N`.
+_LEFT_OUT_NAMES_SHOWN = 5
+
 # Extra keys emit_metrics appends to every row this invocation emits.
 _TAIL_METRICS: Dict[str, Any] = {}
 # Of those, the ones that go after the others whenever they were set: a row
@@ -228,6 +232,8 @@ _LAST_METRIC_KEYS = ("diff_seen",)
 
 # The launcher's slow interpreter probes, if any. After the keys above.
 _LAUNCHER_METRICS: Dict[str, Any] = launcher_probe_metrics()
+# Whether the launcher skipped a packaged alias. Only on rows sent anyway.
+_LAUNCHER_DIRECT: Dict[str, Any] = launcher_direct_metric()
 
 # Reviewer context diagnostics from llm.agentic_review, most useful first.
 _REVIEWER_CONTEXT_KEYS = ("rv_cwd_gone", "rv_tool_err", "rv_tool_calls")
@@ -324,6 +330,10 @@ def emit_metrics(
     # names on PATH were launcher aliases that cannot read the plugin files.
     if os.environ.get("SG_LAUNCHER_FALLBACK") == "1":
         head["launcher_fallback"] = 1
+    if _precheck_miss:
+        # Up front: this is the key that says a text check would have lost a
+        # review, so it must not be the one cut by the key cap.
+        head["precheck_miss"] = 1
     usage = _usage_metrics()
     head.update(usage)
     # Why the last call got no HTTP response (api_error -1 says only that it
@@ -357,6 +367,8 @@ def emit_metrics(
             tail[k] = tail.pop(k)
     tail.update(_LAUNCHER_METRICS)
     tail.update(_REVIEWER_EFFORT_METRICS)
+    # Last of all: the first key a full row loses.
+    tail.update(_LAUNCHER_DIRECT)
     metrics = {**metrics, **{k: v for k, v in tail.items() if k not in metrics}}
     out = {"metrics": metrics}
     if rewake_summary:
@@ -422,7 +434,7 @@ def _no_credentials_notice(file_path, session_id):
             pass
         if not _git_toplevel(os.path.dirname(os.path.abspath(file_path))):
             return None
-        os.makedirs(os.path.dirname(marker), exist_ok=True)
+        make_state_dir(os.path.dirname(marker))
         with open(marker, "w"):
             pass
         # In a session signed in to a Claude apps gateway the reviews do run,
@@ -760,7 +772,7 @@ def handle_user_prompt_submit(input_data):
     # The untracked snapshot has one reader: the Stop-hook diff review, which
     # skips before reading it when either of these switches is off (see
     # handle_stop_hook). Listing the worktree on every prompt then buys
-    # nothing, so only the stash baseline (still read by the Write pattern
+    # nothing, so only the turn baseline (still read by the Write pattern
     # filter) is captured.
     snapshot_untracked = ENABLE_STOP_REVIEW and ENABLE_CODE_SECURITY_REVIEW
     spent = {"baseline": 0.0, "untracked": 0.0}
@@ -775,15 +787,15 @@ def handle_user_prompt_submit(input_data):
     def _capture(repo_cwd):
         if not snapshot_untracked:
             return _timed("baseline", capture_git_baseline, repo_cwd), None
-        # stash-create and ls-files both walk the worktree (~2-5s each in a
+        # the baseline snapshot and ls-files both walk the worktree (~2-5s each in a
         # very large repo). Run them concurrently so UPS latency stays
         # ≈ max(both).
         import concurrent.futures as _cf
         with _cf.ThreadPoolExecutor(max_workers=2) as _ex:
             _f_sha = _ex.submit(_timed, "baseline", capture_git_baseline, repo_cwd)
             _f_ut = _ex.submit(_timed, "untracked", _list_untracked, repo_cwd)
-            # Taken whether or not the stash produced a SHA. `git stash
-            # create` returns empty when there are no TRACKED changes, but
+            # Taken whether or not the snapshot produced a SHA. The baseline
+            # falls back to HEAD when there are no TRACKED changes, but
             # pre-existing untracked files still need to be excluded from the
             # next Stop's review_set — otherwise an untracked-only working
             # tree gets every untracked file reviewed on every turn until
@@ -851,7 +863,7 @@ def handle_user_prompt_submit(input_data):
         # When the turn began: what a Stop review in another checkout has
         # to go on.
         state["prompt_at"] = captured_at
-        # untracked_at_baseline is independent of whether the stash produced
+        # untracked_at_baseline is independent of whether the snapshot produced
         # a SHA, so compute_v2_review_set's preexisting-untracked exclusion
         # works in untracked-only trees. None means no snapshot was taken
         # (Stop review off): drop the previous one, which belongs to an older
@@ -1055,6 +1067,47 @@ try:
     INFLIGHT_WAIT_S = int(os.environ.get("SG_INFLIGHT_WAIT_S", "") or 240)
 except ValueError:
     INFLIGHT_WAIT_S = 240
+
+# Word pairs a shell `case` pattern (`*git*commit*|*git*push*|...`) would look
+# for in the raw hook input: wider than _GIT_COMMIT_RE / _GIT_PUSH_RE, so a
+# command those match always contains one of these pairs in this order.
+_SHELL_PRECHECK_PAIRS = (
+    ("git", "commit"), ("git", "push"),
+    ("gt", "create"), ("gt", "modify"), ("gt", "submit"),
+)
+# One in this many unmatched Bash calls reports, to keep the row count down.
+_UNMATCHED_BASH_SAMPLE = 10
+# Set when a command that is reviewed would not have passed the text check.
+_precheck_miss = False
+
+
+def _shell_precheck_passes(raw):
+    """True when `raw` holds one of _SHELL_PRECHECK_PAIRS, first word first.
+
+    Measurement only. Tells how many hook starts that match no commit or push
+    a text check in the launcher could avoid (`precheck_skip`), and whether
+    that check would ever drop a command that is reviewed (`precheck_miss`).
+    """
+    for first, second in _SHELL_PRECHECK_PAIRS:
+        at = raw.find(first)
+        if at != -1 and raw.find(second, at + len(first)) != -1:
+            return True
+    return False
+
+
+def _unmatched_bash_sampled(input_data):
+    """Pick the same one call in _UNMATCHED_BASH_SAMPLE in every start of it.
+
+    One Bash call can start this hook once per hooks.json entry, so the choice
+    is made from the call's id: all its starts report or none do. A call with
+    no id is not reported.
+    """
+    tool_use_id = input_data.get("tool_use_id")
+    if not isinstance(tool_use_id, str) or not tool_use_id:
+        return False
+    digest = hashlib.sha256(tool_use_id.encode("utf-8", "replace")).digest()
+    return int.from_bytes(digest[:4], "big") % _UNMATCHED_BASH_SAMPLE == 0
+
 
 def _claim_bash_hook_once(input_data):
     """De-dupe across hooks.json `if` matchers firing for the same Bash call.
@@ -1266,18 +1319,68 @@ def is_commit_review_enabled():
 
 COMMIT_REVIEW_ENABLED = is_commit_review_enabled()
 
-# Seconds from the start of a commit or push review's race after which
-# neither side waits for the other any longer; well inside Claude Code's
-# 10-minute hook timeout.
+_HOOK_STARTED = time.monotonic()
+
+# Seconds into the hook after which neither side of a commit or push review's
+# race waits for the other any longer; well inside Claude Code's 10-minute hook
+# timeout.
 _RACE_MAX_WAIT_S = 480
+# Seconds after which the review ends even if a side is still waiting on a
+# request that does not answer, with time left to tell the session before
+# Claude Code kills the hook. The inner CLI exits with the hook. The same limit
+# holds for a commit or push review's single-shot review outside a race.
+_RACE_END_S = 570
 # api_error for a race that hit that deadline with no verdict.
 _RACE_TIMED_OUT = -2
+
+def _hook_spent_s() -> float:
+    return time.monotonic() - _HOOK_STARTED
+
+def _single_shot_review(
+    diff_files: List[Tuple[str, str]],
+    previous_findings: List[Dict[str, Any]],
+) -> Tuple[Optional[str], List[Dict[str, Any]], Dict[str, Any]]:
+    """A single-shot review as (guidance, vulns, metrics); failures are in the
+    metrics, not raised."""
+    try:
+        g, v = analyze_code_security(
+            diff_files, is_diff=True, previous_findings=previous_findings
+        )
+        # Read on this thread: the outcome is per thread.
+        failed = llm.last_review_failed()
+        return g, v, {"agentic": False, "review_failed": failed,
+                      "api_error": llm.last_review_status() if failed else None}
+    except Exception as e:
+        debug_log(f"single-shot review crashed: {type(e).__name__}: {e}")
+        return None, [], {"agentic": False, "review_failed": True, "api_error": None}
+
+def _single_shot_review_in_time(
+    diff_files: List[Tuple[str, str]],
+    previous_findings: List[Dict[str, Any]],
+) -> Tuple[Optional[str], List[Dict[str, Any]], bool, Optional[int]]:
+    """A single-shot review outside a race, as (guidance, vulns, failed, status).
+
+    It ends at _RACE_END_S into the hook, whatever is pending.
+    """
+    done: List[Any] = []
+    worker = threading.Thread(
+        target=lambda: done.append(_single_shot_review(diff_files, previous_findings)),
+        daemon=True,
+    )
+    worker.start()
+    worker.join(timeout=max(0.0, _RACE_END_S - _hook_spent_s()))
+    if not done:
+        debug_log("single-shot review: nothing returned in time")
+        return None, [], True, _RACE_TIMED_OUT
+    g, v, m = done[0]
+    return g, v, m["review_failed"], m["api_error"]
 
 def _agentic_review_with_race(
     repo_root: str,
     diff_files: List[Tuple[str, str]],
     rel_touched: List[str],
     previous_findings: List[Dict[str, Any]],
+    spent_s: float = 0.0,
 ) -> Tuple[Optional[str], List[Dict[str, Any]], Dict[str, Any]]:
     """Race the agentic reviewer against a delayed single-shot fallback.
 
@@ -1289,10 +1392,13 @@ def _agentic_review_with_race(
     verdict) is returned so the caller never starts another review. If agentic
     finishes before the delay, the fallback never runs.
 
+    `spent_s`, the time the hook has already run, comes off the delay and both
+    limits: the hook's time limit does not restart with the race.
+
     Metrics added:
       race_winner    : 1 = agentic won, 2 = fallback won (CC accepts only
                        bool/finite-number metric values — strings would discard the dict)
-      race_delay_s   : the configured delay
+      race_delay_s   : the delay used
       race_started   : 1 if the fallback was actually launched, else 0
 
     Only the commit-review and push-sweep handlers call this — external
@@ -1306,13 +1412,16 @@ def _agentic_review_with_race(
     if os.environ.get("SG_AGENTIC_NO_RACE") == "1":
         return agentic_review(repo_root, diff_files, rel_touched)
 
-    delay_s = int(os.environ.get("SG_AGENTIC_RACE_DELAY_S", "180"))
+    delay_s = max(0, int(os.environ.get("SG_AGENTIC_RACE_DELAY_S", "180")) - int(spent_s))
+    if spent_s >= 1:
+        debug_log(f"Review race: {spent_s:.0f}s already spent, fallback starts after {delay_s}s")
     q: "_queue.Queue[Tuple[str, Any]]" = _queue.Queue(maxsize=1)
     fallback_started = _th.Event()
     fallback_done = _th.Event()
     agentic_done = _th.Event()
     fallback_result: Dict[str, Any] = {}
-    deadline = _t.monotonic() + _RACE_MAX_WAIT_S
+    deadline = _t.monotonic() + max(0.0, _RACE_MAX_WAIT_S - spent_s)
+    timed_out = (None, [], {"agentic": False, "review_failed": True, "api_error": _RACE_TIMED_OUT})
 
     def _agentic() -> None:
         try:
@@ -1330,33 +1439,26 @@ def _agentic_review_with_race(
         if agentic_done.is_set():
             return  # agentic finished within the delay — never start fallback
         fallback_started.set()
-        result = (None, [], {"agentic": False, "review_failed": True, "api_error": None})
+        result = _single_shot_review(diff_files, previous_findings)
+        fallback_result["r"] = result
+        fallback_done.set()
+        if result[2]["review_failed"]:
+            # A failed fallback does not win: the agentic review's inner
+            # CLI may still get a verdict where direct calls cannot.
+            agentic_done.wait(timeout=max(0.0, deadline - _t.monotonic()))
         try:
-            g, v = analyze_code_security(
-                diff_files, is_diff=True, previous_findings=previous_findings
-            )
-            # Read on this thread: the outcome is per thread.
-            failed = llm.last_review_failed()
-            result = (g, v, {"agentic": False, "review_failed": failed,
-                             "api_error": llm.last_review_status() if failed else None})
-        except Exception:  # pragma: no cover
+            q.put_nowait(("fallback", result))
+        except _queue.Full:
             pass
-        finally:
-            fallback_result["r"] = result
-            fallback_done.set()
-            if result[2]["review_failed"]:
-                # A failed fallback does not win: the agentic review's inner
-                # CLI may still get a verdict where direct calls cannot.
-                agentic_done.wait(timeout=max(0.0, deadline - _t.monotonic()))
-            try:
-                q.put_nowait(("fallback", result))
-            except _queue.Full:
-                pass
 
     _th.Thread(target=_agentic, daemon=True).start()
     _th.Thread(target=_fallback, daemon=True).start()
 
-    winner, (g, v, m) = q.get()
+    try:
+        winner, (g, v, m) = q.get(timeout=max(0.0, _RACE_END_S - spent_s))
+    except _queue.Empty:
+        debug_log("review race: nothing returned in time")
+        winner, (g, v, m) = "fallback", timed_out
     # What the agentic run saw of its directory, and how much work it did,
     # is kept when the fallback's result replaces it below.
     reviewer_context = (
@@ -1369,8 +1471,11 @@ def _agentic_review_with_race(
         if fallback_done.wait(timeout=max(0.0, deadline - _t.monotonic())):
             winner, (g, v, m) = "fallback", fallback_result["r"]
         else:
-            winner, (g, v, m) = "fallback", (None, [], {
-                "agentic": False, "review_failed": True, "api_error": _RACE_TIMED_OUT})
+            winner, (g, v, m) = "fallback", timed_out
+    if winner == "agentic" and not m.get("agentic_fallback"):
+        # The agentic run reached the model; any failure on record is the
+        # fallback's, which lost.
+        llm._forget_failed_call()
     m = {**m, **reviewer_context}  # a copy: don't mutate the callee's metrics dict
     m["race_winner"] = 1 if winner == "agentic" else 2
     m["race_delay_s"] = delay_s
@@ -1385,7 +1490,7 @@ def _review_failure_reason(status):
     _RACE_TIMED_OUT.
     """
     gateway = (", or an LLM gateway may need its key in ANTHROPIC_CUSTOM_HEADERS"
-               if os.environ.get("ANTHROPIC_BASE_URL") else "")
+               if os.environ.get("ANTHROPIC_BASE_URL", "").strip() else "")
     if status == _RACE_TIMED_OUT:
         return ("timeout", "the review did not finish in time", "")
     if llm._is_3p_provider():
@@ -1414,6 +1519,44 @@ def _review_failure_reason(status):
                 f"SECURITY_REVIEW_MODEL ({pinned}) may name a model this account "
                 "cannot use." if pinned else "")
     return ("reply", "the model's reply could not be read", "")
+
+
+def _left_out_files_notice(session_id, repo_root, untracked, diff_output):
+    """(one line for the terminal, text for Claude) naming the source files a
+    failed `git add -N` kept out of this Stop review, or None.
+
+    Each set of files gets one notice a session: the wake ends in another Stop
+    that fails the same way, and a notice there would wake Claude for ever. So
+    no notice unless the mark is saved. Paths are JSON quoted in ASCII: a file
+    name can hold a line break.
+    """
+    in_diff = set(extract_file_paths_from_diff(diff_output or ""))
+
+    def has_content(p):
+        try:
+            return os.path.getsize(os.path.join(repo_root, p)) > 0
+        except OSError:
+            return False
+
+    names = sorted(p for p in untracked or ()
+                   if p not in in_diff and _is_reviewable_source(p) and has_content(p))
+    if not names:
+        return None
+    key = "new_files_left_out:" + hashlib.sha256(
+        "\0".join(names).encode("utf-8", "replace")).hexdigest()[:16]
+    if not atomic_check_and_mark_warning(session_id, key):
+        return None
+    if key not in load_state(session_id).get("shown_warnings", ()):
+        return None
+    _TAIL_METRICS["add_fail_told"] = len(names)
+    shown = ", ".join(json.dumps(p) for p in names[:_LEFT_OUT_NAMES_SHOWN])
+    if len(names) > _LEFT_OUT_NAMES_SHOWN:
+        shown += f" and {len(names) - _LEFT_OUT_NAMES_SHOWN} more"
+    return (f"Security review left out new files: {shown}. Log: {DEBUG_LOG_FILE}",
+            f"The security review did not see these new files, so it did not "
+            f"review them: {shown}. git could not add them to the review's "
+            f"diff. Tell the user this in one sentence, and that details are "
+            f"in {DEBUG_LOG_FILE}.")
 
 
 def _exit_review_failed(kind, session_id, metrics, status, pushed="no"):
@@ -1845,7 +1988,7 @@ def handle_commit_review_posttooluse(input_data):
     if _agentic_commit_review_enabled():
         rel_touched = [fp for fp, _ in diff_files]
         concrete_guidance, vulns, _am = _agentic_review_with_race(
-            repo_root, diff_files, rel_touched, previous_findings
+            repo_root, diff_files, rel_touched, previous_findings, spent_s=_hook_spent_s()
         )
         agentic_metrics.update(_am)
         if _am.get("child_stderr"):
@@ -1859,17 +2002,13 @@ def handle_commit_review_posttooluse(input_data):
         # Fall back to single-shot only on agentic FAILURE (SDK/investigate
         # crash). If agentic completed and returned 0 findings, trust that.
         if agentic_metrics.get("agentic_fallback"):
-            concrete_guidance, vulns = analyze_code_security(
-                diff_files, is_diff=True, previous_findings=previous_findings
+            concrete_guidance, vulns, review_failed, api_status = _single_shot_review_in_time(
+                diff_files, previous_findings
             )
-            review_failed = llm.last_review_failed()
-            api_status = llm.last_review_status()
     else:
-        concrete_guidance, vulns = analyze_code_security(
-            diff_files, is_diff=True, previous_findings=previous_findings
+        concrete_guidance, vulns, review_failed, api_status = _single_shot_review_in_time(
+            diff_files, previous_findings
         )
-        review_failed = llm.last_review_failed()
-        api_status = llm.last_review_status()
 
     review_ms = int((_time.time() - review_start) * 1000)
     # `survived` is the raw self-refute count BEFORE the high/critical-only
@@ -2286,7 +2425,7 @@ def handle_push_sweep_posttooluse(input_data):
     rel_touched = [fp for fp, _ in diff_files]
     if _agentic_commit_review_enabled():
         concrete_guidance, vulns, agentic_metrics = _agentic_review_with_race(
-            repo_root, diff_files, rel_touched, previous_findings
+            repo_root, diff_files, rel_touched, previous_findings, spent_s=_hook_spent_s(),
         )
         if agentic_metrics.get("child_stderr"):
             _TAIL_METRICS["child_stderr"] = agentic_metrics["child_stderr"]
@@ -2294,24 +2433,20 @@ def handle_push_sweep_posttooluse(input_data):
         review_failed = bool(agentic_metrics.get("review_failed"))
         api_status = agentic_metrics.get("api_error")
         if agentic_metrics.get("agentic_fallback"):
-            concrete_guidance, vulns = analyze_code_security(
-                diff_files, is_diff=True, previous_findings=previous_findings
+            concrete_guidance, vulns, review_failed, api_status = _single_shot_review_in_time(
+                diff_files, previous_findings
             )
-            review_failed = llm.last_review_failed()
-            api_status = llm.last_review_status()
     else:
-        concrete_guidance, vulns = analyze_code_security(
-            diff_files, is_diff=True, previous_findings=previous_findings
+        concrete_guidance, vulns, review_failed, api_status = _single_shot_review_in_time(
+            diff_files, previous_findings
         )
-        review_failed = llm.last_review_failed()
-        api_status = llm.last_review_status()
         agentic_metrics = {}
     review_ms = int((_time.time() - review_start) * 1000)
     if review_failed:
         # Not marked reviewed. A later push does not re-check these commits:
         # its range starts from the new upstream.
         _exit_review_failed("Push", session_id, {
-            **_base, "pushed": len(push_range), "unreviewed": len(tail),
+            **_base, **_wait_m, "pushed": len(push_range), "unreviewed": len(tail),
             "files_reviewed": len(diff_files), "review_ms": review_ms,
         }, api_status)
 
@@ -2485,10 +2620,29 @@ def handle_stop_hook(input_data):
         _TAIL_METRICS["warn_fired_mask"] = warn_fired_mask
 
     v2_metrics = {}
+    left_out = False
+    restore_paths = touched_paths
+
+    def _left_out_notice():
+        # Asked for as the row goes out: the mark must not outlive a hook
+        # killed during the review.
+        if not left_out:
+            return None
+        return _left_out_files_notice(session_id, repo_root, untracked, diff_output)
+
+    def _left_out_wake():
+        """emit_metrics arguments that wake Claude to say new files were left out."""
+        notice = _left_out_notice()
+        if not notice:
+            return {}
+        return {"rewake_summary": notice[0], "hook_event_name": hook_event_name,
+                "additional_context": (PROVENANCE_BANNER + "\n\n" + notice[1]
+                                       + CONTINUATION_SUFFIX + "\n")}
 
     def _skip(reason, restore=False, **extra):
         if restore:
-            restore_unreviewed_stop_state(session_id, touched_paths, snap_baseline)
+            restore_unreviewed_stop_state(session_id, restore_paths, snap_baseline)
+        wake = _left_out_wake()
         # CC truncates metrics to 10 keys by
         # insertion order. v2_metrics (3) must precede sweep (3) so the v2
         # diagnostics survive when extra adds touched_paths_count + ip_* keys.
@@ -2500,8 +2654,8 @@ def handle_stop_hook(input_data):
                if gitutil._unparsed_diff_headers else {}),
             **({"secret_shaped_skipped": len(gitutil._secret_shaped_skipped)}
                if gitutil._secret_shaped_skipped else {}),
-        })
-        sys.exit(0)
+        }, **wake)
+        sys.exit(2 if wake else 0)
 
     # Limit stop hook firings per asyncRewake loop to prevent infinite loops.
     # fire_count auto-expires after STOP_LOOP_STATE_TTL_SEC so a stale count
@@ -2615,13 +2769,13 @@ def handle_stop_hook(input_data):
                   f"{MAX_REVIEW_SET_PATHS} paths), skipping")
         _skip(8)
     # Run from repo_root so the toplevel-relative review_paths resolve.
-    # Diff CONTENT against the turn-start stash (baseline_sha) so the LLM
+    # Diff CONTENT against the turn-start snapshot (baseline_sha) so the LLM
     # sees only this-turn edits — diffing against HEAD includes the user's
     # pre-turn uncommitted WIP, which inflates review_ms and can re-flag
     # the same pre-existing pattern every turn. The file LIST still comes
     # from git state (compute_v2_review_set), so Bash/subagent edits are
     # caught either way. Fall back to diff_base (HEAD/head_at_capture)
-    # when the stash is missing or pruned.
+    # when the baseline commit is missing or pruned.
     content_base = baseline_sha or diff_base
     diff_output = get_git_diff(repo_root, content_base, full_context=False,
                                paths=review_paths, untracked_paths=untracked)
@@ -2644,6 +2798,15 @@ def handle_stop_hook(input_data):
     if not baseline_sha:
         baseline_sha = "HEAD"
 
+    # New files a failed `git add -N` hid: when nothing gets reviewed they are
+    # put back, listed as touched so the next prompt keeps this baseline even
+    # if an edit tool never wrote them. A review of the tracked files goes on
+    # without them, rather than repeating that review every turn.
+    left_out = gitutil._add_failed["left_out"]
+    if left_out:
+        restore_paths = list(touched_paths) + [
+            os.path.join(repo_root, p) for p in untracked or ()]
+
     if not diff_output or not diff_output.strip():
         if "gave_up" in gitutil._path_list_too_long:
             debug_log("Stop hook: changed paths do not fit the git commands, skipping")
@@ -2652,7 +2815,7 @@ def handle_stop_hook(input_data):
             debug_log("Stop hook: no source code files among the changed paths")
             _skip(7)
         debug_log("Stop hook: no changes since baseline")
-        _skip(6)
+        _skip(6, restore=left_out)
 
     diff_hash = hashlib.sha256(diff_output.encode("utf-8", "replace")).hexdigest()
     if snap.get("reviewed_diff_hash") == diff_hash:
@@ -2663,7 +2826,7 @@ def handle_stop_hook(input_data):
     diff_files = parse_diff_into_files(diff_output)
     if not diff_files:
         debug_log("Stop hook: no source code files in diff")
-        _skip(7)
+        _skip(7, restore=left_out)
 
     # Mirror commit-review: hard-bail only on pathological diffs (>300 files,
     # usually a bad baseline), otherwise prioritize by security-risk path
@@ -2787,6 +2950,7 @@ def handle_stop_hook(input_data):
         # untracked_baseline_n is the signal for whether the UPS-time
         # untracked-snapshot capture actually ran.
         sweep_trimmed = {k: v for k, v in sweep.items() if k != "warn_unresolved_mask"}
+        left_out_notice = _left_out_notice()
         # Guidance goes to stderr plus top-level decision/reason (see
         # emit_metrics). exit(2) preserved as the asyncRewake "force fix"
         # signal — that's the documented mechanism.
@@ -2808,8 +2972,9 @@ def handle_stop_hook(input_data):
             **({"secret_shaped_skipped": len(gitutil._secret_shaped_skipped)}
                if gitutil._secret_shaped_skipped else {}),
         }, rewake_summary=_format_vulns_summary(vulns),
-           additional_context=(PROVENANCE_BANNER + "\n\n"
-                               + concrete_guidance + CONTINUATION_SUFFIX + "\n"),
+           additional_context=(PROVENANCE_BANNER + "\n\n" + concrete_guidance
+                               + ("\n\n" + left_out_notice[1] if left_out_notice else "")
+                               + CONTINUATION_SUFFIX + "\n"),
            hook_event_name=hook_event_name)
         sys.exit(2)
 
@@ -2817,11 +2982,12 @@ def handle_stop_hook(input_data):
     if stop_review_failed:
         debug_log(f"Stop hook: review got no verdict "
                   f"({_review_failure_reason(llm.last_review_status())[1]})")
-        restore_unreviewed_stop_state(session_id, touched_paths, snap_baseline)
+        restore_unreviewed_stop_state(session_id, restore_paths, snap_baseline)
     else:
         debug_log("Stop hook: no security issues found")
         if is_subagent:
             record_reviewed_diff(session_id, diff_hash)
+    wake = _left_out_wake()
     # CC keeps the first 20 metric keys (10 in older versions), in insertion
     # order, after the pv and usage keys emit_metrics puts first. The previous
     # **sweep,**v2_metrics tail meant the 3 v2_metrics keys were always sliced
@@ -2843,8 +3009,8 @@ def handle_stop_hook(input_data):
            if gitutil._unparsed_diff_headers else {}),
         **({"secret_shaped_skipped": len(gitutil._secret_shaped_skipped)}
            if gitutil._secret_shaped_skipped else {}),
-    })
-    sys.exit(0)
+    }, **wake)
+    sys.exit(2 if wake else 0)
 
 _SDK_BOOTSTRAP_THROTTLE = os.path.join(_resolve_state_dir(), ".sdk_bootstrap_spawned")
 
@@ -2877,7 +3043,7 @@ def _maybe_bootstrap_agent_sdk_async():
                 return
         except OSError:
             pass
-        os.makedirs(os.path.dirname(_SDK_BOOTSTRAP_THROTTLE), exist_ok=True)
+        make_state_dir(os.path.dirname(_SDK_BOOTSTRAP_THROTTLE))
         # Touch the throttle BEFORE spawning so a burst of PostToolUse
         # fires in the same second don't each spawn a subprocess.
         open(_SDK_BOOTSTRAP_THROTTLE, "w").close()
@@ -2977,12 +3143,27 @@ def main():
     if tool_name == "Bash" and hook_event_name == "PostToolUse":
         cmd = (input_data.get("tool_input") or {}).get("command", "") or ""
         if not (_GIT_COMMIT_RE.search(cmd) or _GIT_PUSH_RE.search(cmd)):
+            # Measurement only: this start matched no commit or push. Count
+            # it, and say whether a plain text check could have told so before
+            # Python. Both values carry the sample weight, so they sum to
+            # estimates of all such starts.
+            if _unmatched_bash_sampled(input_data) and not portable_output():
+                skip = 0 if _shell_precheck_passes(raw_input) else _UNMATCHED_BASH_SAMPLE
+                emit_metrics({"bash_no_match": _UNMATCHED_BASH_SAMPLE, "precheck_skip": skip})
             return
+        if not _shell_precheck_passes(raw_input):
+            # The text check would have dropped a command that is reviewed.
+            # Rides on whichever row this start emits; nothing is skipped.
+            global _precheck_miss
+            _precheck_miss = True
         if not _claim_bash_hook_once(input_data):
             # Another spawn for this same tool_use_id already claimed the
             # work (compound matched multiple `if` configs). Emit a single
             # metric so telemetry can count how often the de-dupe kicks in.
-            _write_hook_output({"metrics": {"bash_hook_dedup": True}})
+            dedup = {"bash_hook_dedup": True}
+            if _precheck_miss and not portable_output():
+                dedup = {"pv": _PV, "precheck_miss": 1, **dedup}
+            _write_hook_output({"metrics": dedup})
             sys.exit(0)
         if _GIT_COMMIT_RE.search(cmd):
             handle_commit_review_posttooluse(input_data)

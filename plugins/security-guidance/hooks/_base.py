@@ -9,8 +9,16 @@ import glob
 import json
 import os
 import re
+import stat
+import sys
 import threading
 from datetime import datetime
+
+if os.name == "nt":
+    # Unless this variable exists, Windows looks for a program that is started
+    # by name in the working directory before PATH.
+    os.environ.setdefault("NoDefaultCurrentDirectoryInExePath", "1")
+
 
 def state_dir():
     """Return the absolute path of the plugin's state directory.
@@ -40,6 +48,26 @@ def state_dir():
     else:
         d = "~/.claude/security"
     return os.path.abspath(os.path.expanduser(d))
+
+
+def make_state_dir(d=None):
+    """Create the state dir (or `d`) with access for its user alone, and
+    narrow the default one to that if it is already there, so a umask such as
+    002 does not leave the reviewer's venv, logs and session state open to the
+    rest of a shared group. A folder named by SECURITY_WARNINGS_STATE_DIR
+    that already exists is the user's to set. Raises OSError like os.makedirs."""
+    if d is None:
+        d = state_dir()
+    os.makedirs(d, mode=0o700, exist_ok=True)
+    if (os.name != "nt" and not os.environ.get("SECURITY_WARNINGS_STATE_DIR", "").strip()
+            and os.path.abspath(d) == state_dir()):
+        try:
+            st = os.lstat(d)
+            if stat.S_ISDIR(st.st_mode) and st.st_uid == os.getuid() and st.st_mode & 0o077:
+                os.chmod(d, 0o700)
+        except OSError:
+            pass
+    return d
 
 
 def llm_reviews_switched_off():
@@ -212,7 +240,7 @@ _USAGE = {
     # reported it manually.
     "http_err_last": 0,    # most recent HTTP error code this invocation
     "http_err_count": 0,   # total HTTP errors (4xx + 5xx + network)
-    "net_err": 0,          # why the last call got no HTTP response, 0 if it got one
+    "net_err": 0,          # why the deciding call got no HTTP response, 0 if it got one
     # For the usage log line only: model ids as recorded (the requested alias
     # on the Agent SDK path), and whether any call had no price-table entry.
     "models": [],
@@ -308,7 +336,9 @@ def _record_net_error(code):
     raises outside its own error type (a default TLS context that cannot be
     built, a connection closed before the reply) has no `api_error` at all.
     Emitted as `net_err` on the row of a hook whose last call failed this
-    way; a later call clears it."""
+    way; a later call clears it, and so does a call that gets through beside
+    it (a second probe, the other leg of a dual review, the agentic run that
+    wins a race)."""
     try:
         c = int(code)
     except (TypeError, ValueError):
@@ -376,6 +406,117 @@ def launcher_probe_metrics():
         return {}
     cap = 3_600_000
     return {"launcher_probe_ms": min(total, cap), "launcher_probe_max_ms": min(slowest, cap)}
+
+
+def launcher_direct_metric():
+    """`launcher_direct` when sg-python.sh ran this hook with the interpreter
+    behind a packaged Windows alias instead of the alias: 1 from the path it
+    remembered (one process for the hook), 2 when it had just worked that
+    path out. Read once, like the probe timings.
+    """
+    how = os.environ.pop("SG_LAUNCHER_DIRECT", "")
+    return {"launcher_direct": int(how)} if how in ("1", "2") else {}
+
+
+# Reparse tags that redirect every open below them: symbolic links and
+# junctions. App execution aliases (the entries under WindowsApps) carry
+# another tag and are not counted.
+_SYMLINK_TAG, _MOUNT_POINT_TAG = 0xA000000C, 0xA0000003
+
+
+def _is_link(path, st, readlink):
+    """True iff `path` (with lstat result `st`) is a symbolic link or a
+    junction, None when that cannot be told (Python older than 3.8 has no
+    reparse tag). A volume mounted at a folder has the junction tag too; its
+    target is the bare volume name."""
+    if not getattr(st, "st_file_attributes", 0) & 0x400:   # FILE_ATTRIBUTE_REPARSE_POINT
+        return False
+    tag = getattr(st, "st_reparse_tag", None)
+    if tag is None:
+        return None
+    if tag == _MOUNT_POINT_TAG:
+        try:
+            target = readlink(path).lstrip("\\?").rstrip("\\").lower()
+        except (OSError, ValueError, NotImplementedError):
+            return True
+        return not (target.startswith("volume{") and target.endswith("}"))
+    return tag == _SYMLINK_TAG
+
+
+def interp_reparse_metric(executable=None, base_prefix=None, environ=None, platform=None,
+                          lstat=None, readlink=None):
+    """`interp_reparse`, on Windows: whether the interpreter running this
+    hook is reached through a symbolic link or junction. Bits:
+
+      1  the path of the executable goes through one
+      2  the path of the standard library (sys.base_prefix) goes through one
+      4  such a path, as spelled, is under the user's AppData folders (a
+         uv-managed Python, for one)
+      8  one of the two paths could not be checked
+
+    0 is sent too, so a Windows row without the key is a row that lost it,
+    not a "no". Measurement only, on the SessionStart row. It sizes how many
+    sessions start Python through such a link: inside the packaged Claude
+    Desktop app, Windows leaks kernel memory on every file opened that way,
+    and each hook starts an interpreter. See anthropics/claude-code#96870.
+
+    No process is started: one lstat per folder on the two paths, up to the
+    first link. Where the link points is not followed, and an 8.3 short name
+    on one side reads as "not under AppData" (bit 4 missing, 1 and 2 right).
+    The plugin's own folders are not looked at.
+
+    The arguments stand in for the interpreter and the system in tests.
+    """
+    if (platform or sys.platform) != "win32":
+        return {}
+    executable = sys.executable if executable is None else executable
+    base_prefix = getattr(sys, "base_prefix", "") if base_prefix is None else base_prefix
+    environ = os.environ if environ is None else environ
+    lstat = lstat or os.lstat
+    readlink = readlink or os.readlink
+
+    def spelled(p):
+        # For comparing only: lower case, no \\?\ prefix.
+        p = os.path.normcase(p)
+        return p[4:] if p.startswith("\\\\?\\") and not p.startswith("\\\\?\\unc\\") else p
+
+    value = 0
+    roots = []
+    for name in ("APPDATA", "LOCALAPPDATA"):
+        try:
+            root = environ.get(name)
+            if root:
+                roots.append(spelled(os.path.abspath(root)).rstrip("\\/"))
+        except Exception:
+            pass
+    checked = {}
+    for bit, start in ((1, executable), (2, base_prefix)):
+        try:
+            if not start:
+                continue
+            p = start = os.path.abspath(start)
+            linked = False
+            while not linked:
+                parent = os.path.dirname(p)
+                if parent == p:
+                    break
+                if p not in checked:
+                    try:
+                        checked[p] = _is_link(p, lstat(p), readlink)
+                    except FileNotFoundError:
+                        checked[p] = False
+                if checked[p] is None:
+                    value |= 8
+                linked = bool(checked[p])
+                p = parent
+            if linked:
+                value |= bit
+                here = spelled(start)
+                if any(here == r or here.startswith(r + os.sep) for r in roots):
+                    value |= 4
+        except Exception:
+            value |= 8
+    return {"interp_reparse": value}
 
 
 def _usage_metrics():

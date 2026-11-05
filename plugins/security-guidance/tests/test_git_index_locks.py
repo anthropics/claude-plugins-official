@@ -65,12 +65,13 @@ def _make_stat_stale(path):
     os.utime(path, (t, t))
 
 
-def _is_stash_create(args):
-    return list(args[-2:]) == ["stash", "create"]
+def _is_snapshot_add(args):
+    """The `git add -u` that stages the turn baseline's tracked changes."""
+    return list(args[-2:]) == ["add", "-u"]
 
 
 class TestBaselineCapture:
-    def test_stash_create_gets_a_throwaway_index(self, tmp_path, tmproot, monkeypatch):
+    def test_snapshot_gets_a_throwaway_index(self, tmp_path, tmproot, monkeypatch):
         repo = make_repo(tmp_path / "repo", {"app.py": "x = 1\n"})
         (repo / "app.py").write_text("x = 2\n")
         before = _index_sig(repo / ".git")
@@ -78,7 +79,7 @@ class TestBaselineCapture:
         real_run = subprocess.run
 
         def spy(args, **kw):
-            if _is_stash_create(args):
+            if _is_snapshot_add(args):
                 seen.append(kw["env"]["GIT_INDEX_FILE"])
             return real_run(args, **kw)
 
@@ -90,13 +91,13 @@ class TestBaselineCapture:
         assert _index_litter(repo / ".git") == []
         assert _leftovers(tmproot) == []
 
-    def test_killed_stash_create_leaves_nothing(self, tmp_path, tmproot, monkeypatch):
+    def test_killed_snapshot_leaves_nothing(self, tmp_path, tmproot, monkeypatch):
         repo = make_repo(tmp_path / "repo", {"app.py": "x = 1\n"})
         (repo / "app.py").write_text("x = 2\n")
         real_run = subprocess.run
 
         def killed(args, **kw):
-            if _is_stash_create(args):
+            if _is_snapshot_add(args):
                 idx = kw["env"]["GIT_INDEX_FILE"]
                 for suffix in (".lock", ".stash.4242", ".stash.4242.lock"):
                     with open(idx + suffix, "wb") as f:
@@ -211,7 +212,7 @@ class TestReadOnlyGitLeavesTheRealIndexAlone:
         assert _leftovers(tmproot) == []
 
     def test_diffs_need_no_index_copy(self, tmp_path, tmproot, monkeypatch):
-        """Every copy is index-sized, so only `add -N` and stash get one."""
+        """Every copy is index-sized, so only `add -N` and the snapshot get one."""
         repo = make_repo(tmp_path / "repo", {"app.py": "x = 1\n", "b.py": "b = 1\n"})
         first = git(repo, "rev-parse", "HEAD").strip()
         commit_file(repo, "app.py", "x = 2\n")
@@ -293,10 +294,10 @@ class TestWholeHook:
         assert m.get("skip_reason") is None and m["files_reviewed"] == 2, m
 
         calls = read_log()
-        assert {"stash", "status", "diff", "add"} <= {sub[0] for _, _, sub in calls}
+        assert {"write-tree", "status", "diff", "add"} <= {sub[0] for _, _, sub in calls}
         assert [c for c in calls if c[0] != "0"] == []
         for _, index_file, sub in calls:
-            if sub[0] in ("stash", "add"):
+            if sub[0] in ("write-tree", "commit-tree", "add"):
                 assert index_file.startswith(str(tmproot)), sub
         assert _index_sig(repo / ".git") == before
         assert _index_litter(repo / ".git") == []

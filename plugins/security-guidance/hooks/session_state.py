@@ -20,7 +20,7 @@ import re
 import tempfile
 from datetime import datetime
 
-from _base import debug_log, state_dir as _state_dir
+from _base import debug_log, make_state_dir, state_dir as _state_dir
 
 
 def _state_key(session_id):
@@ -139,6 +139,18 @@ def _write_then_rename(state_file, state):
         raise
 
 
+def _write_in_place(state_file, state):
+    """The fallback (Windows, or a folder that refuses the rename) writes the
+    state file itself. As with the rename, a link there is replaced, not
+    followed, and a new file is the user's only, as the temporary file is."""
+    if os.path.islink(state_file):
+        os.unlink(state_file)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(state_file, flags, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump(state, f)
+
+
 def save_state(session_id, state):
     """Save the full state dict to file.
 
@@ -152,12 +164,11 @@ def save_state(session_id, state):
     try:
         state_dir = os.path.dirname(state_file)
         if state_dir:
-            os.makedirs(state_dir, exist_ok=True)
+            make_state_dir(state_dir)
 
         if _RENAME_INTO_PLACE and _write_then_rename(state_file, state):
             return
-        with open(state_file, "w") as f:
-            json.dump(state, f)
+        _write_in_place(state_file, state)
     except (IOError, OSError) as e:
         debug_log(f"Failed to save state file {state_file}: {e}")
 
@@ -181,7 +192,7 @@ def with_locked_state(session_id, callback):
     state_dir = os.path.dirname(lock_file)
 
     try:
-        os.makedirs(state_dir, exist_ok=True)
+        make_state_dir(state_dir)
     except OSError:
         pass
 
