@@ -128,6 +128,12 @@ class TestUsersOwnCli:
         set_path(monkeypatch, tmp_path / "repo-tools")
         assert llm._windows_user_cli() == exe
 
+    def test_session_above_the_home_folder_still_finds_the_native_install(self, win, monkeypatch):
+        native = put(win.home / ".local" / "bin")
+        monkeypatch.chdir(win.home.parent)
+        monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(win.home.parent))
+        assert llm._windows_user_cli() == native
+
     def test_tools_under_the_home_folder_are_found(self, win, monkeypatch):
         exe = put(win.home / "AppData" / "tool")
         monkeypatch.chdir(win.home)

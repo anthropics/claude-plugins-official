@@ -841,11 +841,13 @@ def _windows_user_cli() -> Optional[str]:
     """Windows: the full path of the user's claude.exe, from the native
     installer's folder, else from PATH; None when neither has one. Skips any
     folder that is not given as a full path, and the working directory and
-    project root, and any folder inside them, unless that root is the home folder."""
+    project root, and any folder inside them (unless that root holds the home
+    folder, and with it the user's own tools)."""
     skipped = [d for d in (os.getcwd(), os.environ.get("CLAUDE_PROJECT_DIR")) if d and os.path.isdir(d)]
     home = os.path.expanduser("~")
-    roots = [os.path.normcase(os.path.realpath(d)) for d in skipped
-             if os.path.normcase(os.path.realpath(d)) != os.path.normcase(os.path.realpath(home))]
+    real_home = os.path.normcase(os.path.realpath(home)).rstrip(os.sep) + os.sep
+    roots = [r.rstrip(os.sep) + os.sep for r in (os.path.normcase(os.path.realpath(d)) for d in skipped)]
+    roots = [r for r in roots if not real_home.startswith(r)]
     home_bin = os.path.join(home, ".local", "bin")
     for folder in [home_bin] + os.environ.get("PATH", "").split(os.pathsep):
         folder = folder.strip().strip('"')
@@ -856,7 +858,7 @@ def _windows_user_cli() -> Optional[str]:
             if (os.path.normcase(os.path.abspath(folder)) == os.path.normcase(os.path.normpath(folder))
                     and os.path.isfile(cli)
                     and not any(os.path.samefile(folder, d) for d in skipped)
-                    and not any(real.startswith(r.rstrip(os.sep) + os.sep) for r in roots)):
+                    and not any(real.startswith(r) for r in roots)):
                 return cli
         except OSError:
             pass
