@@ -39,7 +39,7 @@ except ImportError:  # a Python built without TLS
 
 import extensibility
 import review_api
-from _base import debug_log, _record_usage, _record_http_error, _record_net_error, _clear_net_error, _PV, PROVENANCE_TAG, state_dir as _resolve_state_dir, agent_sdk_site_dirs  # noqa: F401
+from _base import debug_log, _record_usage, _record_http_error, _record_net_error, _clear_net_error, _PV, PROVENANCE_TAG, state_dir as _resolve_state_dir, agent_sdk_site_dirs, make_state_dir  # noqa: F401
 from session_state import load_state, with_locked_state
 from gitutil import git_config_env, SAFE_GIT_CONFIG
 
@@ -735,7 +735,7 @@ def _read_review_model_cache(path, endpoint_key, now):
 def _write_review_model_cache(path, endpoint_key, model, now):
     tmp = None
     try:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
+        make_state_dir(os.path.dirname(path))
         fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix=".review_model.")
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump({"endpoint": endpoint_key, "model": model, "at": now}, f)
