@@ -2675,7 +2675,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/makenotion/claude-code-notion-plugin.git",
-        "sha": "9847f2aa1a15f25df35ed1fb7b4557dbb60cd651"
+        "sha": "016c74ffc568920a385186fb9d2d9d2801e0be09"
       },
       "homepage": "https://github.com/makenotion/claude-code-notion-plugin"
     },
