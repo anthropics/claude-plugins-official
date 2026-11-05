@@ -28,10 +28,10 @@ from pathlib import Path
 # here to match the existing local name (state_dir was already a local var in
 # main() and _maybe_emit_user_notice).
 from _base import (
-    launcher_probe_metrics, portable_output, state_dir as _resolve_state_dir,
+    launcher_direct_metric, launcher_probe_metrics, portable_output, state_dir as _resolve_state_dir,
     write_hook_output,
 )
-from _base import llm_reviews_switched_off
+from _base import llm_reviews_switched_off, make_state_dir
 
 
 def _spawn_cwd() -> str:
@@ -46,8 +46,7 @@ def _spawn_cwd() -> str:
     """
     d = _resolve_state_dir()
     try:
-        os.makedirs(d, exist_ok=True)
-        return d
+        return make_state_dir(d)
     except OSError:
         return str(Path(__file__).resolve().parent.parent)
 
@@ -256,7 +255,7 @@ def _write_cooldown(state_dir) -> None:
     """Start/refresh the signal-kill cooldown so we stop re-attempting a build
     that keeps getting killed every session. Best-effort."""
     try:
-        Path(state_dir).mkdir(parents=True, exist_ok=True)
+        make_state_dir(str(state_dir))
         (Path(state_dir) / "agent-sdk-venv.cooldown").write_text(
             time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
     except OSError:
@@ -681,7 +680,7 @@ def main() -> tuple[int, str, str]:
     err_kind = ""
     we_own_sentinel = False
     try:
-        state_dir.mkdir(parents=True, exist_ok=True)
+        make_state_dir(str(state_dir))
         # O_EXCL makes the sentinel an atomic lock — if two SessionStarts
         # race past the exists() check above, only one creates it.
         try:
@@ -857,7 +856,7 @@ def _maybe_emit_user_notice(outcome: int, pv: int) -> str | None:
         marker = state_dir / f".agentic_unavailable_notice_v{pv or 0}"
         if marker.exists():
             return None
-        state_dir.mkdir(parents=True, exist_ok=True)
+        make_state_dir(str(state_dir))
         # Write timestamp + Python version so the marker is self-documenting
         # if a user goes looking. O_EXCL would be racier with no real win
         # (two concurrent SessionStarts both showing the notice once is fine).
@@ -977,6 +976,7 @@ if __name__ == "__main__":
     if os.environ.get("SG_LAUNCHER_FALLBACK") == "1":
         metrics["launcher_fallback"] = 1
     metrics.update(launcher_probe_metrics())
+    metrics.update(launcher_direct_metric())
     response: dict[str, object] = {"metrics": metrics}
     # One-time user-visible notice when the agentic reviewer is dead on
     # arrival. Uses hookSpecificOutput.additionalContext (SessionStart's

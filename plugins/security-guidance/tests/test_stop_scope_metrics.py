@@ -29,13 +29,13 @@ def _turn(repo, env, edits=(), during=None):
     return _stop(repo, env)
 
 
-def _no_stash_env(tmp_path, hook_env):
-    """An env whose `git stash` fails, like a snapshot that could not be taken."""
+def _no_write_tree_env(tmp_path, hook_env):
+    """An env whose `git write-tree` fails, like a snapshot that could not be taken."""
     bindir = tmp_path / "bin"
     bindir.mkdir()
     shim = bindir / "git"
     shim.write_text(
-        '#!/bin/sh\nfor a in "$@"; do [ "$a" = stash ] && exit 1; done\n'
+        '#!/bin/sh\nfor a in "$@"; do [ "$a" = write-tree ] && exit 1; done\n'
         f'exec "{shutil.which("git")}" "$@"\n')
     shim.chmod(0o755)
     return {**hook_env, "PATH": f"{bindir}{os.pathsep}{hook_env['PATH']}"}
@@ -127,7 +127,7 @@ class TestSnapshot:
     def test_failed_snapshot_is_counted(self, hook_env, workspace, tmp_path):
         ws, repo = workspace
         (repo / "app.py").write_text(VULN_PY)  # uncommitted work from before the turn
-        m = _turn(repo, _no_stash_env(tmp_path, hook_env), edits=[ws / "notes.md"])
+        m = _turn(repo, _no_write_tree_env(tmp_path, hook_env), edits=[ws / "notes.md"])
         assert m["files_reviewed"] == 1 and m["review_scope"] == 130001
         # The next prompt takes a real snapshot and the flag is gone.
         m = _turn(repo, hook_env, edits=[repo / "app.py"],
@@ -138,7 +138,7 @@ class TestSnapshot:
     def test_flag_follows_the_snapshot_taken_after_a_finding(self, hook_env, stub_api,
                                                              workspace, tmp_path):
         _, repo = workspace
-        broken = _no_stash_env(tmp_path, hook_env)
+        broken = _no_write_tree_env(tmp_path, hook_env)
         stub_api.vulns = [STUB_VULN]
         # Good snapshot at the prompt; the one taken after the finding fails.
         run_hook(ups_payload(repo), hook_env)
