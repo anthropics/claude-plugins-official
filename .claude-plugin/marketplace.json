@@ -3040,6 +3040,22 @@
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/plugins/project-artifact"
     },
     {
+      "name": "pydantic",
+      "description": "Validate and serialize data with Pydantic — modeling patterns, constraints, custom validators, coercion, and discriminated unions",
+      "author": {
+        "name": "Pydantic"
+      },
+      "category": "development",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/pydantic/skills.git",
+        "path": "plugins/pydantic",
+        "ref": "main",
+        "sha": "238d97102650c1caa51f35027aee13c469c59542"
+      },
+      "homepage": "https://github.com/pydantic/skills/tree/main/plugins/pydantic"
+    },
+    {
       "name": "pydantic-ai",
       "description": "Write accurate Pydantic AI code from the start. Up-to-date patterns, decision trees, and common gotchas for agents, tools, structured output, streaming, and multi-agent apps.",
       "category": "development",
@@ -3051,6 +3067,22 @@
         "sha": "238d97102650c1caa51f35027aee13c469c59542"
       },
       "homepage": "https://github.com/pydantic/skills/tree/main/plugins/ai"
+    },
+    {
+      "name": "pydantic-ai-harness",
+      "description": "Extend Pydantic AI agents with batteries-included capabilities from pydantic-ai-harness — coding agents and sandboxed workspaces, Code Mode, sub-agents and planning, memory, context management, and guardrails — and port LangChain Deep Agents applications over to the harness",
+      "author": {
+        "name": "Pydantic"
+      },
+      "category": "development",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/pydantic/skills.git",
+        "path": "plugins/pydantic-ai-harness",
+        "ref": "main",
+        "sha": "238d97102650c1caa51f35027aee13c469c59542"
+      },
+      "homepage": "https://github.com/pydantic/skills/tree/main/plugins/pydantic-ai-harness"
     },
     {
       "name": "pyright-lsp",
