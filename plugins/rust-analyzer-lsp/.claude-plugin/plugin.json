@@ -1,0 +1,17 @@
+{
+  "name": "rust-analyzer-lsp",
+  "description": "Rust language server for code intelligence and analysis",
+  "version": "1.0.0",
+  "author": {
+    "name": "Anthropic",
+    "email": "support@anthropic.com"
+  },
+  "lspServers": {
+    "rust-analyzer": {
+      "command": "rust-analyzer",
+      "extensionToLanguage": {
+        ".rs": "rust"
+      }
+    }
+  }
+}
