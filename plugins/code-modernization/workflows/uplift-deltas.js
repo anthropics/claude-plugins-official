@@ -3,7 +3,7 @@ export const meta = {
   description:
     'Same-stack uplift delta catalog: one finder per delta category (intersecting known version breaking-changes with this code), each verified against the cited source',
   whenToUse:
-    'Invoked by /modernize-uplift when the Workflow tool is available. Requires args {system, source, target, projectPattern?}. Returns structured delta cards — the calling session writes DELTA_CATALOG.md and runs the migration (build/dual-run are HITL, not in this workflow).',
+    'Invoked by /code-modernization:modernize-uplift when the Workflow tool is available. Requires args {system, source, target, projectPattern?}. Returns structured delta cards — the calling session writes DELTA_CATALOG.md and runs the migration (build/dual-run are HITL, not in this workflow).',
   phases: [
     { title: 'Find', detail: 'one finder per delta category + ecosystem-tool report' },
     { title: 'Verify', detail: 'one referee per delta — does this code really hit it?' },
@@ -25,8 +25,9 @@ if (!system || !source || !target) {
   )
 }
 if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(system)) {
-  throw new Error(`Unsafe system name ${JSON.stringify(system)} — must be a plain directory name under legacy/`)
+  throw new Error(`Unsafe system name ${JSON.stringify(system)} — must be a plain name: letters, digits, hyphen and underscore`)
 }
+// The code is `legacy/<system>`: a copy, or a symlink to where it really lives (`preflight --source` makes the link).
 const legacyDir = `legacy/${system}`
 const projectPattern = (ARGS && ARGS.projectPattern) || ''
 
@@ -98,7 +99,7 @@ const CATEGORIES = [
   {
     key: 'behavioral',
     label: 'Behavioral-silent',
-    brief: `Changes that COMPILE AND RUN but produce a DIFFERENT RESULT on ${target} vs ${source} — the dangerous, silent class. PROBE GLOBALIZATION/LOCALE FIRST: .NET 5+ switched to ICU (vs NLS), silently changing string.Compare/casing/sort-order/DateTime parsing — the canonical Framework→.NET trap. Then: default encoding, TLS defaults, serialization formats, DateTime/timezone, floating-point, async context, collection ordering. For each, name the exact characterization test to write before touching the site.`,
+    brief: `Changes that COMPILE AND RUN but produce a DIFFERENT RESULT on ${target} vs ${source} — the dangerous, silent class. PROBE GLOBALIZATION/LOCALE AND TEXT FIRST, for this stack: .NET 5+ switched to ICU (vs NLS), silently changing string.Compare/casing/sort-order/DateTime parsing; Java 9+ uses CLDR locale data (number, date and currency formats change), JDK 18+ defaults to UTF-8 (file and stream reads without a charset), Hibernate 5→6 changes id generation and column type mapping (Oracle DATE, booleans, UUIDs), Spring 5→6 and Boot 2→3 change property binding, path matching and Jackson defaults; Python 2→3 makes str/bytes a hard boundary and division, dict ordering, hash randomization and the default encoding behave differently; Node and PHP major versions change coercion, JSON and date handling. Then: default encoding, TLS defaults, serialization formats, DateTime/timezone, floating-point, async context, collection ordering. For each, name the exact characterization test to write before touching the site.`,
   },
   {
     key: 'project-system',
@@ -119,7 +120,7 @@ const found = await parallel(
 
 Your category this pass: ${c.brief}
 
-A delta belongs in the catalog ONLY if it is in the intersection of (a) a known ${source}→${target} change and (b) something THIS code actually uses — cite the file:line where it hits, and set siteCount to how many sites hit it (the migration cost is dominated by high-siteCount deltas, so be accurate). If a standard migration tool for this stack is installed (dotnet upgrade-assistant / OpenRewrite 'mvn rewrite:dryRun' / pyupgrade), check whether it can ACTUALLY RUN here (most need a working restore+build and often network — a read-only/offline sandbox usually can't). Only fold in findings from a tool that actually ran; if it's installed but couldn't run, say so in toolReport ("coverage lost: <tool> needs restore+network") rather than implying coverage. Don't rely on apiport (compiled-assembly + archived) or 2to3 (removed in Python 3.13).
+A delta belongs in the catalog ONLY if it is in the intersection of (a) a known ${source}→${target} change and (b) something THIS code actually uses — cite the file:line where it hits, and set siteCount to how many sites hit it (the migration cost is dominated by high-siteCount deltas, so be accurate). Run a migration tool only on a scratch copy of the code (make one with rsync into a temporary folder), never inside ${legacyDir}: builds and dry runs write output and download plugins. If a standard migration tool for this stack is installed (dotnet upgrade-assistant / OpenRewrite 'mvn rewrite:dryRun' / pyupgrade), check whether it can ACTUALLY RUN here (most need a working restore+build and often network — a read-only/offline sandbox usually can't). Only fold in findings from a tool that actually ran; if it's installed but couldn't run, say so in toolReport ("coverage lost: <tool> needs restore+network") rather than implying coverage. Don't rely on apiport (compiled-assembly + archived) or 2to3 (removed in Python 3.13).
 
 Mark each delta Mechanical (a codemod/tool can apply it) or Judgment (needs a human). For Behavioral-silent deltas, give the exact test to write before touching the code.
 ${UNTRUSTED}`,
@@ -222,10 +223,10 @@ return {
   // the codebase. The orchestrating command compares totalTouchedSites to the
   // system's file/LOC count (the command has that from assess; the workflow has
   // no fs access) — if most of the code is forced to change, it's a rewrite, not
-  // an uplift, and the command recommends /modernize-transform. judgment-share is
+  // an uplift, and the command recommends /code-modernization:modernize-transform. judgment-share is
   // a SECONDARY "how much human effort", not the gate.
   upliftVsRewriteSignal:
     confirmed.length === 0
       ? 'no deltas found — verify the version pair and whether the migration tool could actually run'
-      : `${totalSites} touched sites across ${confirmed.length} deltas (${judgmentSites} of them at judgment-class sites). Compare totalTouchedSites against the codebase size from assess: if it approaches "most of the tree", this is a rewrite — recommend /modernize-transform. Judgment share (${Math.round((judgmentCount / confirmed.length) * 100)}% of cards) is a secondary effort signal, not the gate.`,
+      : `${totalSites} touched sites across ${confirmed.length} deltas (${judgmentSites} of them at judgment-class sites). Compare totalTouchedSites against the codebase size from assess: if it approaches "most of the tree", this is a rewrite — recommend /code-modernization:modernize-transform. Judgment share (${Math.round((judgmentCount / confirmed.length) * 100)}% of cards) is a secondary effort signal, not the gate.`,
 }

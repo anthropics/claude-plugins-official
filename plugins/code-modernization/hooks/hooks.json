@@ -1,0 +1,74 @@
+{
+  "description": "The modernization pane and estate map, x-ray reads, the rule review deck, the sign-off dialog and the fleet view, and usage counts (whole numbers only, see the README)",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/scripts/telemetry.sh\" command",
+            "timeout": 10,
+            "asyncRewake": true
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/scripts/telemetry.sh\" state",
+            "timeout": 10,
+            "asyncRewake": true
+          },
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/scripts/telemetry.sh\" run",
+            "timeout": 10,
+            "asyncRewake": true
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/scripts/telemetry.sh\" health",
+            "timeout": 10,
+            "asyncRewake": true
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/scripts/telemetry.sh\" failure",
+            "timeout": 10,
+            "asyncRewake": true
+          }
+        ]
+      }
+    ],
+    "StopFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/scripts/telemetry.sh\" failure",
+            "timeout": 10,
+            "asyncRewake": true
+          }
+        ]
+      }
+    ]
+  },
+  "modules": [
+    "./register.ts"
+  ]
+}

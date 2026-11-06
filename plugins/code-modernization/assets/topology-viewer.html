@@ -48,6 +48,8 @@
   #sidebar.open { display: block; }
   #sidebar h2 { font-size: 16px; word-break: break-word; }
   #sidebar .meta { color: var(--muted); font-size: 12px; margin: 2px 0 10px; }
+  #sidebar .desc { font-size: 13px; margin: 0 0 10px; }
+  #sidebar .desc .cap { display: block; color: var(--muted); font-size: 11px; margin-top: 3px; }
   #sidebar h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em;
     color: var(--muted); margin: 12px 0 4px; }
   #sidebar .link { color: var(--blue); cursor: pointer; display: block;
@@ -93,7 +95,7 @@
 <aside id="sidebar" class="panel"></aside>
 <div id="hint">scroll to zoom · drag to pan · click a node · double-click to zoom in · Esc to reset</div>
 <div id="err" class="panel"><p>No topology data found in this file.<br>
-Re-run <code>/modernize-map</code> to regenerate it.</p></div>
+Re-run <code>/code-modernization:modernize-map</code> to regenerate it.</p></div>
 
 <script>
 /* Inlined d3 v7 subset (d3-hierarchy, d3-zoom, d3-selection, d3-interpolate, d3-ease) - ISC License, Copyright Mike Bostock. Bundled and minified; exposed as window.d3. */
@@ -110,12 +112,12 @@ function fail(html) {
 // the file is fully self-contained and works offline / air-gapped.
 const d3 = window.d3;
 
-// Injected by /modernize-map: the contents of topology.json replace the
+// Injected by /code-modernization:modernize-map: the contents of topology.json replace the
 // null after the marker comment. Schema documented in the command file.
 const DATA = /*__TOPOLOGY_DATA__*/ null;
 
 if (!DATA || !DATA.root) {
-  fail("No topology data found in this file.<br>Re-run <code>/modernize-map</code> to regenerate it.");
+  fail("No topology data found in this file.<br>Re-run <code>/code-modernization:modernize-map</code> to regenerate it.");
   throw new Error("no data");
 }
 
@@ -148,6 +150,7 @@ root.each(d => {
   const n = { id, name: String(d.data.name ?? d.data.id ?? "?"),
     kind: d.data.kind || "module",
     language: d.data.language || null, file: d.data.file || null,
+    description: typeof d.data.description === "string" ? d.data.description : null,
     loc: numLoc(d.data), x: d.x, y: d.y, r: d.r, depth: d.depth,
     parentNode: d.parent ? d.parent.__viz : null,
     container: !!(d.children && d.children.length) };
@@ -398,7 +401,7 @@ function renderSidebar() {
   sidebar.innerHTML = `
     <span class="closebtn" id="close">×</span>
     <h2>${esc(n.name)}</h2>
-    <div class="meta">${esc(n.kind)}${n.language ? " · " + esc(n.language) : ""}${n.loc ? " · " + n.loc.toLocaleString() + " LOC" : ""}</div>
+    <div class="meta">${esc(n.kind)}${n.language ? " · " + esc(n.language) : ""}${n.loc ? " · " + n.loc.toLocaleString() + " LOC" : ""}</div>${n.description ? `<p class="desc">${esc(n.description)}<span class="cap">written by Claude from a source excerpt and the node's connections</span></p>` : ""}
     <div>${entrySet.has(n.id) ? '<span class="badge entry">entry point</span>' : ""}
       ${deadSet.has(n.id) ? '<span class="badge">dead-end candidate</span>' : ""}
       <span class="badge">fan-in ${fanIn.get(n.id) || 0}</span>

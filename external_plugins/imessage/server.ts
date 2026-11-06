@@ -168,6 +168,7 @@ const qAttachments = db.query<AttRow, [number]>(`
   FROM attachment a
   JOIN message_attachment_join maj ON maj.attachment_id = a.ROWID
   WHERE maj.message_id = ?
+  ORDER BY a.ROWID
 `)
 
 // Your own addresses, from message.account ("E:you@icloud.com" / "p:+1555...")
@@ -557,7 +558,7 @@ const mcp = new Server(
     instructions: [
       'The sender reads iMessage, not this session. Anything you want them to see must go through the reply tool — your transcript output never reaches their chat.',
       '',
-      'Messages from iMessage arrive as <channel source="imessage" chat_id="..." message_id="..." user="..." ts="...">. If the tag has an image_path attribute, Read that file — it is an image the sender attached. Reply with the reply tool — pass chat_id back.',
+      'Messages from iMessage arrive as <channel source="imessage" chat_id="..." message_id="..." user="..." ts="...">. If the tag has image_path attributes (image_path, image_path_2, ...), Read each file in order — they are images the sender attached. Reply with the reply tool — pass chat_id back.',
       '',
       'reply accepts file paths (files: ["/abs/path.png"]) for attachments.',
       '',
@@ -844,20 +845,25 @@ function handleInbound(r: Row): void {
   }
 
   // attachment.filename is an absolute path (sometimes tilde-prefixed) —
-  // already on disk, no download. Include the first image inline.
-  let imagePath: string | undefined
+  // already on disk, no download. Collect every image, in attachment ROWID order.
+  const imagePaths: string[] = []
   if (hasAttachments) {
     for (const att of qAttachments.all(r.rowid)) {
       if (!att.filename) continue
       if (att.mime_type && !att.mime_type.startsWith('image/')) continue
-      imagePath = expandTilde(att.filename)
-      break
+      imagePaths.push(expandTilde(att.filename))
     }
   }
 
-  // image_path goes in meta only — an in-content "[image attached — read: PATH]"
+  // Image paths go in meta only — an in-content "[image attached — read: PATH]"
   // annotation is forgeable by any allowlisted sender typing that string.
-  const content = text || (imagePath ? '(image)' : '')
+  // One key per image: image_path, image_path_2, image_path_3, ... (Claude
+  // Code accepts only string meta values, so no array).
+  const imageMeta: Record<string, string> = {}
+  imagePaths.forEach((p, i) => {
+    imageMeta[i === 0 ? 'image_path' : `image_path_${i + 1}`] = p
+  })
+  const content = text || (imagePaths.length ? '(image)' : '')
 
   void mcp.notification({
     method: 'notifications/claude/channel',
@@ -868,7 +874,7 @@ function handleInbound(r: Row): void {
         message_id: r.guid,
         user: sender,
         ts: appleDate(r.date).toISOString(),
-        ...(imagePath ? { image_path: imagePath } : {}),
+        ...imageMeta,
       },
     },
   })

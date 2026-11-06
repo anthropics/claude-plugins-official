@@ -1,0 +1,36 @@
+Mermaid (mermaid.min.js in this folder)
+
+MIT License
+
+Copyright (c) 2014 - 2022 Knut Sveidqvist
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+----------------------------------------------------------------------------
+Provenance (so a reviewer can re-verify the vendored file byte for byte)
+
+Package:   mermaid 11.17.2
+File:      dist/mermaid.min.js, unmodified
+Source:    https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.min.js
+Size:      3572661 bytes
+SHA-256:   581ed7d74bd9048d0e3a91363927d72ef22942d7722546b27f7cc29e35390eb8
+
+To re-check: download the Source URL and run `shasum -a 256` on it; the digest
+must equal the one above and the one of mermaid.min.js in this folder. The
+report inlines this file only when the system has at least one diagram.

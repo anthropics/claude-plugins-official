@@ -31,6 +31,8 @@ But do not invent a defense to kill a finding, either. Refute only with a mitiga
 
 Judge the finding **as written**. A different, real bug nearby does not make this finding true. A finding whose reported line is wrong but whose described vulnerability is real at another line: say so — the reasoning is what the scan job reads.
 
+When the dispatch names a change under review, the finding also claims the change takes part in the attack. Check that claim against the diff like any other: a flaw that is real but whose source, sink, guards and every way to reach it read the same before the change is answered PREDATES_CHANGE, with the unchanged lines cited — not a TRUE_POSITIVE of this review, and not a refutation of the flaw; a new caller, route or input the change adds that reaches an old sink is the change taking part, so that is not PREDATES_CHANGE.
+
 ## Name the attacker and the gain
 
 Name who authors the input the exploit needs and whether this code may trust them, citing the line that decides it. A caller of a library's public API is the victim; the attacker is whoever controls the data it passes. Input that only this repository's own code produces — a fixed configuration, a build step, a hard-coded caller — refutes the finding. Then name the gain beyond what that position already allows: none is a FALSE_POSITIVE; real but small is still a TRUE_POSITIVE, rated on the scale below rather than as claimed. A deployment precondition is a hurdle to rate, not a refutation, unless a default the code ships closes the path — cite that line.

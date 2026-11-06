@@ -1,8 +1,64 @@
 {
   "name": "code-modernization",
-  "description": "Modernize legacy codebases (COBOL, legacy Java/C++/.NET, monolith web apps) with a structured preflight / assess / map / extract-rules / brief / (reimagine | transform | uplift) / harden / status workflow. Cross-stack rewrites, greenfield reimagining, and same-stack version uplifts (e.g. .NET Framework → .NET 8); an interactive topology viewer; specialist agents; and optional dynamic-workflow orchestration with adversarial verification.",
+  "version": "1.0.0",
+  "description": "Guided modernization for any legacy codebase: start with /modernize, get an assessment, an interactive map, the business rules mined from the code, and a plan you approve, then an upgrade, a rewrite or a rebuild with independent proof that the new code behaves like the old. Includes security hardening, a one-page report, specialist agents, and an optional live progress pane (early access).",
   "author": {
     "name": "Anthropic",
     "email": "support@anthropic.com"
+  },
+  "userConfig": {
+    "system": {
+      "type": "string",
+      "title": "System",
+      "description": "The system under analysis/ to follow. Empty follows the first one found.",
+      "default": ""
+    },
+    "track": {
+      "type": "string",
+      "title": "Track to follow",
+      "description": "auto follows whichever way the plugin's commands are working on the system: a rewrite, a same-stack uplift or a greenfield reimagine, by the newest artifacts. Name one to pin it.",
+      "default": "auto",
+      "options": [
+        "auto",
+        "transform",
+        "uplift",
+        "reimagine"
+      ]
+    },
+    "panel": {
+      "type": "string",
+      "title": "Progress pane",
+      "description": "auto opens the pane when a session starts in a workspace that has analysis/; command opens it only when you press its button or type /modernize-panel; off never opens it and never draws the button.",
+      "default": "auto",
+      "options": [
+        "auto",
+        "command",
+        "off"
+      ]
+    },
+    "xray": {
+      "type": "boolean",
+      "title": "X-ray reads",
+      "description": "When Claude reads a legacy file, attach what the analysis already knows about it (callers, data it touches, the rules citing it) as context only the model sees.",
+      "default": true
+    },
+    "commandPrefix": {
+      "type": "string",
+      "title": "Command prefix",
+      "description": "How the plugin's commands are written up to their verb, for the pane's Next line.",
+      "default": "/code-modernization:modernize-"
+    },
+    "legacyDir": {
+      "type": "string",
+      "title": "Legacy directory",
+      "description": "The read-only tree holding the legacy systems, relative to the workspace.",
+      "default": "legacy"
+    },
+    "telemetry": {
+      "type": "boolean",
+      "title": "Usage counts",
+      "description": "Send usage counts through Claude Code's own telemetry setting: whole numbers only, such as which command ran, how many rules were found, what kind of machine and python the plugin runs on, and which kind of error occurred. Never code, names, paths, prompts or error text. Nothing is sent when Claude Code telemetry is off. See exactly what would be sent with: python3 scripts/telemetry.py show",
+      "default": true
+    }
   }
 }

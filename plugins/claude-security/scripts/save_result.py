@@ -5,10 +5,12 @@ Reads the JSON file the Claude Code runtime writes when a workflow task
 completes, folds the result's findings, votes and coverage into
 findings.json, votes.json and coverage.json in the run directory (appending
 to an earlier run's when this result continues one), writes the candidate
-files a further verification run loads, and prints one `next:` line: the
-Workflow call that continues the verification, or the instruction to write
-the report. Each finding is recorded at the line of its file that its quoted
-code is on, with the line the researcher declared kept beside it.
+files a further verification run loads, and prints a summary line with the
+count at each severity, a `votes:` line with each finding's panel tally, and
+a `next:` line: the Workflow call that continues the verification, or the
+instruction to write the report. Each finding is recorded at the line of its
+file that its quoted code is on, with the line the researcher declared kept
+beside it.
 
 Usage:
   save_result.py <output_file> <run_dir>
@@ -24,6 +26,7 @@ import argparse
 import os
 import re
 import sys
+from collections import Counter
 from pathlib import Path
 from typing import NamedTuple
 
@@ -33,13 +36,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from lib import console, plugin, source, strictjson
 from lib.chain import Chain, chain_of, pending_ranks
 from lib.finding import (
-    CONFIDENCE_RANK,
-    SEVERITIES,
+    Confidence,
     FindingError,
+    Panel,
+    Severity,
     file_field,
+    finding_panels,
     line_number,
+    link_field,
+    scan_prefix_fits,
     scan_prefix_shaped,
+    vote_rounds,
 )
+from lib.revision import change_range
 from lib.strictjson import JsonMap, is_int, is_list, is_map, is_str
 
 # Rows per candidate file; workflows/scan.js derives each file's ranks from the same number.
@@ -59,6 +68,17 @@ class Records(NamedTuple):
     votes: JsonMap
     coverage: JsonMap
     chain: Chain
+
+    @property
+    def rounds(self) -> JsonMap:
+        return vote_rounds(self.votes)
+
+    def severity_counts(self) -> Counter[Severity]:
+        """How many findings carry each severity; a word that names no Severity is not counted."""
+        return Counter(s for s in map(Severity.of, self.findings) if s is not None)
+
+    def panels(self) -> list[tuple[str, Panel | None]]:
+        return finding_panels(self.rounds, [str(f["id"]) for f in self.findings])
 
 
 class Args(argparse.Namespace):
@@ -246,13 +266,10 @@ def checked(coverage: JsonMap, meta: JsonMap, run_dir: Path) -> JsonMap:
 
 
 def placed(finding: JsonMap, meta: JsonMap) -> JsonMap:
-    """`finding` at the line of its file that its quoted snippet is on, its declared line kept.
+    """`finding` with its file, change link and line as the render will carry them.
 
-    `line` becomes the line of the finding's file under the scan root that
-    places it (source.placed_line) and the line as it arrived moves to
-    `declared_line`; both hold the arriving line when the file cannot be
-    read or nothing in it places the finding. A finding whose line or snippet
-    is not a shape the render accepts is returned as it is.
+    `line` becomes the line of the file its quoted snippet is on, and the line as it arrived
+    moves to `declared_line`. Fields the render would refuse are left as they are.
     """
     finding_id, line, snippet = (
         finding["id"],
@@ -267,24 +284,28 @@ def placed(finding: JsonMap, meta: JsonMap) -> JsonMap:
         or not is_str(scan_root)
         or not is_str(prefix)
         or not scan_prefix_shaped(prefix)
+        or not scan_prefix_fits(prefix, scan_root=scan_root)
     ):
         return finding
     try:
         file = file_field(finding, finding_id, scan_root, prefix, meta.get("mode") == "scan")
-        text = source.read(scan_root, file)
+        via_change = link_field(finding, finding_id, scan_root, prefix)
     except FindingError:
-        text = None
-    return {**finding, "line": source.placed_line(text, line, snippet or ""), "declared_line": line}
+        return {**finding, "line": line, "declared_line": line}
+    return {
+        **finding,
+        **({"file": file} if file == file.strip() else {}),
+        **({"via_change": via_change} if via_change else {}),
+        "line": source.placed_line(source.read(scan_root, file), line, snippet or ""),
+        "declared_line": line,
+    }
 
 
 def report_order(finding: JsonMap) -> tuple[int, int]:
     """Sort key: severity, then confidence, strongest first; unknown values last."""
-    severity = str(finding.get("severity", "")).upper()
+    severity = Severity.of(finding)
     confidence = str(finding.get("confidence", "")).lower()
-    return (
-        SEVERITIES.index(severity) if severity in SEVERITIES else len(SEVERITIES),
-        -CONFIDENCE_RANK.get(confidence, 0),
-    )
+    return -(severity.value if severity else 0), -Confidence.__members__.get(confidence, 0)
 
 
 def merged(scan: Records, run: Records) -> Records:
@@ -343,6 +364,9 @@ def merged(scan: Records, run: Records) -> Records:
             + texts(run.coverage, "lostCandidates"),
             "severityLowered": texts(scan.coverage, "severityLowered")
             + texts(run.coverage, "severityLowered"),
+            "preExisting": texts(scan.coverage, "preExisting") + texts(run.coverage, "preExisting"),
+            "outsideScope": texts(scan.coverage, "outsideScope")
+            + texts(run.coverage, "outsideScope"),
             "dispatchRefusals": count(scan.coverage, "dispatchRefusals")
             + count(run.coverage, "dispatchRefusals"),
             "continued": run.coverage.get("continued"),
@@ -377,25 +401,35 @@ def write_records(run_dir: Path, records: Records, rows: dict[int, JsonMap]) -> 
 
 
 def summary(records: Records) -> str:
-    """One line on where the scan stands."""
-    rounds = records.votes.get("rounds")
+    """Two lines: where the scan stands, with the count at each severity, then each
+    finding's tally, or "?" when its panel is not complete, in findings.json's order.
+    """
+    counts = records.severity_counts()
+    by_severity = ", ".join(f"{counts[severity]} {severity.name}" for severity in Severity)
+    tallies = [f"{i} {p['true']}/{p['voters']}" if p else f"{i} ?" for i, p in records.panels()]
     return (
-        f"recorded verification run {records.chain['shard']}: {len(records.findings)} findings, "
-        f"{len(rounds) if is_map(rounds) else 0} rounds, "
+        f"recorded verification run {records.chain['shard']}: {len(records.findings)} findings "
+        f"({by_severity}), "
+        f"{len(records.rounds)} rounds, "
         f"{len(pending_ranks(records.chain))} pending, "
-        f"{len(texts(records.coverage, 'lostCandidates'))} lost"
+        f"{len(texts(records.coverage, 'lostCandidates'))} lost\n"
+        f"votes: {', '.join(tallies) or 'no findings'}"
     )
 
 
-def next_step(run_dir: Path, meta: JsonMap, chain: Chain) -> str:
+def next_step(run_dir: Path, meta: JsonMap, records: Records) -> str:
     """The `next:` line: the Workflow call that panels what is pending, or the report."""
+    chain = records.chain
     if not pending_ranks(chain):
         return WRITE_REPORT
+    scope, reviewed_range = meta.get("scope"), records.coverage.get("range")
     args = {
         "scanRoot": meta.get("scan_root"),
         "runDir": str(run_dir),
         "mode": meta.get("mode"),
         "effort": meta.get("effort"),
+        "scope": scope if is_list(scope) and scope else None,
+        "range": reviewed_range if is_str(reviewed_range) else None,
         "verify": {
             "shard": chain["shard"] + 1,
             "idBase": chain["next_id"],
@@ -432,6 +466,16 @@ def standing(run_dir: Path, meta: JsonMap, scan: Records | None, result: JsonMap
     if not is_str(made_for) or os.path.abspath(made_for) != str(run_dir):
         msg = f"the result names {made_for!r} as its run directory, not this one"
         raise CannotContinueError(msg)
+    revision = meta.get("revision")
+    reviewed_range = run.coverage.get("range")
+    recorded_range = change_range(revision) if is_map(revision) else None
+    if is_str(reviewed_range) and reviewed_range != recorded_range:
+        msg = (
+            f"the result reviewed {reviewed_range} but this scan recorded "
+            f"{recorded_range or 'no change'}, so it is not a review of the change that was "
+            "listed: run the scan again with the range: line write_scan_meta.py prints"
+        )
+        raise CannotContinueError(msg)
     if scan is None and run.chain["shard"] != 1:
         msg = f"this is run {run.chain['shard']} but nothing is recorded yet"
         raise CannotContinueError(msg)
@@ -451,7 +495,7 @@ def save(output_file: Path, run_dir: Path) -> None:
     meta = scan_settings(run_dir)
     records = standing(run_dir, meta, recorded(run_dir), result_in(output_file))
     print(summary(records))
-    print(next_step(run_dir, meta, records.chain))
+    print(next_step(run_dir, meta, records))
 
 
 def argument_parser() -> argparse.ArgumentParser:

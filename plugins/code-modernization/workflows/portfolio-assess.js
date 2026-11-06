@@ -3,7 +3,7 @@ export const meta = {
   description:
     'Per-system portfolio sweep as an independent pipeline — metrics, fingerprint, doc coverage per system; COCOMO computed deterministically',
   whenToUse:
-    'Invoked by /modernize-assess --portfolio when the Workflow tool is available. Requires args {parentDir, systems: ["dirname", ...]} — the calling session enumerates the subdirectories (workflow scripts have no filesystem access) and renders analysis/portfolio.html from the returned rows.',
+    'Invoked by /code-modernization:modernize-assess --portfolio when the Workflow tool is available. Requires args {parentDir, systems: ["dirname", ...]} — the calling session enumerates the subdirectories (workflow scripts have no filesystem access) and renders analysis/portfolio.html from the returned rows.',
   phases: [{ title: 'Survey', detail: 'one metrics agent per system, all independent' }],
 }
 
@@ -41,14 +41,14 @@ see: file:line plus a 2-4 character preview, never the value.`
 
 const SYSTEM_SCHEMA = {
   type: 'object',
-  required: ['sloc', 'dominantLanguage', 'fileCount', 'metricsTool'],
+  required: ['sloc', 'dominantLanguage', 'fileCount', 'metricsTool', 'complexityTotal', 'maxFileComplexity'],
   properties: {
     sloc: { type: 'number', description: 'Total source lines of code' },
     dominantLanguage: { type: 'string' },
     languages: { type: 'array', items: { type: 'string' }, description: 'All significant languages, largest first' },
     fileCount: { type: 'number' },
-    meanCcn: { type: 'number', description: 'Mean cyclomatic complexity, or -1 if not measurable' },
-    maxCcn: { type: 'number', description: 'Max cyclomatic complexity, or -1 if not measurable' },
+    complexityTotal: { type: 'number', description: 'Sum of the per-file decision-point complexity over all source files, measured the one way the prompt says' },
+    maxFileComplexity: { type: 'number', description: 'The highest complexity of any single source file, measured the same way' },
     metricsTool: { type: 'string', description: 'Which tool produced the numbers (scc / cloc / lizard / find+wc fallback) so figures are reproducible' },
     depManifest: { type: 'string', description: 'Path of the dependency manifest found, or "none"' },
     depFreshness: { type: 'string', description: 'One phrase: manifest age / pinned-version staleness signal' },
@@ -66,10 +66,10 @@ const rows = await pipeline(
     agent(
       `Measure the legacy system at ${parentDir}/${sys} for a modernization portfolio heat-map.
 
-1. LOC + complexity: prefer \`scc\`, then \`cloc\` + \`lizard\`, then find+wc with decision-keyword counting as last resort. Report which tool you used in metricsTool.
+1. Lines and complexity. Measure complexity the SAME way for every system so the numbers compare: run \`scc --by-file\` and take its Complexity column, summed over all source files (complexityTotal) and the largest single file (maxFileComplexity). Without \`scc\`, count decision keywords per file (if, else if, for, while, case, catch, &&, ||, and the language's equivalents) and say so in metricsTool. Never report lizard's per-function figures here: they do not add up to the same thing. Lines of code come from the same tool.
 2. Dominant language and rough file split.
 3. Dependency manifest (package.json, pom.xml, *.csproj, requirements*.txt, copybook dir): location, age, pinned-version staleness.
-4. Documentation coverage: % of source files with a header comment block; list architecture docs present (README, docs/, ADRs).
+4. Documentation coverage: % of source files whose opening comment describes the file (not just a license or copyright notice); list architecture docs present (README, docs/, ADRs).
 5. 1-3 risk notes: the things that would most complicate modernizing this system.
 ${UNTRUSTED}`,
       {
@@ -95,6 +95,7 @@ if (failed.length) {
 // human-team productivity assumptions).
 for (const r of surveyed) {
   const ksloc = r.sloc / 1000
+  r.complexityPerKsloc = ksloc > 0 ? Math.round(r.complexityTotal / ksloc) : 0
   r.complexityIndex = Math.round(2.94 * Math.pow(ksloc, 1.1) * 10) / 10
 }
 

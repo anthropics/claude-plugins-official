@@ -80,11 +80,15 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: anthropics/claude-plugins-community/.github/actions/validate-plugins@426e469f322952061102b286b378c0c9733a0934
+      - uses: anthropics/claude-plugins-community/.github/actions/validate-plugins@163301d1904c0a994539f5226ce0fcd65b8652bf
         with:
           marketplace-path: .claude-plugin/marketplace.json
           # Official curated marketplace: SHA-pin (I5) is a HARD error.
           # I8/I11 are warnings until the 15 known vendored-path/name issues
           # are cleaned up (see PR body); tighten to "I1 I3" after.
           warn-invariants: "I1 I3 I8 I11"
+          # Plugins resolved by a local command instead of a git repo (no sha to
+          # pin). Each name here is a listing decision: add one only with
+          # marketplace-ops sign-off.
+          command-exempt: "xcode"
           claude-cli-version: latest

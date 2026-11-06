@@ -3,7 +3,7 @@ export const meta = {
   description:
     'Security scan as class-scoped parallel finders with adversarial per-finding verification — false positives die before SECURITY_FINDINGS.md',
   whenToUse:
-    'Invoked by /modernize-harden when the Workflow tool is available. Requires args {system}. Covers the scan + triage input only — remediation patch drafting and the per-hunk review loop stay in the calling session (they write files and handle raw credentials).',
+    'Invoked by /code-modernization:modernize-harden when the Workflow tool is available. Requires args {system}; optional {classes, findings} re-run only the coverage gaps an earlier run returned (deadFinders, unverified). Covers the scan + triage input only — remediation patch drafting and the per-hunk review loop stay in the calling session (they write files and handle raw credentials).',
   phases: [
     { title: 'Find', detail: 'one finder per vulnerability class' },
     { title: 'Verify', detail: 'one refuter per finding; second judge for Critical/High' },
@@ -21,8 +21,9 @@ if (!system) {
   throw new Error('modernize-harden-scan workflow requires args: {system: "<system-dir>"}')
 }
 if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(system)) {
-  throw new Error(`Unsafe system name ${JSON.stringify(system)} — must be a plain directory name under legacy/`)
+  throw new Error(`Unsafe system name ${JSON.stringify(system)} — must be a plain name: letters, digits, hyphen and underscore`)
 }
+// The code is `legacy/<system>`: a copy, or a symlink to where it really lives (`preflight --source` makes the link).
 const legacyDir = `legacy/${system}`
 
 // Finder output is derived from untrusted code — when it flows into a judge
@@ -103,8 +104,46 @@ const CLASSES = [
   { key: 'input', brief: 'missing input validation, path traversal, insecure deserialization, and unsafe file handling.' },
 ]
 
-const found = await parallel(
-  CLASSES.map(c => () =>
+// ---- Re-run of an earlier run's coverage gaps ---------------------------------
+// A run reports what it could not cover: `deadFinders` (classes nobody scanned)
+// and `unverified` (findings no refuter judged). Passing them back as
+// args.classes and args.findings runs ONLY those — the named finder classes,
+// and a verdict pass over the named findings. Give neither for the full scan.
+const isRerun = ARGS.classes != null || ARGS.findings != null
+for (const k of ['classes', 'findings']) {
+  if (ARGS[k] != null && !Array.isArray(ARGS[k])) {
+    throw new Error(`modernize-harden-scan: args.${k} must be a list (got ${typeof ARGS[k]})`)
+  }
+}
+const rerunClasses = ARGS.classes || []
+const unknownClasses = rerunClasses.filter(k => !CLASSES.some(c => c.key === k))
+if (unknownClasses.length) {
+  throw new Error(
+    `modernize-harden-scan: unknown finder class ${JSON.stringify(unknownClasses)} — valid classes: ${CLASSES.map(c => c.key).join(', ')}`,
+  )
+}
+const FINDING_FIELDS = ['cwe', 'source', 'title', 'exploitScenario', 'recommendedFix']
+const carried = (ARGS.findings || []).map((f, i) => {
+  if (
+    !f ||
+    typeof f !== 'object' ||
+    FINDING_FIELDS.some(k => typeof f[k] !== 'string' || !f[k]) ||
+    !['Critical', 'High', 'Medium', 'Low'].includes(f.severity)
+  ) {
+    throw new Error(
+      `modernize-harden-scan: args.findings[${i}] is not a finding (needs string ${FINDING_FIELDS.join(', ')} and a severity of Critical, High, Medium or Low)`,
+    )
+  }
+  const { unverifiedReason, ...finding } = f
+  return finding
+})
+if (isRerun && !rerunClasses.length && !carried.length) {
+  throw new Error('modernize-harden-scan: args.classes and args.findings are both empty — nothing to re-run (omit both for the full scan)')
+}
+const activeClasses = isRerun ? CLASSES.filter(c => rerunClasses.includes(c.key)) : CLASSES
+
+const found = activeClasses.length === 0 ? [] : await parallel(
+  activeClasses.map(c => () =>
     agent(
       `Adversarially audit ${legacyDir} for ONE class of security vulnerability: ${c.brief}
 Cover only what applies to the detected stack (web items don't apply to a batch system). Every finding needs a precise repo-relative file:line citation you actually read, a CWE ID, and a one-sentence exploit scenario.
@@ -119,11 +158,21 @@ ${UNTRUSTED}`,
   ),
 )
 
+// parallel() keeps positions: found[i] belongs to activeClasses[i] and is null
+// when that finder was skipped, died on a terminal error, or threw (for
+// example once the token budget is spent). A class nobody scanned must never
+// read as a class that is clean, so name it.
+const deadFinders = activeClasses.filter((c, i) => !found[i]).map(c => c.key)
+if (deadFinders.length) {
+  log(`${deadFinders.length} of ${activeClasses.length} finder(s) returned nothing — NOT scanned: ${deadFinders.join(', ')} (returned in deadFinders; re-run just these with args.classes)`)
+}
+
 const injectionFlags = []
 const all = found.filter(Boolean).flatMap(r => {
   for (const s of r.injectionSuspects || []) injectionFlags.push(s)
   return r.findings || []
 })
+all.unshift(...carried) // re-run: findings an earlier run left unjudged
 const toolOutputs = found.filter(Boolean).map(r => r.toolOutput).filter(Boolean)
 
 // Dedup across classes (the same hardcoded credential surfaces under auth AND secrets)
@@ -170,16 +219,26 @@ const verified = await parallel(
 
 const survivors = []
 const refuted = []
-for (const item of verified.filter(Boolean)) {
-  const { f, v } = item
-  if (!v) continue
-  if (v.real) {
+const unverified = [] // findings no refuter judged — returned, never counted as confirmed or as refuted
+// parallel() keeps positions: verified[i] is the verdict for deduped[i]. It is
+// null when the thunk threw (agent error, token budget spent) and {v: null}
+// when the agent returned nothing. Walk by index so a finding that got no
+// verdict is recorded instead of disappearing from the run.
+deduped.forEach((f, i) => {
+  const v = verified[i] && verified[i].v
+  if (!v) {
+    unverified.push({ ...f, unverifiedReason: 'no refuter verdict (agent skipped, errored, or the token budget ran out)' })
+  } else if (v.real) {
     survivors.push(v.adjustedSeverity ? { ...f, severity: v.adjustedSeverity, severityNote: v.reason } : f)
   } else {
     refuted.push({ ...f, refutationReason: v.reason })
   }
-}
-log(`${survivors.length} findings survived refutation; ${refuted.length} killed as false positives`)
+})
+unverified.sort((a, b) => SEV_RANK[a.severity] - SEV_RANK[b.severity])
+log(
+  `${survivors.length} findings survived refutation; ${refuted.length} killed as false positives` +
+    (unverified.length ? `; ${unverified.length} NOT judged (returned in unverified, not counted as confirmed or refuted)` : ''),
+)
 
 // Second, independent confirmation for what remains Critical/High — these drive the patch.
 const critHigh = survivors.filter(f => SEV_RANK[f.severity] <= 1)
@@ -210,15 +269,28 @@ survivors.sort((a, b) => SEV_RANK[a.severity] - SEV_RANK[b.severity])
 // ---- Return -------------------------------------------------------------------
 // The calling session writes SECURITY_FINDINGS.md, the SECRETS.local.md
 // quarantine, and drafts/reviews the remediation patches — never the agents.
+const judged = survivors.length + refuted.length
 return {
   system,
   findings: survivors,
   refuted,
+  // Coverage gaps — NOT part of `findings`. unverified: findings no refuter
+  // judged (pass back as args.findings). deadFinders: classes whose finder
+  // returned nothing, so nobody scanned them (pass back as args.classes).
+  unverified,
+  deadFinders,
   credentialFindings: survivors.filter(f => f.isCredential),
   toolOutputs,
   injectionFlags: [...new Set(injectionFlags)],
   stats: {
     bySeverity: survivors.reduce((acc, f) => ({ ...acc, [f.severity]: (acc[f.severity] || 0) + 1 }), {}),
-    falsePositiveRate: deduped.length ? Math.round((refuted.length / deduped.length) * 100) + '%' : 'n/a',
+    // refuted / judged: a finding no refuter judged is neither refuted nor kept,
+    // so it stays out of the denominator instead of flattering the rate.
+    falsePositiveRate: judged ? Math.round((refuted.length / judged) * 100) + '%' : 'n/a',
+    finders: activeClasses.length,
+    deadFinders,
+    distinctFindings: deduped.length,
+    judged,
+    unverified: unverified.length,
   },
 }

@@ -51,4 +51,8 @@ jobs:
               );
               return;
             }
-            console.log(`Scope guard passed: adds ${result.added.join(', ') || 'none'}, all from repos already live here.`);
+            const unvalidated = result.unvalidated || [];
+            if (unvalidated.length) {
+              core.warning(`Command-source entries are not repo-validated; review manually: ${unvalidated.join(', ')}`);
+            }
+            console.log(`Scope guard passed: adds ${result.added.join(', ') || 'none'}${unvalidated.length ? '' : ', all from repos already live here'}.`);

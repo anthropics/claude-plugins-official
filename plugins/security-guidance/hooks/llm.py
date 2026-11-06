@@ -17,18 +17,31 @@ Two reassignable globals here are read by handlers in
 ``_last_review_truncated_bytes``. Handlers reference them as ``llm.X`` (not via
 ``from``-import) so they observe reassignment.
 """
-import glob
+import contextlib
+import hashlib
 import json
+import logging
 import os
 import re
+import subprocess
 import sys
+import tempfile
+import threading
+import time
+import traceback
+import urllib.parse
 import urllib.request
-from typing import Optional, Tuple, Dict, Any, List
+from typing import Optional, Tuple, Dict, Any, List, Callable
+
+try:
+    import ssl
+except ImportError:  # a Python built without TLS
+    ssl = None
 
 import extensibility
 import review_api
-from _base import debug_log, _record_usage, _record_http_error, _PV, PROVENANCE_TAG, state_dir as _resolve_state_dir  # noqa: F401
-from session_state import with_locked_state
+from _base import debug_log, _record_usage, _record_http_error, _record_net_error, _clear_net_error, _PV, PROVENANCE_TAG, state_dir as _resolve_state_dir, agent_sdk_site_dirs, make_state_dir  # noqa: F401
+from session_state import load_state, with_locked_state
 from gitutil import git_config_env, SAFE_GIT_CONFIG
 
 
@@ -52,17 +65,13 @@ def _inject_agent_sdk_venv_into_syspath(state_dir):
     fails with `ModuleNotFoundError: pywintypes` and the agentic reviewer
     falls back to single-shot silently. Replicate what site.py would do.
     """
-    venv_root = os.path.join(state_dir, "agent-sdk-venv")
-    candidates = (
-        glob.glob(os.path.join(venv_root, "lib", "python*", "site-packages"))
-        + glob.glob(os.path.join(venv_root, "Lib", "site-packages"))
-        # `pip install --target` fallback (ensure_agent_sdk BUILT_TARGET, used
-        # when venv can't bootstrap pip): a FLAT layout — packages sit directly
-        # in agent-sdk-libs/, not under a site-packages subdir. See #2154
-        # follow-up. The pywin32 .pth bootstrap below applies here too (target
-        # installs don't process .pth at runtime, same as a manual venv insert).
-        + [os.path.join(state_dir, "agent-sdk-libs")]
-    )
+    # `agent-sdk-libs` is the `pip install --target` fallback
+    # (ensure_agent_sdk BUILT_TARGET, used when venv can't bootstrap pip): a
+    # FLAT layout, packages sit directly in it, not under a site-packages
+    # subdir. See #2154 follow-up. The pywin32 .pth bootstrap below applies
+    # there too (target installs don't process .pth at runtime, same as a
+    # manual venv insert).
+    candidates = agent_sdk_site_dirs(state_dir)
     added = False
     for sp in candidates:
         if not os.path.isdir(sp) or sp in sys.path:
@@ -125,11 +134,19 @@ HAS_API_CREDENTIALS = bool(
     ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN or _HAS_3P_PROVIDER_AT_LOAD
 )
 
-# Model for security review. Default chosen for its precision profile on
+# Model for security review. Opus is the default for its precision profile on
 # interruptive review surfaces — false positives are the dominant uninstall
 # driver, so the default favors precision over recall and over latency.
 # Override via the SECURITY_REVIEW_MODEL env var (see README).
-SECURITY_REVIEW_MODEL = os.environ.get("SECURITY_REVIEW_MODEL", "").strip() or "claude-opus-4-7"
+#
+# Without an override the review follows the newest Opus rather than a
+# release named here: default_review_model() resolves it per call path.
+# _PINNED_REVIEW_MODEL is only what a review uses when that lookup fails.
+_PINNED_REVIEW_MODEL = "claude-opus-5-5"
+# Claude Code's own alias. The CLI the Agent SDK spawns resolves it to the
+# newest Opus it knows how to drive, in the provider's id form on 3P.
+_CLI_OPUS_ALIAS = "opus"
+SECURITY_REVIEW_MODEL = os.environ.get("SECURITY_REVIEW_MODEL", "").strip() or _PINNED_REVIEW_MODEL
 
 # OAuth subscriber tokens (ANTHROPIC_AUTH_TOKEN) require this exact system prompt
 # for api.anthropic.com/v1/messages — the API checks for one of the known Claude
@@ -141,6 +158,24 @@ CLAUDE_CODE_SYSTEM_PROMPT = "You are a Claude agent, built on Anthropic's Claude
 # for "API failed" vs "API succeeded with no findings". Reset at the start of
 # each call. None = no error; int = HTTP status code; -1 = network/timeout;
 _last_call_claude_http_error = None
+
+# Outcome of this thread's last analyze_code_security call. Per thread because
+# the commit review's race runs that call on a thread of its own.
+_review_status = threading.local()
+
+
+def last_review_failed() -> bool:
+    """True when this thread's last analyze_code_security call got no verdict
+    from the model (every call failed, or the reply could not be read), which
+    a caller must not treat as "nothing found"."""
+    return getattr(_review_status, "failed", False)
+
+
+def last_review_status() -> Optional[int]:
+    """A copy of the module-wide _last_call_claude_http_error, taken when this
+    thread's last analyze_code_security call got no verdict (an overlapping call
+    on another thread can change the global); None if the reply was unreadable."""
+    return getattr(_review_status, "status", None)
 
 
 # =====================================================================
@@ -161,21 +196,219 @@ def _anthropic_base_url() -> str:
     Honors ANTHROPIC_BASE_URL (the convention the Anthropic SDK and CC itself
     use) so customers behind an LLM gateway (LiteLLM, Bifrost, self-hosted
     Anthropic-compatible proxy) can route the plugin's reviews through their
-    gateway. Defaults to https://api.anthropic.com. Always returns a string
-    with no trailing slash so callers can safely append /v1/messages etc.
+    gateway. Defaults to https://api.anthropic.com, also when the variable is
+    set but blank, which is how the SDK and CC read it. Always returns a
+    string with no trailing slash so callers can safely append /v1/messages
+    etc.
     """
-    return os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com").rstrip("/")
+    base = os.environ.get("ANTHROPIC_BASE_URL", "").strip()
+    return (base or "https://api.anthropic.com").rstrip("/")
+
+
+# ── Windows certificate store with an entry OpenSSL cannot read ──────────
+# Older Python releases (3.11 and 3.12 among them) hand each Windows
+# certificate store to OpenSSL in one call, so a single certificate it cannot
+# parse makes ssl.create_default_context() raise, and every HTTPS call fails
+# before a byte is sent. SSL_CERT_FILE does not help: the store is read
+# first. Newer releases load the store one certificate at a time and skip
+# the ones that fail; _urlopen does the same on the releases that do not.
+
+_STORE_TLS_UNSET = object()
+_store_tls_context = _STORE_TLS_UNSET  # None once Python's default context is known to build
+_store_tls_lock = threading.Lock()
+# Store entries left out of that context; emit_metrics reports it.
+_store_certs_skipped = 0
+
+
+def _context_without_unreadable_store_certs():
+    """(context, skipped): Python's default TLS context built from the
+    Windows store entries OpenSSL can parse, and how many it could not.
+    The context is None when the default one builds as it is, off Windows,
+    or when no entry is readable. Trust is never widened: the certificates
+    come from the same stores, under the same server-authentication filter,
+    and the chain and host name are verified as in any default context."""
+    enum_certificates = getattr(ssl, "enum_certificates", None)  # Windows only
+    if enum_certificates is None:
+        return None, 0
+    try:
+        ssl.create_default_context()
+        return None, 0
+    except ssl.SSLError:
+        pass
+    server_auth = ssl.Purpose.SERVER_AUTH.oid
+    context, skipped = None, 0
+    for store in getattr(ssl.SSLContext, "_windows_cert_stores", ("CA", "ROOT")):
+        try:
+            for cert, encoding, trust in enum_certificates(store):
+                if encoding != "x509_asn" or not (trust is True or server_auth in trust):
+                    continue
+                try:
+                    if context is None:
+                        # With cadata, create_default_context applies every
+                        # default except reading the store itself.
+                        context = ssl.create_default_context(cadata=cert)
+                    else:
+                        context.load_verify_locations(cadata=cert)
+                except ssl.SSLError:
+                    skipped += 1
+        except PermissionError:
+            pass
+    if context is None:
+        return None, skipped
+    context.set_default_verify_paths()
+    # What http.client sets on the context it would have made.
+    context.set_alpn_protocols(["http/1.1"])
+    if context.post_handshake_auth is not None:
+        context.post_handshake_auth = True
+    return context, skipped
+
+
+def _urlopen(request, timeout):
+    """urllib.request.urlopen for the plugin's API calls. Uses Python's
+    default TLS context unless that cannot be built because of the Windows
+    certificate store (see above); checked once per process."""
+    global _store_tls_context, _store_certs_skipped
+    if _store_tls_context is _STORE_TLS_UNSET:
+        with _store_tls_lock:
+            if _store_tls_context is _STORE_TLS_UNSET:
+                try:
+                    context, skipped = _context_without_unreadable_store_certs()
+                except Exception as e:
+                    debug_log(f"TLS: certificate store check failed: {type(e).__name__}")
+                    context, skipped = None, 0
+                if context is not None:
+                    debug_log(f"TLS: the Windows certificate store has {skipped} certificate(s) "
+                              "OpenSSL cannot read; using the store without them")
+                    _store_certs_skipped = skipped
+                _store_tls_context = context
+    if _store_tls_context is None:
+        return urllib.request.urlopen(request, timeout=timeout)
+    return urllib.request.urlopen(request, timeout=timeout, context=_store_tls_context)
+
+
+def _is_remote_session() -> bool:
+    return os.environ.get("CLAUDE_CODE_REMOTE", "").lower() in ("1", "true", "yes", "on")
 
 
 def _probe_anthropic(timeout: float = 5.0) -> bool:
     req = urllib.request.Request(_anthropic_base_url() + "/", method="HEAD")
     try:
-        with urllib.request.urlopen(req, timeout=timeout):
+        with _urlopen(req, timeout):
             return True
     except urllib.error.HTTPError:
         return True  # got a status code → connected
-    except (urllib.error.URLError, TimeoutError, OSError):
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        _record_net_error(_net_error_code(e))
         return False
+
+
+# =====================================================================
+# Why a call got no HTTP response
+# =====================================================================
+# Classes for the `net_err` metric. Measure only: nothing reads these to
+# decide what the plugin does.
+NET_ERR_CERT_VERIFY = 1   # the server certificate did not verify
+NET_ERR_TLS = 2           # any other TLS failure, including a default context that cannot be built
+NET_ERR_DNS = 3           # the host name did not resolve
+NET_ERR_CONNECT = 4       # refused, reset, closed early or unreachable
+NET_ERR_TIMEOUT = 5
+NET_ERR_PROXY = 6         # the proxy refused the tunnel
+NET_ERR_OTHER = 7         # another failure from the HTTP client
+NET_ERR_INNER_CLI = 9     # the review ran through a CLI, which failed
+NET_ERR_INNER_CLI_TIMEOUT = 10
+NET_ERR_NO_SDK = 11       # the review needed the agent SDK, which could not be imported
+
+_NET_FLAG_NO_CA_ON_DISK = 1   # Python's default CA file and directory are missing or empty
+_NET_FLAG_PROXY = 2           # the request would go through a proxy
+_NET_FLAG_NODE_EXTRA_CA = 4   # NODE_EXTRA_CA_CERTS is set (Python does not read it)
+_NET_FLAG_SSL_CERT_ENV = 8    # SSL_CERT_FILE or SSL_CERT_DIR is set
+
+
+def _net_error_class(exc) -> Tuple[int, int]:
+    """(class, X.509 verify code) for an exception from an API call; class 0
+    for one that is not a network failure. The verify code is OpenSSL's
+    (20 = issuer not found locally, 19 = self-signed certificate in the
+    chain, 10 = expired), 0 when the class is not NET_ERR_CERT_VERIFY."""
+    import errno
+    import http.client
+    import socket
+    try:
+        import ssl
+        cert_error, tls_error = ssl.SSLCertVerificationError, ssl.SSLError
+    except ImportError:
+        cert_error = tls_error = ()
+    reason = getattr(exc, "reason", None)
+    err = reason if isinstance(reason, BaseException) else exc
+    if isinstance(err, cert_error):
+        code = getattr(err, "verify_code", 0)
+        return NET_ERR_CERT_VERIFY, code if isinstance(code, int) and 0 < code < 100 else 0
+    if isinstance(err, tls_error):
+        return NET_ERR_TLS, 0
+    if isinstance(err, socket.gaierror):
+        return NET_ERR_DNS, 0
+    if isinstance(err, OSError):
+        text = str(err).lower()
+        if "tunnel connection failed" in text:
+            return NET_ERR_PROXY, 0
+        if isinstance(err, TimeoutError) or "timed out" in text:
+            return NET_ERR_TIMEOUT, 0
+        if isinstance(err, ConnectionError) or err.errno in (
+                errno.ENETUNREACH, errno.EHOSTUNREACH, errno.ENETDOWN,
+                errno.EHOSTDOWN, errno.EADDRNOTAVAIL):
+            return NET_ERR_CONNECT, 0
+        return NET_ERR_OTHER, 0
+    if isinstance(err, http.client.HTTPException) or isinstance(exc, urllib.error.URLError):
+        return NET_ERR_OTHER, 0
+    return 0, 0
+
+
+def _net_error_flags(tls: bool) -> int:
+    """What the machine's setup says about a failed call. Each check is
+    best effort: one that cannot be made leaves its flag off."""
+    flags = 0
+    if tls:
+        try:
+            import ssl
+            paths = ssl.get_default_verify_paths()
+            has_file = bool(paths.cafile) and os.path.getsize(paths.cafile) > 0
+            has_dir = False
+            if paths.capath:
+                with os.scandir(paths.capath) as it:
+                    has_dir = any(True for _ in it)
+            # Windows also reads the system store, which this cannot see.
+            if not has_file and not has_dir and sys.platform != "win32":
+                flags |= _NET_FLAG_NO_CA_ON_DISK
+        except Exception:
+            pass
+        if os.environ.get("NODE_EXTRA_CA_CERTS"):
+            flags |= _NET_FLAG_NODE_EXTRA_CA
+        if os.environ.get("SSL_CERT_FILE") or os.environ.get("SSL_CERT_DIR"):
+            flags |= _NET_FLAG_SSL_CERT_ENV
+    try:
+        url = urllib.parse.urlsplit(_anthropic_base_url())
+        # As urllib chooses: the proxy for the URL's scheme, bypass by host:port.
+        if (urllib.request.getproxies().get(url.scheme)
+                and not urllib.request.proxy_bypass(url.netloc.rpartition("@")[2])):
+            flags |= _NET_FLAG_PROXY
+    except Exception:
+        pass
+    return flags
+
+
+def _net_error_code(exc) -> int:
+    """`net_err` for an exception: class + 100 * verify code + 10000 * flags,
+    or 0 for an exception that is not a network failure."""
+    try:
+        cls, verify = _net_error_class(exc)
+    except Exception:
+        return 0
+    if not cls:
+        return 0
+    try:
+        flags = _net_error_flags(cls in (NET_ERR_CERT_VERIFY, NET_ERR_TLS))
+    except Exception:
+        flags = 0
+    return cls + 100 * verify + 10000 * flags
 
 
 def _strip_anthropic_from_no_proxy() -> None:
@@ -195,7 +428,7 @@ def ensure_anthropic_reachable() -> bool:
     global _anthropic_reachable
     if _anthropic_reachable is not None:
         return _anthropic_reachable
-    if os.environ.get("CLAUDE_CODE_REMOTE", "").lower() not in ("1", "true", "yes", "on"):
+    if not _is_remote_session():
         _anthropic_reachable = True
         return True
     if _probe_anthropic():
@@ -256,8 +489,62 @@ def _cap_files_for_prompt(files):
 _auth_prefer_token = False
 
 
-def _build_auth_headers(use_token):
-    betas = ["structured-outputs-2025-11-13"]
+# A valid HTTP header name (an RFC 9110 token).
+_HEADER_NAME = re.compile(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+")
+_custom_header_lines_skipped = set()
+
+
+def _custom_headers() -> List[Tuple[str, str]]:
+    """ANTHROPIC_CUSTOM_HEADERS as (name, value) pairs, parsed the way Claude
+    Code parses it: one `Name: Value` per line, split at the first colon,
+    trimmed, lines with no name dropped. Lines http.client cannot send (an
+    invalid name, a carriage return or non-Latin-1 text in the value) are
+    skipped. Values are never logged: they are often credentials."""
+    pairs = []
+    raw = os.environ.get("ANTHROPIC_CUSTOM_HEADERS", "")
+    for number, line in enumerate(re.split(r"\r?\n", raw), 1):
+        name, sep, value = line.partition(":")
+        name, value = name.strip(), value.strip()
+        if not sep or not name:
+            continue
+        try:
+            value.encode("latin-1")
+            sendable = bool(_HEADER_NAME.fullmatch(name)) and "\r" not in value
+        except UnicodeEncodeError:
+            sendable = False
+        if not sendable:
+            if number not in _custom_header_lines_skipped:
+                _custom_header_lines_skipped.add(number)
+                debug_log(f"ANTHROPIC_CUSTOM_HEADERS: skipped line {number}, not a valid HTTP header")
+            continue
+        pairs.append((name, value))
+    return pairs
+
+
+def gateway_cfg() -> int:
+    """How the plugin's reviews are routed, for telemetry: bit 1 when
+    ANTHROPIC_BASE_URL names a host other than api.anthropic.com, bit 2 when
+    at least one ANTHROPIC_CUSTOM_HEADERS line is sent, bit 4 when reviews
+    run through the user's claude on a Claude apps gateway sign-in (see
+    gateway_review_cli). 0 when none. A number only: no host, header name
+    or value."""
+    cfg = 0
+    base = _anthropic_base_url()
+    try:
+        host = (urllib.parse.urlsplit(base).hostname or "").lower()
+    except ValueError:
+        host = ""
+    if base and host != "api.anthropic.com":
+        cfg |= 1
+    if any(name.lower() != "anthropic-beta" for name, _ in _custom_headers()):
+        cfg |= 2
+    if _gateway_cli:
+        cfg |= 4
+    return cfg
+
+
+def _build_auth_headers(use_token, betas=("structured-outputs-2025-11-13",)):
+    betas = list(betas)
     headers = {
         "Content-Type": "application/json",
         "anthropic-version": "2023-06-01",
@@ -267,7 +554,20 @@ def _build_auth_headers(use_token):
         betas.append("oauth-2025-04-20")
     else:
         headers["x-api-key"] = ANTHROPIC_API_KEY
-    headers["anthropic-beta"] = ",".join(betas)
+    for name, value in _custom_headers():
+        lowered = name.lower()
+        if lowered == "anthropic-beta":
+            # Not sent: the review needs none of the user's betas, and Claude
+            # Code drops anthropic-beta lines when the organization's
+            # compliance policy disables experimental betas.
+            continue
+        # As in Claude Code, a custom line wins over a header of the same
+        # name that the plugin set, including the credential header.
+        for existing in [k for k in headers if k.lower() == lowered]:
+            del headers[existing]
+        headers[name] = value
+    if betas:
+        headers["anthropic-beta"] = ",".join(betas)
     return headers
 
 
@@ -278,7 +578,10 @@ def _build_auth_headers(use_token):
 _ADAPTIVE_THINKING_MODELS = (
     "claude-opus-4-6",
     "claude-opus-4-7",
+    "claude-opus-4-8",
+    "claude-opus-5",
     "claude-sonnet-4-6",
+    "claude-sonnet-5",
 )
 _LEGACY_THINKING_MODELS = (
     "claude-3-",
@@ -339,16 +642,372 @@ def _is_3p_provider() -> bool:
     return False
 
 
-def _call_claude_via_sdk(prompt, output_schema, *, max_tokens=16000, model=None):
-    """Single-turn SDK call as a substitute for the HTTP _call_claude path on
-    3P providers. Uses the same `output_format` JSON-schema contract so the
-    return value shape is identical (parsed dict or None).
+# ── Default review model ─────────────────────────────────────────────────
+# The API has no alias for "newest Opus", so the raw-HTTP path asks the
+# endpoint it is about to call (GET /v1/models) and keeps the answer in the
+# state dir. Asking that endpoint, not api.anthropic.com, means a gateway
+# that serves an older Opus gets a model it can actually route.
 
-    No tools (`allowed_tools=[]`) — the security review only needs structured
-    output, not Read/Grep/Glob. Single turn keeps cost predictable.
+_REVIEW_MODEL_CACHE_FILE = "review_model.json"
+_REVIEW_MODEL_TTL_SECONDS = 24 * 3600
+# A failed lookup is remembered too, for less long: otherwise an endpoint
+# without /v1/models costs every hook fire the lookup timeout.
+_REVIEW_MODEL_RETRY_SECONDS = 3600
+_REVIEW_MODEL_LOOKUP_TIMEOUT = 5
+_REVIEW_MODEL_LISTING_MAX_BYTES = 4 * 1024 * 1024
+
+# claude-opus-<major>[-<minor>][-<yyyymmdd>]. Anything else a listing or the
+# cache file holds (other families, gateway-prefixed names, free text) is
+# never sent as a model id.
+_OPUS_ID = re.compile(r"claude-opus-(\d{1,2})(?:-(\d{1,2}))?(?:-(\d{8}))?")
+
+_review_model_memo: Optional[str] = None
+
+
+def _newest_opus(model_ids) -> Optional[str]:
+    """The highest-versioned Opus id in `model_ids`, or None."""
+    best = None
+    for model_id in model_ids:
+        m = _OPUS_ID.fullmatch(model_id) if isinstance(model_id, str) else None
+        if not m:
+            continue
+        version = (int(m.group(1)), int(m.group(2) or 0), m.group(3) or "")
+        if best is None or version > best[0]:
+            best = (version, model_id)
+    return best[1] if best else None
+
+
+def _fetch_newest_opus() -> Optional[str]:
+    """Newest Opus the configured endpoint lists; None if it can't say."""
+    # Newest first, so one modest page is enough; an org with many models
+    # otherwise returns a megabyte-sized listing.
+    url = _anthropic_base_url() + "/v1/models?limit=100"
+    use_token = _auth_prefer_token or not ANTHROPIC_API_KEY
+    for _ in range(2):
+        request = urllib.request.Request(
+            url, headers=_build_auth_headers(use_token, betas=()), method="GET",
+        )
+        try:
+            with _urlopen(request, _REVIEW_MODEL_LOOKUP_TIMEOUT) as response:
+                listing = json.loads(
+                    response.read(_REVIEW_MODEL_LISTING_MAX_BYTES).decode("utf-8")
+                )
+            entries = listing.get("data") if isinstance(listing, dict) else None
+            if not isinstance(entries, list):
+                debug_log("review model lookup: no model list in response")
+                return None
+            ids = [e.get("id") for e in entries if isinstance(e, dict)]
+            if listing.get("has_more"):
+                # A truncated page may hold no current Opus at all (an org's
+                # own models can fill it); never let it pick an older one.
+                ids.append(_PINNED_REVIEW_MODEL)
+            return _newest_opus(ids)
+        except urllib.error.HTTPError as e:
+            if e.code == 401 and not use_token and ANTHROPIC_AUTH_TOKEN:
+                use_token = True
+                continue
+            debug_log(f"review model lookup: HTTP {e.code}")
+            return None
+        except Exception as e:
+            debug_log(f"review model lookup failed: {type(e).__name__}")
+            return None
+    return None
+
+
+def _read_review_model_cache(path, endpoint_key, now):
+    """(hit, model) from the cache file. `model` is None for a remembered
+    failed lookup. The file is user-writable state: every field is checked
+    and a model id is accepted only if it has the shape of an Opus id."""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            entry = json.loads(f.read(4096))
+    except (OSError, ValueError):
+        return False, None
+    if not isinstance(entry, dict) or entry.get("endpoint") != endpoint_key:
+        return False, None
+    at = entry.get("at")
+    if isinstance(at, bool) or not isinstance(at, (int, float)):
+        return False, None
+    model = entry.get("model")
+    if model is None:
+        ttl = _REVIEW_MODEL_RETRY_SECONDS
+    elif isinstance(model, str) and _OPUS_ID.fullmatch(model):
+        ttl = _REVIEW_MODEL_TTL_SECONDS
+    else:
+        return False, None
+    if not 0 <= now - at < ttl:
+        return False, None
+    return True, model
+
+
+def _write_review_model_cache(path, endpoint_key, model, now):
+    tmp = None
+    try:
+        make_state_dir(os.path.dirname(path))
+        fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix=".review_model.")
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump({"endpoint": endpoint_key, "model": model, "at": now}, f)
+        os.replace(tmp, path)
+    except OSError as e:
+        debug_log(f"review model cache not written: {type(e).__name__}")
+        if tmp:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+
+
+def default_review_model() -> str:
+    """Model for a review the user hasn't pinned with SECURITY_REVIEW_MODEL.
+
+    3P providers and Claude apps gateway sign-ins go through the Agent SDK,
+    so the CLI alias does the work. 1P and LLM gateways set with
+    ANTHROPIC_BASE_URL get the newest Opus the endpoint lists, looked up at
+    most once per _REVIEW_MODEL_TTL_SECONDS; _PINNED_REVIEW_MODEL when the
+    lookup can't answer. Never raises.
     """
-    global _last_call_claude_http_error
+    global _review_model_memo
+    explicit = os.environ.get("SECURITY_REVIEW_MODEL", "").strip()
+    if explicit:
+        return explicit
+    if _is_3p_provider() or _gateway_cli:
+        return _CLI_OPUS_ALIAS
+    if not HAS_API_CREDENTIALS:
+        return _PINNED_REVIEW_MODEL
+    if _review_model_memo:
+        return _review_model_memo
+    try:
+        path = os.path.join(_resolve_state_dir(), _REVIEW_MODEL_CACHE_FILE)
+        # Hashed: a gateway URL can carry credentials.
+        endpoint_key = hashlib.sha256(
+            _anthropic_base_url().encode("utf-8")
+        ).hexdigest()[:16]
+        now = time.time()
+        hit, model = _read_review_model_cache(path, endpoint_key, now)
+        if not hit:
+            model = _fetch_newest_opus()
+            _write_review_model_cache(path, endpoint_key, model, now)
+    except Exception as e:
+        debug_log(f"review model resolution failed: {type(e).__name__}")
+        model = None
+    _review_model_memo = model or _PINNED_REVIEW_MODEL
+    return _review_model_memo
+
+
+# A session signed in to a Claude apps gateway with /login gives hooks no
+# credential, but a child `claude` restores that sign-in by itself, so reviews
+# can run through the user's CLI without a credential entering this process.
+
+# `claude auth status` may wait for a settings helper script an administrator
+# configured, which Claude Code gives 10 s by default.
+_GATEWAY_CHECK_TIMEOUT_S = 15
+_GATEWAY_STATE_KEY = "gateway_sign_in"
+# The CLI that reviews for a signed-in gateway session, "" when this process
+# decided not to use the gateway route, None before it has decided.
+_gateway_cli: Optional[str] = None
+# True when this process asked the CLI about the sign-in and got no usable
+# answer: the reviews are skipped, but the session may well be signed in.
+_gateway_check_unanswered = False
+# True once a review through the gateway route ran out of time. What makes
+# it do so (a rejected sign-in, a gateway that cannot be reached) does not
+# depend on the model, so the Sonnet attempt is not made after it.
+_gateway_review_timed_out = False
+
+_WINDOWS = os.name == "nt"
+
+
+def _user_cli_path() -> Optional[str]:
+    """The user's own `claude`: SG_AGENTIC_CLI_PATH if set ("" names none), else
+    the first of the absolute paths below that exists, else None."""
+    cli_path = os.environ.get("SG_AGENTIC_CLI_PATH")
+    if cli_path is not None:
+        return cli_path
+    # CLAUDE_CODE_EXECPATH is the absolute path to the running CC binary
+    # itself (e.g. ~/.local/share/claude/versions/2.1.x — that's the binary,
+    # not a directory). Claude Code sets it for the Bash tool's shells, not for
+    # hooks, so hooks usually find the CLI at a fixed path below. We do NOT
+    # fall back to shutil.which("claude") because the hook's cwd is the
+    # user's (potentially attacker-supplied) repo, and Windows shutil.which
+    # searches cwd first — a checked-in ./claude.exe would get spawned.
+    # Absolute-path probes only.
+    probes = [os.environ.get("CLAUDE_CODE_EXECPATH")]
+    if not _WINDOWS:
+        # Where Claude Code is installed on macOS and Linux.
+        probes += [
+            os.path.expanduser("~/.local/bin/claude"),
+            "/root/.local/bin/claude",
+            # Claude Code Remote container install path.
+            "/opt/claude-code/bin/claude",
+        ]
+    for p in probes:
+        if p and os.path.isfile(p):
+            return p
+    return None
+
+
+def _windows_user_cli() -> Optional[str]:
+    """Windows: the full path of the user's claude.exe, from the native
+    installer's folder, else from PATH; None when neither has one. Skips any
+    folder that is not given as a full path, and the working directory and
+    project root, and any folder inside them (unless that root holds the home
+    folder, and with it the user's own tools)."""
+    skipped = [d for d in (os.getcwd(), os.environ.get("CLAUDE_PROJECT_DIR")) if d and os.path.isdir(d)]
+    home = os.path.expanduser("~")
+    real_home = os.path.normcase(os.path.realpath(home)).rstrip(os.sep) + os.sep
+    roots = [r.rstrip(os.sep) + os.sep for r in (os.path.normcase(os.path.realpath(d)) for d in skipped)]
+    roots = [r for r in roots if not real_home.startswith(r)]
+    home_bin = os.path.join(home, ".local", "bin")
+    for folder in [home_bin] + os.environ.get("PATH", "").split(os.pathsep):
+        folder = folder.strip().strip('"')
+        cli = os.path.join(folder, "claude.exe")
+        try:
+            real = os.path.normcase(os.path.realpath(folder))
+            # A full path is one that abspath leaves as it is.
+            if (os.path.normcase(os.path.abspath(folder)) == os.path.normcase(os.path.normpath(folder))
+                    and os.path.isfile(cli)
+                    and not any(os.path.samefile(folder, d) for d in skipped)
+                    and not any(real.startswith(r) for r in roots)):
+                return cli
+        except OSError:
+            pass
+    return None
+
+
+def _cli_for_sdk(cli_path: Optional[str]) -> Optional[str]:
+    """What to pass the Agent SDK as `cli_path`: a given one as it is. With none
+    given, the SDK chooses, except on Windows. There this names the CLI bundled
+    with the SDK, else the user's own, by its full path, and when neither exists
+    the bundled path anyway, so that the start fails."""
+    if cli_path or not _WINDOWS:
+        return cli_path or None
+    # When the SDK module has no file, any full path at which nothing exists will do.
+    sdk_file = getattr(sys.modules.get("claude_agent_sdk"), "__file__", None) or __file__
+    bundled = os.path.join(os.path.dirname(os.path.abspath(sdk_file)), "_bundled", "claude.exe")
+    if os.path.isfile(bundled):
+        return bundled
+    cli_path = _windows_user_cli()
+    if not cli_path:
+        debug_log("no Claude Code for the Agent SDK: none is bundled with it, and there is no claude.exe "
+                  "in ~\\.local\\bin or on PATH outside this project (SG_AGENTIC_CLI_PATH can name one)")
+        return bundled
+    debug_log(f"the Agent SDK has no bundled Claude Code; using {cli_path}")
+    _tolerate_unknown_sdk_messages()
+    return cli_path
+
+
+def _tolerate_unknown_sdk_messages() -> None:
+    """Make the SDK's message parser pass unknown message types through
+    instead of raising: a CLI newer than the SDK emits types the SDK does not
+    know (e.g. rate_limit_event)."""
+    try:
+        from claude_agent_sdk._internal import message_parser as _mp
+        import claude_agent_sdk._internal.client as _sdk_client
+        from claude_agent_sdk import SystemMessage as _SysMsg
+
+        _orig_parse = _mp.parse_message
+        if getattr(_orig_parse, "_sg_tolerant", False):
+            return
+
+        def _tolerant(data):
+            try:
+                return _orig_parse(data)
+            except Exception:
+                return _SysMsg(subtype=data.get("type", "unknown"), data=data)
+
+        _tolerant._sg_tolerant = True
+        _mp.parse_message = _tolerant
+        _sdk_client.parse_message = _tolerant
+    except Exception:
+        pass
+
+
+def _gateway_signed_in(cli: str) -> Optional[bool]:
+    """Whether `cli auth status --json` reports a session signed in to a
+    Claude apps gateway. None when the CLI gave no usable answer (an error, a
+    timeout, or output that is not a JSON object)."""
+    try:
+        # A process the CLI starts can keep stdout open after the CLI exits;
+        # reading a pipe would then wait out the timeout and lose the answer.
+        with tempfile.TemporaryFile() as out:
+            subprocess.run(
+                [cli, "auth", "status", "--json"], stdin=subprocess.DEVNULL,
+                stdout=out, stderr=subprocess.DEVNULL,
+                env={**os.environ, **_agentic_spawn_env()},
+                cwd=os.path.expanduser("~"),
+                timeout=_GATEWAY_CHECK_TIMEOUT_S, check=False,
+            )
+            out.seek(0)
+            status = json.loads(out.read(64 * 1024))
+    except Exception as e:
+        debug_log(f"gateway check: no usable answer from {cli} ({type(e).__name__})")
+        return None
+    if not isinstance(status, dict):
+        debug_log("gateway check: answer was not a JSON object")
+        return None
+    provider, logged_in = status.get("apiProvider"), status.get("loggedIn")
+    debug_log(f"gateway check: apiProvider={str(provider)[:40]!r} loggedIn={repr(logged_in)[:10]}")
+    # A managed machine that names a gateway but was never signed in also
+    # reports "gateway".
+    return provider == "gateway" and logged_in is True
+
+
+def gateway_review_cli(session_id) -> Optional[str]:
+    """The CLI to review through when the plugin has no credential but the
+    session is signed in to a Claude apps gateway; None otherwise. A yes or
+    no from the CLI is kept for the rest of the session, so signing in or
+    out mid-session takes effect in the next one. When the CLI gives no
+    usable answer, nothing is saved, so the next hook asks again."""
+    global _gateway_cli, _gateway_check_unanswered
+    if _gateway_cli is not None:
+        return _gateway_cli or None
+    cli = _user_cli_path() or ""
+    ok = None
+    # No skip for CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC, as on Bedrock and Vertex:
+    # the gateway docs suggest setting it, and the review goes through the
+    # gateway like the session's own requests.
+    if not os.path.isabs(cli):
+        debug_log("gateway check: skipped, SG_AGENTIC_CLI_PATH is not a full path"
+                  if "SG_AGENTIC_CLI_PATH" in os.environ
+                  else "gateway check: skipped, no claude at ~/.local/bin/claude or the other "
+                  "usual full paths (SG_AGENTIC_CLI_PATH can name one)")
+    else:
+        cached = load_state(session_id).get(_GATEWAY_STATE_KEY)
+        if (isinstance(cached, dict) and cached.get("cli") == cli
+                and isinstance(cached.get("ok"), bool)):
+            ok = cached["ok"]
+            debug_log(f"gateway check: using this session's saved answer (signed in: {ok})")
+        else:
+            ok = _gateway_signed_in(cli)
+            _gateway_check_unanswered = ok is None
+            if ok is not None:
+                def _save(state):
+                    state[_GATEWAY_STATE_KEY] = {"cli": cli, "ok": ok}
+                with_locked_state(session_id, _save)
+    _gateway_cli = cli if ok else ""
+    return _gateway_cli or None
+
+
+def can_review(session_id) -> bool:
+    """True when the plugin has a credential, or has none but the session is
+    signed in to a Claude apps gateway. Call it before reviewing: the review
+    takes the gateway route only after it has said yes in this process."""
+    return HAS_API_CREDENTIALS or gateway_review_cli(session_id) is not None
+
+
+def _call_claude_via_sdk(prompt, output_schema, *, max_tokens=16000, model=None,
+                         cli_path=None):
+    """Single-turn SDK call as a substitute for the HTTP _call_claude path on
+    3P providers, and, with `cli_path` set, for a session signed in to a
+    Claude apps gateway. Uses the same `output_format` JSON-schema contract so
+    the return value shape is identical (parsed dict or None).
+
+    No tools (see _only_tools_args) — the security review only needs
+    structured output, not Read/Grep/Glob. Single turn keeps cost predictable.
+    """
+    global _last_call_claude_http_error, _gateway_review_timed_out
     _last_call_claude_http_error = None
+    _clear_net_error()
+    route = "gateway" if cli_path else "3P"
 
     try:
         import asyncio as _asyncio
@@ -373,33 +1032,42 @@ def _call_claude_via_sdk(prompt, output_schema, *, max_tokens=16000, model=None)
                 query,
             )
         except Exception as e:
-            debug_log(f"3P sdk-single-turn: SDK unavailable ({e})")
+            debug_log(f"{route} sdk-single-turn: SDK unavailable ({e})")
             _last_call_claude_http_error = -1
             _record_http_error(-1)
+            _record_net_error(NET_ERR_NO_SDK)
             return None
 
-    cli_path = os.environ.get("SG_AGENTIC_CLI_PATH") or None
-    chosen_model = model or SECURITY_REVIEW_MODEL
+    _send_sdk_logs_to_debug_log()
+    if cli_path:
+        _tolerate_unknown_sdk_messages()
+    else:
+        cli_path = _cli_for_sdk(os.environ.get("SG_AGENTIC_CLI_PATH") or None)
+    default_model = default_review_model()
+    chosen_model = model or default_model
 
     # Capture child claude stderr so a failing 3P call surfaces the real
     # error (auth missing, model id wrong, etc.) in the debug log instead
     # of just "exit code 1".
     _captured_stderr: List[str] = []
+    # HTTP statuses (or "no response") the CLI said it retried an API request after.
+    _retried_after: set = set()
 
     async def _arun():
         opts = ClaudeAgentOptions(
             system_prompt=CLAUDE_CODE_SYSTEM_PROMPT,
             cli_path=cli_path,
             allowed_tools=[],
+            extra_args={**_only_tools_args(), **_reviewer_session_args()},
             setting_sources=[],
             max_turns=2,
             model=chosen_model,
             output_format={"type": "json_schema", "schema": output_schema},
             # Identical --model/--fallback-model is rejected by the CLI at
-            # startup; chosen_model defaults to SECURITY_REVIEW_MODEL, so
-            # only pass a fallback when it actually differs.
+            # startup; chosen_model defaults to default_model, so only pass
+            # a fallback when it actually differs.
             fallback_model=(
-                SECURITY_REVIEW_MODEL if chosen_model != SECURITY_REVIEW_MODEL else None
+                default_model if chosen_model != default_model else None
             ),
             env=_agentic_spawn_env(),
             stderr=lambda l: _captured_stderr.append(l),
@@ -416,41 +1084,59 @@ def _call_claude_via_sdk(prompt, output_schema, *, max_tokens=16000, model=None)
                     structured = msg.structured_output
                 _record_usage(getattr(msg, "usage", None) or {}, chosen_model,
                               cost_usd=getattr(msg, "total_cost_usd", None))
+            elif getattr(msg, "subtype", None) == "api_retry":
+                status = _api_retry_status(msg)
+                _retried_after.add(str(status) if status is not None else "no response")
         return structured
 
     # 60s ceiling: a single review request on a healthy 3P endpoint completes
     # in 5-15s; >60s means the child claude is hung (e.g. user has the 3P env
     # var set but no provider creds → child waits for an auth that never
     # comes). Bound the wait so a misconfigured 3P session doesn't stall the
-    # whole hook.
-    try:
-        result = _asyncio.run(_asyncio.wait_for(_arun(), timeout=60))
+    # whole hook. A gateway review gets the 120 s a direct HTTP review gets.
+    timeout_s = 120 if route == "gateway" else 60
+
+    def _log_child_stderr():
         if _captured_stderr:
-            debug_log(f"3P sdk-single-turn child stderr ({len(_captured_stderr)} lines):")
+            debug_log(f"{route} sdk-single-turn child stderr ({len(_captured_stderr)} lines):")
             for _l in _captured_stderr[:20]:
                 debug_log(f"  | {_l.rstrip()}")
+
+    try:
+        result = _run_inner_cli(
+            lambda: _asyncio.run(_asyncio.wait_for(_arun(), timeout=timeout_s)),
+            _captured_stderr)
+        _log_child_stderr()
         return result
     except _asyncio.TimeoutError:
-        debug_log("3P sdk-single-turn: timeout after 60s")
+        # The CLI retries a refused or unreachable API by itself and reports
+        # each retry in its output, not on stderr.
+        debug_log(f"{route} sdk-single-turn: timeout after {timeout_s}s"
+                  + (f"; the CLI's API requests were retried after status "
+                     f"{', '.join(sorted(_retried_after))}" if _retried_after else ""))
+        _log_child_stderr()
+        if route == "gateway":
+            _gateway_review_timed_out = True
         _last_call_claude_http_error = -1
         _record_http_error(-1)
+        _record_net_error(NET_ERR_INNER_CLI_TIMEOUT)
         return None
     except Exception as e:
-        debug_log(f"3P sdk-single-turn: query failed ({e})")
-        if _captured_stderr:
-            debug_log(f"3P sdk-single-turn child stderr ({len(_captured_stderr)} lines):")
-            for _l in _captured_stderr[:20]:
-                debug_log(f"  | {_l.rstrip()}")
+        debug_log(f"{route} sdk-single-turn: query failed ({e})")
+        _log_child_stderr()
         _last_call_claude_http_error = -1
         _record_http_error(-1)
+        _record_net_error(NET_ERR_INNER_CLI)
         return None
 
 
 def _call_claude(prompt, output_schema, thinking_budget=10000, max_tokens=16000, model=None,
-                 retry_5xx=True):
+                 retry_5xx=True, cacheable_prefix=None):
     """
     Call the configured LLM model with extended thinking and structured outputs.
-    Model defaults to Sonnet 4.6 but can be overridden via SECURITY_REVIEW_MODEL env var.
+    cacheable_prefix: static text sent ahead of `prompt` as its own content block
+    with cache_control, so repeated calls share a cached request prefix.
+    Model defaults to default_review_model(); SECURITY_REVIEW_MODEL overrides it.
     Returns parsed JSON response or None on failure.
     On failure, sets module-level _last_call_claude_http_error to the HTTP status
     (or -1 for network/timeout) so callers can distinguish API failure from an
@@ -463,6 +1149,7 @@ def _call_claude(prompt, output_schema, thinking_budget=10000, max_tokens=16000,
     """
     global _last_call_claude_http_error
     _last_call_claude_http_error = None
+    _clear_net_error()
 
     if _is_3p_provider():
         # On Bedrock/Vertex/Foundry/Mantle the api.anthropic.com path below
@@ -471,10 +1158,19 @@ def _call_claude(prompt, output_schema, thinking_budget=10000, max_tokens=16000,
         # child claude CLI. Note: thinking_budget/retry_5xx don't pass
         # through — the SDK manages retries (529) and thinking config
         # internally per the chosen model.
+        if cacheable_prefix:
+            prompt = cacheable_prefix + "\n\n" + prompt
         return _call_claude_via_sdk(prompt, output_schema,
                                     max_tokens=max_tokens, model=model)
 
     if not HAS_API_CREDENTIALS:
+        if _gateway_cli:
+            # Signed in to a Claude apps gateway: the user's CLI reviews with
+            # its own stored sign-in (see gateway_review_cli).
+            if cacheable_prefix:
+                prompt = cacheable_prefix + "\n\n" + prompt
+            return _call_claude_via_sdk(prompt, output_schema, max_tokens=max_tokens,
+                                        model=model, cli_path=_gateway_cli)
         return None
 
     global _auth_prefer_token
@@ -484,11 +1180,20 @@ def _call_claude(prompt, output_schema, thinking_budget=10000, max_tokens=16000,
     use_token = _auth_prefer_token or not ANTHROPIC_API_KEY
     headers = _build_auth_headers(use_token)
 
+    if cacheable_prefix:
+        content = [
+            {"type": "text", "text": cacheable_prefix,
+             "cache_control": {"type": "ephemeral"}},
+            {"type": "text", "text": prompt},
+        ]
+    else:
+        content = prompt
+
     payload = {
-        "model": model or SECURITY_REVIEW_MODEL,
+        "model": model or default_review_model(),
         "max_tokens": max_tokens,
         "system": CLAUDE_CODE_SYSTEM_PROMPT,
-        "messages": [{"role": "user", "content": prompt}],
+        "messages": [{"role": "user", "content": content}],
         # API moved the structured-output schema from top-level `output_format`
         # to `output_config.format` per
         # https://platform.claude.com/docs/en/build-with-claude/structured-outputs.
@@ -530,7 +1235,7 @@ def _call_claude(prompt, output_schema, thinking_budget=10000, max_tokens=16000,
                 headers=headers,
                 method="POST",
             )
-            with urllib.request.urlopen(request, timeout=120) as response:
+            with _urlopen(request, 120) as response:
                 response_body = response.read().decode("utf-8")
                 response_data = json.loads(response_body)
             _record_usage(response_data.get("usage") or {},
@@ -563,6 +1268,7 @@ def _call_claude(prompt, output_schema, thinking_budget=10000, max_tokens=16000,
                 debug_log(f"Request failed after retries: {e}")
                 _last_call_claude_http_error = -1
                 _record_http_error(-1)
+                _record_net_error(_net_error_code(e))
                 return None
 
     if not response_data:
@@ -599,7 +1305,7 @@ def _dual_or_enabled() -> bool:
 
 
 def _call_claude_dual_or(prompt, output_schema, *, bool_key: str, list_key: str,
-                         thinking_budget=10000, max_tokens=16000):
+                         thinking_budget=10000, max_tokens=16000, cacheable_prefix=None):
     """Run prompt through the model 2× in parallel and OR-merge the results.
 
     The second look samples the model again on the same prompt — independent
@@ -622,28 +1328,33 @@ def _call_claude_dual_or(prompt, output_schema, *, bool_key: str, list_key: str,
     from concurrent.futures import ThreadPoolExecutor
 
     explicit = os.environ.get("SECURITY_REVIEW_MODEL", "").strip()
-    primary = explicit or SECURITY_REVIEW_MODEL
+    primary = default_review_model()
+    # Through the user's CLI, the alias gives the Sonnet id the user's own
+    # sessions use on the gateway, including any ANTHROPIC_DEFAULT_SONNET_MODEL.
+    fallback = "sonnet" if _gateway_cli else "claude-sonnet-4-6"
 
     if not _dual_or_enabled():
         # Single-call path. Reuse the same sonnet-fallback retry as a dual_or
         # leg so a 529/400 on the primary doesn't drop recall to zero.
         r = _call_claude(prompt, output_schema, thinking_budget=thinking_budget,
-                         max_tokens=max_tokens, model=primary, retry_5xx=False)
-        if r is None and not explicit:
+                         max_tokens=max_tokens, model=primary, retry_5xx=False,
+                         cacheable_prefix=cacheable_prefix)
+        if r is None and not explicit and not _gateway_review_timed_out:
             debug_log(f"single: {primary} failed, falling back to sonnet")
             r = _call_claude(prompt, output_schema, thinking_budget=thinking_budget,
-                             max_tokens=max_tokens, model="claude-sonnet-4-6",
-                             retry_5xx=True)
+                             max_tokens=max_tokens, model=fallback,
+                             retry_5xx=True, cacheable_prefix=cacheable_prefix)
         return r
 
     def _leg():
         r = _call_claude(prompt, output_schema, thinking_budget=thinking_budget,
-                         max_tokens=max_tokens, model=primary, retry_5xx=False)
-        if r is None and not explicit:
+                         max_tokens=max_tokens, model=primary, retry_5xx=False,
+                         cacheable_prefix=cacheable_prefix)
+        if r is None and not explicit and not _gateway_review_timed_out:
             debug_log(f"dual_or: {primary} leg failed, falling back to sonnet")
             r = _call_claude(prompt, output_schema, thinking_budget=thinking_budget,
-                             max_tokens=max_tokens, model="claude-sonnet-4-6",
-                             retry_5xx=True)
+                             max_tokens=max_tokens, model=fallback,
+                             retry_5xx=True, cacheable_prefix=cacheable_prefix)
         return r
 
     with ThreadPoolExecutor(max_workers=2) as ex:
@@ -787,6 +1498,138 @@ def _dedup_against_state(session_id: str, vulns: List[Dict[str, Any]],
     return kept, len(vulns) - len(kept)
 
 
+# Static review rubric, sent as its own content block with cache_control so the
+# request prefix is byte-identical across calls. Keep it free of per-call text.
+_CODE_REVIEW_RUBRIC = """You are a security expert reviewing code for CONCRETE security vulnerabilities that an attacker could exploit.
+
+IMPORTANT vulnerability categories to check:
+
+**Command Injection**: Is user input passed to shell commands or system exec calls? In Go, exec.Command("sh", "-c", userInput) is injectable. Even exec.Command("cmd", userArg) can be dangerous if userArg isn't validated (e.g., a hostname could contain shell metacharacters in some contexts). Safe: pass each argument separately without invoking a shell, AND validate the input format.
+
+**Path Traversal**: Is user input used to construct file paths? Key insight: filepath.Join() in Go does NOT prevent path traversal — filepath.Join("/var/log", "../../etc/passwd") returns "/etc/passwd". Same for Python's os.path.join() and Java's Paths.get().resolve(). CRITICAL: `path.resolve()`/`filepath.Clean()`/`normalize()` are LEXICAL — they collapse `..` but do NOT dereference symlinks, so `startsWith(baseDir)` after them is symlink-bypassable. Call `fs.realpathSync()`/`os.path.realpath()`/`filepath.EvalSymlinks()` FIRST, then check the result starts with the realpath of baseDir.
+
+**SQL Injection**: Is user input concatenated into SQL queries instead of using parameterized queries? This includes f-string interpolation (e.g., `f"WHERE name = '{user_input}'"`) and string concatenation (e.g., `"WHERE name = '" + user_input + "'"`). Even if input appears to be validated upstream, use parameterized queries. In Python: `cursor.execute('WHERE name = %s', (user_input,))`. In Go: `db.Query('WHERE name = $1', userInput)`.
+
+A NEW security-gate parameter (group/role/tool/permission/scope) is safe only if (a) the gate is enforced unconditionally, OR (b) when its enabling condition is False the function raises/denies. If execution can continue past the new gate unchecked, flag fail-open — a later check may be vacuous when the new gate was the caller's only constraint.
+
+**Authorization (IDOR / scoping / visibility)**: A handler that returns or modifies a tenant-, owner-, role-, or visibility-scoped resource MUST verify the requester is in that scope. Missing-authz patterns: `findById(id)` / `Model.objects.get(id=id)` without an ownership check; `Model.objects.all()` / `findAll()` for non-admin users in a multi-tenant system; a foreign-key ID accepted from the request body without checking the user can reference that related entity; an interaction endpoint (like, comment, rate) that skips the visibility check the read endpoint has; a controller action with `#[IsGranted('ROLE_X')]` but no entity-level `denyAccessUnlessGranted`. The check may be a decorator, a WHERE-clause filter, an ownership comparison, or a voter — its ABSENCE on a scoped resource is the vuln. Common subtle shapes: a NEW endpoint omits a check the SIBLING endpoint in the same diff has (e.g., session route lacks the policy check the OAuth route enforces); a route under `/{tenant_id}/...` whose handler never references that path param (queries only by `auth.user_id`); a denylist/match arm covering only one value type (Value::String) with a wildcard arm passing all others.
+
+**Secrets/PII in Logs, URLs, or Errors**: Any sink that persists or transmits values an observer of logs/URLs/errors shouldn't see. Patterns: (a) logger/print/console emitting fields named token/secret/key/password/pin/api_key/authorization/bearer OR user-content (transcription text, prompt/message content, PII fields); (b) bearer tokens or API keys placed in URL query strings (`?key=`, `?token=`, `?access_token=`) — leaks to access logs/referer/history; (c) `str(exc)`/`repr(exc)`/`fmt.Errorf("...%s", respBody)`/`traceback.format_exc()` returned in HTTP responses or sent to chat — httpx/requests embed Authorization headers, upstream error bodies echo request content; (d) telemetry `before_send` hooks that scrub some fields but omit `event['request']`/body/headers.
+
+**Unsafe Deserialization**: Untrusted bytes/paths reaching pickle deserialization including via wrappers — `pickle.load`/`pickle.loads`, `torch.load` or `.torch_load()` without `weights_only=True`, `yaml.load` without `SafeLoader`, `joblib.load`, `cloudpickle.load`/`.cloudpickle_load()`, `marshal.loads`, PHP `unserialize`, Java `ObjectInputStream`. Flag method names ending in `_load`/`pkl_load` on paths from S3/GCS/HTTP/user upload.
+
+**TLS Verification Disabled / Plaintext Transport**: An explicit literal that disables transport encryption or peer-cert validation for a non-loopback connection. Client-side: Python `requests.*(verify=False)` / `httpx.Client(verify=False)` / `ssl._create_unverified_context()`; Go `tls.Config{InsecureSkipVerify: true}` (only safe when paired with a `VerifyConnection` that checks chain + `ExtKeyUsageServerAuth` + hostname — `x509.ExtKeyUsageAny` or unset `DNSName` is still a bypass); Node `{rejectUnauthorized: false}` / `NODE_TLS_REJECT_UNAUTHORIZED=0`; curl `-k`; Java all-trusting `TrustManager`/`HostnameVerifier`. Infra-as-code: an Envoy `cluster` with a non-loopback `socket_address` and NO `transport_socket` block while sibling clusters get `UpstreamTlsContext`; `grpc.insecure_channel()` / `grpc.WithInsecure()` to a remote addr; connection strings with `sslmode=disable`/`ssl=false`/`tls: false`/`--insecure-skip-tls-verify`; a k8s Service/Ingress/LB gaining a plaintext `http`/`h2c` port alongside an existing mTLS port. Do NOT flag `localhost`/`127.0.0.1`/unix-socket targets or test fixtures.
+
+**SSRF (Server-Side Request Forgery)**: A user-influenceable URL/host/path reaching an outbound fetch — `requests.get`/`httpx`/`aiohttp`/`urllib`/`fetch`/`axios`/`http.Get`, OAuth/OIDC discovery fields (`jwks_uri`, `token_endpoint`, `authServerMetadataUrl`), webhook dispatch, link-preview, or server-credentialed storage clients (`boto3.get_object`, `gcs.Blob.from_string`) on a bucket/key from an attacker-authored manifest. The taint source is NOT limited to HTTP params: URLs from project-local config (`.mcp.json`, `.vscode/settings.json`, `package.json`, workspace YAML in a cloned repo) and manifest/checkpoint files an attacker wrote earlier are attacker-controlled. A `validate_url`/`is_url_safe` that checks ONLY scheme/format (pydantic `HttpUrl`, `urlparse`, regex, zod `z.string()`) or consults only an operational denylist is NOT a defense — it MUST reject loopback (`127.0.0.0/8`, `::1`, `0.0.0.0`), RFC1918 private, and link-local `169.254.0.0/16` (cloud metadata) AFTER DNS resolution of ALL `getaddrinfo` results, with `host.rstrip('.').lower()` before any `.endswith()` compare (FQDN trailing-dot and `evilgoogle.com` bypasses). Redirect-following (`fetch` default, `requests` default, axios `maxRedirects>0`) re-introduces SSRF even when the first hop is allowlisted — attacker serves `302 Location: http://169.254.169.254/`; fix is `redirect: 'manual'` + re-validate each hop.
+
+**Argument Injection (argv flag smuggling)**: User input as a positional argv element — `spawn(bin,[...])`, `execFile`, `subprocess.run([...])`, `exec.Command(bin, args...)` — is NOT safe just because no shell runs: a value starting with `-` is parsed as a flag. Exec-capable flags: ripgrep `--pre=CMD`, git `--upload-pack=CMD`/`-c core.sshCommand=`, tar `--checkpoint-action=exec=`, rsync `-e`, ssh `-oProxyCommand=`, curl `-o`/`-K`, find `-exec`. Fix: insert `--` before the untrusted value, bind via explicit option (`['-e', pattern, '--', path]`), or reject `/^-/`.
+
+**OAuth/OIDC Flow Weaknesses**: (a) **Forgeable state** — an OAuth callback's `state` is CSRF-protective ONLY if unguessable AND bound to the session (compared against a cookie/server-session, or HMAC-verified). A `state` decoded as plain base64 JSON (`JSON.parse(Buffer.from(state,'base64url'))`, `json.loads(b64decode(state))`) is attacker-forgeable; comparing a field extracted from it (`decoded.email === identity.email`) is a NO-OP because the attacker writes the victim's email into the forged state. Flag callbacks decoding `state` without `crypto.createHmac` verify, `cookies.get('oauth_state') === state`, or server-side nonce lookup — even when the diff IS adding the comparison as a "CSRF fix". (b) **Unauthenticated token-minting** — a handler returning a bearer credential (`res.json({sessionId / access_token / apiKey})`, `JSONResponse({'access_token': ...})`) that reads only `req.query`/`req.body` and never references `req.user`/`req.auth`/`Authorization`/auth middleware.
+
+**XSS — Autoescape Off / Incomplete or Wrong Escaper**: (a) `jinja2.Environment()`/`jinja2.Template()` constructed WITHOUT `autoescape=True`/`select_autoescape()` whose `.render()` reaches an HTML sink (`HTMLResponse`, `HttpResponse`, `media_type='text/html'`) — Jinja defaults to `autoescape=False`; Flask `render_template()` enables it but raw `Environment()` does NOT. Same: Go `text/template` (vs `html/template`) to `http.ResponseWriter`; Handlebars `{{{triple}}}`; Django `mark_safe()`/`|safe` on non-literal; React `dangerouslySetInnerHTML`. (b) The `div.textContent=s; return div.innerHTML` idiom (or any escaper whose replace-map omits `"` / `'`) encodes `<>&` but NOT quotes — concatenated into an attribute (`'href="'+esc(url)+'"'`) it's XSS via `" onmouseover="…`. A protocol allowlist `/^https?:/` does NOT stop attribute breakout. (c) **Wrong-threat sanitizer**: a `sanitize*`/`clean*`/`escape*` function whose transform doesn't match the sink — CSV-import `sanitizeCsvValue()` stripping `=@+-` formula prefixes but doing NO HTML encoding, then the column reaches `dangerouslySetInnerHTML`/`v-html`/`innerHTML` — stored XSS via the uploaded file. The misleading function name is the false-safety signal.
+
+**Sibling Validator/Sanitizer Asymmetry**: A diff where ONE field/argument receives a security refinement (regex/`.refine()`/sanitizer like `escapeHtml`/`stripBidiChars`/`DOMPurify.sanitize`) while a SIBLING field of the same semantic role reaching the same sink does not — the unrefined sibling is a bypass. The `+` line adding the refinement to one place is the cue: check every sibling.
+
+**Orchestrator Template Injection (Airflow/Argo/Tekton)**: Airflow `{{ run_id }}`/`{{ dag_run.conf[...] }}`/`{{ params.* }}`, Argo `{{workflow.parameters.*}}`, or Tekton `$(params.*)` rendered into a shell string (`bash_command=`, `cmds=["bash","-c", ...]`, `script:`) — these are user-settable via the trigger API. Fix: pass as a separate argv element or env var. Do NOT flag scheduler-only macros like `{{ ds }}`.
+
+**SSRF URL-Allowlist Bypass**: Host allowlists are bypassable via: (a) USERINFO — `url.startswith(allowed_prefix)` or comparing `urlparse().netloc`/`url.host` (which include `user:pass@`) lets `https://trusted.com@evil.com/x` through; compare ONLY `urlparse(u).hostname` / `new URL(u).hostname` / `u.Hostname()`. (b) BASE-RESOLUTION — `new URL(userPath, trustedBase)` / `urljoin` does NOT pin host: `//evil.com/x` is protocol-relative, absolute `http://evil.com` ignores base; check `result.hostname === expectedHost` AFTER resolution. (c) STRING-SUFFIX — `host.endswith('.trusted.com')` on a value later interpolated into `f"https://{host}"` passes `evil.com/.trusted.com` and `evil.com#.trusted.com`. (d) NORMALIZATION — missing `.lower().rstrip('.')` lets `Trusted.COM.` slip; falsy-netloc short-circuit `if parsed.netloc and parsed.netloc != allowed:` lets `http:evil.com` through. (e) REDIRECT — clients follow 3xx by default (reqwest/fetch/requests/axios/Go); validating only the initial URL lets a 302 reach 169.254.169.254. Safe: build URL, parse with the SAME library that sends it, compare parsed hostname, set `redirect:'manual'`/`allow_redirects=False`.
+
+**XXE / XML Entity Expansion**: Untrusted XML (uploaded .docx/.xlsx/.pptx/.svg, SOAP/SAML bodies, feed/webhook payloads, OOXML extracted from a zip) parsed with Python stdlib `xml.etree.ElementTree`, `xml.dom.minidom.parse`/`parseString`, `xml.sax.make_parser`, or `xml.dom.pulldom` — these do NOT disable DTDs or external entities, so `<!ENTITY x SYSTEM "file:///etc/passwd">` reads local files and a billion-laughs entity bomb DoS's the process. Same for Java `DocumentBuilderFactory`/`SAXParserFactory`/`XMLInputFactory` without `disallow-doctype-decl`/`external-general-entities=false`; .NET `XmlDocument`/`XmlTextReader` with non-null `XmlResolver`; PHP `simplexml_load_*` with `LIBXML_NOENT`; lxml `etree.parse` with `resolve_entities=True`. Fix: Python → swap import to `defusedxml.*`; Java → `factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)`; lxml → `XMLParser(resolve_entities=False, no_network=True)`. Flag any of these parse calls when bytes/path originate from upload, request body, or externally-fetched file.
+
+**Substring/Unanchored Allowlist Bypass**: A security gate — allowlist, host/origin check, redirect-target validation, or SIEM/detection-rule exclusion — that matches by substring (`allowed in value`, `value.includes(allowed)`, `strings.Contains`, unanchored `re.search`) or unanchored prefix/suffix (`value.startswith("https://trusted.com")` with no trailing `/`; `value.endswith("trusted.com")` with no leading `.`) is bypassable: `trusted.com.evil.com`, `eviltrusted.com`, `evil.com/?x=trusted.com`. URL string-match on RAW `requestURI`: `/proxy/exec?_=/proxy/metrics` ends with `/proxy/metrics`; `/public/../admin` contains `/public/`. ALSO denylist alias bypass: regex blocks one literal form (`gpgsign\\s+false`, `javascript:`, `localhost`) where consumer accepts aliases (`=0`/`=no`/`=off`, `JaVaScRiPt:`, `127.0.0.1`/`[::1]`). ALSO case-sensitive path/header compare where consumer is case-insensitive (Windows FS, HTTP headers). Fix: parse the structured field (`urlparse().path`/`.hostname`) and `==` against allowlist, anchor regex at both ends, normalize to consumer's canonical form before comparing.
+
+**XSS via Manual HTML/Markdown Building**: Code assembling HTML by string formatting — `format!("<a href='{x}'>")`, `f"<div>{val}</div>"`, `fmt.Fprintf(w, "<span>%s</span>", v)`, `"<li>" + s + "</li>"` — is XSS at EVERY interpolated `{var}` lacking escape. INCONSISTENT: function calls `html.escape()` on SOME fields but interpolates others raw — audit each `{...}` individually; one `html.escape` nearby is NOT proof of safety. ATTRIBUTE-CONTEXT: data concatenated into quoted attribute (`'<a href="' + x + '">'`) is XSS unless escaper encodes `"` AND `'`; the `div.textContent=s; div.innerHTML` trick and `.replace(/[<>&]/g,...)` escape only `< > &` — NOT quotes; `[x](https://a" onmouseover=alert(1))` breaks out of `href`. MARKDOWN: `<MDEditor.Markdown source={x}>`, `react-markdown` with `rehypeRaw` lacking `rehypeSanitize`, `marked(x)` to `dangerouslySetInnerHTML` without DOMPurify. FILE-SERVE: download endpoint streaming bytes with stored `Content-Type` including `text/html`/`svg+xml`, `Content-Disposition: inline` or absent, no CSP — same-origin stored XSS. UNTRUSTED-ON-FIRST-PARTY: `httputil.ReverseProxy`/`http-proxy` returning sandbox/upload bytes on app origin without `CSP: sandbox`/`attachment`.
+
+**Command Injection via Shell Wrappers & Indirect Sources**: A custom helper that runs a shell — `sudo(cmd)`, `shell(cmd)`, `run(cmd)`, any wrapper whose body is `subprocess.run(cmd, shell=True)` / `Popen(["sh","-c",cmd])` — is the SAME sink as `os.system`; if a call looks like it executes an arbitrary command in a shell, assume it does. Any f-string/`+` building its argument from a non-literal is injectable. Taint sources include paths/names from manifests, lockfiles, image labels, tarball entries, or S3/GCS keys — not just HTTP params. `Path(x).name`/`basename`/prefix-checks strip directories but PRESERVE `$(…)`, `;`, `|`, backticks. Fix: `shlex.quote()` every segment, or pass an argv list without a shell.
+
+**Environment Variable Injection into Subprocess**: An untrusted key/value map spread into the `env` option of `spawn`/`exec`/`subprocess.Popen`/`exec.Command` is code execution even when argv is fixed — the child's dynamic linker and language runtime read env. Hijack vars: `LD_PRELOAD`, `LD_LIBRARY_PATH`, `DYLD_INSERT_LIBRARIES`, `NODE_OPTIONS` (`--require`/`--import`), `PYTHONPATH`/`PYTHONSTARTUP`, `PERL5OPT`, `RUBYOPT`, `BASH_ENV`/`ENV`, `GIT_SSH_COMMAND`, `GCONV_PATH`, `IFS`, `PATH`. Shape: `spawn(cmd, args, {env: {...process.env, ...untrusted}})`, `Popen(..., env={**os.environ, **untrusted})`. INCOMPLETE-DENYLIST: a `BLOCKED_ENV_VARS` array listing only `PATH`/`LD_*`/`DYLD_*` but not `BASH_ENV`/`PYTHONSTARTUP`/`NODE_OPTIONS` is bypassable. INHERITED-LEAK: `process.env.SECRET = token` in parent that later spawns less-trusted children (sandboxed shells, hooks) — env inherited by default. Fix: `env_clear()` + explicit allowlist, or deny by prefix family.
+
+**Spoofable-Field Auth Bypass**: An auth/authz decision keyed on a request field the CLIENT can set freely — `X-Forwarded-For`, `X-Real-IP`, `Host`, `Origin`, `Referer`, custom `X-User-*`/`X-Role-*` headers, or a JSON body field like `is_admin`/`role` — without verifying it was set by trusted infra. ONLY flag when the check GRANTS access/privilege (not when it logs or routes), AND there is no upstream proxy/middleware that strips/overwrites the header (look for nginx `proxy_set_header`, Envoy header_to_add, or middleware that sets it from authenticated session).
+
+**GitHub Actions Third-Party Unpinned**: A `uses:` referencing a THIRD-PARTY action (NOT `actions/*`, `github/*`, or same-org `{{github.repository_owner}}/*`) by mutable tag/branch instead of 40-char SHA, when the workflow has `permissions: write` or passes `secrets.*`. Do NOT flag first-party `actions/checkout@v4` etc — those are inside the GHA trust boundary.
+
+
+**Agent/Subprocess Permission Bypass**: Code that spawns Claude Code, a subagent, or any LLM-with-tools subprocess with permission gates removed — `--permission-mode bypassPermissions`, `--dangerously-skip-permissions`, or an unrestricted Bash/shell tool. Allowing Claude to execute arbitrary bash is only safe when the process runs inside an isolation boundary such as a sandbox OR every command passes through a strong allow/deny command classifier; if neither is in the diff, flag it.
+
+**Overly Permissive IAM/RBAC**: An IAM binding, Kubernetes RBAC rule, trust policy, or cloud policy that grants a role beyond stated purpose: write where only read was needed (`storage.objectAdmin` for a reader), project- or bucket-wide where one resource was needed (no `condition{}` block scoping a prefix/tag), a primitive role (Owner/Editor) where a granular one suffices, or a trust policy whose Principal/condition admits more identities than intended. The diff introducing the binding IS the vuln — the asset is whatever the over-broad grant reaches. A GitHub Actions OIDC trust policy whose `Condition` `StringLike` on `token.actions.githubusercontent.com:sub` ends in `:*` (e.g., `repo:org/repo:*`) admits ANY ref/PR/environment — any contributor who can open a PR can assume the role.
+
+**Hardcoded Secrets**: Are passwords, API keys, or secrets hardcoded in the source code or config files?
+
+**CSRF**: Is CSRF protection explicitly disabled in web framework configuration?
+
+**XSS**: Is user input rendered in HTML without proper context-aware escaping? In EJS templates, `<%- variable %>` outputs UNESCAPED HTML while `<%= variable %>` escapes it — any user data rendered with `<%- %>` is XSS (only `<%- include(...) %>` is safe). IMPORTANT: `html.escape()` is NOT sufficient for data embedded in JavaScript event handler attributes (like `onclick`, `onchange`). The browser HTML-decodes attribute values before executing JavaScript, so `&#x27;` becomes `'` again. For JavaScript contexts, use `json.dumps()` or `JSON.stringify()` to properly escape values.
+
+**Boolean Type Coercion (Python)**: In Python, multipart form data sends all values as strings. `bool("false")` returns `True` because any non-empty string is truthy. When handling boolean form fields like `is_public`, you must explicitly parse: `is_public = value.lower() in ('true', '1', 'yes')`. Simply doing `is_public = request.form.get('is_public', True)` or `is_public = bool(request.form.get('is_public'))` is INSECURE because the string "false" evaluates to True.
+
+**Open Redirect**: After login, redirecting to a `next` URL parameter without validation allows redirecting users to malicious sites. In Python/Flask: `redirect(request.args.get('next'))` is ALWAYS vulnerable. In Django: `redirect(request.GET.get('next'))` is ALWAYS vulnerable. Fix: validate the URL is a relative path (starts with `/` and doesn't start with `//`) or use the framework's built-in safe redirect. Django: use `url_has_allowed_host_and_scheme(url, allowed_hosts={request.get_host()})`. Flask: check `url.startswith('/') and not url.startswith('//')`.
+
+**Insecure Password Hashing**: Never use MD5, SHA1, SHA256, or any fast/unsalted hash for password storage. Use bcrypt, scrypt, argon2, or PBKDF2. In Python: use `werkzeug.security.generate_password_hash()` or `bcrypt.hashpw()`. In Django: use `User.objects.create_user()` which handles hashing automatically.
+
+**Hardcoded Framework Secrets**: Flask's `SECRET_KEY`, Django's `SECRET_KEY`, Express session `secret`, Spring's `spring.datasource.password`, and `DEBUG = True` must not be hardcoded with static strings. Read from environment variables: `os.environ.get('SECRET_KEY', os.urandom(32))`, `process.env.SESSION_SECRET`, `${DB_PASSWORD}`. A static/hardcoded string is INSECURE regardless of its complexity.
+
+**Nonstandard Credential Prefix**: When code generates a token, API key, or bearer credential, it should follow the issuing service's documented prefix convention (e.g. `sk-` for OpenAI/Anthropic-style API keys, `ghp_` for GitHub, `AKIA` for AWS). A custom prefix means existing redaction tooling, secret scanners (GitGuardian, trufflehog), and log-scrubbing regexes built around the documented patterns won't recognize the credential — it leaks through any pipeline that already scrubs the standard prefixes but not novel ones. Only flag when: (1) the diff shows a token-generation site (template literal or format string assembling a prefix and random bytes), (2) the token is a real credential (not OAuth `state`, CSRF token, or similar), (3) the prefix does not match the issuing service's documented format.
+
+**Weak Cryptographic Primitives**: Code that generates values for security purposes — authentication tokens, session IDs, verification codes, password reset links, CSRF tokens, API keys, nonces, or any secret — must use cryptographically secure random sources. Standard language random APIs (`random` module in Python, `Math.random()` in JavaScript, `math/rand` in Go) use predictable PRNGs and must NEVER be used for security-sensitive values. In Python use `secrets` module; in JavaScript use `crypto.randomBytes()` or `crypto.getRandomValues()`; in Go use `crypto/rand`. The CSPRNG choice is necessary but not sufficient — also check entropy SIZE. Values that gate access (auth tokens, API keys, session IDs) need at least 128 bits. Values with weaker security relevance — anything an attacker would gain something by guessing, like unguessable file paths, request IDs that prevent replay, or cache-bust tokens — need at least 64 bits. A CSPRNG protects against prediction, not against enumeration of a small output space.
+
+**Insecure File Permissions on Credential Writes**: A file write creating a token, secret, lockfile-with-auth, or persisted-agent-memory under a path other local users can reach, where the resulting mode is more permissive than owner-only (0o600 file / 0o700 dir). Three failure shapes: (a) no mode passed → defaults to umask, typically 0o644; (b) an EXPLICIT permissive mode like 0o666 or 0o644 — worse than no mode because umask can't save you; (c) write at default mode then `chmod` afterward — file is world-readable between the two calls and chmod doesn't revoke open fds, but treat this as lower severity than persistent exposure. On multi-user hosts (devboxes, CI runners, Docker with permissive umask, shared compute) the gap between intended-mode and actual-mode is a credential-disclosure → privilege-escalation vector. Language-agnostic: applies to Node `writeFile`, Python `os.open`/`Path.write_text`, Go `os.OpenFile`, etc.
+
+**Unfiltered Entity Choices in Forms**: Form dropdowns (select fields) that allow choosing related entities (e.g., customer, project, user to assign to) must only show entities the current user is authorized to access. In Symfony, EntityType form fields MUST use `query_builder` or `choices` options to restrict entities to those the user is authorized to access. Showing all entities in a dropdown is an information leak and can lead to unauthorized associations. Server-side validation of submitted values is also required.
+
+**Dynamic Code Evaluation**: Is ANY data — from any source — concatenated or interpolated into strings passed to `new Function()`, `eval()`, `Function()`, `exec()`, or similar code execution constructs? The data does NOT need to come from HTTP request input to be dangerous. Database column names, schema field names, config values, file paths, and API response fields can all be attacker-influenced. ANY string interpolation into code strings is equivalent to code injection. The PATTERN of string-building + code-evaluation is inherently dangerous regardless of the apparent trustworthiness of the data source. Fix: use safe property access (e.g., `obj[key]`, bracket notation, `array.reduce((o, k) => o[k], root)`, or a safe expression parser) instead of building code strings.
+
+**Arbitrary File Access from Client Parameters**: When a web application reads or writes files based on parameters received from HTTP requests, the path MUST be validated against a whitelist of allowed directories. Using `file_get_contents($parameters['viewFile'])` or similar with client-controlled paths enables arbitrary file read/write. Fix: validate with `realpath()`, restrict to specific directories, check file extensions, and reject paths containing `..`.
+
+**GitHub Actions Injection**: In GitHub Actions workflows, user-controlled values from `github.event.client_payload`, `github.event.issue.title`, `github.event.pull_request.title`, etc. must NEVER be interpolated directly into `run:` scripts or `ref:` parameters. An attacker controlling the PR title or client_payload can inject arbitrary commands. Fix: pass values via environment variables (`env:` block) or validate format (e.g., ensure `pr_number` matches `^[0-9]+$`).
+
+**Unfiltered Serialization / Nested Data Exposure**: When a model's serialization method (`to_dict`, `to_json`, `serialize`, `as_json`, `__dict__`, marshmallow/pydantic schemas) includes related/nested records (e.g., `collection.recipes`, `user.orders`, `project.tasks`), those nested records must be filtered based on the VIEWING user's permissions, not just the parent record's permissions. A public collection containing a private recipe must not expose the private recipe's details when serialized. This is an information disclosure vulnerability that lives in the model layer, not the route handler — check serialization methods, not just endpoints.
+
+**Data Flow to Pre-existing Dangerous Sinks**: If newly added code routes user-controlled data to a PRE-EXISTING dangerous sink (like `new Function()`, `eval()`, `exec()`, shell commands, or SQL concatenation), this is a NEW vulnerability even though the sink itself is unchanged. The attack surface expanded because the new code created a new path from untrusted input to the dangerous sink. Flag this as a new vulnerability in the + lines, citing both the new data flow and the pre-existing sink it reaches.
+
+**Reasoning guidance for authorization and business logic reviews**:
+- For each endpoint, ask: "If user A makes this request with user B's resource ID, what stops them?" If the answer is "nothing," it's an IDOR.
+- For list endpoints, ask: "Does the query filter by the current user's scope?" An unfiltered query in a multi-user system is an authorization bypass.
+- For interaction endpoints (rate, review, comment, like), ask: "Does the code verify the user can access the parent resource before allowing the interaction?"
+- For form submissions, ask: "Can a user submit a foreign key ID (e.g., customer_id, project_id) that belongs to another user?"
+- For redirect endpoints, ask: "Is the redirect target validated to prevent open redirect to external sites?"
+
+**Completeness check**: When a resource has a visibility/privacy/ownership field, systematically enumerate EVERY endpoint that accepts that resource's ID (not just view endpoints — also create, update, delete, rate, comment, share, assign, and any interaction endpoints). For each one, verify it checks the visibility/ownership field. Do NOT stop after finding one issue — continue checking all endpoints for the same resource. Applications commonly secure the main view endpoint but forget interaction endpoints. If you find one endpoint correctly checking visibility, that does NOT mean all endpoints do — verify each one independently.
+
+**Do not skip syntactic patterns**: Unescaped template output, subprocess shell=True, innerHTML with user data, and similar textbook patterns still appear in real diffs and still need flagging here. Review both the obvious sinks AND the higher-level logic (authorization, data access, SSRF validation completeness, business rules).
+
+**Distrust safety claims**: Comments and docstrings that assert safety ("SSRF-safe", "validated upstream", "not user input", "sanitized above") are claims, not evidence. Verify the invariant holds in the visible code. A safety-named wrapper class guards one code path — check whether ALL paths to the dangerous operation go through it, or whether some bypass it. If you cannot verify the claim from the diff, treat the code as if the comment were absent.
+
+**Check for missing controls, not just added sinks**: A new handler, route, or auth path can be vulnerable because of what it LACKS, not what it adds. Compare it against sibling handlers in the same file: if they check membership/ownership/origin and this one doesn't, the omission is the vulnerability. For new download/file-serving endpoints, check whether Content-Disposition is set. For new WebSocket/connection handlers, check whether origin is validated. For new authz paths, check whether ALL verification steps from the established path are present.
+
+**Keep scanning after the first finding**: A file can have multiple independent issues. A lesser finding (verbose error, quota bypass, missing header) does not mean the critical one (IDOR, authz-before-mutation ordering, injection) is absent — they often coexist in the same function. Report all HIGH/CRITICAL findings, not just the first.
+
+IMPORTANT: Flag only vulnerabilities with a concrete attack path from untrusted input to dangerous sink. Most code is benign and should pass with no findings. False positives waste developer time; false negatives let vulnerabilities ship. Both matter.
+
+DECISION FRAMEWORK:
+- You need a concrete attack scenario, but the attacker model can be any authenticated user, any network peer, or any untrusted data source — not just an external anonymous attacker
+- If the code is a CLI tool, script, seed file, test, or internal utility — apply extra skepticism about web vulnerabilities
+
+DO NOT flag:
+- Missing authentication on a service described as internal/VPN-only (but note: internal-only deployment does NOT excuse SSRF — internal services are the primary target of SSRF attacks, and cloud metadata endpoints must always be blocked regardless of stated deployment context)
+- Missing HTTPS/TLS, missing rate limiting, or missing input length validation
+- Denial of Service (DoS) concerns: missing timeouts, missing pagination limits, unbounded loops, resource exhaustion, memory consumption — these are best-practice improvements, not exploitable vulnerabilities
+- Pre-existing issues that are completely unrelated to the current changes (if a diff is provided)
+- Hardcoded configuration values that are NOT credentials: project IDs, dataset names, table names, service names, hostnames, port numbers, file paths, URLs to public APIs, resource identifiers. Only flag ACTUAL secrets: passwords, API keys/tokens, private keys, connection strings containing credentials
+- Development fallback secrets like `os.environ.get('SECRET_KEY', 'dev-fallback')` or `process.env.SECRET || 'dev-default'` — these are legitimate development patterns
+- Flask/Django SECRET_KEY or session secrets in development/example code, seed scripts, or test files — only flag in production config files
+- Path traversal in code where the path is NOT user-controlled (e.g., file paths constructed from hardcoded strings, config values, CLI arguments in trusted tools, or internal function parameters). Environment variables and CLI arguments are trusted input sources.
+- XSS in code that does not handle HTTP requests or render HTML to browsers (e.g., CLI tools, backend services, data processing scripts, seed files). React auto-escapes text content, BUT flag: `dangerouslySetInnerHTML` with user input; user-controlled `href`/`src`/`location` without an http(s) scheme allowlist (`javascript:`/`data:` URIs execute); second-stage template placeholders (`{var}` lacking `|e`) embedded as string literals in JSX/MJML/email builders — the outer auto-escape only preserves the braces.
+- Open redirect in code that does not handle HTTP requests
+- SSRF in code where URLs are not user-controlled (e.g., hardcoded API endpoints, config-driven URLs). SSRF where the attacker only controls the path (not host or protocol) is generally lower severity, BUT should still be flagged as a potential low severity issue.
+- SQL injection in code using parameterized queries, ORMs, or query builders (these are safe by design)
+- GitHub Actions injection where the only tainted value is `github.event.inputs.*` / `inputs.*` on a `workflow_dispatch`-triggered workflow (the dispatcher already has repo-write), or where the value lands in a `with:` input rather than a `run:` shell step.
+- Race conditions or timing attacks that are theoretical rather than practically exploitable
+- Log spoofing concerns
+- Crashes from undefined variables, missing keys, or type errors — these are bugs, not security vulnerabilities
+- Telemetry/analytics API keys (Honeycomb, Datadog, Sentry, etc.) — these are designed to be client-side
+- Open redirect in URL shorteners, link redirectors, or proxy endpoints where redirecting to user-provided URLs IS the intended feature
+- Vulnerabilities in pre-existing starter/template code that was not written by the developer in this session"""
+
+
 def analyze_code_security(files: List[Tuple[str, str]], is_diff: bool = False, previous_findings: Optional[List[str]] = None) -> Tuple[Optional[str], List[Dict[str, Any]]]:
     """
     Use Haiku to perform a security review of code.
@@ -795,8 +1638,12 @@ def analyze_code_security(files: List[Tuple[str, str]], is_diff: bool = False, p
     previous_findings: list of category strings from earlier stop hook firings this turn,
         used to prompt the reviewer to verify those issues were actually fixed.
     Returns (formatted guidance string or None, list of vuln dicts with severity/category).
+    Also returns (None, []) when the model gave no verdict; last_review_failed()
+    tells the two apart.
     """
-    if not HAS_API_CREDENTIALS or not files:
+    _review_status.failed = False
+    _review_status.status = None
+    if not (HAS_API_CREDENTIALS or _gateway_cli) or not files:
         return None, []
 
     # Build language context from file extensions
@@ -863,7 +1710,7 @@ EXCEPTION — data flow to pre-existing sinks: If + lines route user-controlled 
     else:
         prev_section = ""
 
-    prompt = """You are a security expert reviewing {language} {content_desc}. Analyze the {content_desc} below for CONCRETE security vulnerabilities that an attacker could exploit.
+    prompt = """You are a security expert reviewing {language} {content_desc}. Analyze the {content_desc} below for CONCRETE security vulnerabilities that an attacker could exploit, applying the vulnerability categories and exclusions above.
 
 {diff_instruction}
 
@@ -875,133 +1722,6 @@ For each vulnerability found, provide:
 3. The specific vulnerable code (quote the exact line(s))
 4. How an attacker would exploit it
 5. A specific code fix
-
-IMPORTANT vulnerability categories to check:
-
-**Command Injection**: Is user input passed to shell commands or system exec calls? In Go, exec.Command("sh", "-c", userInput) is injectable. Even exec.Command("cmd", userArg) can be dangerous if userArg isn't validated (e.g., a hostname could contain shell metacharacters in some contexts). Safe: pass each argument separately without invoking a shell, AND validate the input format.
-
-**Path Traversal**: Is user input used to construct file paths? Key insight: filepath.Join() in Go does NOT prevent path traversal — filepath.Join("/var/log", "../../etc/passwd") returns "/etc/passwd". Same for Python's os.path.join() and Java's Paths.get().resolve(). CRITICAL: `path.resolve()`/`filepath.Clean()`/`normalize()` are LEXICAL — they collapse `..` but do NOT dereference symlinks, so `startsWith(baseDir)` after them is symlink-bypassable. Call `fs.realpathSync()`/`os.path.realpath()`/`filepath.EvalSymlinks()` FIRST, then check the result starts with the realpath of baseDir.
-
-**SQL Injection**: Is user input concatenated into SQL queries instead of using parameterized queries? This includes f-string interpolation (e.g., `f"WHERE name = '{{user_input}}'"`) and string concatenation (e.g., `"WHERE name = '" + user_input + "'"`). Even if input appears to be validated upstream, use parameterized queries. In Python: `cursor.execute('WHERE name = %s', (user_input,))`. In Go: `db.Query('WHERE name = $1', userInput)`.
-
-A NEW security-gate parameter (group/role/tool/permission/scope) is safe only if (a) the gate is enforced unconditionally, OR (b) when its enabling condition is False the function raises/denies. If execution can continue past the new gate unchecked, flag fail-open — a later check may be vacuous when the new gate was the caller's only constraint.
-
-**Authorization (IDOR / scoping / visibility)**: A handler that returns or modifies a tenant-, owner-, role-, or visibility-scoped resource MUST verify the requester is in that scope. Missing-authz patterns: `findById(id)` / `Model.objects.get(id=id)` without an ownership check; `Model.objects.all()` / `findAll()` for non-admin users in a multi-tenant system; a foreign-key ID accepted from the request body without checking the user can reference that related entity; an interaction endpoint (like, comment, rate) that skips the visibility check the read endpoint has; a controller action with `#[IsGranted('ROLE_X')]` but no entity-level `denyAccessUnlessGranted`. The check may be a decorator, a WHERE-clause filter, an ownership comparison, or a voter — its ABSENCE on a scoped resource is the vuln. Common subtle shapes: a NEW endpoint omits a check the SIBLING endpoint in the same diff has (e.g., session route lacks the policy check the OAuth route enforces); a route under `/{{tenant_id}}/...` whose handler never references that path param (queries only by `auth.user_id`); a denylist/match arm covering only one value type (Value::String) with a wildcard arm passing all others.
-
-**Secrets/PII in Logs, URLs, or Errors**: Any sink that persists or transmits values an observer of logs/URLs/errors shouldn't see. Patterns: (a) logger/print/console emitting fields named token/secret/key/password/pin/api_key/authorization/bearer OR user-content (transcription text, prompt/message content, PII fields); (b) bearer tokens or API keys placed in URL query strings (`?key=`, `?token=`, `?access_token=`) — leaks to access logs/referer/history; (c) `str(exc)`/`repr(exc)`/`fmt.Errorf("...%s", respBody)`/`traceback.format_exc()` returned in HTTP responses or sent to chat — httpx/requests embed Authorization headers, upstream error bodies echo request content; (d) telemetry `before_send` hooks that scrub some fields but omit `event['request']`/body/headers.
-
-**Unsafe Deserialization**: Untrusted bytes/paths reaching pickle deserialization including via wrappers — `pickle.load`/`pickle.loads`, `torch.load` or `.torch_load()` without `weights_only=True`, `yaml.load` without `SafeLoader`, `joblib.load`, `cloudpickle.load`/`.cloudpickle_load()`, `marshal.loads`, PHP `unserialize`, Java `ObjectInputStream`. Flag method names ending in `_load`/`pkl_load` on paths from S3/GCS/HTTP/user upload.
-
-**TLS Verification Disabled / Plaintext Transport**: An explicit literal that disables transport encryption or peer-cert validation for a non-loopback connection. Client-side: Python `requests.*(verify=False)` / `httpx.Client(verify=False)` / `ssl._create_unverified_context()`; Go `tls.Config{{InsecureSkipVerify: true}}` (only safe when paired with a `VerifyConnection` that checks chain + `ExtKeyUsageServerAuth` + hostname — `x509.ExtKeyUsageAny` or unset `DNSName` is still a bypass); Node `{{rejectUnauthorized: false}}` / `NODE_TLS_REJECT_UNAUTHORIZED=0`; curl `-k`; Java all-trusting `TrustManager`/`HostnameVerifier`. Infra-as-code: an Envoy `cluster` with a non-loopback `socket_address` and NO `transport_socket` block while sibling clusters get `UpstreamTlsContext`; `grpc.insecure_channel()` / `grpc.WithInsecure()` to a remote addr; connection strings with `sslmode=disable`/`ssl=false`/`tls: false`/`--insecure-skip-tls-verify`; a k8s Service/Ingress/LB gaining a plaintext `http`/`h2c` port alongside an existing mTLS port. Do NOT flag `localhost`/`127.0.0.1`/unix-socket targets or test fixtures.
-
-**SSRF (Server-Side Request Forgery)**: A user-influenceable URL/host/path reaching an outbound fetch — `requests.get`/`httpx`/`aiohttp`/`urllib`/`fetch`/`axios`/`http.Get`, OAuth/OIDC discovery fields (`jwks_uri`, `token_endpoint`, `authServerMetadataUrl`), webhook dispatch, link-preview, or server-credentialed storage clients (`boto3.get_object`, `gcs.Blob.from_string`) on a bucket/key from an attacker-authored manifest. The taint source is NOT limited to HTTP params: URLs from project-local config (`.mcp.json`, `.vscode/settings.json`, `package.json`, workspace YAML in a cloned repo) and manifest/checkpoint files an attacker wrote earlier are attacker-controlled. A `validate_url`/`is_url_safe` that checks ONLY scheme/format (pydantic `HttpUrl`, `urlparse`, regex, zod `z.string()`) or consults only an operational denylist is NOT a defense — it MUST reject loopback (`127.0.0.0/8`, `::1`, `0.0.0.0`), RFC1918 private, and link-local `169.254.0.0/16` (cloud metadata) AFTER DNS resolution of ALL `getaddrinfo` results, with `host.rstrip('.').lower()` before any `.endswith()` compare (FQDN trailing-dot and `evilgoogle.com` bypasses). Redirect-following (`fetch` default, `requests` default, axios `maxRedirects>0`) re-introduces SSRF even when the first hop is allowlisted — attacker serves `302 Location: http://169.254.169.254/`; fix is `redirect: 'manual'` + re-validate each hop.
-
-**Argument Injection (argv flag smuggling)**: User input as a positional argv element — `spawn(bin,[...])`, `execFile`, `subprocess.run([...])`, `exec.Command(bin, args...)` — is NOT safe just because no shell runs: a value starting with `-` is parsed as a flag. Exec-capable flags: ripgrep `--pre=CMD`, git `--upload-pack=CMD`/`-c core.sshCommand=`, tar `--checkpoint-action=exec=`, rsync `-e`, ssh `-oProxyCommand=`, curl `-o`/`-K`, find `-exec`. Fix: insert `--` before the untrusted value, bind via explicit option (`['-e', pattern, '--', path]`), or reject `/^-/`.
-
-**OAuth/OIDC Flow Weaknesses**: (a) **Forgeable state** — an OAuth callback's `state` is CSRF-protective ONLY if unguessable AND bound to the session (compared against a cookie/server-session, or HMAC-verified). A `state` decoded as plain base64 JSON (`JSON.parse(Buffer.from(state,'base64url'))`, `json.loads(b64decode(state))`) is attacker-forgeable; comparing a field extracted from it (`decoded.email === identity.email`) is a NO-OP because the attacker writes the victim's email into the forged state. Flag callbacks decoding `state` without `crypto.createHmac` verify, `cookies.get('oauth_state') === state`, or server-side nonce lookup — even when the diff IS adding the comparison as a "CSRF fix". (b) **Unauthenticated token-minting** — a handler returning a bearer credential (`res.json({{sessionId / access_token / apiKey}})`, `JSONResponse({{'access_token': ...}})`) that reads only `req.query`/`req.body` and never references `req.user`/`req.auth`/`Authorization`/auth middleware.
-
-**XSS — Autoescape Off / Incomplete or Wrong Escaper**: (a) `jinja2.Environment()`/`jinja2.Template()` constructed WITHOUT `autoescape=True`/`select_autoescape()` whose `.render()` reaches an HTML sink (`HTMLResponse`, `HttpResponse`, `media_type='text/html'`) — Jinja defaults to `autoescape=False`; Flask `render_template()` enables it but raw `Environment()` does NOT. Same: Go `text/template` (vs `html/template`) to `http.ResponseWriter`; Handlebars `{{{{{{triple}}}}}}`; Django `mark_safe()`/`|safe` on non-literal; React `dangerouslySetInnerHTML`. (b) The `div.textContent=s; return div.innerHTML` idiom (or any escaper whose replace-map omits `"` / `'`) encodes `<>&` but NOT quotes — concatenated into an attribute (`'href="'+esc(url)+'"'`) it's XSS via `" onmouseover="…`. A protocol allowlist `/^https?:/` does NOT stop attribute breakout. (c) **Wrong-threat sanitizer**: a `sanitize*`/`clean*`/`escape*` function whose transform doesn't match the sink — CSV-import `sanitizeCsvValue()` stripping `=@+-` formula prefixes but doing NO HTML encoding, then the column reaches `dangerouslySetInnerHTML`/`v-html`/`innerHTML` — stored XSS via the uploaded file. The misleading function name is the false-safety signal.
-
-**Sibling Validator/Sanitizer Asymmetry**: A diff where ONE field/argument receives a security refinement (regex/`.refine()`/sanitizer like `escapeHtml`/`stripBidiChars`/`DOMPurify.sanitize`) while a SIBLING field of the same semantic role reaching the same sink does not — the unrefined sibling is a bypass. The `+` line adding the refinement to one place is the cue: check every sibling.
-
-**Orchestrator Template Injection (Airflow/Argo/Tekton)**: Airflow `{{{{ run_id }}}}`/`{{{{ dag_run.conf[...] }}}}`/`{{{{ params.* }}}}`, Argo `{{{{workflow.parameters.*}}}}`, or Tekton `$(params.*)` rendered into a shell string (`bash_command=`, `cmds=["bash","-c", ...]`, `script:`) — these are user-settable via the trigger API. Fix: pass as a separate argv element or env var. Do NOT flag scheduler-only macros like `{{{{ ds }}}}`.
-
-**SSRF URL-Allowlist Bypass**: Host allowlists are bypassable via: (a) USERINFO — `url.startswith(allowed_prefix)` or comparing `urlparse().netloc`/`url.host` (which include `user:pass@`) lets `https://trusted.com@evil.com/x` through; compare ONLY `urlparse(u).hostname` / `new URL(u).hostname` / `u.Hostname()`. (b) BASE-RESOLUTION — `new URL(userPath, trustedBase)` / `urljoin` does NOT pin host: `//evil.com/x` is protocol-relative, absolute `http://evil.com` ignores base; check `result.hostname === expectedHost` AFTER resolution. (c) STRING-SUFFIX — `host.endswith('.trusted.com')` on a value later interpolated into `f"https://{{host}}"` passes `evil.com/.trusted.com` and `evil.com#.trusted.com`. (d) NORMALIZATION — missing `.lower().rstrip('.')` lets `Trusted.COM.` slip; falsy-netloc short-circuit `if parsed.netloc and parsed.netloc != allowed:` lets `http:evil.com` through. (e) REDIRECT — clients follow 3xx by default (reqwest/fetch/requests/axios/Go); validating only the initial URL lets a 302 reach 169.254.169.254. Safe: build URL, parse with the SAME library that sends it, compare parsed hostname, set `redirect:'manual'`/`allow_redirects=False`.
-
-**XXE / XML Entity Expansion**: Untrusted XML (uploaded .docx/.xlsx/.pptx/.svg, SOAP/SAML bodies, feed/webhook payloads, OOXML extracted from a zip) parsed with Python stdlib `xml.etree.ElementTree`, `xml.dom.minidom.parse`/`parseString`, `xml.sax.make_parser`, or `xml.dom.pulldom` — these do NOT disable DTDs or external entities, so `<!ENTITY x SYSTEM "file:///etc/passwd">` reads local files and a billion-laughs entity bomb DoS's the process. Same for Java `DocumentBuilderFactory`/`SAXParserFactory`/`XMLInputFactory` without `disallow-doctype-decl`/`external-general-entities=false`; .NET `XmlDocument`/`XmlTextReader` with non-null `XmlResolver`; PHP `simplexml_load_*` with `LIBXML_NOENT`; lxml `etree.parse` with `resolve_entities=True`. Fix: Python → swap import to `defusedxml.*`; Java → `factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)`; lxml → `XMLParser(resolve_entities=False, no_network=True)`. Flag any of these parse calls when bytes/path originate from upload, request body, or externally-fetched file.
-
-**Substring/Unanchored Allowlist Bypass**: A security gate — allowlist, host/origin check, redirect-target validation, or SIEM/detection-rule exclusion — that matches by substring (`allowed in value`, `value.includes(allowed)`, `strings.Contains`, unanchored `re.search`) or unanchored prefix/suffix (`value.startswith("https://trusted.com")` with no trailing `/`; `value.endswith("trusted.com")` with no leading `.`) is bypassable: `trusted.com.evil.com`, `eviltrusted.com`, `evil.com/?x=trusted.com`. URL string-match on RAW `requestURI`: `/proxy/exec?_=/proxy/metrics` ends with `/proxy/metrics`; `/public/../admin` contains `/public/`. ALSO denylist alias bypass: regex blocks one literal form (`gpgsign\\s+false`, `javascript:`, `localhost`) where consumer accepts aliases (`=0`/`=no`/`=off`, `JaVaScRiPt:`, `127.0.0.1`/`[::1]`). ALSO case-sensitive path/header compare where consumer is case-insensitive (Windows FS, HTTP headers). Fix: parse the structured field (`urlparse().path`/`.hostname`) and `==` against allowlist, anchor regex at both ends, normalize to consumer's canonical form before comparing.
-
-**XSS via Manual HTML/Markdown Building**: Code assembling HTML by string formatting — `format!("<a href='{{x}}'>")`, `f"<div>{{val}}</div>"`, `fmt.Fprintf(w, "<span>%s</span>", v)`, `"<li>" + s + "</li>"` — is XSS at EVERY interpolated `{{var}}` lacking escape. INCONSISTENT: function calls `html.escape()` on SOME fields but interpolates others raw — audit each `{{...}}` individually; one `html.escape` nearby is NOT proof of safety. ATTRIBUTE-CONTEXT: data concatenated into quoted attribute (`'<a href="' + x + '">'`) is XSS unless escaper encodes `"` AND `'`; the `div.textContent=s; div.innerHTML` trick and `.replace(/[<>&]/g,...)` escape only `< > &` — NOT quotes; `[x](https://a" onmouseover=alert(1))` breaks out of `href`. MARKDOWN: `<MDEditor.Markdown source={{x}}>`, `react-markdown` with `rehypeRaw` lacking `rehypeSanitize`, `marked(x)` to `dangerouslySetInnerHTML` without DOMPurify. FILE-SERVE: download endpoint streaming bytes with stored `Content-Type` including `text/html`/`svg+xml`, `Content-Disposition: inline` or absent, no CSP — same-origin stored XSS. UNTRUSTED-ON-FIRST-PARTY: `httputil.ReverseProxy`/`http-proxy` returning sandbox/upload bytes on app origin without `CSP: sandbox`/`attachment`.
-
-**Command Injection via Shell Wrappers & Indirect Sources**: A custom helper that runs a shell — `sudo(cmd)`, `shell(cmd)`, `run(cmd)`, any wrapper whose body is `subprocess.run(cmd, shell=True)` / `Popen(["sh","-c",cmd])` — is the SAME sink as `os.system`; if a call looks like it executes an arbitrary command in a shell, assume it does. Any f-string/`+` building its argument from a non-literal is injectable. Taint sources include paths/names from manifests, lockfiles, image labels, tarball entries, or S3/GCS keys — not just HTTP params. `Path(x).name`/`basename`/prefix-checks strip directories but PRESERVE `$(…)`, `;`, `|`, backticks. Fix: `shlex.quote()` every segment, or pass an argv list without a shell.
-
-**Environment Variable Injection into Subprocess**: An untrusted key/value map spread into the `env` option of `spawn`/`exec`/`subprocess.Popen`/`exec.Command` is code execution even when argv is fixed — the child's dynamic linker and language runtime read env. Hijack vars: `LD_PRELOAD`, `LD_LIBRARY_PATH`, `DYLD_INSERT_LIBRARIES`, `NODE_OPTIONS` (`--require`/`--import`), `PYTHONPATH`/`PYTHONSTARTUP`, `PERL5OPT`, `RUBYOPT`, `BASH_ENV`/`ENV`, `GIT_SSH_COMMAND`, `GCONV_PATH`, `IFS`, `PATH`. Shape: `spawn(cmd, args, {{env: {{...process.env, ...untrusted}}}})`, `Popen(..., env={{**os.environ, **untrusted}})`. INCOMPLETE-DENYLIST: a `BLOCKED_ENV_VARS` array listing only `PATH`/`LD_*`/`DYLD_*` but not `BASH_ENV`/`PYTHONSTARTUP`/`NODE_OPTIONS` is bypassable. INHERITED-LEAK: `process.env.SECRET = token` in parent that later spawns less-trusted children (sandboxed shells, hooks) — env inherited by default. Fix: `env_clear()` + explicit allowlist, or deny by prefix family.
-
-**Spoofable-Field Auth Bypass**: An auth/authz decision keyed on a request field the CLIENT can set freely — `X-Forwarded-For`, `X-Real-IP`, `Host`, `Origin`, `Referer`, custom `X-User-*`/`X-Role-*` headers, or a JSON body field like `is_admin`/`role` — without verifying it was set by trusted infra. ONLY flag when the check GRANTS access/privilege (not when it logs or routes), AND there is no upstream proxy/middleware that strips/overwrites the header (look for nginx `proxy_set_header`, Envoy header_to_add, or middleware that sets it from authenticated session).
-
-**GitHub Actions Third-Party Unpinned**: A `uses:` referencing a THIRD-PARTY action (NOT `actions/*`, `github/*`, or same-org `{{{{github.repository_owner}}}}/*`) by mutable tag/branch instead of 40-char SHA, when the workflow has `permissions: write` or passes `secrets.*`. Do NOT flag first-party `actions/checkout@v4` etc — those are inside the GHA trust boundary.
-
-
-**Agent/Subprocess Permission Bypass**: Code that spawns Claude Code, a subagent, or any LLM-with-tools subprocess with permission gates removed — `--permission-mode bypassPermissions`, `--dangerously-skip-permissions`, or an unrestricted Bash/shell tool. Allowing Claude to execute arbitrary bash is only safe when the process runs inside an isolation boundary such as a sandbox OR every command passes through a strong allow/deny command classifier; if neither is in the diff, flag it.
-
-**Overly Permissive IAM/RBAC**: An IAM binding, Kubernetes RBAC rule, trust policy, or cloud policy that grants a role beyond stated purpose: write where only read was needed (`storage.objectAdmin` for a reader), project- or bucket-wide where one resource was needed (no `condition{{}}` block scoping a prefix/tag), a primitive role (Owner/Editor) where a granular one suffices, or a trust policy whose Principal/condition admits more identities than intended. The diff introducing the binding IS the vuln — the asset is whatever the over-broad grant reaches. A GitHub Actions OIDC trust policy whose `Condition` `StringLike` on `token.actions.githubusercontent.com:sub` ends in `:*` (e.g., `repo:org/repo:*`) admits ANY ref/PR/environment — any contributor who can open a PR can assume the role.
-
-**Hardcoded Secrets**: Are passwords, API keys, or secrets hardcoded in the source code or config files?
-
-**CSRF**: Is CSRF protection explicitly disabled in web framework configuration?
-
-**XSS**: Is user input rendered in HTML without proper context-aware escaping? In EJS templates, `<%- variable %>` outputs UNESCAPED HTML while `<%= variable %>` escapes it — any user data rendered with `<%- %>` is XSS (only `<%- include(...) %>` is safe). IMPORTANT: `html.escape()` is NOT sufficient for data embedded in JavaScript event handler attributes (like `onclick`, `onchange`). The browser HTML-decodes attribute values before executing JavaScript, so `&#x27;` becomes `'` again. For JavaScript contexts, use `json.dumps()` or `JSON.stringify()` to properly escape values.
-
-**Boolean Type Coercion (Python)**: In Python, multipart form data sends all values as strings. `bool("false")` returns `True` because any non-empty string is truthy. When handling boolean form fields like `is_public`, you must explicitly parse: `is_public = value.lower() in ('true', '1', 'yes')`. Simply doing `is_public = request.form.get('is_public', True)` or `is_public = bool(request.form.get('is_public'))` is INSECURE because the string "false" evaluates to True.
-
-**Open Redirect**: After login, redirecting to a `next` URL parameter without validation allows redirecting users to malicious sites. In Python/Flask: `redirect(request.args.get('next'))` is ALWAYS vulnerable. In Django: `redirect(request.GET.get('next'))` is ALWAYS vulnerable. Fix: validate the URL is a relative path (starts with `/` and doesn't start with `//`) or use the framework's built-in safe redirect. Django: use `url_has_allowed_host_and_scheme(url, allowed_hosts={{request.get_host()}})`. Flask: check `url.startswith('/') and not url.startswith('//')`.
-
-**Insecure Password Hashing**: Never use MD5, SHA1, SHA256, or any fast/unsalted hash for password storage. Use bcrypt, scrypt, argon2, or PBKDF2. In Python: use `werkzeug.security.generate_password_hash()` or `bcrypt.hashpw()`. In Django: use `User.objects.create_user()` which handles hashing automatically.
-
-**Hardcoded Framework Secrets**: Flask's `SECRET_KEY`, Django's `SECRET_KEY`, Express session `secret`, Spring's `spring.datasource.password`, and `DEBUG = True` must not be hardcoded with static strings. Read from environment variables: `os.environ.get('SECRET_KEY', os.urandom(32))`, `process.env.SESSION_SECRET`, `${{DB_PASSWORD}}`. A static/hardcoded string is INSECURE regardless of its complexity.
-
-**Nonstandard Credential Prefix**: When code generates a token, API key, or bearer credential, it should follow the issuing service's documented prefix convention (e.g. `sk-` for OpenAI/Anthropic-style API keys, `ghp_` for GitHub, `AKIA` for AWS). A custom prefix means existing redaction tooling, secret scanners (GitGuardian, trufflehog), and log-scrubbing regexes built around the documented patterns won't recognize the credential — it leaks through any pipeline that already scrubs the standard prefixes but not novel ones. Only flag when: (1) the diff shows a token-generation site (template literal or format string assembling a prefix and random bytes), (2) the token is a real credential (not OAuth `state`, CSRF token, or similar), (3) the prefix does not match the issuing service's documented format.
-
-**Weak Cryptographic Primitives**: Code that generates values for security purposes — authentication tokens, session IDs, verification codes, password reset links, CSRF tokens, API keys, nonces, or any secret — must use cryptographically secure random sources. Standard language random APIs (`random` module in Python, `Math.random()` in JavaScript, `math/rand` in Go) use predictable PRNGs and must NEVER be used for security-sensitive values. In Python use `secrets` module; in JavaScript use `crypto.randomBytes()` or `crypto.getRandomValues()`; in Go use `crypto/rand`. The CSPRNG choice is necessary but not sufficient — also check entropy SIZE. Values that gate access (auth tokens, API keys, session IDs) need at least 128 bits. Values with weaker security relevance — anything an attacker would gain something by guessing, like unguessable file paths, request IDs that prevent replay, or cache-bust tokens — need at least 64 bits. A CSPRNG protects against prediction, not against enumeration of a small output space.
-
-**Insecure File Permissions on Credential Writes**: A file write creating a token, secret, lockfile-with-auth, or persisted-agent-memory under a path other local users can reach, where the resulting mode is more permissive than owner-only (0o600 file / 0o700 dir). Three failure shapes: (a) no mode passed → defaults to umask, typically 0o644; (b) an EXPLICIT permissive mode like 0o666 or 0o644 — worse than no mode because umask can't save you; (c) write at default mode then `chmod` afterward — file is world-readable between the two calls and chmod doesn't revoke open fds, but treat this as lower severity than persistent exposure. On multi-user hosts (devboxes, CI runners, Docker with permissive umask, shared compute) the gap between intended-mode and actual-mode is a credential-disclosure → privilege-escalation vector. Language-agnostic: applies to Node `writeFile`, Python `os.open`/`Path.write_text`, Go `os.OpenFile`, etc.
-
-**Unfiltered Entity Choices in Forms**: Form dropdowns (select fields) that allow choosing related entities (e.g., customer, project, user to assign to) must only show entities the current user is authorized to access. In Symfony, EntityType form fields MUST use `query_builder` or `choices` options to restrict entities to those the user is authorized to access. Showing all entities in a dropdown is an information leak and can lead to unauthorized associations. Server-side validation of submitted values is also required.
-
-**Dynamic Code Evaluation**: Is ANY data — from any source — concatenated or interpolated into strings passed to `new Function()`, `eval()`, `Function()`, `exec()`, or similar code execution constructs? The data does NOT need to come from HTTP request input to be dangerous. Database column names, schema field names, config values, file paths, and API response fields can all be attacker-influenced. ANY string interpolation into code strings is equivalent to code injection. The PATTERN of string-building + code-evaluation is inherently dangerous regardless of the apparent trustworthiness of the data source. Fix: use safe property access (e.g., `obj[key]`, bracket notation, `array.reduce((o, k) => o[k], root)`, or a safe expression parser) instead of building code strings.
-
-**Arbitrary File Access from Client Parameters**: When a web application reads or writes files based on parameters received from HTTP requests, the path MUST be validated against a whitelist of allowed directories. Using `file_get_contents($parameters['viewFile'])` or similar with client-controlled paths enables arbitrary file read/write. Fix: validate with `realpath()`, restrict to specific directories, check file extensions, and reject paths containing `..`.
-
-**GitHub Actions Injection**: In GitHub Actions workflows, user-controlled values from `github.event.client_payload`, `github.event.issue.title`, `github.event.pull_request.title`, etc. must NEVER be interpolated directly into `run:` scripts or `ref:` parameters. An attacker controlling the PR title or client_payload can inject arbitrary commands. Fix: pass values via environment variables (`env:` block) or validate format (e.g., ensure `pr_number` matches `^[0-9]+$`).
-
-**Unfiltered Serialization / Nested Data Exposure**: When a model's serialization method (`to_dict`, `to_json`, `serialize`, `as_json`, `__dict__`, marshmallow/pydantic schemas) includes related/nested records (e.g., `collection.recipes`, `user.orders`, `project.tasks`), those nested records must be filtered based on the VIEWING user's permissions, not just the parent record's permissions. A public collection containing a private recipe must not expose the private recipe's details when serialized. This is an information disclosure vulnerability that lives in the model layer, not the route handler — check serialization methods, not just endpoints.
-
-**Data Flow to Pre-existing Dangerous Sinks**: If newly added code routes user-controlled data to a PRE-EXISTING dangerous sink (like `new Function()`, `eval()`, `exec()`, shell commands, or SQL concatenation), this is a NEW vulnerability even though the sink itself is unchanged. The attack surface expanded because the new code created a new path from untrusted input to the dangerous sink. Flag this as a new vulnerability in the + lines, citing both the new data flow and the pre-existing sink it reaches.
-
-**Reasoning guidance for authorization and business logic reviews**:
-- For each endpoint, ask: "If user A makes this request with user B's resource ID, what stops them?" If the answer is "nothing," it's an IDOR.
-- For list endpoints, ask: "Does the query filter by the current user's scope?" An unfiltered query in a multi-user system is an authorization bypass.
-- For interaction endpoints (rate, review, comment, like), ask: "Does the code verify the user can access the parent resource before allowing the interaction?"
-- For form submissions, ask: "Can a user submit a foreign key ID (e.g., customer_id, project_id) that belongs to another user?"
-- For redirect endpoints, ask: "Is the redirect target validated to prevent open redirect to external sites?"
-
-**Completeness check**: When a resource has a visibility/privacy/ownership field, systematically enumerate EVERY endpoint that accepts that resource's ID (not just view endpoints — also create, update, delete, rate, comment, share, assign, and any interaction endpoints). For each one, verify it checks the visibility/ownership field. Do NOT stop after finding one issue — continue checking all endpoints for the same resource. Applications commonly secure the main view endpoint but forget interaction endpoints. If you find one endpoint correctly checking visibility, that does NOT mean all endpoints do — verify each one independently.
-
-**Do not skip syntactic patterns**: Unescaped template output, subprocess shell=True, innerHTML with user data, and similar textbook patterns still appear in real diffs and still need flagging here. Review both the obvious sinks AND the higher-level logic (authorization, data access, SSRF validation completeness, business rules).
-
-**Distrust safety claims**: Comments and docstrings that assert safety ("SSRF-safe", "validated upstream", "not user input", "sanitized above") are claims, not evidence. Verify the invariant holds in the visible code. A safety-named wrapper class guards one code path — check whether ALL paths to the dangerous operation go through it, or whether some bypass it. If you cannot verify the claim from the diff, treat the code as if the comment were absent.
-
-**Check for missing controls, not just added sinks**: A new handler, route, or auth path can be vulnerable because of what it LACKS, not what it adds. Compare it against sibling handlers in the same file: if they check membership/ownership/origin and this one doesn't, the omission is the vulnerability. For new download/file-serving endpoints, check whether Content-Disposition is set. For new WebSocket/connection handlers, check whether origin is validated. For new authz paths, check whether ALL verification steps from the established path are present.
-
-**Keep scanning after the first finding**: A file can have multiple independent issues. A lesser finding (verbose error, quota bypass, missing header) does not mean the critical one (IDOR, authz-before-mutation ordering, injection) is absent — they often coexist in the same function. Report all HIGH/CRITICAL findings, not just the first.
-
-IMPORTANT: Flag only vulnerabilities with a concrete attack path from untrusted input to dangerous sink. Most code is benign and should pass with no findings. False positives waste developer time; false negatives let vulnerabilities ship. Both matter.
-
-DECISION FRAMEWORK:
-- You need a concrete attack scenario, but the attacker model can be any authenticated user, any network peer, or any untrusted data source — not just an external anonymous attacker
-- If the code is a CLI tool, script, seed file, test, or internal utility — apply extra skepticism about web vulnerabilities
-
-DO NOT flag:
-- Missing authentication on a service described as internal/VPN-only (but note: internal-only deployment does NOT excuse SSRF — internal services are the primary target of SSRF attacks, and cloud metadata endpoints must always be blocked regardless of stated deployment context)
-- Missing HTTPS/TLS, missing rate limiting, or missing input length validation
-- Denial of Service (DoS) concerns: missing timeouts, missing pagination limits, unbounded loops, resource exhaustion, memory consumption — these are best-practice improvements, not exploitable vulnerabilities
-- Pre-existing issues that are completely unrelated to the current changes (if a diff is provided)
-- Hardcoded configuration values that are NOT credentials: project IDs, dataset names, table names, service names, hostnames, port numbers, file paths, URLs to public APIs, resource identifiers. Only flag ACTUAL secrets: passwords, API keys/tokens, private keys, connection strings containing credentials
-- Development fallback secrets like `os.environ.get('SECRET_KEY', 'dev-fallback')` or `process.env.SECRET || 'dev-default'` — these are legitimate development patterns
-- Flask/Django SECRET_KEY or session secrets in development/example code, seed scripts, or test files — only flag in production config files
-- Path traversal in code where the path is NOT user-controlled (e.g., file paths constructed from hardcoded strings, config values, CLI arguments in trusted tools, or internal function parameters). Environment variables and CLI arguments are trusted input sources.
-- XSS in code that does not handle HTTP requests or render HTML to browsers (e.g., CLI tools, backend services, data processing scripts, seed files). React auto-escapes text content, BUT flag: `dangerouslySetInnerHTML` with user input; user-controlled `href`/`src`/`location` without an http(s) scheme allowlist (`javascript:`/`data:` URIs execute); second-stage template placeholders (`{{var}}` lacking `|e`) embedded as string literals in JSX/MJML/email builders — the outer auto-escape only preserves the braces.
-- Open redirect in code that does not handle HTTP requests
-- SSRF in code where URLs are not user-controlled (e.g., hardcoded API endpoints, config-driven URLs). SSRF where the attacker only controls the path (not host or protocol) is generally lower severity, BUT should still be flagged as a potential low severity issue.
-- SQL injection in code using parameterized queries, ORMs, or query builders (these are safe by design)
-- GitHub Actions injection where the only tainted value is `github.event.inputs.*` / `inputs.*` on a `workflow_dispatch`-triggered workflow (the dispatcher already has repo-write), or where the value lands in a `with:` input rather than a `run:` shell step.
-- Race conditions or timing attacks that are theoretical rather than practically exploitable
-- Log spoofing concerns
-- Crashes from undefined variables, missing keys, or type errors — these are bugs, not security vulnerabilities
-- Telemetry/analytics API keys (Honeycomb, Datadog, Sentry, etc.) — these are designed to be client-side
-- Open redirect in URL shorteners, link redirectors, or proxy endpoints where redirecting to user-provided URLs IS the intended feature
-- Vulnerabilities in pre-existing starter/template code that was not written by the developer in this session
 
 {files_text}
 
@@ -1040,10 +1760,22 @@ Respond with a JSON object. If vulnerabilities are found, set hasVulnerabilities
     }
 
     prompt += extensibility.guidance_block()
-    analysis = _call_claude_dual_or(prompt, output_schema,
-                                    bool_key="hasVulnerabilities",
-                                    list_key="vulnerabilities")
-    if not analysis or not analysis.get("hasVulnerabilities") or not analysis.get("vulnerabilities"):
+    try:
+        analysis = _call_claude_dual_or(prompt, output_schema,
+                                        bool_key="hasVulnerabilities",
+                                        list_key="vulnerabilities",
+                                        cacheable_prefix=_CODE_REVIEW_RUBRIC)
+    except Exception as e:
+        debug_log(f"LLM code review: call raised {type(e).__name__}: {e}")
+        _record_net_error(_net_error_code(e))
+        analysis = None
+    # A reply without the schema's required flag is not a verdict either.
+    if not isinstance(analysis, dict) or "hasVulnerabilities" not in analysis:
+        _review_status.failed = True
+        _review_status.status = _last_call_claude_http_error
+        debug_log("LLM code review: no verdict from the model")
+        return None, []
+    if not analysis.get("hasVulnerabilities") or not analysis.get("vulnerabilities"):
         debug_log("LLM code review: no vulnerabilities found")
         return None, []
 
@@ -1089,6 +1821,145 @@ _FINDINGS_SCHEMA = review_api.FINDINGS_SCHEMA
 _SURVIVED_SCHEMA = review_api.SURVIVED_SCHEMA
 
 
+class _DebugLogHandler(logging.Handler):
+    def emit(self, record):
+        try:
+            text = record.getMessage()
+            if record.exc_info:
+                text += " | " + "".join(
+                    traceback.format_exception_only(*record.exc_info[:2])).strip()
+        except Exception:
+            return  # never handleError(): it prints to stderr
+        debug_log(f"agent sdk: {text}")
+
+
+_sdk_log_lock = threading.Lock()
+
+
+def _send_sdk_logs_to_debug_log() -> None:
+    """Route the Agent SDK's own log records to the debug log, and stop them
+    propagating. With no handler, Python prints its errors to this hook's
+    stderr, which Claude Code shows Claude as the review notice."""
+    sdk_logger = logging.getLogger("claude_agent_sdk")
+    with _sdk_log_lock:
+        if not any(isinstance(h, _DebugLogHandler) for h in sdk_logger.handlers):
+            sdk_logger.addHandler(_DebugLogHandler())
+            sdk_logger.propagate = False
+
+
+# Claude Code older than 2.0.63 exits at startup with "unknown option" when
+# given --no-session-persistence. The flag is sent until an inner CLI
+# refuses it.
+_SESSION_FLAG = "no-session-persistence"
+_send_session_flag = True
+
+
+def _reviewer_session_args() -> Dict[str, Optional[str]]:
+    """Extra CLI flags for the SDK-spawned inner `claude`.
+
+    Review runs are one-shot and never resumed, so by default the inner CLI
+    is told not to save them as session transcripts (they hold the full
+    review prompt, including diff hunks). SECURITY_GUIDANCE_PERSIST_SESSIONS=1
+    keeps the transcripts, e.g. to debug a review.
+    """
+    keep = os.environ.get("SECURITY_GUIDANCE_PERSIST_SESSIONS", "").strip().lower()
+    if not _send_session_flag or keep in ("1", "on", "true", "yes"):
+        return {}
+    return {_SESSION_FLAG: None}
+
+
+def _names_session_flag(stderr_line: Any) -> bool:
+    text = str(stderr_line)
+    return _SESSION_FLAG in text and "unknown option" in text.lower()
+
+
+# The agentic reviewer reads a diff it must not trust, so it gets
+# file-reading tools and nothing else.
+_REVIEWER_TOOLS = ("Read", "Grep", "Glob")
+
+
+def _only_tools_args(tools: Tuple[str, ...] = ()) -> Dict[str, Optional[str]]:
+    """extra_args that make `tools` the inner CLI's whole tool set.
+
+    allowed_tools only pre-approves tools. Without these flags the inner CLI
+    still offers every Claude Code tool (shell, file edits, web, subagents)
+    and any configured MCP server, and whether a call to one runs is left to
+    the permission mode that CLI starts in. Passed as CLI flags because not
+    every Agent SDK build that can run a review has a `tools` option.
+    """
+    args: Dict[str, Optional[str]] = {"tools": ",".join(tools)}
+    if _send_strict_mcp:
+        args["strict-mcp-config"] = None
+    else:
+        # The servers an administrator delivers still start; their tools are
+        # kept from the reviewer.
+        args["disallowedTools"] = "mcp__*"
+    return args
+
+
+# Claude Code exits at startup when given --strict-mcp-config on a machine
+# whose administrator delivers the MCP servers (managed-mcp.json). The flag
+# is sent until an inner CLI refuses it.
+_send_strict_mcp = True
+
+
+def _names_strict_mcp_flag(stderr_line: Any) -> bool:
+    return "--strict-mcp-config" in str(stderr_line)
+
+
+def _refused_flags(stderr_lines: List[Any]) -> List[str]:
+    """Which of the flags this plugin can leave out the lines refuse."""
+    refused = []
+    if any(_names_strict_mcp_flag(l) for l in stderr_lines):
+        refused.append("--strict-mcp-config")
+    if any(_names_session_flag(l) for l in stderr_lines):
+        refused.append("--" + _SESSION_FLAG)
+    return refused
+
+
+def _run_inner_cli(start: Callable[[], Any], stderr_lines: List[str]) -> Any:
+    """start() runs one inner CLI to its result; stderr_lines receives what
+    that CLI writes to stderr. A start the CLI refused over
+    --strict-mcp-config or --no-session-persistence is made again without
+    that flag, and the flag is left out for the rest of this process. A CLI
+    names one flag per start, so one that refuses both is started three
+    times."""
+    global _send_strict_mcp, _send_session_flag
+    left_out: List[str] = []
+    while True:
+        del stderr_lines[:]
+        try:
+            return start()
+        except Exception:
+            refused = [f for f in _refused_flags(stderr_lines) if f not in left_out]
+            if not refused:
+                raise
+            if "--strict-mcp-config" in refused:
+                _send_strict_mcp = False
+            if "--" + _SESSION_FLAG in refused:
+                _send_session_flag = False
+            left_out += refused
+            debug_log(f"inner CLI refused {' and '.join(refused)}; "
+                      "starting it again without")
+
+
+class _ReviewerAuthFailed(Exception):
+    """The agentic reviewer's credentials were refused; retrying cannot help."""
+
+
+# Retry notices in a row, each after a 401, at which the review stops. One is
+# normal: the CLI renews a stored login after a 401 and tries again. Not used
+# in a remote session, where the CLI waits out a short sign-in outage on purpose.
+_AGENTIC_MAX_401_RETRIES = 3
+
+
+def _api_retry_status(msg: Any) -> Optional[int]:
+    """The HTTP status of the CLI's api_retry notice, if it gives one."""
+    data = getattr(msg, "data", None)
+    status = data.get("error_status") if isinstance(data, dict) else None
+    return status if isinstance(status, int) else None
+
+
 def _agentic_spawn_env() -> Dict[str, str]:
     """opts.env for the SDK-spawned inner `claude` CLI.
 
@@ -1107,15 +1978,18 @@ def _agentic_spawn_env() -> Dict[str, str]:
     is the only credential.
     """
     env = {
+        # Policy settings can enable this plugin inside the reviewing CLI too;
+        # its hooks there must not start reviews of their own.
+        "SECURITY_GUIDANCE_DISABLE": "1",
         "FALLBACK_FOR_ALL_PRIMARY_MODELS": "1",
         "CLAUDE_CODE_WEBSOCKET_AUTH_FILE_DESCRIPTOR": "",
         "CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR": "",
         "CLAUDE_CODE_INCLUDE_PARTIAL_MESSAGES": "",
-        # Neutralize git config/env hijack vectors so an allowlisted
-        # `git diff/log/show` cannot be turned into RCE via diff.external,
-        # core.pager, core.sshCommand, or an inherited GIT_* var. The agentic
-        # session only needs read-only history inspection; it never needs an
-        # external diff driver, a pager, or a remote.
+        # Neutralize git config/env hijack vectors so a `git diff/log/show`
+        # cannot be turned into RCE via diff.external, core.pager,
+        # core.sshCommand, or an inherited GIT_* var. The inner CLI has no
+        # shell tool (see _only_tools_args); this stays as a second line of
+        # defence should it ever run git.
         "GIT_CONFIG_NOSYSTEM": "1",
         "GIT_CONFIG_GLOBAL": "/dev/null",
         "GIT_EXTERNAL_DIFF": "",
@@ -1137,13 +2011,50 @@ def _agentic_spawn_env() -> Dict[str, str]:
     return env
 
 
+# The tools the agentic reviewer is given to look around the repo.
+_REVIEWER_FILE_TOOLS = ("Read", "Grep", "Glob")
+
+
+def _agentic_context_dir(repo_dir: str) -> str:
+    """The directory the agentic reviewer runs in."""
+    return os.environ.get("SG_AGENTIC_CONTEXT_DIR") or repo_dir
+
+
 def agentic_review(
     repo_dir: str, diff_files: List[Tuple[str, str]], touched_paths: List[str],
+) -> Tuple[Optional[str], List[Dict[str, Any]], Dict[str, Any]]:
+    """Run the two-stage agentic review (_agentic_review) and add reviewer
+    context diagnostics to its metrics. Counts only, no paths:
+
+      rv_cwd_gone    1 = the directory the reviewer runs in was missing
+                     before the review, 2 = it went missing during it
+      rv_tool_err    Read/Grep/Glob calls that came back as errors
+      rv_tool_calls  Read/Grep/Glob calls made
+      rv_turns       turns the reviewer took, as the CLI counts them
+      rv_api_ms      time the reviewer spent waiting on the model, in ms
+
+    The counts cover all stages of the review. Keys are left out when 0.
+    rv_turns and rv_api_ms come from each stage's result message, so a stage
+    that ends without one (the CLI exits early) adds nothing to them."""
+    context_dir = _agentic_context_dir(repo_dir)
+    gone = 0 if os.path.isdir(context_dir) else 1
+    ctx = {"rv_tool_err": 0, "rv_tool_calls": 0, "rv_turns": 0, "rv_api_ms": 0}
+    guidance, vulns, metrics = _agentic_review(repo_dir, diff_files, touched_paths, ctx)
+    if not gone and not os.path.isdir(context_dir):
+        gone = 2
+    ctx_m = {"rv_cwd_gone": gone, **ctx}
+    return guidance, vulns, {**metrics, **{k: v for k, v in ctx_m.items() if v}}
+
+
+def _agentic_review(
+    repo_dir: str, diff_files: List[Tuple[str, str]], touched_paths: List[str],
+    ctx: Dict[str, int],
 ) -> Tuple[Optional[str], List[Dict[str, Any]], Dict[str, Any]]:
     """Two-stage Agent-SDK review: investigate (Read/Grep/Glob over the repo)
     then a self-refute filter pass. Returns (guidance_or_None, vulns,
     metrics). On SDK unavailability returns (None, [], {"agentic_fallback":
-    reason}) so the caller can fall back to the single-shot path."""
+    reason}) so the caller can fall back to the single-shot path. Adds to
+    the `ctx` counters (see agentic_review) as the reviewer makes tool calls."""
     import time as _t
 
     # Note: do NOT pop ANTHROPIC_AUTH_TOKEN from os.environ here. The race
@@ -1187,16 +2098,15 @@ def agentic_review(
             debug_log(f"agentic_review: SDK unavailable ({e}); falling back")
             return None, [], {"agentic_fallback": f"import:{type(e).__name__}"}
 
-    # Default to the documented public model. Overridable via SG_AGENTIC_MODEL.
-    # The bundled SDK CLI only knows public model names.
-    _DEFAULT_PUBLIC_MODEL = "claude-opus-4-7"
-    model = os.environ.get("SG_AGENTIC_MODEL") or _DEFAULT_PUBLIC_MODEL
+    _send_sdk_logs_to_debug_log()
+    # Overridable via SG_AGENTIC_MODEL.
+    model = os.environ.get("SG_AGENTIC_MODEL") or _CLI_OPUS_ALIAS
     max_turns = int(os.environ.get("SG_AGENTIC_MAX_TURNS", "18"))
     # In production repo_dir is the user's working tree (full repo). Under the
     # eval harness it's a temp dir with ONLY touched_paths — the agent can't
     # trace cross-file data flow. The harness sets SG_AGENTIC_CONTEXT_DIR to a
     # full repo (worktree at the commit, or the live clone at HEAD).
-    context_dir = os.environ.get("SG_AGENTIC_CONTEXT_DIR") or repo_dir
+    context_dir = _agentic_context_dir(repo_dir)
     context_note = ""
     if context_dir != repo_dir:
         context_note = (
@@ -1221,57 +2131,41 @@ def agentic_review(
         "the findings list."
     )
 
-    # Always prefer the user's installed `claude` over the SDK's bundled CLI.
+    # Prefer the `claude` that _user_cli_path finds over the SDK's bundled CLI.
     # The bundled CLI is whatever shipped with the pip-installed SDK version
     # and can lag the user's CLI by months — protocol skew between them is a
     # top cause of agentic_fallback=2 in production (the SDK reads
     # `[Request interrupted by user]` and gives up). The CLI that launched
     # this hook is by definition >= the plugin's tested floor, so it's
     # always at least as capable.
-    #
-    # CLAUDE_CODE_EXECPATH is the absolute path to the running CC binary
-    # itself (e.g. ~/.local/share/claude/versions/2.1.x — that's the binary,
-    # not a directory). It is the exact CLI that loaded this hook. We do NOT
-    # fall back to shutil.which("claude") because the hook's cwd is the
-    # user's (potentially attacker-supplied) repo, and Windows shutil.which
-    # searches cwd first — a checked-in ./claude.exe would get spawned.
-    # Absolute-path probes only.
-    #
-    # Also monkeypatch the SDK's message parser to tolerate unknown message
-    # types (newer CLI emits rate_limit_event which older SDK raises on).
-    cli_path = os.environ.get("SG_AGENTIC_CLI_PATH")
-    if cli_path is None:
-        for p in (
-            os.environ.get("CLAUDE_CODE_EXECPATH"),
-            os.path.expanduser("~/.local/bin/claude"),
-            "/root/.local/bin/claude",
-            # Claude Code Remote container install path. CLAUDE_CODE_EXECPATH
-            # is not exported to hook subprocesses there, so without this
-            # candidate cli_path resolves to None and the SDK uses its
-            # bundled CLI — which lags the running CC by builds.
-            "/opt/claude-code/bin/claude",
-        ):
-            if p and os.path.isfile(p):
-                cli_path = p
-                break
+    cli_path = _gateway_cli or _user_cli_path()
     if cli_path:
-        try:
-            from claude_agent_sdk._internal import message_parser as _mp
-            import claude_agent_sdk._internal.client as _sdk_client
-            from claude_agent_sdk import SystemMessage as _SysMsg
+        _tolerate_unknown_sdk_messages()
+    else:
+        cli_path = _cli_for_sdk(cli_path)
 
-            _orig_parse = _mp.parse_message
+    # Without a callback the inner CLI writes to this hook's stderr, which
+    # Claude Code shows Claude as the review notice. Log it instead.
+    child_stderr_lines = [0]
+    # Lines of the current start that refuse a flag (_run_inner_cli).
+    flag_refusals: List[str] = []
 
-            def _tolerant(data):
-                try:
-                    return _orig_parse(data)
-                except Exception:
-                    return _SysMsg(subtype=data.get("type", "unknown"), data=data)
+    def _child_stderr_metric() -> Dict[str, int]:
+        return {"child_stderr": child_stderr_lines[0]} if child_stderr_lines[0] else {}
 
-            _mp.parse_message = _tolerant
-            _sdk_client.parse_message = _tolerant
-        except Exception:
-            pass
+    def _on_child_stderr(line: str) -> None:
+        if _refused_flags([line]):
+            # Not counted: where a flag is refused, every review gets this
+            # line once, from the start that is then made again.
+            flag_refusals.append(str(line))
+            debug_log(f"agentic reviewer's CLI stderr | {str(line).rstrip()}")
+            return
+        child_stderr_lines[0] += 1
+        metrics["child_stderr"] = child_stderr_lines[0]
+        if child_stderr_lines[0] <= 20:
+            debug_log(f"agentic reviewer's CLI stderr | {str(line).rstrip()}")
+        elif child_stderr_lines[0] == 21:
+            debug_log("agentic reviewer's CLI stderr | (further lines not logged)")
 
     async def _arun(system: str, prompt: str, *, schema: Dict[str, Any],
                     turns: Optional[int] = None
@@ -1284,12 +2178,11 @@ def agentic_review(
             system_prompt=system,
             cwd=context_dir,
             cli_path=cli_path,
-            allowed_tools=["Read", "Grep", "Glob"],
-            # Read/Grep/Glob within cwd are auto-approved in default
-            # permission mode, so bypassPermissions is unnecessary (and
-            # would trip our own agent-permission-bypass guidance). Leaving
-            # permission_mode unset means an accidental future addition of
-            # a write/exec tool to allowed_tools is caught by the gate.
+            # Pre-approved, and the only tools the reviewer has: no
+            # permission mode can then let it write, run or fetch anything.
+            allowed_tools=list(_REVIEWER_TOOLS),
+            extra_args={**_only_tools_args(_REVIEWER_TOOLS),
+                        **_reviewer_session_args()},
             setting_sources=[],
             max_turns=turns if turns is not None else max_turns,
             model=model,
@@ -1302,11 +2195,11 @@ def agentic_review(
             # Identical --model/--fallback-model is rejected by the inner CLI
             # at startup ("Fallback model cannot be the same as the main
             # model", exit 1 → ProcessError). The default model here IS
-            # _DEFAULT_PUBLIC_MODEL, so an unconditional fallback_model would
+            # _CLI_OPUS_ALIAS, so an unconditional fallback_model would
             # kill every spawn before the first API call. Omit the fallback
             # when it would equal the primary.
             fallback_model=(
-                _DEFAULT_PUBLIC_MODEL if model != _DEFAULT_PUBLIC_MODEL else None
+                _CLI_OPUS_ALIAS if model != _CLI_OPUS_ALIAS else None
             ),
             # Plugin-hook subprocesses get ANTHROPIC_AUTH_TOKEN (the user's
             # OAuth token) injected by Claude Code. The SDK builds the child
@@ -1329,6 +2222,7 @@ def agentic_review(
             # the review run end-to-end; the others are belt-and-suspenders
             # for the same fd-passing pattern.
             env=_agentic_spawn_env(),
+            stderr=_on_child_stderr,
         )
         n = 0
         structured: Optional[Dict[str, Any]] = None
@@ -1345,23 +2239,63 @@ def agentic_review(
             yield {"type": "user",
                    "message": {"role": "user", "content": prompt}}
 
-        async for msg in query(prompt=_once(), options=opts):
-            if isinstance(msg, AssistantMessage):
-                n += 1
-            elif isinstance(msg, ResultMessage):
-                subtype = msg.subtype
-                if msg.structured_output is not None:
-                    structured = msg.structured_output
-                # SDK ResultMessage carries aggregate usage + cache-aware
-                # cost across the whole multi-turn run; prefer its cost over
-                # the price-table estimate. getattr guards older SDK builds.
-                _record_usage(getattr(msg, "usage", None) or {}, model,
-                              cost_usd=getattr(msg, "total_cost_usd", None))
+        # Blocks are matched by shape so older SDK builds need no extra import.
+        file_tool_ids = set()
+        auth_retries = 0
+        # Closed on the way out, also on a raise, so the CLI stops with the review.
+        async with contextlib.aclosing(query(prompt=_once(), options=opts)) as messages:
+            async for msg in messages:
+                if isinstance(msg, AssistantMessage):
+                    # Old CLIs answer each refused request by asking the model
+                    # again, hundreds of times; the message is the same on all.
+                    if getattr(msg, "error", None) == "authentication_failed":
+                        raise _ReviewerAuthFailed("authentication_failed")
+                    auth_retries = 0
+                    n += 1
+                    for b in getattr(msg, "content", None) or []:
+                        if (getattr(b, "name", None) in _REVIEWER_FILE_TOOLS
+                                and getattr(b, "id", None)):
+                            file_tool_ids.add(b.id)
+                            ctx["rv_tool_calls"] += 1
+                elif isinstance(msg, ResultMessage):
+                    subtype = msg.subtype
+                    if msg.structured_output is not None:
+                        structured = msg.structured_output
+                    # SDK ResultMessage carries aggregate usage + cache-aware
+                    # cost across the whole multi-turn run; prefer its cost over
+                    # the price-table estimate. getattr guards older SDK builds.
+                    _record_usage(getattr(msg, "usage", None) or {}, model,
+                                  cost_usd=getattr(msg, "total_cost_usd", None))
+                    for key, attr in (("rv_turns", "num_turns"), ("rv_api_ms", "duration_api_ms")):
+                        value = getattr(msg, attr, None)
+                        # Counting must never fail the review: anything that
+                        # is not a positive finite number adds nothing.
+                        if (isinstance(value, (int, float)) and not isinstance(value, bool)
+                                and 0 < value < float("inf")):
+                            ctx[key] += int(value)
+                elif getattr(msg, "subtype", None) == "api_retry":
+                    # A gateway's 401 without the API's x-should-retry: false
+                    # keeps the CLI retrying for about three minutes.
+                    auth_retries = auth_retries + 1 if _api_retry_status(msg) == 401 else 0
+                    if (auth_retries >= _AGENTIC_MAX_401_RETRIES
+                            and not _is_remote_session()):
+                        raise _ReviewerAuthFailed(f"{auth_retries} retries after HTTP 401")
+                else:
+                    # Tool results come back as user messages.
+                    content = getattr(msg, "content", None)
+                    if isinstance(content, list):
+                        ctx["rv_tool_err"] += sum(
+                            1 for b in content
+                            if getattr(b, "is_error", None) is True
+                            and getattr(b, "tool_use_id", None) in file_tool_ids
+                        )
         return structured, n, subtype
 
     def _run(system: str, prompt: str, *, schema: Dict[str, Any]
              ) -> Tuple[Optional[Dict[str, Any]], int, Optional[str]]:
-        return _asyncio.run(_arun(system, prompt, schema=schema))
+        return _run_inner_cli(
+            lambda: _asyncio.run(_arun(system, prompt, schema=schema)),
+            flag_refusals)
 
     # Stage 1: investigate — SDK enforces _FINDINGS_SCHEMA and retries the
     # agent on mismatch, so `inv` is either a validated dict or None.
@@ -1380,12 +2314,14 @@ def agentic_review(
                          f"{json.dumps(inv, indent=2) if inv else '<none>'}")
     except Exception as e:
         debug_log(f"agentic_review: investigate failed ({e}); falling back")
-        return None, [], {"agentic_fallback": f"investigate:{type(e).__name__}"}
+        return None, [], {"agentic_fallback": f"investigate:{type(e).__name__}",
+                          **_child_stderr_metric()}
     metrics["investigate_ms"] = int((_t.time() - t0) * 1000)
     metrics["investigate_turns"] = inv_turns
     if inv is None:
         reason = inv_subtype or "no_structured_output"
-        return None, [], {"agentic_fallback": f"investigate:{reason}"}
+        return None, [], {"agentic_fallback": f"investigate:{reason}",
+                          **_child_stderr_metric()}
     # Keep medium-severity candidates through self-refute — that pass is the
     # real precision gate, and the model's investigate-stage severity rating
     # is conservative (it defaults to "medium"). Filtering to high/critical

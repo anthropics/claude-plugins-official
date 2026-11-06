@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import hashlib
 import json
-import posixpath
 import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final, NamedTuple
 from urllib.parse import quote
 
 from . import cwe, secret, source
+from .finding import LINK_SITE, repository_file
 
 if TYPE_CHECKING:
     import uuid
@@ -173,7 +173,7 @@ def placed(
     `sources` is the text of each scanned file by the finding's `file`; a
     finding whose file is absent from it keeps its line and hashes the number.
     """
-    texts = {repository_file(scan, file): text for file, text in sources.items()}
+    texts = {repository_file(scan.prefix, file=file): text for file, text in sources.items()}
     secrets = {
         (path, line)
         for f in findings
@@ -188,21 +188,53 @@ def placed(
     return [placed_one(f, scan, sources.get(f["file"]), secrets) for f in findings]
 
 
+class Span(NamedTuple):
+    """Lines `first` to `last` of the file at repository path `path`."""
+
+    path: str
+    first: int
+    last: int
+
+
 def placed_one(
     finding: Finding, scan: Scan, text: str | None, secrets: Collection[tuple[str, int]]
 ) -> Record:
-    """One finding placed in `text`, its file's content (None when unread), and given its id."""
+    """One finding placed in `text`, its file's content (None when unread), and given its id.
+
+    The link to the change is dropped for a finding inside a credential's window,
+    or whose link opens at a line or range that reaches one: it may describe the credential.
+    """
     moved: Finding = finding
     code = None
+    path = repository_path(scan, finding)
     if text is not None:
         lines = source.normalized_lines(text)
         row = source.placing_row(lines, finding["line"], finding["snippet"])
         if row is not None:
             moved = {**finding, "line": row + 1}
-            path = repository_path(scan, finding)
-            near_secret = any(p == path and abs(row + 1 - n) <= CONTEXT_LINES for p, n in secrets)
-            code = None if near_secret else code_at(lines, row)
+            code = None if near(Span(path, row + 1, row + 1), secrets) else code_at(lines, row)
+    anchor = Span(path, moved["line"], moved["line"])
+    link = link_site(scan, moved["via_change"])
+    if near(anchor, secrets) or (link is not None and near(link, secrets)):
+        moved = {**moved, "via_change": None}
     return {**moved, FINDING_ID: fingerprint(moved, scan, code)}
+
+
+def near(span: Span, secrets: Collection[tuple[str, int]]) -> bool:
+    """True when `span` comes within CONTEXT_LINES of a credential line in its file."""
+    return any(
+        p == span.path and span.first - CONTEXT_LINES <= n <= span.last + CONTEXT_LINES
+        for p, n in secrets
+    )
+
+
+def link_site(scan: Scan, via_change: str | None) -> Span | None:
+    """The span a change link opens with; None when it opens with no file:line."""
+    matched = LINK_SITE.match(via_change or "")
+    if not matched:
+        return None
+    first, last = sorted((int(matched[2]), int(matched[3] or matched[2])))
+    return Span(repository_file(scan.prefix, file=matched[1]), first, last)
 
 
 def secret_lines(home: str, credential: Finding, texts: Mapping[str, str]) -> set[tuple[str, int]]:
@@ -306,12 +338,7 @@ def location(finding: Finding, scan: Scan) -> dict[str, object]:
 
 def repository_path(scan: Scan, finding: Finding) -> str:
     """The finding's file relative to the repository top level, with any leading climb folded."""
-    return repository_file(scan, finding["file"])
-
-
-def repository_file(scan: Scan, file: str) -> str:
-    """A scan-root-relative `file`, as file_field carries it, made repository-relative."""
-    return posixpath.normpath(scan.prefix + file)
+    return repository_file(scan.prefix, file=finding["file"])
 
 
 def uri_bytes(text: str) -> bytes:

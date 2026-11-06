@@ -1,232 +1,158 @@
 ---
-description: Full discovery & portfolio analysis of a legacy system — inventory, complexity, debt, relative scale
-argument-hint: <system-dir> [--show-secrets] | --portfolio <parent-dir>
+description: What am I dealing with? Inventory, complexity, debt, security and a recommended modernization pattern
+argument-hint: <system> [--show-secrets] | --portfolio <parent-dir>
+arguments: system
 ---
 
-**Mode select.** If `$ARGUMENTS` starts with `--portfolio`, run **Portfolio
-mode** against the directory that follows. Otherwise run **Single-system
-mode** against the system dir. Parse flags positionally-independently:
-`--show-secrets` may appear before or after the system dir — the system
-dir is the first non-flag token.
+**Mode.** If `$ARGUMENTS` starts with `--portfolio`, run **Portfolio mode** on the
+directory that follows. Otherwise run **Single-system mode** on `$system`, the
+first token. Flags go after it (`<system> --show-secrets`): a flag in first place
+would be read as the system name.
+
+The code is `legacy/$system`, often a symlink to where it really lives: say where it points (`readlink legacy/$system`) in one line before you start. If `legacy/$system` does not exist, stop and say so: nothing can run without the code, so the fix is `/code-modernization:modernize $system --source <path to the code>`. Run every subagent in the foreground and wait for its result: never end your turn while one is still running.
 
 ---
 
 # Portfolio mode (`--portfolio <parent-dir>`)
 
-Sweep every immediate subdirectory of the parent dir and produce a
-heat-map a steering committee can use to sequence a multi-year program.
+Sweep every immediate subdirectory and produce a heat-map a steering committee
+can use to sequence a multi-year program.
 
-**Preferred — Workflow orchestration.** If the **Workflow tool** is available
-in this session (this command invocation is your authorization), enumerate
-the immediate subdirectories first — the workflow script has no filesystem
-access — then launch one survey agent per system, all independent:
+If the **Workflow tool** is available (this command is your authorization),
+list the subdirectories first (`ls -d <parent-dir>/*/ | xargs -n1 basename`; the
+script has no filesystem access), tell the user the count (30 systems means 30
+agents), then run one survey agent per system:
 
-```bash
-ls -d <parent-dir>/*/ | xargs -n1 basename   # bare subdir names, not paths
-```
+Call it by name (the plugin registers it). If the tool does not know the name, pass `scriptPath: "${CLAUDE_PLUGIN_ROOT}/workflows/portfolio-assess.js"` instead:
 
 ```
 Workflow({
-  scriptPath: "${CLAUDE_PLUGIN_ROOT}/workflows/portfolio-assess.js",
+  name: "code-modernization:modernize-portfolio-assess",
   args: { parentDir: "<parent-dir>", systems: ["<sub1>", "<sub2>", ...] }
 })
 ```
 
-This is one agent per system (a 30-system estate = 30 agents — tell the user
-the count before launching; the runtime queues them against its concurrency
-cap). Each agent returns a structured metrics row and the workflow computes
-COCOMO-II uniformly in code, so every row uses the identical formula. On
-return, render `rows` (plus an "unmeasured" marker row for anything in
-`unmeasured`) into the Step P4 heat-map, add the sequencing recommendation
-yourself, and skip Steps P1–P3. For very long sweeps, note the workflow's
-`runId` — if the session dies mid-sweep, relaunch with `resumeFromRunId` and
-completed systems return instantly from cache.
+Each agent returns a metrics row and the workflow computes the COCOMO index in
+code, so every row uses the same formula. If the session dies mid-sweep,
+relaunch with `resumeFromRunId` and finished systems return from cache. Without
+the Workflow tool, gather the same row per system yourself.
 
-**Fallback** (no Workflow tool): run Steps P1–P3 per system yourself, then P4.
+Per system: SLOC and dominant language (`cloc --csv`, else `scc`, else `find` +
+`wc -l`), file count, complexity measured one way for every system (`scc`'s per-file
+complexity summed, divided by KSLOC, and the most complex single file; without `scc`,
+count decision keywords the same way everywhere), dependency freshness (age or pinned-version count of the
+manifest), documentation coverage (source files whose opening comment
+describes the file, not just a license, and architecture docs present), and the COCOMO index `2.94 × KSLOC^1.10`. **The
+index is a relative size measure for ranking systems, never a timeline or a cost**
+(it assumes human-team productivity): label the column "index", never print
+person-months, a date or a duration.
 
-## Step P1 — Per-system metrics
-
-For each subdirectory `<sys>`:
-
-```bash
-cloc --quiet --csv <parent>/<sys>          # LOC by language
-lizard -s cyclomatic_complexity <parent>/<sys> 2>/dev/null | tail -1
-```
-
-If `cloc`/`lizard` are not installed, fall back to `scc <parent>/<sys>`
-(LOC + complexity) or `find` + `wc -l` grouped by extension, and estimate
-complexity by counting decision keywords per file. Note which tool you used.
-
-Capture: total SLOC, dominant language, file count, mean & max
-cyclomatic complexity (CCN). For dependency freshness, locate the
-manifest (`package.json`, `pom.xml`, `*.csproj`, `requirements*.txt`,
-copybook dir) and note its age / pinned-version count.
-
-## Step P2 — COCOMO-II complexity index
-
-Compute the COCOMO-II basic figure per system: `2.94 × (KSLOC)^1.10`
-(nominal scale factors). Show the formula and inputs so it is defensible,
-not a guess.
-
-**Use this only as a relative complexity/scale index** for ranking and
-sequencing systems — bigger number = bigger, more complex estate. **It is
-not a modernization timeline or cost.** The COCOMO person-month figure
-assumes traditional human-team productivity; agentic transformation does
-not follow those productivity curves, so do not present it (or convert it)
-as how long the work will take or what it will cost. Label the column as an
-index, not "person-months", and never attach a date or duration to it.
-
-## Step P3 — Documentation coverage
-
-For each system, count source files with vs without a header comment
-block, and list architecture docs present (`README`, `docs/`, ADRs).
-Report coverage % and the top undocumented subsystems.
-
-## Step P4 — Render the heat-map
-
-Write `analysis/portfolio.html` (dark `#1e1e1e` bg, `#d4d4d4` text,
-`#cc785c` accent, system-ui font, all CSS inline). One row per system;
-columns: **System · Lang · KSLOC · Files · Mean CCN · Max CCN · Dep
-Freshness · Doc Coverage % · Complexity (COCOMO index) · Risk**. Color-grade the index and
-Risk cells (green→amber→red). Below the table, a 2-3 sentence
-sequencing recommendation: which system first and why.
-
-Then stop. Tell the user to open `analysis/portfolio.html`.
+Write `analysis/portfolio.html` (dark `#1e1e1e` background, `#d4d4d4` text,
+`#cc785c` accent, system-ui, CSS inline): one row per system, columns **System ·
+Lang · KSLOC · Files · Complexity per KSLOC · Most complex file · Dep Freshness · Doc
+Coverage % · Complexity index · Risk**, index and Risk cells graded green to red, and a
+2–3 sentence recommendation of which system goes first and why. Tell the user to
+open it, then stop.
 
 ---
 
 # Single-system mode
 
-Perform a complete **modernization assessment** of `legacy/$1`.
+Assess `legacy/$system` so a VP of Engineering could take a fact-grounded brief into a
+budget meeting.
 
-This is the discovery phase — the goal is a fact-grounded executive brief that
-a VP of Engineering could take into a budget meeting. Work in this order:
+## Step 1 — Inventory
 
-## Step 1 — Quantitative inventory
+Run `scc legacy/$system` and `scc --by-file -s complexity legacy/$system | head -25` (the most
+complex files). Use scc's COCOMO figure **only as a relative scale index** and
+ignore its "Estimated Schedule Effort" and dollar lines: they project a
+human-team timeline and budget, which are invalid for agentic modernization.
 
-Run and show the output of:
-```bash
-scc legacy/$1
-```
-Then run `scc --by-file -s complexity legacy/$1 | head -25` to identify the
-highest-complexity files. Capture scc's COCOMO figure **only as a relative
-complexity/scale index** — and **ignore scc's "Estimated Schedule Effort"
-and cost-in-dollars lines**: those project a human-team timeline and budget,
-which are invalid for agentic modernization (see the not-a-timeline note in
-Step 6).
-
-If `scc` is not installed, fall back in order:
-1. `cloc legacy/$1` for the LOC table, then compute the COCOMO-II index
-   yourself: `2.94 × (KSLOC)^1.10` (nominal scale factors). Show the
-   inputs.
-2. If `cloc` is also missing, use `find` + `wc -l` grouped by extension
-   for LOC, and rank file complexity by counting decision keywords
-   (`IF`/`EVALUATE`/`WHEN`/`PERFORM` for COBOL; `if`/`for`/`while`/`case`/
-   `catch` for C-family). Compute COCOMO from KSLOC as above.
-
-Note in the assessment which tool was used so the figures are reproducible.
+Without `scc`, use `cloc legacy/$system`, then compute the index yourself
+(`2.94 × KSLOC^1.10`); without that, `find` + `wc -l` by extension and rank
+complexity by decision keywords (`IF`/`EVALUATE`/`PERFORM` for COBOL,
+`if`/`for`/`while`/`case`/`catch` for C-family). Say which tool you used.
 
 ## Step 2 — Technology fingerprint
 
-Identify, with file evidence:
-- Languages, frameworks, and runtime versions in use
-- Build system and dependency manifest locations
-- Data stores (schemas, copybooks, DDL, ORM configs)
-- Integration points (queues, APIs, batch interfaces, screen maps)
-- Test presence and approximate coverage signal
+With file evidence: languages, frameworks and runtime versions; build system and
+manifest locations; data stores (schemas, copybooks, DDL, ORM configs);
+integration points (queues, APIs, batch interfaces, screen maps); test presence
+and rough coverage signal.
 
-## Step 3 — Parallel deep analysis
+## Step 3 — Deep analysis (three subagents, in parallel)
 
-Spawn three subagents **in parallel**:
+1. **legacy-analyst** — "Build a structural map of legacy/$system: the 5–12 major
+   functional domains (group optional subsystems under one umbrella), which
+   files belong to each, and how they depend on each other (control flow and
+   shared data). Return a markdown table and a Mermaid `graph TD` of the
+   domains, clustered with `subgraph`, at most ~40 edges. Cite repo-relative
+   paths. Flag dangling references."
+2. **legacy-analyst** — "Identify technical debt in legacy/$system: dead code,
+   deprecated APIs, duplication, god objects, missing error handling, hardcoded
+   config. Return the top 10 by remediation value, each with file:line. Mask any
+   credential value per your secret-handling rules."
+3. **security-auditor** — "Scan legacy/$system for vulnerabilities: injection, auth
+   weaknesses, hardcoded secrets, vulnerable dependencies, missing input
+   validation. Return a CWE-tagged table with file:line and severity. Mask every
+   credential (file:line plus a 2–4 character preview, never the value)."
 
-1. **legacy-analyst** — "Build a structural map of legacy/$1: what are the
-   5-12 major functional domains (group optional/feature-gated subsystems
-   under one umbrella), which source files belong to each, and how do they
-   depend on each other (control flow + shared data)? Return a markdown
-   table + a Mermaid `graph TD` of domain-level dependencies — use
-   `subgraph` to cluster and cap at ~40 edges. Cite repo-relative file
-   paths. Flag dangling references (defined but no source, or unused)."
-
-2. **legacy-analyst** — "Identify technical debt in legacy/$1: dead code,
-   deprecated APIs, copy-paste duplication, god objects/programs, missing
-   error handling, hardcoded config. Return the top 10 findings ranked by
-   remediation value, each with file:line evidence. If evidence contains a
-   credential value, mask it per your secret-handling rules — never quote
-   it."
-
-3. **security-auditor** — "Scan legacy/$1 for security vulnerabilities:
-   injection, auth weaknesses, hardcoded secrets, vulnerable dependencies,
-   missing input validation. Return findings in CWE-tagged table form with
-   file:line evidence and severity. Mask every discovered credential value
-   per your secret-handling rules — file:line plus a 2–4 character masked
-   preview, never the value itself."
-
-Wait for all three. Synthesize their findings.
+Wait for all three and synthesize.
 
 ## Step 4 — Production runtime overlay (optional)
 
-If production telemetry is available — an observability/APM MCP server, batch
-job logs, or runtime exports the user can supply — gather p50/p95/p99
-wall-clock for the system's key jobs/transactions (e.g. JCL members under
-`legacy/$1/jcl/`, scheduled batches, top API routes). Use it to:
+If telemetry exists (an APM MCP server, batch logs, runtime exports the user can
+supply), gather p50/p95/p99 for the key jobs or routes, tag each domain with its
+wall-clock cost and p99/p50 variance, and call out the highest-variance domain as
+the operational risk. Include a small Runtime Profile table. If none exists, say
+so in the assessment and move on.
 
-- Tag each functional domain from Step 3 with its production wall-clock
-  cost and **p99 variance** (p99/p50 ratio).
-- Flag the highest-variance domain as the highest operational risk —
-  this is telemetry-grounded, not a static-analysis opinion.
+## Step 5 — Documentation gaps
 
-Include a small **Runtime Profile** table (Job/Route · Domain · p50 · p95 ·
-p99 · p99/p50) in the assessment. If no telemetry is available, skip this
-step and note the gap in the assessment.
-
-## Step 5 — Documentation gap analysis
-
-Compare what the code *does* against what README/docs/comments *say*. List
-the top 5 undocumented behaviors or subsystems that a new engineer would
-need explained.
+Compare what the code *does* with what README, docs and comments *say*: list the
+top 5 behaviors or subsystems a new engineer would need explained.
 
 ## Step 6 — Write the assessment
 
-**Secrets quarantine first.** The assessment gets shared and committed —
-discovered credential values must never appear in it. If the
-security-auditor found any hardcoded credentials:
+**Secrets first.** The assessment gets shared and committed, so discovered
+credential values never appear in it. If credentials were found:
 
-1. Ensure `analysis/.gitignore` exists and contains the lines
-   `SECRETS.local.md` and `*.local.patch` (create or append as needed —
-   the patch pattern is used by `/modernize-harden`; writing both now
-   means the ignore set is complete from first contact). If the project is a
-   git repo, verify with `git check-ignore -q analysis/$1/SECRETS.local.md`
-   — do not write any findings until the check passes. If there is **no
-   git repo** (check for `.svn`/`.hg`/`CVS` too — a `.gitignore` protects
-   nothing under another VCS): refuse `--show-secrets` and write
-   `SECRETS.local.md` to `~/.modernize/$1/` instead of the project tree,
-   telling the user where it went and why.
-2. Write `SECRETS.local.md`: one row per credential — masked preview,
-   `file:line`, credential type, what it grants access to,
-   production/test guess, rotation recommendation. Only if the user passed
-   `--show-secrets`, add the raw value column here — this file only, never
-   ASSESSMENT.md.
-3. Masking applies to **every section of ASSESSMENT.md**, whichever agent
-   produced the finding — the Technical Debt section quotes hardcoded
-   config; those quotes follow the same masking rule as Security Findings.
-   The Security Findings section adds a one-line pointer:
-   "Credential inventory in SECRETS.local.md (gitignored; not for sharing)."
+1. Ensure `analysis/.gitignore` contains `SECRETS.local.md` and `*.local.patch`
+   (create or append). In a git repo, verify with
+   `git check-ignore -q analysis/$system/SECRETS.local.md` before writing any
+   finding. With no git repo (check for `.svn`, `.hg`, `CVS` too: a `.gitignore`
+   protects nothing under another VCS), refuse `--show-secrets` and write
+   `SECRETS.local.md` to `~/.modernize/$system/`, telling the user where and why.
+2. Write `SECRETS.local.md`: per credential a masked preview, `file:line`, type,
+   what it grants, production or test guess, rotation advice. Only with
+   `--show-secrets`, add a raw-value column, in this file alone.
+3. Masking applies to every section of `ASSESSMENT.md`, whichever agent produced
+   the finding (Technical Debt quotes hardcoded config too). Security Findings
+   points to "Credential inventory in SECRETS.local.md (gitignored; not for sharing)".
 
-Create `analysis/$1/ASSESSMENT.md` with these sections:
-- **Executive Summary** (3-4 sentences: what it is, how big, how risky, headline recommendation)
-- **System Inventory** (the scc table + tech fingerprint)
-- **Architecture-at-a-Glance** (the domain table; reference the diagram)
-- **Production Runtime Profile** (the runtime table from Step 4 with the highest-variance domain called out — or "no telemetry available")
-- **Technical Debt** (top 10, ranked)
-- **Security Findings** (CWE table)
-- **Documentation Gaps** (top 5)
-- **Relative Scale** (the COCOMO-II index + KSLOC as a complexity/scale signal for ranking this system against others. **Not a timeline:** state plainly that this is a relative size measure, not an estimate of how long modernization will take or what it will cost — it assumes traditional human-team productivity, which agentic transformation does not follow. Do not print person-months, a schedule, a cost, or a date.)
-- **Recommended Modernization Pattern** (one of: Rehost / Replatform / Refactor / Rearchitect / Rebuild / Replace — with one-paragraph rationale, and the command it routes to: **Replatform / Refactor-in-place same-stack version bump → `/modernize-uplift`**; Rearchitect/cross-stack → `/modernize-transform`; Rebuild → `/modernize-reimagine`)
+Write `analysis/$system/ASSESSMENT.md` with: **Executive Summary** (3–4 sentences:
+what it is, how big, how risky, the headline recommendation) · **System
+Inventory** · **Architecture at a Glance** (domain table, refer to the diagram) ·
+**Production Runtime Profile** (or "no telemetry available") · **Technical Debt**
+(top 10) · **Security Findings** (CWE table) · **Documentation Gaps** (top 5) ·
+**Relative Scale** (the index and KSLOC for ranking against other systems; state
+plainly that it is not a timeline or a cost, and print no person-months, schedule,
+cost or date) · **Recommended Modernization Pattern**: one of Rehost, Replatform,
+Refactor, Rearchitect, Rebuild, Replace, with a one-paragraph rationale and the
+command it routes to: a move to a newer version of the same technology (or its
+supporting platform) → `uplift`; a rewrite in another technology, piece by piece →
+`transform`; a rebuild on a new architecture → `reimagine`. Rehost (move as is) and
+Replace (buy or adopt a product) change no code, so no build command applies: say so,
+and say what the analysis is still good for. For Rehost, `map`, `harden` and the `preflight`
+build check show what the move must carry along; for Replace, `extract-rules` turns
+what the system does into the acceptance criteria a replacement is judged against.
 
-Also create `analysis/$1/ARCHITECTURE.mmd` containing the Mermaid domain
-dependency diagram from the legacy-analyst.
+Also write `analysis/$system/ARCHITECTURE.mmd`, the domain diagram from the
+legacy-analyst.
 
-## Step 7 — Present
+## Step 7 — Finish
 
-Tell the user the assessment is ready and suggest:
-`glow -p analysis/$1/ASSESSMENT.md`
+Refresh the report: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/build_report.py" $system`
+(a convenience: if it fails or `python3` is missing, say so in one line and carry on). Tell the user the assessment is ready
+(`analysis/$system/ASSESSMENT.md`, and the report at `analysis/$system/REPORT.html`) and
+that the next step is `/code-modernization:modernize-map $system`.

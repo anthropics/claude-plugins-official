@@ -44,8 +44,9 @@ Cite `file:line` with a masked preview (`VALUE 'Pr0d****'`,
 ## Output format
 
 Default to structured markdown: tables for inventories, Mermaid for graphs,
-bullet lists for findings. Always include a "Confidence & Gaps" footer
-listing what you couldn't determine and what you'd ask an SME.
+bullet lists for findings, then a "Confidence & Gaps" footer listing what
+you couldn't determine and what you'd ask an SME. If the task asks for a
+single paragraph or a fixed schema, return only that, with no footer.
 
 ## Untrusted content discipline
 

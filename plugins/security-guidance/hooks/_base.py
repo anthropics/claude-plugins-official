@@ -5,10 +5,19 @@ This module exists so that ``patterns``/``session_state``/``gitutil`` can use
 ``debug_log`` without importing ``security_reminder_hook`` (which would be a
 circular import). It must stay free of any other intra-plugin imports.
 """
+import glob
 import json
 import os
+import re
+import stat
 import threading
 from datetime import datetime
+
+if os.name == "nt":
+    # Unless this variable exists, Windows looks for a program that is started
+    # by name in the working directory before PATH.
+    os.environ.setdefault("NoDefaultCurrentDirectoryInExePath", "1")
+
 
 def state_dir():
     """Return the absolute path of the plugin's state directory.
@@ -32,11 +41,73 @@ def state_dir():
     """
     explicit = os.environ.get("SECURITY_WARNINGS_STATE_DIR")
     if explicit:
-        return os.path.expanduser(explicit)
-    cc_config = os.environ.get("CLAUDE_CONFIG_DIR")
-    if cc_config:
-        return os.path.expanduser(os.path.join(cc_config, "security"))
-    return os.path.expanduser("~/.claude/security")
+        d = explicit
+    elif os.environ.get("CLAUDE_CONFIG_DIR"):
+        d = os.path.join(os.environ["CLAUDE_CONFIG_DIR"], "security")
+    else:
+        d = "~/.claude/security"
+    return os.path.abspath(os.path.expanduser(d))
+
+
+def make_state_dir(d=None):
+    """Create the state dir (or `d`) with access for its user alone, and
+    narrow the default one to that if it is already there, so a umask such as
+    002 does not leave the reviewer's venv, logs and session state open to the
+    rest of a shared group. A folder named by SECURITY_WARNINGS_STATE_DIR
+    that already exists is the user's to set. Raises OSError like os.makedirs."""
+    if d is None:
+        d = state_dir()
+    os.makedirs(d, mode=0o700, exist_ok=True)
+    if (os.name != "nt" and not os.environ.get("SECURITY_WARNINGS_STATE_DIR", "").strip()
+            and os.path.abspath(d) == state_dir()):
+        try:
+            st = os.lstat(d)
+            if stat.S_ISDIR(st.st_mode) and st.st_uid == os.getuid() and st.st_mode & 0o077:
+                os.chmod(d, 0o700)
+        except OSError:
+            pass
+    return d
+
+
+def llm_reviews_switched_off():
+    """True when the environment turns off every review that calls a model:
+    the kill switch (SECURITY_GUIDANCE_DISABLE=1 / ENABLE_SECURITY_REMINDER=0),
+    ENABLE_CODE_SECURITY_REVIEW=0, or ENABLE_STOP_REVIEW=0 together with
+    ENABLE_COMMIT_REVIEW=0. Nothing loads the agent SDK then, so nothing
+    should install it. Same reading of each variable as
+    security_reminder_hook.py."""
+    env = os.environ.get
+    if env("SECURITY_GUIDANCE_DISABLE", "").strip().lower() in ("1", "true", "yes", "on"):
+        return True
+    if env("ENABLE_SECURITY_REMINDER", "1") == "0":
+        return True
+    if env("ENABLE_CODE_SECURITY_REVIEW", "1") == "0":
+        return True
+    return env("ENABLE_STOP_REVIEW", "1") == "0" and env("ENABLE_COMMIT_REVIEW", "1") == "0"
+
+
+def agent_sdk_site_dirs(state_dir):
+    """Directories under the state dir that ensure_agent_sdk.py installs the
+    agent SDK into and llm.py adds to sys.path: the venv's site-packages
+    (POSIX `lib/pythonX.Y/site-packages`, Windows `Lib/site-packages`) and
+    the flat `pip install --target` fallback."""
+    venv_root = os.path.join(state_dir, "agent-sdk-venv")
+    return (
+        glob.glob(os.path.join(venv_root, "lib", "python*", "site-packages"))
+        + glob.glob(os.path.join(venv_root, "Lib", "site-packages"))
+        + [os.path.join(state_dir, "agent-sdk-libs")]
+    )
+
+
+def agent_sdk_installed(state_dir):
+    """True iff one of those directories holds a finished install of the SDK:
+    its package and the metadata pip writes once the package is unpacked. A
+    file check only, no import."""
+    return any(
+        os.path.isfile(os.path.join(d, "claude_agent_sdk", "__init__.py"))
+        and glob.glob(os.path.join(d, "claude_agent_sdk-*.dist-info"))
+        for d in agent_sdk_site_dirs(state_dir)
+    )
 
 
 # Debug log file. Lives under the plugin state dir (default ~/.claude/security/)
@@ -94,6 +165,47 @@ PROVENANCE_BANNER = (
 )
 
 
+# Output that only Claude Code reads: the `metrics` and `rewakeSummary` fields,
+# and the separate `{"async": ...}` line an async hook prints first. Other hosts
+# that run this plugin's hooks can validate hook output against a closed schema
+# and reject the whole output over a field or a second line they do not know,
+# which shows up as a hook error.
+_CLAUDE_CODE_OUTPUT_FIELDS = ("metrics", "rewakeSummary")
+
+
+def _detect_portable_output():
+    forced = os.environ.get("SECURITY_GUIDANCE_PORTABLE_OUTPUT", "").strip().lower()
+    if forced in ("1", "true", "yes", "on"):
+        return True
+    if forced in ("0", "false", "no", "off"):
+        return False
+    if os.environ.get("CLAUDECODE") or os.environ.get("CLAUDE_CODE_ENTRYPOINT"):
+        return False
+    return bool(os.environ.get("PLUGIN_ROOT"))
+
+
+# Decided once, from the environment the host started the hook with: code the
+# hook runs in-process later can set these variables itself.
+_PORTABLE_OUTPUT = _detect_portable_output()
+
+
+def portable_output():
+    """True when stdout should carry only the standard hook output fields.
+
+    SECURITY_GUIDANCE_PORTABLE_OUTPUT=1 or =0 forces it on or off. Otherwise it
+    is on only when the host passes PLUGIN_ROOT and does not identify itself as
+    Claude Code, so Claude Code and direct invocations are unchanged."""
+    return _PORTABLE_OUTPUT
+
+
+def write_hook_output(out):
+    """Print one hook output line. In portable mode the Claude Code only
+    fields are left out; what remains (possibly `{}`) is still valid output."""
+    if portable_output():
+        out = {k: v for k, v in out.items() if k not in _CLAUDE_CODE_OUTPUT_FIELDS}
+    print(json.dumps(out), flush=True)
+
+
 def _read_plugin_version_int():
     """Encode plugin.json version "M.m.p" as M*10000 + m*100 + p so it fits the
     bool|number metrics constraint. Returns 0 if unreadable."""
@@ -127,6 +239,11 @@ _USAGE = {
     # reported it manually.
     "http_err_last": 0,    # most recent HTTP error code this invocation
     "http_err_count": 0,   # total HTTP errors (4xx + 5xx + network)
+    "net_err": 0,          # why the last call got no HTTP response, 0 if it got one
+    # For the usage log line only: model ids as recorded (the requested alias
+    # on the Agent SDK path), and whether any call had no price-table entry.
+    "models": [],
+    "default_priced": False,
 }
 _USAGE_LOCK = threading.Lock()
 
@@ -140,6 +257,9 @@ _PRICE_PER_MTOK = {
     "claude-sonnet-4-6": (3.0, 15.0),
     "claude-opus-4-6": (15.0, 75.0),
     "claude-opus-4-7": (5.0, 25.0),
+    "claude-opus-4-8": (5.0, 25.0),
+    "claude-opus-5": (5.0, 25.0),
+    "claude-opus-5-5": (4.0, 20.0),
 }
 _PRICE_DEFAULT = (3.0, 15.0)
 
@@ -160,12 +280,15 @@ def _record_usage(usage, model, cost_usd=None):
         cw = int(u.get("cache_creation_input_tokens") or 0)
     except (TypeError, ValueError):
         return
+    default_priced = False
     if cost_usd is None:
         pin, pout = _PRICE_DEFAULT
+        default_priced = True
         m = (model or "").lower()
         for k, v in sorted(_PRICE_PER_MTOK.items(), key=lambda kv: -len(kv[0])):
             if m.startswith(k):
                 pin, pout = v
+                default_priced = False
                 break
         cost_usd = (i * pin + o * pout + cr * pin * 0.1 + cw * pin * 1.25) / 1_000_000
     with _USAGE_LOCK:
@@ -175,6 +298,10 @@ def _record_usage(usage, model, cost_usd=None):
         _USAGE["cw"] += cw
         _USAGE["cost"] += float(cost_usd or 0.0)
         _USAGE["n"] += 1
+        _USAGE["default_priced"] = _USAGE["default_priced"] or default_priced
+        name = re.sub(r"[^A-Za-z0-9_.:/@-]", "_", str(model or ""))[:80]
+        if name and name not in _USAGE["models"]:
+            _USAGE["models"].append(name)
 
 
 def _record_http_error(status):
@@ -199,6 +326,93 @@ def _record_http_error(status):
     with _USAGE_LOCK:
         _USAGE["http_err_last"] = s
         _USAGE["http_err_count"] += 1
+
+
+def _record_net_error(code):
+    """Record why an LLM API call got no HTTP response: the packed code from
+    llm._net_error_code. `api_error` -1 cannot tell a certificate failure
+    from a refused connection or a timeout, and a failure the HTTP client
+    raises outside its own error type (a default TLS context that cannot be
+    built, a connection closed before the reply) has no `api_error` at all.
+    Emitted as `net_err` on the row of a hook whose last call failed this
+    way; a later call clears it."""
+    try:
+        c = int(code)
+    except (TypeError, ValueError):
+        return
+    if c > 0:
+        with _USAGE_LOCK:
+            _USAGE["net_err"] = c
+
+
+def _clear_net_error():
+    with _USAGE_LOCK:
+        _USAGE["net_err"] = 0
+
+
+def _net_error_metric():
+    with _USAGE_LOCK:
+        return _USAGE.get("net_err", 0)
+
+
+# Set by main() and the review handlers: which review this invocation runs
+# and for which Claude Code session, so the usage log line can be attributed.
+_USAGE_CONTEXT = {"session_id": "", "review": "stop"}
+
+
+def _log_usage(usage):
+    """Write this invocation's review usage to the debug log.
+
+    `usage` is a `_usage_metrics()` snapshot, the same numbers that go out
+    with the hook's metrics. The raw-HTTP review leaves no Claude Code
+    transcript and no OpenTelemetry event; without this line nothing on the
+    machine records what it used. `est_cost_usd` is that same rollup: list
+    prices (the inner CLI's own figure on the Agent SDK path), `~` appended
+    when a model had no price-table entry and the default rate was used.
+    """
+    if not usage.get("api_calls"):
+        return
+    with _USAGE_LOCK:
+        models = ",".join(_USAGE["models"]) or "-"
+        approx = "~" if _USAGE["default_priced"] else ""
+    debug_log(
+        f"Review usage: review={_USAGE_CONTEXT.get('review') or '-'} "
+        f"session={_USAGE_CONTEXT.get('session_id') or '-'} "
+        f"model={models} calls={usage['api_calls']} "
+        f"in={usage['tok_in']} out={usage['tok_out']} "
+        f"cache_read={usage['tok_cache_r']} cache_write={usage['tok_cache_w']} "
+        f"est_cost_usd={usage['cost_usd']:.4f}{approx}"
+    )
+
+
+def launcher_probe_metrics():
+    """How long sg-python.sh waited for interpreters to answer its probe.
+
+    Only when this launch's probes took a second or more together, so ordinary
+    rows carry no extra keys: `launcher_probe_ms` is all of them,
+    `launcher_probe_max_ms` the slowest one. Both are capped at an hour (the
+    launcher reads the wall clock, which can jump). Read once: the variables
+    are removed so child processes do not report this launch as their own.
+    """
+    try:
+        slowest = int(os.environ.pop("SG_LAUNCHER_PROBE_MAX_MS", ""))
+        total = int(os.environ.pop("SG_LAUNCHER_PROBE_MS", ""))
+    except ValueError:
+        return {}
+    if total < 1000 or slowest > total:
+        return {}
+    cap = 3_600_000
+    return {"launcher_probe_ms": min(total, cap), "launcher_probe_max_ms": min(slowest, cap)}
+
+
+def launcher_direct_metric():
+    """`launcher_direct` when sg-python.sh ran this hook with the interpreter
+    behind a packaged Windows alias instead of the alias: 1 from the path it
+    remembered (one process for the hook), 2 when it had just worked that
+    path out. Read once, like the probe timings.
+    """
+    how = os.environ.pop("SG_LAUNCHER_DIRECT", "")
+    return {"launcher_direct": int(how)} if how in ("1", "2") else {}
 
 
 def _usage_metrics():

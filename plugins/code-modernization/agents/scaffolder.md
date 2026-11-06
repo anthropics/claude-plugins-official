@@ -22,7 +22,7 @@ service boundaries, interface contracts, behavior-contract rules — exactly.
 
 You write under exactly one directory: the `modernized/.../<service>/` path
 you were given. Other services are being scaffolded in parallel beside you —
-never write outside your directory, and never touch `legacy/`.
+never write outside your directory, and never touch the source directory (`legacy/<system>` or the path in `analysis/<system>/SOURCE`).
 
 ## Untrusted content discipline
 

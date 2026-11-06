@@ -27,7 +27,28 @@ from pathlib import Path
 # → ~/.claude/security. See _base.state_dir for resolution precedence. Re-aliased
 # here to match the existing local name (state_dir was already a local var in
 # main() and _maybe_emit_user_notice).
-from _base import state_dir as _resolve_state_dir
+from _base import (
+    launcher_direct_metric, launcher_probe_metrics, portable_output, state_dir as _resolve_state_dir,
+    write_hook_output,
+)
+from _base import llm_reviews_switched_off, make_state_dir
+
+
+def _spawn_cwd() -> str:
+    """Working directory for every Python this file starts.
+
+    `python -c` and `python -m` put the working directory first on the import
+    path, and hooks run in the user's repository, so a repository file named
+    `claude_agent_sdk.py`, `venv.py` or `pip.py` would be imported in place
+    of the real module. The state dir is the plugin's own (the venv is built
+    there, so the interpreter can reach it); the plugin folder is the
+    fallback when it can't be created.
+    """
+    d = _resolve_state_dir()
+    try:
+        return make_state_dir(d)
+    except OSError:
+        return str(Path(__file__).resolve().parent.parent)
 
 # Outcome codes for the sdk_bootstrap metric. Values are stable for telemetry.
 NOOP_SYSTEM = 0      # claude_agent_sdk already importable in system python
@@ -55,6 +76,9 @@ SKIP_COOLDOWN = 9    # a recent build was signal-killed (memory pressure) — no
                      # repro confirmed the dominant Linux BUILD_FAILED is a
                      # SIGKILL/SIGSEGV of the memory-heavy venv+pip subprocess
                      # (rc<0, empty streams). See #2154 follow-up.
+SKIP_REVIEWS_OFF = 10  # the environment turns off every review that would
+                       # load the SDK (kill switch included), so nothing is
+                       # installed. See #5331.
 
 # How long to skip rebuilds after a signal kill. Retries at most once per
 # window so a machine whose memory frees up still recovers (just not every
@@ -231,7 +255,7 @@ def _write_cooldown(state_dir) -> None:
     """Start/refresh the signal-kill cooldown so we stop re-attempting a build
     that keeps getting killed every session. Best-effort."""
     try:
-        Path(state_dir).mkdir(parents=True, exist_ok=True)
+        make_state_dir(str(state_dir))
         (Path(state_dir) / "agent-sdk-venv.cooldown").write_text(
             time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
     except OSError:
@@ -311,7 +335,7 @@ def _probe_has_pip() -> bool:
     try:
         r = subprocess.run(
             [sys.executable, "-m", "pip", "--version"],
-            capture_output=True, timeout=10,
+            capture_output=True, timeout=10, cwd=_spawn_cwd(),
         )
         return r.returncode == 0
     except Exception:
@@ -392,6 +416,20 @@ def _pip_err_from_stderr(stderr_b):
     return f"other:{tail}" if tail else "other"
 
 
+# A package directory that has lost its files still imports, as a namespace
+# package, so a bare `import claude_agent_sdk` calls an emptied install
+# healthy and it is never rebuilt. A real install has a __file__; the probe
+# exits with _PROBE_EMPTIED when there is none. See #6612.
+_PROBE_EMPTIED = 3
+_SDK_IMPORT_PROBE = (
+    "import sys, claude_agent_sdk; "
+    f"sys.exit(0 if getattr(claude_agent_sdk, '__file__', None) else {_PROBE_EMPTIED})"
+)
+
+# Set by main() when the venv's probe exited with _PROBE_EMPTIED.
+_venv_was_emptied = False
+
+
 def _target_dir(state_dir) -> Path:
     return Path(state_dir) / "agent-sdk-libs"
 
@@ -407,9 +445,9 @@ def _target_sdk_importable(state_dir) -> bool:
     try:
         r = subprocess.run(
             [sys.executable, "-c",
-             "import sys; sys.path.insert(0, sys.argv[1]); import claude_agent_sdk",
+             "import sys; sys.path.insert(0, sys.argv[1]); " + _SDK_IMPORT_PROBE,
              str(target)],
-            capture_output=True, timeout=10,
+            capture_output=True, timeout=10, cwd=_spawn_cwd(),
         )
         return r.returncode == 0
     except Exception:
@@ -434,7 +472,7 @@ def _build_via_target(state_dir) -> tuple[int, str, str]:
              "--target", str(target), "--upgrade",
              "--disable-pip-version-check", "--prefer-binary", "--no-cache-dir",
              "claude-agent-sdk"],
-            capture_output=True, timeout=120, check=True,
+            capture_output=True, timeout=120, check=True, cwd=_spawn_cwd(),
         )
         return BUILT_TARGET, "", ""
     except subprocess.CalledProcessError as e:
@@ -451,6 +489,79 @@ def _build_via_target(state_dir) -> tuple[int, str, str]:
         if isinstance(errno, int):
             return BUILD_FAILED, "pip_target", f"exc:{type(e).__name__}:{errno}"
         return BUILD_FAILED, "pip_target", f"exc:{type(e).__name__}"
+
+
+def _near_git_repo() -> bool:
+    """Whether the session's directory is in a git work tree (a `.git` entry
+    here or above) or directly holds one (a workspace of repositories). The
+    reviews the SDK serves only run on a repository."""
+    try:
+        top = d = os.path.abspath(os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
+        while True:
+            if os.path.exists(os.path.join(d, ".git")):
+                return True
+            parent = os.path.dirname(d)
+            if parent == d:
+                break
+            d = parent
+        with os.scandir(top) as entries:
+            for i, entry in enumerate(entries):
+                if i >= 500:
+                    return True  # too large to say; not counted
+                if entry.is_dir() and os.path.exists(os.path.join(entry.path, ".git")):
+                    return True
+        return False
+    except OSError:
+        return True
+
+
+def _venv_python_version(venv) -> int:
+    """The Python the venv was built with, as major*100+minor (312), read
+    from its pyvenv.cfg; 0 if unknown."""
+    try:
+        for line in (Path(venv) / "pyvenv.cfg").read_text(errors="replace").splitlines():
+            key, _, value = line.partition("=")
+            if key.strip() in ("version", "version_info"):
+                major, minor = value.strip().split(".")[:2]
+                return int(major) * 100 + int(minor)
+    except (OSError, ValueError):
+        pass
+    return 0
+
+
+def _install_context_metrics(outcome, state_dir) -> dict:
+    """Counts that size open questions about the private SDK install; no
+    behaviour depends on them. Only when set, and the first three only on
+    rows where the install exists.
+
+    sdk_no_creds / sdk_no_git: the session holds the install while the
+    reviews it serves cannot run, for lack of model credentials or of a git
+    repository. Should the build wait for those? See #5331.
+
+    sdk_venv_py: the venv was built by another Python version than the one
+    running the hooks, which is the one that loads it; its compiled
+    dependencies do not load there. See #5706.
+
+    sdk_venv_emptied: the venv's SDK package directory had lost its files
+    and this run went on to rebuild it, whatever the outcome. See #6612."""
+    out = {}
+    if _venv_was_emptied:
+        out["sdk_venv_emptied"] = 1
+    if outcome not in (NOOP_VENV, BUILT, BUILT_TARGET, NOOP_TARGET):
+        return out
+    try:
+        import llm
+        if not llm.HAS_API_CREDENTIALS:
+            out["sdk_no_creds"] = 1
+    except Exception:
+        pass
+    if not _near_git_repo():
+        out["sdk_no_git"] = 1
+    if outcome == NOOP_VENV:
+        built_by = _venv_python_version(Path(state_dir) / "agent-sdk-venv")
+        if built_by and built_by != sys.version_info[0] * 100 + sys.version_info[1]:
+            out["sdk_venv_py"] = built_by
+    return out
 
 
 def _sdk_on_syspath() -> bool:
@@ -481,6 +592,15 @@ def main() -> tuple[int, str, str]:
     err_phase / err_kind are non-empty only on BUILD_FAILED — they let
     telemetry split bootstrap failures by root cause.
     """
+    global _venv_was_emptied
+    _venv_was_emptied = False
+    # The SDK only serves the LLM reviews. With those switched off, or the
+    # whole plugin (SECURITY_GUIDANCE_DISABLE=1), a venv of a few hundred MB
+    # would be built for code that never runs, and the notice below would
+    # advertise a reviewer the user turned off. See #5331.
+    if llm_reviews_switched_off():
+        return SKIP_REVIEWS_OFF, "", ""
+
     # Honesty check (fixes the misleading NOOP_VENV in #2071): the SDK
     # requires Python >=3.10 and uses 3.10+ syntax (match statements,
     # PEP 604 unions). On a 3.9 hook interpreter we CANNOT import it no
@@ -533,11 +653,12 @@ def main() -> tuple[int, str, str]:
     if venv_py.exists():
         try:
             r = subprocess.run(
-                [str(venv_py), "-c", "import claude_agent_sdk"],
-                capture_output=True, timeout=10,
+                [str(venv_py), "-c", _SDK_IMPORT_PROBE],
+                capture_output=True, timeout=10, cwd=_spawn_cwd(),
             )
             if r.returncode == 0:
                 return NOOP_VENV, "", ""
+            _venv_was_emptied = r.returncode == _PROBE_EMPTIED
         except Exception:
             pass  # broken venv; rebuild below
 
@@ -559,7 +680,7 @@ def main() -> tuple[int, str, str]:
     err_kind = ""
     we_own_sentinel = False
     try:
-        state_dir.mkdir(parents=True, exist_ok=True)
+        make_state_dir(str(state_dir))
         # O_EXCL makes the sentinel an atomic lock — if two SessionStarts
         # race past the exists() check above, only one creates it.
         try:
@@ -570,7 +691,7 @@ def main() -> tuple[int, str, str]:
         err_phase = "venv"
         subprocess.run(
             [sys.executable, "-m", "venv", "--clear", str(venv)],
-            capture_output=True, timeout=60, check=True,
+            capture_output=True, timeout=60, check=True, cwd=_spawn_cwd(),
         )
         # Some machines route pip through a private registry; we
         # don't pass --index-url here so we inherit that default. Outside
@@ -594,7 +715,7 @@ def main() -> tuple[int, str, str]:
             [str(venv_py), "-m", "pip", "install", "--quiet",
              "--disable-pip-version-check", "--prefer-binary", "--no-cache-dir",
              "claude-agent-sdk"],
-            capture_output=True, timeout=120, check=True,
+            capture_output=True, timeout=120, check=True, cwd=_spawn_cwd(),
         )
         return BUILT, "", ""
     except subprocess.CalledProcessError as e:
@@ -735,7 +856,7 @@ def _maybe_emit_user_notice(outcome: int, pv: int) -> str | None:
         marker = state_dir / f".agentic_unavailable_notice_v{pv or 0}"
         if marker.exists():
             return None
-        state_dir.mkdir(parents=True, exist_ok=True)
+        make_state_dir(str(state_dir))
         # Write timestamp + Python version so the marker is self-documenting
         # if a user goes looking. O_EXCL would be racier with no real win
         # (two concurrent SessionStarts both showing the notice once is fine).
@@ -765,7 +886,11 @@ if __name__ == "__main__":
     # SessionStart runs before the user's first prompt; doing this in the
     # background means the first commit-review of the session usually finds
     # the venv ready.
-    print(json.dumps({"async": True, "asyncTimeout": 180000}), flush=True)
+    #
+    # Not printed in portable mode: a host that reads stdout as one JSON
+    # document rejects a second line, and runs this hook to completion anyway.
+    if not portable_output():
+        print(json.dumps({"async": True, "asyncTimeout": 180000}), flush=True)
     t0 = time.perf_counter()
     try:
         outcome, err_phase, err_kind = main()
@@ -842,9 +967,16 @@ if __name__ == "__main__":
     # HOOK_PY_INCOMPATIBLE (whose "py_3.9" err_kind otherwise collapses to
     # err=99, losing the version). Cheap — no subprocess, just sys.version_info.
     metrics["sdk_hook_py"] = sys.version_info[0] * 100 + sys.version_info[1]
+    metrics.update(_install_context_metrics(outcome, _resolve_state_dir()))
     pv = _plugin_version_int()
     if pv:
         metrics["pv"] = pv
+    # See sg-python.sh pass 4: started by real path, the PATH names could
+    # not read the plugin files.
+    if os.environ.get("SG_LAUNCHER_FALLBACK") == "1":
+        metrics["launcher_fallback"] = 1
+    metrics.update(launcher_probe_metrics())
+    metrics.update(launcher_direct_metric())
     response: dict[str, object] = {"metrics": metrics}
     # One-time user-visible notice when the agentic reviewer is dead on
     # arrival. Uses hookSpecificOutput.additionalContext (SessionStart's
@@ -859,4 +991,4 @@ if __name__ == "__main__":
             "additionalContext": notice,
         }
         response["systemMessage"] = notice
-    print(json.dumps(response), flush=True)
+    write_hook_output(response)

@@ -55,7 +55,7 @@ Handles are phone numbers (`+15551234567`) or Apple ID emails (`them@icloud.com`
 | **Inbound** | Polls `chat.db` once a second for `ROWID > watermark`. Watermark initializes to `MAX(ROWID)` at boot — old messages aren't replayed on restart. |
 | **Outbound** | `osascript` with `tell application "Messages" to send …`. Text and chat GUID pass through argv so there's no escaping footgun. |
 | **History & search** | Direct SQLite queries against `chat.db`. Full history — not just messages since the server started. |
-| **Attachments** | `chat.db` stores absolute filesystem paths. The first inbound image per message is surfaced to the assistant as a local path it can `Read`. Outbound attachments send as separate messages after the text. |
+| **Attachments** | `chat.db` stores absolute filesystem paths. Every inbound image in a message is surfaced to the assistant as a local path it can `Read` (`image_path`, `image_path_2`, …). Outbound attachments send as separate messages after the text. |
 
 ## Environment variables
 

@@ -1,10 +1,14 @@
 import http.server
+import io
 import json
 import os
+import struct
 import subprocess
 import sys
+import sysconfig
 import threading
 import time
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -64,6 +68,15 @@ VULN_PY = (
 )
 
 
+@pytest.fixture(autouse=True)
+def _no_net_err_from_an_earlier_test():
+    """A hook is one process per event; tests that call it in-process share
+    the module's record of the last failed call."""
+    import _base
+    _base._USAGE["net_err"] = 0
+    yield
+
+
 @pytest.fixture
 def workspace(tmp_path):
     ws = tmp_path / "ws"
@@ -76,8 +89,10 @@ def workspace(tmp_path):
 class _Stub(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         n = int(self.headers.get("Content-Length") or 0)
-        if n:
-            self.rfile.read(n)
+        body = self.rfile.read(n).decode("utf-8", "replace") if n else ""
+        # Only the stub_api fixture keeps the request bodies.
+        if hasattr(self.server, "bodies"):
+            self.server.bodies.append(body)
         self.server.calls.append(self.path)
         if self.server.delay:
             time.sleep(self.server.delay)
@@ -108,6 +123,7 @@ class _Stub(http.server.BaseHTTPRequestHandler):
 def stub_api():
     srv = http.server.HTTPServer(("127.0.0.1", 0), _Stub)
     srv.calls = []
+    srv.bodies = []
     srv.status = 200
     srv.delay = 0
     srv.vulns = []
@@ -128,7 +144,8 @@ def hook_env(tmp_path, stub_api):
                         "CLAUDE_PROJECT_DIR", "HTTP_PROXY", "HTTPS_PROXY",
                         "http_proxy", "https_proxy", "ALL_PROXY", "all_proxy",
                         "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX",
-                        "CLAUDE_CODE_USE_FOUNDRY")}
+                        "CLAUDE_CODE_USE_FOUNDRY",
+                        "PLUGIN_ROOT", "SECURITY_GUIDANCE_PORTABLE_OUTPUT")}
     env.update(GIT_ENV)
     env.update({
         "SECURITY_WARNINGS_STATE_DIR": str(state),
@@ -136,6 +153,9 @@ def hook_env(tmp_path, stub_api):
         "ANTHROPIC_BASE_URL": f"http://127.0.0.1:{stub_api.server_port}",
         "NO_PROXY": "*", "no_proxy": "*",
         "SG_AGENTIC_COMMIT_REVIEW": "0",
+        # Points the plugin at a claude that does not exist, so no hook test
+        # runs this machine's own claude.
+        "SG_AGENTIC_CLI_PATH": str(tmp_path / "no-claude"),
         "SECURITY_GUIDANCE_COMMIT_REVIEW": "on",
         "SG_PUSH_SWEEP": "on",
         "PYTHONDONTWRITEBYTECODE": "1",
@@ -212,3 +232,114 @@ def ups_payload(cwd, session_id="s1"):
         "prompt": "hi",
         "cwd": str(cwd),
     }
+
+
+# ── a local Anthropic-compatible endpoint the hook can be pointed at ──────
+
+class _Gateway(http.server.BaseHTTPRequestHandler):
+    """An Anthropic-compatible endpoint. With `required` set it answers 401
+    unless that header arrives, like a LiteLLM proxy keyed on a custom header."""
+
+    def _handle(self):
+        n = int(self.headers.get("Content-Length") or 0)
+        if n:
+            self.rfile.read(n)
+        srv = self.server
+        srv.requests.append((self.command, self.path, {k.lower(): v for k, v in self.headers.items()}))
+        name, value = srv.required or (None, None)
+        if name and self.headers.get(name) != value:
+            return self._send(401, {"type": "error", "error": {
+                "type": "authentication_error", "message": "Invalid proxy server token"}})
+        if srv.status != 200:
+            return self._send(srv.status, {"type": "error", "error": {"type": "api_error"}})
+        if self.command == "GET":
+            return self._send(200, {"data": [{"id": "claude-opus-5-5"}], "has_more": False})
+        text = (srv.reply if srv.reply is not None else json.dumps(
+            {"hasVulnerabilities": bool(srv.vulns), "vulnerabilities": srv.vulns}))
+        self._send(200, {
+            "id": "msg_stub", "type": "message", "role": "assistant",
+            "model": "stub", "stop_reason": "end_turn",
+            "content": [{"type": "text", "text": text}],
+            "usage": {"input_tokens": 1, "output_tokens": 1},
+        })
+
+    do_GET = do_POST = do_HEAD = _handle
+
+    def _send(self, status, payload):
+        body = json.dumps(payload).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *a):
+        pass
+
+
+@pytest.fixture
+def gateway():
+    srv = http.server.HTTPServer(("127.0.0.1", 0), _Gateway)
+    srv.requests, srv.required, srv.status, srv.reply, srv.vulns = [], None, 200, None, []
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        yield srv
+    finally:
+        srv.shutdown()
+
+
+@pytest.fixture
+def env(hook_env, gateway):
+    e = dict(hook_env)
+    e["ANTHROPIC_BASE_URL"] = f"http://127.0.0.1:{gateway.server_port}"
+    e.pop("SECURITY_REVIEW_MODEL", None)
+    return e
+
+
+def _windows_exe(script):
+    """`script` as the bytes of a Windows .exe: Windows starts neither a
+    `#!` file nor, without a shell, a .cmd with multi-line arguments. Built
+    the way pip builds a console script: its launcher stub, then the
+    interpreter to run, then a zip holding the script as __main__.py."""
+    distlib = pytest.importorskip("pip._vendor.distlib")
+    stub = "t%s%s.exe" % ("64" if struct.calcsize("P") == 8 else "32",
+                          "-arm" if sysconfig.get_platform() == "win-arm64" else "")
+    stub = os.path.join(os.path.dirname(distlib.__file__), stub)
+    if not os.path.isfile(stub):
+        pytest.skip(f"pip has no script launcher {os.path.basename(stub)}")
+    with open(stub, "rb") as f:
+        launcher = f.read()
+    python = f'"{sys.executable}"' if " " in sys.executable else sys.executable
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr("__main__.py", script)
+    return launcher + f"#!{python}\n".encode("utf-8") + archive.getvalue()
+
+
+def write_cli(tmp_path, name, script):
+    """A stand-in for `claude` in `tmp_path` that runs the Python `script`;
+    returns its path."""
+    if os.name == "nt":
+        cli = tmp_path / f"{name}.exe"
+        cli.write_bytes(_windows_exe(script))
+    else:
+        cli = tmp_path / name
+        cli.write_text(f"#!{sys.executable}\n{script}")
+        cli.chmod(0o755)
+    return cli
+
+
+@pytest.fixture
+def failing_inner_cli(tmp_path):
+    """An inner CLI that prints a warning on stderr and exits 1; the review
+    then falls back to a single-shot call."""
+    return str(write_cli(tmp_path, "claude", (
+        "import sys\n"
+        "sys.stderr.write('claude.ai connectors are disabled\\n')\n"
+        "sys.exit(1)\n")))
+
+
+@pytest.fixture
+def agentic_env(env, failing_inner_cli):
+    pytest.importorskip("claude_agent_sdk")
+    return {**env, "SG_AGENTIC_COMMIT_REVIEW": "1", "SG_AGENTIC_CLI_PATH": failing_inner_cli}

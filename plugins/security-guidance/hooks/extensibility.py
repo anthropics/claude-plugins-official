@@ -12,11 +12,13 @@ Two extensibility points, both additive only:
 
 Discovery, in precedence order (matching CLAUDE.md / settings.json):
   - ``~/.claude/<name>``                  (user)
+  - ``$CLAUDE_CONFIG_DIR/<name>``         (user, when set to another directory)
   - ``<cwd>/.claude/<name>``              (project, committed)
   - ``<cwd>/.claude/<name>.local.<ext>``  (project local, gitignored)
 
 Managed delivery via ``managed-settings.json`` is not yet supported.
-Org admins can still push files to ``~/.claude/`` via MDM/GPO.
+Org admins can still push files to ``~/.claude/`` (or the directory
+``CLAUDE_CONFIG_DIR`` names) via MDM/GPO.
 
 Trust model:
   - The ``.md`` is repo-controlled and goes into the USER prompt (not system),
@@ -28,6 +30,9 @@ Trust model:
     built-in ones. Reminder length is capped.
   - Custom regexes are validated at load for catastrophic-backtracking
     structure and skipped (with a debug log) if they look ReDoS-prone.
+  - A project file that is a link, or sits under a ``.claude`` that is one, is
+    skipped (with a debug log). User files may be links, as dotfile managers
+    make them.
   - Built-in patterns cannot be disabled. ``ENABLE_PATTERN_RULES=0`` disables
     all pattern checks; there is no per-rule kill switch in v1.
 """
@@ -89,11 +94,32 @@ def user_patterns() -> List[Dict[str, Any]]:
 # ── claude-security-guidance.md ───────────────────────────────────────────────────────
 
 
+def _user_config_dirs() -> List[str]:
+    """User-level config directories. ``~/.claude`` always, so a file placed
+    there keeps loading; then ``CLAUDE_CONFIG_DIR`` when it names another
+    directory. Empty is treated as not set, as in ``_base.state_dir``."""
+    dirs = [os.path.expanduser(os.path.join("~", ".claude"))]
+    configured = (os.environ.get("CLAUDE_CONFIG_DIR") or "").strip()
+    if configured:
+        configured = os.path.expanduser(configured)
+        if _same_dir(configured, dirs[0]):
+            return dirs
+        dirs.append(configured)
+    return dirs
+
+
+def _same_dir(a: str, b: str) -> bool:
+    try:
+        return os.path.samefile(a, b)
+    except OSError:
+        return os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))
+
+
 def _config_paths(cwd: Optional[str], basename: str) -> List[Tuple[str, str]]:
     """Existing config file paths, lowest precedence first (so concat reads in
     precedence order user → project → project-local). Truncation is done on
     the concatenated string, so lowest-precedence content is dropped last."""
-    paths = [("User", os.path.expanduser(os.path.join("~", ".claude", basename)))]
+    paths = [("User", os.path.join(d, basename)) for d in _user_config_dirs()]
     if cwd:
         paths.append(("Project", os.path.join(cwd, ".claude", basename)))
         # claude-security-guidance.local.md / security-patterns.local.yaml
@@ -102,13 +128,30 @@ def _config_paths(cwd: Optional[str], basename: str) -> List[Tuple[str, str]]:
     return paths
 
 
+def _readable_config(path: str, cwd: Optional[str]) -> bool:
+    """Whether a config file may be read. A project file (`cwd` given) must be
+    a regular file at that very place: a link, or a `.claude` that is one,
+    would bring in text from wherever it points."""
+    if cwd is None or not os.path.lexists(path):
+        return True
+    expected = os.path.join(os.path.realpath(cwd), os.path.relpath(path, cwd))
+    real = os.path.realpath(path)
+    if os.path.normcase(real) == os.path.normcase(expected) and os.path.isfile(real):
+        return True
+    debug_log(f"extensibility: skipping {path}: a link, or not a regular file")
+    return False
+
+
 def _load_guidance(cwd: Optional[str]) -> str:
     parts = []
     for label, path in _config_paths(cwd, GUIDANCE_BASENAME):
+        if not _readable_config(path, cwd if label.startswith("Project") else None):
+            continue
         try:
             with open(path, encoding="utf-8") as f:
                 txt = f.read().strip()
-        except OSError:
+        except (OSError, UnicodeDecodeError) as e:
+            debug_log(f"extensibility: skipping {path}: {type(e).__name__}")
             continue
         if txt:
             parts.append(f"### {label} security guidance\n{txt}")
@@ -125,9 +168,14 @@ def _load_guidance(cwd: Optional[str]) -> str:
     return combined
 
 
+_GUIDANCE_END_TAG = re.compile(r"<(\s*/\s*project-security-guidance)", re.IGNORECASE)
+
+
 def _wrap_guidance(guidance: str) -> str:
     if not guidance:
         return ""
+    # The block ends at its own closing tag, not at one in the text it holds.
+    guidance = _GUIDANCE_END_TAG.sub(r"&lt;\1", guidance)
     return (
         "\n\n<project-security-guidance>\n"
         "The user has provided project-specific security guidance below. "
@@ -152,13 +200,18 @@ def _load_user_patterns(cwd: Optional[str]) -> List[Dict[str, Any]]:
         # try each supported extension.
         for ext in (".yaml", ".yml", ".json"):
             candidate = path + ext
-            data = _read_config(candidate)
-            if data is None:
+            # One unusable file is skipped on its own, so the rules from the
+            # other locations still load.
+            try:
+                if not _readable_config(candidate, cwd if label.startswith("Project") else None):
+                    continue
+                found = _rules_from_file(candidate, label)
+            except Exception as e:
+                debug_log(f"extensibility: skipping {candidate}: {type(e).__name__}: {e}")
                 continue
-            for entry in (data or {}).get("patterns", []):
-                rule = _validate_pattern(entry, source=label)
-                if rule:
-                    rules.append(rule)
+            if found is None:
+                continue
+            rules.extend(found)
             break  # found one extension; don't double-load .yaml AND .json
         if len(rules) >= PATTERN_MAX_RULES:
             break
@@ -168,8 +221,32 @@ def _load_user_patterns(cwd: Optional[str]) -> List[Dict[str, Any]]:
     return rules
 
 
+def _rules_from_file(path: str, label: str) -> Optional[List[Dict[str, Any]]]:
+    """The valid rules in one config file, or None when the file is missing
+    or does not hold a mapping with a ``patterns`` list."""
+    data = _read_config(path)
+    if data is None:
+        return None
+    entries = data.get("patterns", [])
+    if entries is None:
+        entries = []
+    if not isinstance(entries, list):
+        debug_log(
+            f"extensibility: skipping {path}: 'patterns' must be a list, "
+            f"got {type(entries).__name__}"
+        )
+        return None
+    rules = []
+    for entry in entries:
+        rule = _validate_pattern(entry, source=label)
+        if rule:
+            rules.append(rule)
+    return rules
+
+
 def _read_config(path: str) -> Optional[Dict[str, Any]]:
-    """Read a YAML or JSON config file. Returns None on missing/malformed."""
+    """Read a YAML or JSON config file. Returns None on missing/malformed,
+    and when the file parses to something other than a mapping."""
     try:
         with open(path, encoding="utf-8") as f:
             raw = f.read()
@@ -179,7 +256,7 @@ def _read_config(path: str) -> Optional[Dict[str, Any]]:
         return None
     if path.endswith(".json"):
         try:
-            return json.loads(raw)
+            return _mapping_or_none(path, json.loads(raw))
         except ValueError as e:
             debug_log(f"extensibility: skipping {path}: invalid JSON: {e}")
             return None
@@ -190,10 +267,24 @@ def _read_config(path: str) -> Optional[Dict[str, Any]]:
         debug_log(f"extensibility: skipping {path}: PyYAML not installed (use .json)")
         return None
     try:
-        return yaml.safe_load(raw)
+        return _mapping_or_none(path, yaml.safe_load(raw))
     except yaml.YAMLError as e:  # type: ignore
         debug_log(f"extensibility: skipping {path}: invalid YAML: {e}")
         return None
+
+
+def _mapping_or_none(path: str, data: Any) -> Optional[Dict[str, Any]]:
+    """A config file must hold a mapping. A scalar or a list is valid YAML or
+    JSON too (e.g. the pattern list written without its ``patterns:`` key);
+    skip that one file so the other locations still load."""
+    if isinstance(data, dict):
+        return data
+    if data is not None:
+        debug_log(
+            f"extensibility: skipping {path}: expected a mapping, "
+            f"got {type(data).__name__}"
+        )
+    return None
 
 
 def _validate_pattern(entry: Any, source: str) -> Optional[Dict[str, Any]]:
@@ -227,7 +318,7 @@ def _validate_pattern(entry: Any, source: str) -> Optional[Dict[str, Any]]:
         try:
             rule["regex"] = regex
             re.compile(regex)
-        except re.error as e:
+        except (re.error, OverflowError, RecursionError) as e:
             debug_log(f"extensibility: skipping {name}: invalid regex: {e}")
             return None
 

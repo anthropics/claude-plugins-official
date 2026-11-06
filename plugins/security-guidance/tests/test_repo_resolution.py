@@ -191,6 +191,10 @@ class TestRegexes:
         "git -c core.editor=true -C sub commit --amend",
         "git --git-dir=x/.git --work-tree=x commit -m x",
         "git --git-dir x/.git commit -m x",
+        "git --no-pager commit -m x",
+        "git -p --no-optional-locks -c user.name=x --bare commit -m x",
+        'git -c user.name="First Last" -c user.email=a@b.c commit -S -m x',
+        "git --git-dir='a b/.git' --namespace ns commit -m x",
         "cd sub && git commit -m x",
         "gt create -m x",
     ])
@@ -199,16 +203,29 @@ class TestRegexes:
 
     @pytest.mark.parametrize("cmd", [
         "git push", "git -C sub push origin main", 'git -C "a b" push',
-        "git --work-tree x push -u origin HEAD", "gt submit",
+        "git --work-tree x push -u origin HEAD", "git --no-pager push",
+        'git -c http.extraHeader="X-A: b" push', "git --config-env http.extraheader=TOK push", "gt submit",
     ])
     def test_push_re(self, cmd):
         assert hook._GIT_PUSH_RE.search(cmd)
 
-    @pytest.mark.parametrize("cmd", ["git status", "git log --oneline", "echo commit"])
+    @pytest.mark.parametrize("cmd", ["git status", "git log --oneline", "echo commit",
+                                     "git commit-graph write --reachable", "git commit-tree HEAD^{tree}",
+                                     "git log --grep commit", "git stash push",
+                                     "git log --oneline commit", "git --no-pager log --grep commit",
+                                     "git merge --no-commit topic", "git --git-dir commit status",
+                                     "git --namespace commit log", "git --help commit",
+                                     'git -c user.name="commit status'])
     def test_commit_re_negative(self, cmd):
         assert not hook._GIT_COMMIT_RE.search(cmd)
 
-    @pytest.mark.parametrize("unit", ['-c "a"', "-c 'a'", "--no-a=b", "--a=b=c=d", "--git-dir x"])
+    @pytest.mark.parametrize("cmd", ["git stash push", "git log --grep push", "git commit-graph write",
+                                     "git --no-pager stash push", "git --no-pager log push"])
+    def test_push_re_negative(self, cmd):
+        assert not hook._GIT_PUSH_RE.search(cmd)
+
+    @pytest.mark.parametrize("unit", ['-c "a"', "-c 'a'", "--no-a=b", "--a=b=c=d", "--git-dir x",
+                                      "--no-pager", "-p", '-c a="b c"', "--namespace x"])
     @pytest.mark.parametrize("regex,verb", [("_GIT_COMMIT_RE", "commit"), ("_GIT_PUSH_RE", "push")])
     def test_global_option_prefix_is_linear(self, regex, verb, unit):
         cre = getattr(hook, regex)
@@ -222,15 +239,25 @@ class TestRegexes:
 class TestHooksJson:
     def test_matchers_and_events(self):
         cfg = json.loads((HOOKS_DIR / "hooks.json").read_text())
-        assert "SubagentStop" in cfg["hooks"]
-        assert cfg["hooks"]["SubagentStop"][0]["hooks"][0]["command"] == \
-            cfg["hooks"]["Stop"][0]["hooks"][0]["command"]
+        # Stop already reviews what subagents changed during the turn.
+        assert "SubagentStop" not in cfg["hooks"]
+        stop = cfg["hooks"]["Stop"][0]["hooks"][0]
+        assert stop["command"].endswith('security_reminder_hook.py"')
+        assert stop["asyncRewake"] is True
         bash = [g for g in cfg["hooks"]["PostToolUse"] if g.get("matcher") == "Bash"][0]
-        ifs = {h.get("if") for h in bash["hooks"]}
-        assert {"Bash(git commit:*)", "Bash(git push:*)", "Bash(git -C * commit *)",
-                "Bash(git -C * push*)", "Bash(gt create:*)", "Bash(gt modify:*)",
-                "Bash(gt submit:*)"} <= ifs
+        # One entry per kind, not per spelling: when Claude Code cannot parse
+        # a command it runs every entry, so each extra entry is one more process.
+        assert [h.get("if") for h in bash["hooks"]] == [
+            "Bash(git*commit*)", "Bash(git*push*)", "Bash(gt *)"]
+        assert all(h["asyncRewake"] is True and h["rewakeMessage"] for h in bash["hooks"])
 
+    @pytest.mark.parametrize("cmd", ["git stash push", "git commit-graph write --reachable",
+                                     "git log --grep commit", "gt log"])
+    def test_other_commands_the_if_patterns_let_through_do_nothing(self, workspace, hook_env, stub_api, cmd):
+        ws, repo = workspace
+        commit_file(repo, "app.py", VULN_PY)
+        rc, so, se = run_hook(bash_payload(repo, cmd, ""), hook_env)
+        assert rc == 0 and so.strip() == "" and not stub_api.calls
 
 
 def _read_state(env):

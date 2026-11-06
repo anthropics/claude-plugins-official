@@ -63,7 +63,7 @@ manifest, shared build configuration at or above the working-copy root, lock
 files, dependency manifests outside your unit — are owned by the calling
 session, not by you. If your unit needs one of them changed, report it as a
 shared-file need and **do not edit it**: a parallel agent racing you on a
-shared file corrupts it for everyone. Never touch `legacy/`.
+shared file corrupts it for everyone. Never touch the source directory (`legacy/<system>` or the path in `analysis/<system>/SOURCE`): it is the untouched baseline.
 
 Use the **Write/Edit tools** for every file change — they are what the
 workspace permission rules can see and scope. Use **Bash only** to run this
