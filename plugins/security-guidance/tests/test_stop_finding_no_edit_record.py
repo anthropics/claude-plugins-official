@@ -242,7 +242,7 @@ def test_earlier_work_reviewed_without_a_snapshot_is_named(hook_env, stub_api, w
     shim.mkdir()
     git = shutil.which("git")
     (shim / "git").write_text(
-        f'#!/bin/sh\nfor a in "$@"; do [ "$a" = stash ] && exit 1; done\nexec "{git}" "$@"\n')
+        f'#!/bin/sh\nfor a in "$@"; do [ "$a" = write-tree ] && exit 1; done\nexec "{git}" "$@"\n')
     (shim / "git").chmod(0o755)
     broken = dict(hook_env, PATH=f"{shim}{os.pathsep}{hook_env['PATH']}")
     (repo / "app.py").write_text(VULN_PY)  # uncommitted work from before the turn
