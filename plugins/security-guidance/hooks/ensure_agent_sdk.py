@@ -28,7 +28,8 @@ from pathlib import Path
 # here to match the existing local name (state_dir was already a local var in
 # main() and _maybe_emit_user_notice).
 from _base import (
-    launcher_direct_metric, launcher_probe_metrics, portable_output, state_dir as _resolve_state_dir,
+    interp_reparse_metric, launcher_direct_metric, launcher_probe_metrics, portable_output,
+    state_dir as _resolve_state_dir,
     write_hook_output,
 )
 from _base import llm_reviews_switched_off, make_state_dir
@@ -977,6 +978,9 @@ if __name__ == "__main__":
         metrics["launcher_fallback"] = 1
     metrics.update(launcher_probe_metrics())
     metrics.update(launcher_direct_metric())
+    # Last, so it is the first key a row over Claude Code's key cap (20, 10
+    # in older versions) loses.
+    metrics.update(interp_reparse_metric())
     response: dict[str, object] = {"metrics": metrics}
     # One-time user-visible notice when the agentic reviewer is dead on
     # arrival. Uses hookSpecificOutput.additionalContext (SessionStart's
