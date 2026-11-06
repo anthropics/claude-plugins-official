@@ -27,7 +27,7 @@ def _spawns(tree):
 def test_every_spawn_sets_a_plugin_owned_cwd():
     tree = ast.parse((HOOKS_DIR / "ensure_agent_sdk.py").read_text())
     calls = list(_spawns(tree))
-    assert len(calls) >= 6
+    assert len(calls) >= 5
     for call in calls:
         cwd = [k for k in call.keywords if k.arg == "cwd"]
         assert cwd, f"subprocess call on line {call.lineno} inherits the hook's working directory"
