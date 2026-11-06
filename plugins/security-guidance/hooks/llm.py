@@ -437,7 +437,9 @@ def ensure_anthropic_reachable() -> bool:
     debug_log("Remote env: api.anthropic.com unreachable, stripping anthropic.com from NO_PROXY")
     _strip_anthropic_from_no_proxy()
     _anthropic_reachable = _probe_anthropic()
-    if not _anthropic_reachable:
+    if _anthropic_reachable:
+        _clear_net_error()  # the first probe's failure; this one got through
+    else:
         debug_log("Remote env: api.anthropic.com still unreachable after NO_PROXY scrub")
     return _anthropic_reachable
 
@@ -994,6 +996,14 @@ def can_review(session_id) -> bool:
     return HAS_API_CREDENTIALS or gateway_review_cli(session_id) is not None
 
 
+def _forget_failed_call():
+    """A review got its answer from another call running beside the one that
+    failed, so the row should not report that failure."""
+    global _last_call_claude_http_error
+    _last_call_claude_http_error = None
+    _clear_net_error()
+
+
 def _call_claude_via_sdk(prompt, output_schema, *, max_tokens=16000, model=None,
                          cli_path=None):
     """Single-turn SDK call as a substitute for the HTTP _call_claude path on
@@ -1384,6 +1394,7 @@ def _call_claude_dual_or(prompt, output_schema, *, bool_key: str, list_key: str,
             merged.append(item)
         elif item not in merged:
             merged.append(item)
+    _forget_failed_call()  # one leg got through; the other may have failed
     return {bool_key: bool(merged) or bool((ra or {}).get(bool_key)) or bool((rb or {}).get(bool_key)),
             list_key: merged}
 

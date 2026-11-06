@@ -1472,6 +1472,10 @@ def _agentic_review_with_race(
             winner, (g, v, m) = "fallback", fallback_result["r"]
         else:
             winner, (g, v, m) = "fallback", timed_out
+    if winner == "agentic" and not m.get("agentic_fallback"):
+        # The agentic run reached the model; any failure on record is the
+        # fallback's, which lost.
+        llm._forget_failed_call()
     m = {**m, **reviewer_context}  # a copy: don't mutate the callee's metrics dict
     m["race_winner"] = 1 if winner == "agentic" else 2
     m["race_delay_s"] = delay_s
