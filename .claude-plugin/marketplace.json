@@ -773,6 +773,17 @@
       "homepage": "https://cap.cloud.sap/"
     },
     {
+      "name": "champion-kit",
+      "description": "Help Claude Code champions run hackathons and office hours, find patterns worth sharing, help teammates climb the steps of AI adoption, and write a shareable AI maturity report.",
+      "author": {
+        "name": "Anthropic",
+        "email": "support@anthropic.com"
+      },
+      "source": "./plugins/champion-kit",
+      "category": "productivity",
+      "homepage": "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/champion-kit"
+    },
+    {
       "name": "chrome-devtools-mcp",
       "description": "Control and inspect a live Chrome browser from your coding agent. Record performance traces, analyze network requests, check console messages with source-mapped stack traces, and automate browser actions with Puppeteer.",
       "category": "development",
