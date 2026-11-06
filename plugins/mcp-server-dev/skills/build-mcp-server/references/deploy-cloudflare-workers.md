@@ -14,77 +14,72 @@ npm create cloudflare@latest -- my-mcp-server \
 cd my-mcp-server
 ```
 
-This pulls a minimal template with the right deps (`agents`, `zod`) and a working `wrangler.jsonc`.
+This pulls a minimal template with the right deps (`@modelcontextprotocol/server`, `agents`, `zod`) and a working `wrangler.jsonc`.
 
 ---
 
 ## `src/index.ts`
 
-Replace the template's calculator example with your tools. Use `registerTool()` (same API as the Express scaffold — the `McpServer` instance is identical):
+Replace the template's calculator example with your tools. Use `registerTool()` (same API as the Express scaffold — the `McpServer` class is identical):
 
 ```typescript
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { McpAgent } from "agents/mcp";
+import { McpServer } from "@modelcontextprotocol/server";
+import { createMcpHandler } from "agents/mcp/server";
 import { z } from "zod";
 
-export class MyMCP extends McpAgent {
-  server = new McpServer(
+// Called once per request. Always build a new McpServer here.
+function createServer() {
+  const server = new McpServer(
     { name: "my-service", version: "0.1.0" },
     { instructions: "Prefer search_items before get_item — IDs aren't guessable." },
   );
 
-  async init() {
-    this.server.registerTool(
-      "search_items",
-      {
-        description: "Search items by keyword. Returns up to `limit` matches.",
-        inputSchema: {
-          query: z.string().describe("Search keywords"),
-          limit: z.number().int().min(1).max(50).default(10),
-        },
-        annotations: { readOnlyHint: true },
-      },
-      async ({ query, limit }) => {
-        const results = await upstreamApi.search(query, limit);
-        return { content: [{ type: "text", text: JSON.stringify(results, null, 2) }] };
-      },
-    );
-  }
+  server.registerTool(
+    "search_items",
+    {
+      description: "Search items by keyword. Returns up to `limit` matches.",
+      inputSchema: z.object({
+        query: z.string().describe("Search keywords"),
+        limit: z.number().int().min(1).max(50).default(10),
+      }),
+      annotations: { readOnlyHint: true },
+    },
+    async ({ query, limit }) => {
+      const results = await upstreamApi.search(query, limit);
+      return { content: [{ type: "text", text: JSON.stringify(results, null, 2) }] };
+    },
+  );
+
+  return server;
 }
+
+const handler = createMcpHandler(createServer); // serves /mcp
 
 export default {
   fetch(request: Request, env: Env, ctx: ExecutionContext) {
-    const url = new URL(request.url);
-    if (url.pathname === "/mcp") {
-      return MyMCP.serve("/mcp").fetch(request, env, ctx);
-    }
-    return new Response("Not found", { status: 404 });
+    return handler(request, env, ctx);
   },
-};
+} satisfies ExportedHandler<Env>;
 ```
 
-`McpAgent` is Cloudflare's wrapper — it handles the streamable-HTTP transport, session routing, and Durable Object plumbing. Your code only touches `this.server`, which is the same `McpServer` class from the SDK. Everything in `tool-design.md` and `server-capabilities.md` applies unchanged.
+`createMcpHandler` from `agents/mcp/server` is Cloudflare's wrapper around the SDK's stateless handler — it adds the `/mcp` route, CORS, and Host/Origin checks. No sessions and no Durable Objects. Everything in `tool-design.md` and `server-capabilities.md` applies unchanged.
+
+Older versions of this template used `McpAgent` with a Durable Object binding and SDK v1. Don't mix the two: `McpAgent` takes a v1 `McpServer` from `@modelcontextprotocol/sdk`.
 
 ---
 
 ## `wrangler.jsonc`
 
-The template ships this. The Durable Objects block is **boilerplate** — `McpAgent` uses DO for session state. You don't interact with it directly.
+The template ships this. Nothing MCP-specific in it.
 
 ```jsonc
 {
   "name": "my-mcp-server",
   "main": "src/index.ts",
-  "compatibility_date": "2025-03-10",
-  "compatibility_flags": ["nodejs_compat"],
-  "migrations": [{ "new_sqlite_classes": ["MyMCP"], "tag": "v1" }],
-  "durable_objects": {
-    "bindings": [{ "class_name": "MyMCP", "name": "MCP_OBJECT" }]
-  }
+  "compatibility_date": "2026-07-02",
+  "compatibility_flags": ["nodejs_compat"]
 }
 ```
-
-If you rename the `MyMCP` class, update both `new_sqlite_classes` and `class_name` to match.
 
 ---
 
@@ -97,10 +92,10 @@ npx wrangler deploy  # → https://my-mcp-server.<account>.workers.dev/mcp
 
 `wrangler deploy` prints the live URL. That's the URL users paste into Claude.
 
-Secrets (upstream API keys): `npx wrangler secret put UPSTREAM_API_KEY`, then read `env.UPSTREAM_API_KEY` inside `init()`.
+Secrets (upstream API keys): `npx wrangler secret put UPSTREAM_API_KEY`, then `import { env } from "cloudflare:workers"` and read `env.UPSTREAM_API_KEY`.
 
 ---
 
 ## OAuth
 
-Cloudflare ships `@cloudflare/workers-oauth-provider` — a drop-in that handles the authorization server side (CIMD/DCR endpoints, token issuance, consent UI). It wraps your `McpAgent` and gates `/mcp` behind a token check. See `auth.md` for the protocol details; the CF template `cloudflare/ai/demos/remote-mcp-github-oauth` shows the wiring.
+Cloudflare ships `@cloudflare/workers-oauth-provider` — a drop-in that handles the authorization server side (CIMD/DCR endpoints, token issuance, consent UI). It wraps your handler and gates `/mcp` behind a token check; `getMcpAuthContext()` from `agents/mcp/server` gives the factory the signed-in user's props. See `auth.md` for the protocol details; the CF template `cloudflare/ai/demos/remote-mcp-github-oauth` shows the wiring.

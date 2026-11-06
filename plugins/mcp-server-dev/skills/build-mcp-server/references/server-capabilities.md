@@ -25,17 +25,24 @@ This is the highest-leverage one-liner in the spec. If Claude keeps misusing you
 
 ## Sampling — delegate LLM calls to the host
 
-If your tool logic needs LLM inference (summarize, classify, generate), don't ship your own model client. Ask the host to do it.
+> **Deprecated** as of protocol revision 2026-07-28 (SEP-2577). It keeps working during the deprecation window, but new servers should call their LLM provider's API directly.
+
+If your tool logic needs LLM inference (summarize, classify, generate), you can ask the host to do it. Same return-and-retry flow as `elicitation.md`:
 
 ```typescript
 // Inside a tool handler
-const result = await extra.sendRequest({
-  method: "sampling/createMessage",
-  params: {
-    messages: [{ role: "user", content: { type: "text", text: `Summarize: ${doc}` } }],
-    maxTokens: 500,
-  },
-}, CreateMessageResultSchema);
+const summary = inputResponse(ctx.mcpReq.inputResponses, "summary");
+if (summary.kind !== "sampling") {
+  return inputRequired({
+    inputRequests: {
+      summary: inputRequired.createMessage({
+        messages: [{ role: "user", content: { type: "text", text: `Summarize: ${doc}` } }],
+        maxTokens: 500,
+      }),
+    },
+  });
+}
+// summary.result is the CreateMessageResult
 ```
 
 ```python
@@ -43,20 +50,23 @@ const result = await extra.sendRequest({
 response = await ctx.sample("Summarize this document", context=doc)
 ```
 
-**Requires client support** — check `clientCapabilities.sampling` first. Model preference hints are substring-matched (`"claude-3-5"` matches any Claude 3.5 variant).
+**Requires client support** — check the client's `sampling` capability first. Model preference hints are substring-matched (`"claude-3-5"` matches any Claude 3.5 variant).
 
 ---
 
 ## Roots — query workspace boundaries
 
-Instead of hardcoding a root directory, ask the host which directories the user approved.
+> **Deprecated** as of protocol revision 2026-07-28 (SEP-2577). Prefer a tool argument, a resource URI, or host configuration (MCPB `user_config`) for directories.
+
+Ask the host which directories the user approved:
 
 ```typescript
-const caps = server.getClientCapabilities();
-if (caps?.roots) {
-  const { roots } = await server.server.listRoots();
-  // roots: [{ uri: "file:///home/user/project", name: "My Project" }]
+// Inside a tool handler
+const answer = inputResponse(ctx.mcpReq.inputResponses, "roots");
+if (answer.kind !== "roots") {
+  return inputRequired({ inputRequests: { roots: inputRequired.listRoots() } });
 }
+// answer.roots: [{ uri: "file:///home/user/project", name: "My Project" }]
 ```
 
 ```python
@@ -69,14 +79,13 @@ Particularly relevant for MCPB local servers — see `build-mcpb/references/loca
 
 ## Logging — structured, level-aware
 
-Better than stderr for remote servers. Client can filter by level.
+> **Deprecated** as of protocol revision 2026-07-28 (SEP-2577). Log to stderr (stdio servers) or to your own observability stack instead.
+
+Client can filter by level. Declare `capabilities: { logging: {} }` in the `McpServer` options first.
 
 ```typescript
 // In a tool handler
-await extra.sendNotification({
-  method: "notifications/message",
-  params: { level: "info", logger: "my-tool", data: { msg: "Processing", count: 42 } },
-});
+await ctx.mcpReq.log("info", { msg: "Processing", count: 42 }, "my-tool");
 ```
 
 ```python
@@ -92,11 +101,11 @@ Levels follow syslog: `debug`, `info`, `notice`, `warning`, `error`, `critical`,
 Client sends a `progressToken` in request `_meta`. Server emits progress notifications against it.
 
 ```typescript
-async (args, extra) => {
-  const token = extra._meta?.progressToken;
+async (args, ctx) => {
+  const token = ctx.mcpReq._meta?.progressToken;
   for (let i = 0; i < 100; i++) {
     if (token !== undefined) {
-      await extra.sendNotification({
+      await ctx.mcpReq.notify({
         method: "notifications/progress",
         params: { progressToken: token, progress: i, total: 100, message: `Step ${i}` },
       });
@@ -122,9 +131,9 @@ async def long_task(ctx: Context) -> str:
 Long tools should check the SDK-provided `AbortSignal`:
 
 ```typescript
-async (args, extra) => {
+async (args, ctx) => {
   for (const item of items) {
-    if (extra.signal.aborted) throw new Error("Cancelled");
+    if (ctx.mcpReq.signal.aborted) throw new Error("Cancelled");
     await process(item);
   }
 }
@@ -140,9 +149,9 @@ If you've registered prompts or resource templates with arguments, you can offer
 
 ```typescript
 server.registerPrompt("query", {
-  argsSchema: {
+  argsSchema: z.object({
     table: completable(z.string(), async (partial) => tables.filter(t => t.startsWith(partial))),
-  },
+  }),
 }, ...);
 ```
 
@@ -161,4 +170,4 @@ Low priority unless your prompts have many valid values.
 | Elicitation | — | `elicitation: {}` | return text, ask Claude to relay |
 | Roots | — | `roots: {}` | config env var |
 
-Check client caps via `server.getClientCapabilities()` (TS) or `ctx.session.client_params.capabilities` (fastmcp) before using the bottom three.
+Check client caps via the `clientCapabilities(ctx)` helper in `elicitation.md` (TS) or `ctx.session.client_params.capabilities` (fastmcp) before using the bottom three.

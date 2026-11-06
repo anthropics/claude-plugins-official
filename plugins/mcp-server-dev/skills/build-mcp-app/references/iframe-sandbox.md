@@ -36,7 +36,7 @@ const require = createRequire(import.meta.url);
 const bundle = readFileSync(
   require.resolve("@modelcontextprotocol/ext-apps/app-with-deps"),
   "utf8",
-).replace(/export\{([^}]+)\};?\s*$/, (_, body) =>
+).replace(/export\{([^}]+)\};?\s*$/, (_, body: string) =>
   "globalThis.ExtApps={" +
   body.split(",").map((pair) => {
     const [local, exported] = pair.split(" as ").map((s) => s.trim());
