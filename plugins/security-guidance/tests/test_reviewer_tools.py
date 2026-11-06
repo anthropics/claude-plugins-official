@@ -14,11 +14,14 @@ NO_TOOLS = {"tools": "", "strict-mcp-config": None}
 # Once an inner CLI has refused --strict-mcp-config.
 READ_ONLY_NO_MCP = {"tools": "Read,Grep,Glob", "disallowedTools": "mcp__*"}
 NO_TOOLS_NO_MCP = {"tools": "", "disallowedTools": "mcp__*"}
+# Every review start also asks for its session not to be saved.
+NOT_SAVED = {"no-session-persistence": None}
 
 
 @pytest.fixture(autouse=True)
 def strict_mcp_flag_sent(monkeypatch):
     monkeypatch.setattr(llm, "_send_strict_mcp", True)
+    monkeypatch.setattr(llm, "_send_session_flag", True)
 
 
 def test_tool_flags():
@@ -82,6 +85,7 @@ def sdk(monkeypatch, tmp_path):
     mod.AssistantMessage = type("AssistantMessage", (), {})
     monkeypatch.setitem(sys.modules, "claude_agent_sdk", mod)
     monkeypatch.setenv("SG_AGENTIC_CLI_PATH", "")
+    monkeypatch.delenv("SECURITY_GUIDANCE_PERSIST_SESSIONS", raising=False)
     monkeypatch.setenv("SECURITY_WARNINGS_STATE_DIR", str(tmp_path / "state"))
     for var in ("CONTEXT_DIR", "DEBUG_DIR", "MODEL", "ITER2", "FILTER", "NO_ADJUDICATE",
                 "DIFF_INTERSECT", "EXCLUDE_MEDIUM", "MAX_TURNS"):
@@ -95,7 +99,7 @@ def test_every_agentic_stage_gets_only_the_read_tools(sdk, tmp_path):
     # investigate, second investigate pass, refute
     assert len(sdk) == 3
     for opts in sdk:
-        assert opts["extra_args"] == READ_ONLY
+        assert opts["extra_args"] == {**READ_ONLY, **NOT_SAVED}
         assert opts["allowed_tools"] == ["Read", "Grep", "Glob"]
         assert "permission_mode" not in opts
 
@@ -104,7 +108,8 @@ def test_single_turn_sdk_review_gets_no_tools(sdk):
     schema = {"type": "object", "properties": {}}
     assert llm._call_claude_via_sdk("review this", schema) is not None
     assert len(sdk) == 1
-    assert sdk[0]["extra_args"] == NO_TOOLS and sdk[0]["allowed_tools"] == []
+    assert sdk[0]["extra_args"] == {**NO_TOOLS, **NOT_SAVED}
+    assert sdk[0]["allowed_tools"] == []
 
 
 # What Claude Code prints, before exiting 1, on a machine whose administrator
@@ -137,9 +142,9 @@ def test_agentic_review_runs_where_the_strict_mcp_flag_is_refused(managed_mcp, t
     # The refused start's line is not what child_stderr is there to count.
     assert "agentic_fallback" not in metrics and "child_stderr" not in metrics
     refused, ran = managed_mcp
-    assert [o["extra_args"] for o in refused] == [READ_ONLY]
+    assert [o["extra_args"] for o in refused] == [{**READ_ONLY, **NOT_SAVED}]
     # investigate, second investigate pass, refute
-    assert [o["extra_args"] for o in ran] == [READ_ONLY_NO_MCP] * 3
+    assert [o["extra_args"] for o in ran] == [{**READ_ONLY_NO_MCP, **NOT_SAVED}] * 3
     for opts in ran:
         assert opts["allowed_tools"] == ["Read", "Grep", "Glob"]
 
@@ -148,11 +153,11 @@ def test_single_turn_sdk_review_runs_where_the_strict_mcp_flag_is_refused(manage
     schema = {"type": "object", "properties": {}}
     assert llm._call_claude_via_sdk("review this", schema) is not None
     refused, ran = managed_mcp
-    assert [o["extra_args"] for o in refused] == [NO_TOOLS]
-    assert [o["extra_args"] for o in ran] == [NO_TOOLS_NO_MCP]
+    assert [o["extra_args"] for o in refused] == [{**NO_TOOLS, **NOT_SAVED}]
+    assert [o["extra_args"] for o in ran] == [{**NO_TOOLS_NO_MCP, **NOT_SAVED}]
     # The refusal is remembered for the rest of the hook process.
     assert llm._call_claude_via_sdk("review this", schema) is not None
-    assert len(refused) == 1 and ran[-1]["extra_args"] == NO_TOOLS_NO_MCP
+    assert len(refused) == 1 and ran[-1]["extra_args"] == {**NO_TOOLS_NO_MCP, **NOT_SAVED}
 
 
 def test_other_start_failures_are_not_retried(sdk, monkeypatch, tmp_path):
@@ -167,7 +172,7 @@ def test_other_start_failures_are_not_retried(sdk, monkeypatch, tmp_path):
     assert guidance is None and vulns == []
     assert metrics["agentic_fallback"] == "investigate:RuntimeError"
     assert llm._call_claude_via_sdk("review this", {"type": "object", "properties": {}}) is None
-    assert [o["extra_args"] for o in sdk] == [READ_ONLY, NO_TOOLS]
+    assert [o["extra_args"] for o in sdk] == [{**READ_ONLY, **NOT_SAVED}, {**NO_TOOLS, **NOT_SAVED}]
 
 
 def test_reviews_started_together_are_each_started_again(managed_mcp):
@@ -192,7 +197,7 @@ def test_reviews_started_together_are_each_started_again(managed_mcp):
     for t in threads:
         t.join(20)
     assert len(results) == 2 and None not in results
-    assert len(refused) == 2 and [o["extra_args"] for o in ran] == [NO_TOOLS_NO_MCP] * 2
+    assert len(refused) == 2 and [o["extra_args"] for o in ran] == [{**NO_TOOLS_NO_MCP, **NOT_SAVED}] * 2
 
 
 def test_review_rows_say_when_the_flag_was_left_out(managed_mcp, capsys):
@@ -205,3 +210,63 @@ def test_review_rows_say_when_the_flag_was_left_out(managed_mcp, capsys):
     assert "strict_mcp_off" not in row()
     assert llm._call_claude_via_sdk("review this", {"type": "object", "properties": {}}) is not None
     assert row()["strict_mcp_off"] == 1
+
+
+# What a Claude Code older than --no-session-persistence prints, before exiting 1.
+UNKNOWN = "error: unknown option '--no-session-persistence'"
+
+
+@pytest.fixture
+def old_cli(sdk, monkeypatch):
+    """The stand-in SDK's inner CLI now refuses --no-session-persistence
+    and, once that is gone, --strict-mcp-config: one flag per start, as
+    Claude Code does. Gives the options of the refused starts and of the
+    ones that ran."""
+    answer = sys.modules["claude_agent_sdk"].query
+    refused = []
+
+    async def query(prompt, options):
+        args = options.kwargs["extra_args"]
+        line = (UNKNOWN if "no-session-persistence" in args
+                else REFUSAL if "strict-mcp-config" in args else None)
+        if line:
+            refused.append(options.kwargs)
+            options.kwargs["stderr"](line)
+            raise RuntimeError("Command failed with exit code 1")
+        async for msg in answer(prompt, options):
+            yield msg
+
+    monkeypatch.setattr(sys.modules["claude_agent_sdk"], "query", query)
+    return refused, sdk
+
+
+def test_agentic_review_runs_where_both_flags_are_refused(old_cli, tmp_path):
+    _, vulns, metrics = llm.agentic_review(str(tmp_path), [("a.py", "+x = 1\n")], ["a.py"])
+    assert len(vulns) == 1
+    assert "agentic_fallback" not in metrics and "child_stderr" not in metrics
+    refused, ran = old_cli
+    assert [o["extra_args"] for o in refused] == [{**READ_ONLY, **NOT_SAVED}, READ_ONLY]
+    assert [o["extra_args"] for o in ran] == [READ_ONLY_NO_MCP] * 3
+
+
+def test_single_turn_sdk_review_runs_where_both_flags_are_refused(old_cli):
+    schema = {"type": "object", "properties": {}}
+    assert llm._call_claude_via_sdk("review this", schema) is not None
+    refused, ran = old_cli
+    assert [o["extra_args"] for o in refused] == [{**NO_TOOLS, **NOT_SAVED}, NO_TOOLS]
+    assert [o["extra_args"] for o in ran] == [NO_TOOLS_NO_MCP]
+    # Both refusals are remembered for the rest of the hook process.
+    assert llm._call_claude_via_sdk("review this", schema) is not None
+    assert len(refused) == 2 and ran[-1]["extra_args"] == NO_TOOLS_NO_MCP
+
+
+def test_a_flag_refused_again_after_it_was_left_out_is_not_retried(sdk, monkeypatch):
+    async def query(prompt, options):
+        sdk.append(options.kwargs)
+        options.kwargs["stderr"](UNKNOWN)
+        raise RuntimeError("Command failed with exit code 1")
+        yield
+
+    monkeypatch.setattr(sys.modules["claude_agent_sdk"], "query", query)
+    assert llm._call_claude_via_sdk("review this", {"type": "object", "properties": {}}) is None
+    assert [o["extra_args"] for o in sdk] == [{**NO_TOOLS, **NOT_SAVED}, NO_TOOLS]

@@ -166,7 +166,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/gemini-cli-extensions/alloydb.git",
-        "sha": "2954566c7f791d0cef47cabeae76f7a75dd42f2b"
+        "sha": "f9b3280bdcfe8910451f00b2a40eb32685766cd1"
       },
       "homepage": "https://cloud.google.com/alloydb"
     },
@@ -306,7 +306,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/astronomer/agents.git",
-        "sha": "486ee63d01f8126c52fbc92c36cd36ec31708dcd"
+        "sha": "35b9610bb2710c37ca11326c4cbf7818b6725fec"
       },
       "homepage": "https://github.com/astronomer/agents"
     },
@@ -773,6 +773,17 @@
       "homepage": "https://cap.cloud.sap/"
     },
     {
+      "name": "champion-kit",
+      "description": "Help Claude Code champions run hackathons and office hours, find patterns worth sharing, help teammates climb the steps of AI adoption, and write a shareable AI maturity report.",
+      "author": {
+        "name": "Anthropic",
+        "email": "support@anthropic.com"
+      },
+      "source": "./plugins/champion-kit",
+      "category": "productivity",
+      "homepage": "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/champion-kit"
+    },
+    {
       "name": "chrome-devtools-mcp",
       "description": "Control and inspect a live Chrome browser from your coding agent. Record performance traces, analyze network requests, check console messages with source-mapped stack traces, and automate browser actions with Puppeteer.",
       "category": "development",
@@ -1176,7 +1187,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/crowdsecurity/crowdsec-skill.git",
-        "sha": "8802dbe68a0552fe55dc605b6278f57e57578526"
+        "sha": "9bca8a76de2cbf5e6b70a8b2cfeadeffe53512da"
       },
       "homepage": "https://www.crowdsec.net"
     },
@@ -1261,7 +1272,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/astronomer/agents.git",
-        "sha": "486ee63d01f8126c52fbc92c36cd36ec31708dcd"
+        "sha": "35b9610bb2710c37ca11326c4cbf7818b6725fec"
       },
       "homepage": "https://github.com/astronomer/agents"
     },
@@ -1285,7 +1296,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/astronomer/agents.git",
-        "sha": "486ee63d01f8126c52fbc92c36cd36ec31708dcd"
+        "sha": "35b9610bb2710c37ca11326c4cbf7818b6725fec"
       },
       "homepage": "https://github.com/astronomer/agents"
     },
@@ -1314,7 +1325,7 @@
         "url": "https://github.com/databricks/databricks-agent-skills.git",
         "path": "plugins/databricks/claude",
         "ref": "main",
-        "sha": "e77e37e8a4dabbe2662b680c180bb72a05eca48d"
+        "sha": "c1964266c7aa6063d89036691d0594420ffa0129"
       },
       "homepage": "https://developers.databricks.com/"
     },
@@ -1463,7 +1474,7 @@
         "url": "https://github.com/dropbox/dropbox-ai-plugins.git",
         "path": "claude",
         "ref": "main",
-        "sha": "60cea151b269e9ab47266279d80839c471e0d8c6"
+        "sha": "078f0ca36df40f054829b58731a5f86a561d9668"
       },
       "homepage": "https://www.dropbox.com"
     },
@@ -1801,10 +1812,10 @@
       "category": "development",
       "source": {
         "source": "git-subdir",
-        "url": "https://github.com/greptileai/claude-plugin.git",
+        "url": "https://github.com/greptileai/skills.git",
         "path": "plugins/greptile",
-        "ref": "greptile--v1.2.3",
-        "sha": "f0b7379ca06e40896fdae93fe166e851d1c9db67"
+        "ref": "greptile--v1.3.1",
+        "sha": "4a13eb124ab175d018869fe7cc4d203e374571dc"
       },
       "homepage": "https://www.greptile.com/docs/mcp-v2/overview"
     },
@@ -2296,7 +2307,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/lusha-oss/lusha-mcp-plugin.git",
-        "sha": "c3017a3d6831e444b781044337f0394e76b12d89"
+        "sha": "4bcf5c743d5799d7c02727dd991585208f7a47b1"
       },
       "homepage": "https://www.lusha.com"
     },
@@ -2425,7 +2436,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/MicrosoftDocs/mcp.git",
-        "sha": "f8ffde185dfd232dbf5d187c22ce299eadc3d583"
+        "sha": "f0a9478a954c9b3a7c6525a5183466902ca60731"
       },
       "homepage": "https://github.com/microsoftdocs/mcp"
     },
@@ -2976,7 +2987,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/postmanlabs/postman-plugin.git",
-        "sha": "c6352ef5605cd46d3f817e15c601eeb9a56c08f7"
+        "sha": "1fdd3f1e2736c7cb83780a221cb9f83641215ab7"
       },
       "homepage": "https://github.com/postmanlabs/postman-plugin"
     },
@@ -3013,7 +3024,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/prisma/claude-plugin.git",
-        "sha": "815dbc4a045a29e3b81510ba0e3ab806f1baaf0e"
+        "sha": "82edd74d81892bcccf7294cbbf76752d76391da5"
       },
       "homepage": "https://prisma.io"
     },
@@ -3310,15 +3321,18 @@
     },
     {
       "name": "runway-api",
-      "description": "Video generation at scale. Generate videos, images, and audio with Runway's API — batch ad campaigns, product videos, multishot stories, and creative iteration. Supports seedance2, gen4.5, veo3, Nano, Banana Pro, and more.",
+      "displayName": "Runway Dev",
+      "description": "Get guidance for integrating video, image and audio generation with the Runway API and official SDKs. Connect to your Runway Dev account to inspect available models and task errors, manage Model Routers and existing real-time avatars, and inspect recorded routing decisions.",
       "author": {
         "name": "Runway"
       },
       "category": "design",
       "source": {
-        "source": "url",
+        "source": "git-subdir",
         "url": "https://github.com/runwayml/skills.git",
-        "sha": "e3dffc15498e9588e7815f37b9ecf10e8bc2c902"
+        "path": "claude",
+        "ref": "main",
+        "sha": "6e98d3f3540705331acd748d75427f4bd7c90ce1"
       },
       "homepage": "https://runwayml.com"
     },
@@ -3367,7 +3381,7 @@
         "url": "https://github.com/forcedotcom/sf-skills.git",
         "path": "plugins/builder/salesforce-development",
         "ref": "main",
-        "sha": "3c15867bdb9dacd515960174c661c706d041bb63"
+        "sha": "d3088edf8776a3c23f55aadead587eb3903be2d3"
       },
       "homepage": "https://github.com/forcedotcom/sf-skills/tree/main/plugins/builder/salesforce-development"
     },
@@ -3485,7 +3499,7 @@
     {
       "name": "security-guidance",
       "description": "Security review for Claude-generated code. Pattern-based warnings on edits, LLM-powered diff review on Stop, and an agentic commit reviewer that catches injection, XSS, SSRF, hardcoded secrets, and 25+ other vulnerability classes.",
-      "version": "2.0.15",
+      "version": "2.0.17",
       "author": {
         "name": "Anthropic",
         "email": "support@anthropic.com"
@@ -3773,7 +3787,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/confluentinc/agent-skills.git",
-        "sha": "f3d95b7e6855b690b7670ecee033404e082ab169"
+        "sha": "204b36f10e9be41819557988e8f5291711fda986"
       },
       "homepage": "https://www.confluent.io"
     },
@@ -3942,7 +3956,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/twilio/ai.git",
-        "sha": "8aba46fb65dc8d9a20f4b301a68352064b4159a5"
+        "sha": "803790a281f0ef11d2928ffb41bc8422237fb434"
       },
       "homepage": "https://www.twilio.com"
     },
@@ -4071,7 +4085,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/EpicGames/unreal-engine-skills-for-claude-code-plugin.git",
-        "sha": "a6aa73ada02a9fb1f5415bec491f9942c519b297"
+        "sha": "0e27bde2b55c5d3f6948532f4296aaa3654d8f4b"
       },
       "homepage": "https://dev.epicgames.com/documentation/unreal-engine/unreal-mcp-in-unreal-editor"
     },
@@ -4224,6 +4238,21 @@
       "homepage": "https://workos.com"
     },
     {
+      "name": "xcode",
+      "displayName": "Xcode",
+      "description": "Work with Xcode projects from Claude Code: build, run, and test schemes, render SwiftUI previews, drive simulators and devices, read build logs and diagnostics, and search Apple developer documentation.",
+      "author": {
+        "name": "Apple Inc."
+      },
+      "category": "development",
+      "source": {
+        "source": "command",
+        "command": "xcrun agent plugin path --plugin-format claude",
+        "mode": "link"
+      },
+      "homepage": "https://developer.apple.com/xcode/"
+    },
+    {
       "name": "youdotcom-agent-skills",
       "description": "You.com agent skills for web search, research with citations, and content extraction. Guided integrations for Vercel AI SDK, Claude Agent SDK, OpenAI Agents SDK, crewAI, LangChain, Microsoft Teams.ai, direct REST API, and bash CLI.",
       "author": {
@@ -4246,7 +4275,7 @@
         "url": "https://github.com/zapier/zapier-mcp.git",
         "path": "plugins/zapier",
         "ref": "main",
-        "sha": "5360f152b96735712e5f925ad728732cb86888df"
+        "sha": "54a12277a12c60df51ec16cf4e4ef0b27b166649"
       },
       "homepage": "https://github.com/zapier/zapier-mcp/tree/main/plugins/zapier"
     },
@@ -4314,7 +4343,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/zscaler/zscaler-mcp-server.git",
-        "sha": "809f68d6c921e0829fb2e07e9b797e7e70cf720b"
+        "sha": "6340cd24087a5681bc9ca2ba1c477748fbcc7bcb"
       },
       "homepage": "https://github.com/zscaler/zscaler-mcp-server"
     },

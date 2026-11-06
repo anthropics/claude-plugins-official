@@ -6,9 +6,10 @@ import pytest
 
 from conftest import (
     GIT_ENV, STUB_VULN, VULN_PY, git, make_repo, metrics_of, run_hook,
-    stop_payload, ups_payload,
+    stop_payload, ups_payload, write_cli,
 )
 
+import diffstate
 import gitutil
 
 
@@ -160,3 +161,313 @@ def test_commit_range_diff_does_not_enter_nested_repo(outer, marker, git_env, tm
 
     assert not ext_marker.exists() and not marker.exists()
     assert "lib.py" not in (out or "")
+
+
+def _record_during_turn(outer, marker, commit):
+    _add_nested_repo(outer, "vendor/pkg", marker)
+    (outer / "app.py").write_text(VULN_PY)
+    git(outer, "add", "-A")
+    if commit:
+        git(outer, "commit", "-q", "-m", "wip")
+    marker.unlink(missing_ok=True)  # only what the hooks run counts
+
+
+@pytest.mark.parametrize("finding", [False, True], ids=["no-finding", "finding"])
+@pytest.mark.parametrize("commit", [False, True], ids=["staged", "committed"])
+def test_nested_repo_recorded_during_the_turn_filter_not_run(
+        outer, marker, hook_env, stub_api, commit, finding):
+    stub_api.vulns = [STUB_VULN] if finding else []
+    ran_at = []
+
+    def hook(name, payload):
+        rc, out, err = run_hook(payload, hook_env)
+        # 2 is a Stop that hands a finding back.
+        assert rc == (2 if finding and name.startswith("stop") else 0), (name, out, err)
+        if marker.exists():
+            ran_at.append(name)
+            marker.unlink()
+
+    hook("prompt 1", ups_payload(outer))
+    _record_during_turn(outer, marker, commit)
+    hook("stop 1", stop_payload(outer))
+    hook("prompt 2", ups_payload(outer))
+    (outer / "app.py").write_text(VULN_PY + "# one more edit\n")
+    hook("stop 2", stop_payload(outer))
+    hook("prompt 3", ups_payload(outer))
+
+    assert ran_at == []
+    assert stub_api.calls  # the turn's own edit is still reviewed
+
+
+@pytest.mark.skipif(os.name == "nt", reason="'*' is not allowed in Windows file names")
+@pytest.mark.parametrize("commit", [False, True], ids=["staged", "committed"])
+def test_glob_shaped_file_name_beside_recorded_nested_repo(
+        outer, marker, hook_env, stub_api, commit):
+    assert run_hook(ups_payload(outer), hook_env)[0] == 0
+    _record_during_turn(outer, marker, commit)
+    (outer / "vendor" / "p*").write_text("x = 1\n")
+    (outer / "new.py").write_text(VULN_PY)
+
+    rc, out, err = run_hook(stop_payload(outer), hook_env)
+
+    assert not marker.exists(), marker.read_text()
+    assert stub_api.calls, (rc, out, err)
+
+
+def _index_copies():
+    return [f for _, _, files in os.walk(tempfile.gettempdir()) for f in files
+            if f.startswith(gitutil._TEMP_INDEX_PREFIX)]
+
+
+def _index_entries(repo, env=None):
+    return subprocess.run(
+        ["git", "ls-files", "-s"], cwd=repo, capture_output=True, text=True,
+        env=env, check=True,
+    ).stdout
+
+
+@pytest.mark.parametrize("subdir", ["", "src"])
+def test_index_copy_has_no_gitlinks_and_real_index_is_unchanged(
+        outer, marker, git_env, subdir):
+    (outer / "src").mkdir()
+    (outer / "src" / "a.py").write_text("x = 1\n")
+    _add_nested_repo(outer, "src/third party/dep", marker)
+    _record_nested_repo(outer, marker)
+    real = outer / ".git" / "index"
+    before = (real.read_bytes(), real.stat().st_mtime_ns)
+
+    with gitutil._temp_index(str(outer / subdir), untracked_paths=[]) as env:
+        assert env is not None
+        assert len(_index_copies()) == 1
+        copy = _index_entries(outer, env)
+        copy_mtime = os.stat(env["GIT_INDEX_FILE"]).st_mtime_ns
+
+    assert "160000" not in copy
+    assert "app.py" in copy and "src/a.py" in copy
+    assert copy_mtime == before[1]
+    assert (real.read_bytes(), real.stat().st_mtime_ns) == before
+    assert _index_entries(outer).count("160000") == 2
+    assert not marker.exists()
+
+
+def test_baseline_and_diff_with_recorded_nested_repo(outer, marker, git_env):
+    nested = _record_nested_repo(outer, marker)
+    (nested / "lib.py").write_text("print('abc')\n")
+    (outer / "app.py").write_text(VULN_PY)
+    (outer / "new.py").write_text("x = 1\n")
+
+    baseline = diffstate.capture_git_baseline(str(outer))
+    diff = gitutil.get_git_diff(str(outer), "HEAD", untracked_paths=["new.py"])
+    since = gitutil.get_git_diff(str(outer), baseline, untracked_paths=["new.py"])
+    # The snapshot has no entry for the nested repository; the real index does.
+    tracked_since = gitutil.get_git_diff(str(outer), baseline, untracked_paths=[])
+    names_since = gitutil._git_name_only(str(outer), baseline)
+
+    # The baseline is a snapshot with the edit in it, not HEAD.
+    assert baseline and baseline != git(outer, "rev-parse", "HEAD").strip()
+    assert "app.py" in diff and "new.py" in diff and "vendor/pkg" not in diff
+    assert "new.py" in since and "app.py" not in since and "vendor/pkg" not in since
+    assert tracked_since == "" and "vendor/pkg" not in names_since
+    assert not marker.exists()
+
+
+def test_whole_tree_index_copy_with_recorded_nested_repo(outer, marker, git_env):
+    nested = _record_nested_repo(outer, marker)
+    (nested / "lib.py").write_text("print('abc')\n")
+    (outer / "new.py").write_text("x = 1\n")
+
+    with gitutil._temp_index(str(outer)) as env:
+        assert env is not None
+        copy = _index_entries(outer, env)
+
+    assert "new.py" in copy and "160000" not in copy
+    assert not marker.exists()
+
+
+def test_no_index_copy_when_gitlinks_cannot_be_removed(
+        outer, marker, git_env, monkeypatch):
+    _record_nested_repo(outer, marker)
+    (outer / "app.py").write_text(VULN_PY)
+    real_run = subprocess.run
+
+    def run(cmd, *a, **kw):
+        if "update-index" in cmd:
+            return subprocess.CompletedProcess(cmd, 1, b"", b"no")
+        return real_run(cmd, *a, **kw)
+
+    monkeypatch.setattr(gitutil.subprocess, "run", run)
+
+    with gitutil._temp_index(str(outer), untracked_paths=[]) as env:
+        assert env is None
+    # Without the copy the baseline is HEAD.
+    assert diffstate.capture_git_baseline(str(outer)) == git(outer, "rev-parse", "HEAD").strip()
+    assert diffstate.last_baseline_fail == 2
+    assert not marker.exists()
+    assert _index_copies() == []
+
+
+@pytest.mark.skipif(os.name == "nt", reason="':' and '*' are not allowed in Windows file names")
+def test_untracked_file_name_is_not_read_as_a_pattern(outer, git_env):
+    name = ":(glob)**"
+    (outer / name).write_text("x = 1\n")
+    (outer / "other.py").write_text("x = 2\n")
+
+    with gitutil._temp_index(str(outer), [name]) as env:
+        copy = _index_entries(outer, env)
+
+    assert name in copy and "other.py" not in copy
+
+
+def test_gitlink_without_a_repository_stays_in_the_copy(outer, marker, git_env):
+    """A submodule that is not checked out: an empty directory."""
+    nested = _record_nested_repo(outer, marker)
+    # Moved, not deleted: git's object files are read-only on Windows.
+    nested.rename(outer.parent / "moved-away")
+    nested.mkdir()
+    (outer / "app.py").write_text(VULN_PY)
+
+    with gitutil._temp_index(str(outer), untracked_paths=[]) as env:
+        copy = _index_entries(outer, env)
+    baseline = diffstate.capture_git_baseline(str(outer))
+
+    assert "160000" in copy
+    assert baseline and baseline != git(outer, "rev-parse", "HEAD").strip()
+    assert diffstate.last_baseline_fail == 0
+
+
+def test_gitlinks_listed_by_a_git_without_sparse_listing(outer, marker, git_env, monkeypatch):
+    _record_nested_repo(outer, marker)
+    real_popen = subprocess.Popen
+    seen = []
+
+    def popen(cmd, *a, **kw):
+        if "ls-files" in cmd and "-z" in cmd:  # the plugin's own listing
+            seen.append("--sparse" in cmd)
+        if "--sparse" in cmd:
+            cmd = [*gitutil.GIT_CMD, "ls-files", "--no-such-option"]
+        return real_popen(cmd, *a, **kw)
+
+    monkeypatch.setattr(gitutil.subprocess, "Popen", popen)
+    monkeypatch.setattr(gitutil, "_ls_files_sparse", True)
+
+    for _ in range(2):
+        with gitutil._temp_index(str(outer), untracked_paths=[]) as env:
+            assert "160000" not in _index_entries(outer, env)
+
+    assert seen == [True, False, False]
+
+
+def test_no_index_copy_when_the_listing_cannot_be_watched(outer, marker, git_env, monkeypatch):
+    _record_nested_repo(outer, marker)
+
+    def no_thread(self):
+        raise RuntimeError("can't start new thread")
+
+    monkeypatch.setattr(gitutil.threading.Timer, "start", no_thread)
+
+    with gitutil._temp_index(str(outer), untracked_paths=[]) as env:
+        assert env is None
+    assert _index_copies() == []
+
+
+def _listings(monkeypatch):
+    """Counts the plugin's own `git ls-files` runs."""
+    real_popen = subprocess.Popen
+    seen = []
+
+    def popen(cmd, *a, **kw):
+        if "ls-files" in cmd and "-z" in cmd:
+            seen.append(cmd)
+        return real_popen(cmd, *a, **kw)
+
+    monkeypatch.setattr(gitutil.subprocess, "Popen", popen)
+    return seen
+
+
+def test_index_without_gitlinks_is_not_listed(outer, git_env, monkeypatch):
+    for i in range(300):
+        (outer / f"f{i}.py").write_text(f"x = {i}\n")
+    git(outer, "add", "-A")
+    seen = _listings(monkeypatch)
+
+    with gitutil._temp_index(str(outer), untracked_paths=[]) as env:
+        assert env is not None
+
+    assert seen == []
+
+
+@pytest.mark.parametrize("setup", [
+    [],
+    [("config", "index.version", "4")],
+    [("config", "core.splitIndex", "true")],
+    [("config", "feature.manyFiles", "true")],
+], ids=["default", "index-v4", "split-index", "many-files"])
+def test_gitlink_found_in_every_index_format(outer, marker, git_env, monkeypatch, setup):
+    for args in setup:
+        git(outer, *args)
+    for i in range(50):
+        (outer / f"f{i}.py").write_text(f"x = {i}\n")
+    git(outer, "add", "-A")
+    git(outer, "commit", "-q", "-m", "files")
+    nested = _record_nested_repo(outer, marker)
+    # One more index write after the gitlink went in.
+    (outer / "later.py").write_text("x = 1\n")
+    git(outer, "add", "later.py")
+    marker.unlink(missing_ok=True)
+    (nested / "lib.py").write_text("print('abc')\n")
+    (outer / "app.py").write_text(VULN_PY)
+    seen = _listings(monkeypatch)
+
+    with gitutil._temp_index(str(outer), untracked_paths=[]) as env:
+        copy = _index_entries(outer, env)
+    baseline = diffstate.capture_git_baseline(str(outer))
+
+    assert seen and "160000" not in copy and "later.py" in copy
+    assert baseline != git(outer, "rev-parse", "HEAD").strip()
+    assert not marker.exists()
+
+
+def _signed_head(repo, tmp_path, marker):
+    """Make HEAD a commit that carries a signature, with log.showSignature on
+    and gpg.program naming a stand-in that leaves a line in `marker`."""
+    program = write_cli(tmp_path, "signature-check", (
+        "import sys\n"
+        f"open({str(marker)!r}, 'a').write('ran\\n')\n"
+        "sys.exit(1)\n"))
+    head = git(repo, "rev-parse", "HEAD").strip()
+    tree = git(repo, "rev-parse", "HEAD^{tree}").strip()
+    who = "t <t@example.com> 1800000000 +0000"
+    commit = (
+        f"tree {tree}\nparent {head}\nauthor {who}\ncommitter {who}\n"
+        "gpgsig -----BEGIN PGP SIGNATURE-----\n \n xx\n"
+        " -----END PGP SIGNATURE-----\n\nsigned\n")
+    sha = subprocess.run(
+        ["git", "hash-object", "-t", "commit", "-w", "--stdin"], cwd=repo,
+        input=commit.encode(), capture_output=True, check=True,
+    ).stdout.decode().strip()
+    git(repo, "update-ref", "--create-reflog", "-m", "commit: signed", "HEAD", sha)
+    git(repo, "config", "log.showSignature", "true")
+    git(repo, "config", "gpg.program", str(program))
+    return sha
+
+
+def test_reading_the_reflog_does_not_check_signatures(outer, marker, tmp_path, git_env):
+    sha = _signed_head(outer, tmp_path, marker)
+    # The stand-in does run for a plain `git log` in this repository.
+    git(outer, "log", "-1")
+    assert marker.exists()
+    marker.unlink()
+
+    fresh, _stale = gitutil._git_reflog_recent_commits(str(outer), max_age_s=10**10)
+
+    assert sha in fresh
+    assert not marker.exists(), marker.read_text()
+
+
+def test_reviewer_environment_turns_signature_display_off(outer, marker, tmp_path, git_env):
+    _signed_head(outer, tmp_path, marker)
+
+    gitutil.apply_safe_git_env()
+    git(outer, "log", "-1")
+
+    assert not marker.exists(), marker.read_text()

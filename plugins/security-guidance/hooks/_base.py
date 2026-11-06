@@ -9,8 +9,15 @@ import glob
 import json
 import os
 import re
+import stat
 import threading
 from datetime import datetime
+
+if os.name == "nt":
+    # Unless this variable exists, Windows looks for a program that is started
+    # by name in the working directory before PATH.
+    os.environ.setdefault("NoDefaultCurrentDirectoryInExePath", "1")
+
 
 def state_dir():
     """Return the absolute path of the plugin's state directory.
@@ -40,6 +47,26 @@ def state_dir():
     else:
         d = "~/.claude/security"
     return os.path.abspath(os.path.expanduser(d))
+
+
+def make_state_dir(d=None):
+    """Create the state dir (or `d`) with access for its user alone, and
+    narrow the default one to that if it is already there, so a umask such as
+    002 does not leave the reviewer's venv, logs and session state open to the
+    rest of a shared group. A folder named by SECURITY_WARNINGS_STATE_DIR
+    that already exists is the user's to set. Raises OSError like os.makedirs."""
+    if d is None:
+        d = state_dir()
+    os.makedirs(d, mode=0o700, exist_ok=True)
+    if (os.name != "nt" and not os.environ.get("SECURITY_WARNINGS_STATE_DIR", "").strip()
+            and os.path.abspath(d) == state_dir()):
+        try:
+            st = os.lstat(d)
+            if stat.S_ISDIR(st.st_mode) and st.st_uid == os.getuid() and st.st_mode & 0o077:
+                os.chmod(d, 0o700)
+        except OSError:
+            pass
+    return d
 
 
 def llm_reviews_switched_off():
@@ -212,6 +239,7 @@ _USAGE = {
     # reported it manually.
     "http_err_last": 0,    # most recent HTTP error code this invocation
     "http_err_count": 0,   # total HTTP errors (4xx + 5xx + network)
+    "net_err": 0,          # why the last call got no HTTP response, 0 if it got one
     # For the usage log line only: model ids as recorded (the requested alias
     # on the Agent SDK path), and whether any call had no price-table entry.
     "models": [],
@@ -300,6 +328,33 @@ def _record_http_error(status):
         _USAGE["http_err_count"] += 1
 
 
+def _record_net_error(code):
+    """Record why an LLM API call got no HTTP response: the packed code from
+    llm._net_error_code. `api_error` -1 cannot tell a certificate failure
+    from a refused connection or a timeout, and a failure the HTTP client
+    raises outside its own error type (a default TLS context that cannot be
+    built, a connection closed before the reply) has no `api_error` at all.
+    Emitted as `net_err` on the row of a hook whose last call failed this
+    way; a later call clears it."""
+    try:
+        c = int(code)
+    except (TypeError, ValueError):
+        return
+    if c > 0:
+        with _USAGE_LOCK:
+            _USAGE["net_err"] = c
+
+
+def _clear_net_error():
+    with _USAGE_LOCK:
+        _USAGE["net_err"] = 0
+
+
+def _net_error_metric():
+    with _USAGE_LOCK:
+        return _USAGE.get("net_err", 0)
+
+
 # Set by main() and the review handlers: which review this invocation runs
 # and for which Claude Code session, so the usage log line can be attributed.
 _USAGE_CONTEXT = {"session_id": "", "review": "stop"}
@@ -328,6 +383,36 @@ def _log_usage(usage):
         f"cache_read={usage['tok_cache_r']} cache_write={usage['tok_cache_w']} "
         f"est_cost_usd={usage['cost_usd']:.4f}{approx}"
     )
+
+
+def launcher_probe_metrics():
+    """How long sg-python.sh waited for interpreters to answer its probe.
+
+    Only when this launch's probes took a second or more together, so ordinary
+    rows carry no extra keys: `launcher_probe_ms` is all of them,
+    `launcher_probe_max_ms` the slowest one. Both are capped at an hour (the
+    launcher reads the wall clock, which can jump). Read once: the variables
+    are removed so child processes do not report this launch as their own.
+    """
+    try:
+        slowest = int(os.environ.pop("SG_LAUNCHER_PROBE_MAX_MS", ""))
+        total = int(os.environ.pop("SG_LAUNCHER_PROBE_MS", ""))
+    except ValueError:
+        return {}
+    if total < 1000 or slowest > total:
+        return {}
+    cap = 3_600_000
+    return {"launcher_probe_ms": min(total, cap), "launcher_probe_max_ms": min(slowest, cap)}
+
+
+def launcher_direct_metric():
+    """`launcher_direct` when sg-python.sh ran this hook with the interpreter
+    behind a packaged Windows alias instead of the alias: 1 from the path it
+    remembered (one process for the hook), 2 when it had just worked that
+    path out. Read once, like the probe timings.
+    """
+    how = os.environ.pop("SG_LAUNCHER_DIRECT", "")
+    return {"launcher_direct": int(how)} if how in ("1", "2") else {}
 
 
 def _usage_metrics():

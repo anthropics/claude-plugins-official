@@ -68,6 +68,15 @@ VULN_PY = (
 )
 
 
+@pytest.fixture(autouse=True)
+def _no_net_err_from_an_earlier_test():
+    """A hook is one process per event; tests that call it in-process share
+    the module's record of the last failed call."""
+    import _base
+    _base._USAGE["net_err"] = 0
+    yield
+
+
 @pytest.fixture
 def workspace(tmp_path):
     ws = tmp_path / "ws"
@@ -80,8 +89,10 @@ def workspace(tmp_path):
 class _Stub(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         n = int(self.headers.get("Content-Length") or 0)
-        if n:
-            self.rfile.read(n)
+        body = self.rfile.read(n).decode("utf-8", "replace") if n else ""
+        # Only the stub_api fixture keeps the request bodies.
+        if hasattr(self.server, "bodies"):
+            self.server.bodies.append(body)
         self.server.calls.append(self.path)
         if self.server.delay:
             time.sleep(self.server.delay)
@@ -112,6 +123,7 @@ class _Stub(http.server.BaseHTTPRequestHandler):
 def stub_api():
     srv = http.server.HTTPServer(("127.0.0.1", 0), _Stub)
     srv.calls = []
+    srv.bodies = []
     srv.status = 200
     srv.delay = 0
     srv.vulns = []

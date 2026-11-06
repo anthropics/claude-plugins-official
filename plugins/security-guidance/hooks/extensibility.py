@@ -30,6 +30,9 @@ Trust model:
     built-in ones. Reminder length is capped.
   - Custom regexes are validated at load for catastrophic-backtracking
     structure and skipped (with a debug log) if they look ReDoS-prone.
+  - A project file that is a link, or sits under a ``.claude`` that is one, is
+    skipped (with a debug log). User files may be links, as dotfile managers
+    make them.
   - Built-in patterns cannot be disabled. ``ENABLE_PATTERN_RULES=0`` disables
     all pattern checks; there is no per-rule kill switch in v1.
 """
@@ -125,13 +128,30 @@ def _config_paths(cwd: Optional[str], basename: str) -> List[Tuple[str, str]]:
     return paths
 
 
+def _readable_config(path: str, cwd: Optional[str]) -> bool:
+    """Whether a config file may be read. A project file (`cwd` given) must be
+    a regular file at that very place: a link, or a `.claude` that is one,
+    would bring in text from wherever it points."""
+    if cwd is None or not os.path.lexists(path):
+        return True
+    expected = os.path.join(os.path.realpath(cwd), os.path.relpath(path, cwd))
+    real = os.path.realpath(path)
+    if os.path.normcase(real) == os.path.normcase(expected) and os.path.isfile(real):
+        return True
+    debug_log(f"extensibility: skipping {path}: a link, or not a regular file")
+    return False
+
+
 def _load_guidance(cwd: Optional[str]) -> str:
     parts = []
     for label, path in _config_paths(cwd, GUIDANCE_BASENAME):
+        if not _readable_config(path, cwd if label.startswith("Project") else None):
+            continue
         try:
             with open(path, encoding="utf-8") as f:
                 txt = f.read().strip()
-        except OSError:
+        except (OSError, UnicodeDecodeError) as e:
+            debug_log(f"extensibility: skipping {path}: {type(e).__name__}")
             continue
         if txt:
             parts.append(f"### {label} security guidance\n{txt}")
@@ -148,9 +168,14 @@ def _load_guidance(cwd: Optional[str]) -> str:
     return combined
 
 
+_GUIDANCE_END_TAG = re.compile(r"<(\s*/\s*project-security-guidance)", re.IGNORECASE)
+
+
 def _wrap_guidance(guidance: str) -> str:
     if not guidance:
         return ""
+    # The block ends at its own closing tag, not at one in the text it holds.
+    guidance = _GUIDANCE_END_TAG.sub(r"&lt;\1", guidance)
     return (
         "\n\n<project-security-guidance>\n"
         "The user has provided project-specific security guidance below. "
@@ -178,6 +203,8 @@ def _load_user_patterns(cwd: Optional[str]) -> List[Dict[str, Any]]:
             # One unusable file is skipped on its own, so the rules from the
             # other locations still load.
             try:
+                if not _readable_config(candidate, cwd if label.startswith("Project") else None):
+                    continue
                 found = _rules_from_file(candidate, label)
             except Exception as e:
                 debug_log(f"extensibility: skipping {candidate}: {type(e).__name__}: {e}")

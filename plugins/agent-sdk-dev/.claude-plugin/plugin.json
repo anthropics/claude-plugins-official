@@ -1,6 +1,7 @@
 {
   "name": "agent-sdk-dev",
   "description": "Claude Agent SDK Development Plugin",
+  "version": "1.0.1",
   "author": {
     "name": "Anthropic",
     "email": "support@anthropic.com"

@@ -17,6 +17,7 @@ Two reassignable globals here are read by handlers in
 ``_last_review_truncated_bytes``. Handlers reference them as ``llm.X`` (not via
 ``from``-import) so they observe reassignment.
 """
+import contextlib
 import hashlib
 import json
 import logging
@@ -32,9 +33,14 @@ import urllib.parse
 import urllib.request
 from typing import Optional, Tuple, Dict, Any, List, Callable
 
+try:
+    import ssl
+except ImportError:  # a Python built without TLS
+    ssl = None
+
 import extensibility
 import review_api
-from _base import debug_log, _record_usage, _record_http_error, _PV, PROVENANCE_TAG, state_dir as _resolve_state_dir, agent_sdk_site_dirs  # noqa: F401
+from _base import debug_log, _record_usage, _record_http_error, _record_net_error, _clear_net_error, _PV, PROVENANCE_TAG, state_dir as _resolve_state_dir, agent_sdk_site_dirs, make_state_dir  # noqa: F401
 from session_state import load_state, with_locked_state
 from gitutil import git_config_env, SAFE_GIT_CONFIG
 
@@ -190,21 +196,219 @@ def _anthropic_base_url() -> str:
     Honors ANTHROPIC_BASE_URL (the convention the Anthropic SDK and CC itself
     use) so customers behind an LLM gateway (LiteLLM, Bifrost, self-hosted
     Anthropic-compatible proxy) can route the plugin's reviews through their
-    gateway. Defaults to https://api.anthropic.com. Always returns a string
-    with no trailing slash so callers can safely append /v1/messages etc.
+    gateway. Defaults to https://api.anthropic.com, also when the variable is
+    set but blank, which is how the SDK and CC read it. Always returns a
+    string with no trailing slash so callers can safely append /v1/messages
+    etc.
     """
-    return os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com").rstrip("/")
+    base = os.environ.get("ANTHROPIC_BASE_URL", "").strip()
+    return (base or "https://api.anthropic.com").rstrip("/")
+
+
+# ── Windows certificate store with an entry OpenSSL cannot read ──────────
+# Older Python releases (3.11 and 3.12 among them) hand each Windows
+# certificate store to OpenSSL in one call, so a single certificate it cannot
+# parse makes ssl.create_default_context() raise, and every HTTPS call fails
+# before a byte is sent. SSL_CERT_FILE does not help: the store is read
+# first. Newer releases load the store one certificate at a time and skip
+# the ones that fail; _urlopen does the same on the releases that do not.
+
+_STORE_TLS_UNSET = object()
+_store_tls_context = _STORE_TLS_UNSET  # None once Python's default context is known to build
+_store_tls_lock = threading.Lock()
+# Store entries left out of that context; emit_metrics reports it.
+_store_certs_skipped = 0
+
+
+def _context_without_unreadable_store_certs():
+    """(context, skipped): Python's default TLS context built from the
+    Windows store entries OpenSSL can parse, and how many it could not.
+    The context is None when the default one builds as it is, off Windows,
+    or when no entry is readable. Trust is never widened: the certificates
+    come from the same stores, under the same server-authentication filter,
+    and the chain and host name are verified as in any default context."""
+    enum_certificates = getattr(ssl, "enum_certificates", None)  # Windows only
+    if enum_certificates is None:
+        return None, 0
+    try:
+        ssl.create_default_context()
+        return None, 0
+    except ssl.SSLError:
+        pass
+    server_auth = ssl.Purpose.SERVER_AUTH.oid
+    context, skipped = None, 0
+    for store in getattr(ssl.SSLContext, "_windows_cert_stores", ("CA", "ROOT")):
+        try:
+            for cert, encoding, trust in enum_certificates(store):
+                if encoding != "x509_asn" or not (trust is True or server_auth in trust):
+                    continue
+                try:
+                    if context is None:
+                        # With cadata, create_default_context applies every
+                        # default except reading the store itself.
+                        context = ssl.create_default_context(cadata=cert)
+                    else:
+                        context.load_verify_locations(cadata=cert)
+                except ssl.SSLError:
+                    skipped += 1
+        except PermissionError:
+            pass
+    if context is None:
+        return None, skipped
+    context.set_default_verify_paths()
+    # What http.client sets on the context it would have made.
+    context.set_alpn_protocols(["http/1.1"])
+    if context.post_handshake_auth is not None:
+        context.post_handshake_auth = True
+    return context, skipped
+
+
+def _urlopen(request, timeout):
+    """urllib.request.urlopen for the plugin's API calls. Uses Python's
+    default TLS context unless that cannot be built because of the Windows
+    certificate store (see above); checked once per process."""
+    global _store_tls_context, _store_certs_skipped
+    if _store_tls_context is _STORE_TLS_UNSET:
+        with _store_tls_lock:
+            if _store_tls_context is _STORE_TLS_UNSET:
+                try:
+                    context, skipped = _context_without_unreadable_store_certs()
+                except Exception as e:
+                    debug_log(f"TLS: certificate store check failed: {type(e).__name__}")
+                    context, skipped = None, 0
+                if context is not None:
+                    debug_log(f"TLS: the Windows certificate store has {skipped} certificate(s) "
+                              "OpenSSL cannot read; using the store without them")
+                    _store_certs_skipped = skipped
+                _store_tls_context = context
+    if _store_tls_context is None:
+        return urllib.request.urlopen(request, timeout=timeout)
+    return urllib.request.urlopen(request, timeout=timeout, context=_store_tls_context)
+
+
+def _is_remote_session() -> bool:
+    return os.environ.get("CLAUDE_CODE_REMOTE", "").lower() in ("1", "true", "yes", "on")
 
 
 def _probe_anthropic(timeout: float = 5.0) -> bool:
     req = urllib.request.Request(_anthropic_base_url() + "/", method="HEAD")
     try:
-        with urllib.request.urlopen(req, timeout=timeout):
+        with _urlopen(req, timeout):
             return True
     except urllib.error.HTTPError:
         return True  # got a status code → connected
-    except (urllib.error.URLError, TimeoutError, OSError):
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        _record_net_error(_net_error_code(e))
         return False
+
+
+# =====================================================================
+# Why a call got no HTTP response
+# =====================================================================
+# Classes for the `net_err` metric. Measure only: nothing reads these to
+# decide what the plugin does.
+NET_ERR_CERT_VERIFY = 1   # the server certificate did not verify
+NET_ERR_TLS = 2           # any other TLS failure, including a default context that cannot be built
+NET_ERR_DNS = 3           # the host name did not resolve
+NET_ERR_CONNECT = 4       # refused, reset, closed early or unreachable
+NET_ERR_TIMEOUT = 5
+NET_ERR_PROXY = 6         # the proxy refused the tunnel
+NET_ERR_OTHER = 7         # another failure from the HTTP client
+NET_ERR_INNER_CLI = 9     # the review ran through a CLI, which failed
+NET_ERR_INNER_CLI_TIMEOUT = 10
+NET_ERR_NO_SDK = 11       # the review needed the agent SDK, which could not be imported
+
+_NET_FLAG_NO_CA_ON_DISK = 1   # Python's default CA file and directory are missing or empty
+_NET_FLAG_PROXY = 2           # the request would go through a proxy
+_NET_FLAG_NODE_EXTRA_CA = 4   # NODE_EXTRA_CA_CERTS is set (Python does not read it)
+_NET_FLAG_SSL_CERT_ENV = 8    # SSL_CERT_FILE or SSL_CERT_DIR is set
+
+
+def _net_error_class(exc) -> Tuple[int, int]:
+    """(class, X.509 verify code) for an exception from an API call; class 0
+    for one that is not a network failure. The verify code is OpenSSL's
+    (20 = issuer not found locally, 19 = self-signed certificate in the
+    chain, 10 = expired), 0 when the class is not NET_ERR_CERT_VERIFY."""
+    import errno
+    import http.client
+    import socket
+    try:
+        import ssl
+        cert_error, tls_error = ssl.SSLCertVerificationError, ssl.SSLError
+    except ImportError:
+        cert_error = tls_error = ()
+    reason = getattr(exc, "reason", None)
+    err = reason if isinstance(reason, BaseException) else exc
+    if isinstance(err, cert_error):
+        code = getattr(err, "verify_code", 0)
+        return NET_ERR_CERT_VERIFY, code if isinstance(code, int) and 0 < code < 100 else 0
+    if isinstance(err, tls_error):
+        return NET_ERR_TLS, 0
+    if isinstance(err, socket.gaierror):
+        return NET_ERR_DNS, 0
+    if isinstance(err, OSError):
+        text = str(err).lower()
+        if "tunnel connection failed" in text:
+            return NET_ERR_PROXY, 0
+        if isinstance(err, TimeoutError) or "timed out" in text:
+            return NET_ERR_TIMEOUT, 0
+        if isinstance(err, ConnectionError) or err.errno in (
+                errno.ENETUNREACH, errno.EHOSTUNREACH, errno.ENETDOWN,
+                errno.EHOSTDOWN, errno.EADDRNOTAVAIL):
+            return NET_ERR_CONNECT, 0
+        return NET_ERR_OTHER, 0
+    if isinstance(err, http.client.HTTPException) or isinstance(exc, urllib.error.URLError):
+        return NET_ERR_OTHER, 0
+    return 0, 0
+
+
+def _net_error_flags(tls: bool) -> int:
+    """What the machine's setup says about a failed call. Each check is
+    best effort: one that cannot be made leaves its flag off."""
+    flags = 0
+    if tls:
+        try:
+            import ssl
+            paths = ssl.get_default_verify_paths()
+            has_file = bool(paths.cafile) and os.path.getsize(paths.cafile) > 0
+            has_dir = False
+            if paths.capath:
+                with os.scandir(paths.capath) as it:
+                    has_dir = any(True for _ in it)
+            # Windows also reads the system store, which this cannot see.
+            if not has_file and not has_dir and sys.platform != "win32":
+                flags |= _NET_FLAG_NO_CA_ON_DISK
+        except Exception:
+            pass
+        if os.environ.get("NODE_EXTRA_CA_CERTS"):
+            flags |= _NET_FLAG_NODE_EXTRA_CA
+        if os.environ.get("SSL_CERT_FILE") or os.environ.get("SSL_CERT_DIR"):
+            flags |= _NET_FLAG_SSL_CERT_ENV
+    try:
+        url = urllib.parse.urlsplit(_anthropic_base_url())
+        # As urllib chooses: the proxy for the URL's scheme, bypass by host:port.
+        if (urllib.request.getproxies().get(url.scheme)
+                and not urllib.request.proxy_bypass(url.netloc.rpartition("@")[2])):
+            flags |= _NET_FLAG_PROXY
+    except Exception:
+        pass
+    return flags
+
+
+def _net_error_code(exc) -> int:
+    """`net_err` for an exception: class + 100 * verify code + 10000 * flags,
+    or 0 for an exception that is not a network failure."""
+    try:
+        cls, verify = _net_error_class(exc)
+    except Exception:
+        return 0
+    if not cls:
+        return 0
+    try:
+        flags = _net_error_flags(cls in (NET_ERR_CERT_VERIFY, NET_ERR_TLS))
+    except Exception:
+        flags = 0
+    return cls + 100 * verify + 10000 * flags
 
 
 def _strip_anthropic_from_no_proxy() -> None:
@@ -224,7 +428,7 @@ def ensure_anthropic_reachable() -> bool:
     global _anthropic_reachable
     if _anthropic_reachable is not None:
         return _anthropic_reachable
-    if os.environ.get("CLAUDE_CODE_REMOTE", "").lower() not in ("1", "true", "yes", "on"):
+    if not _is_remote_session():
         _anthropic_reachable = True
         return True
     if _probe_anthropic():
@@ -484,9 +688,7 @@ def _fetch_newest_opus() -> Optional[str]:
             url, headers=_build_auth_headers(use_token, betas=()), method="GET",
         )
         try:
-            with urllib.request.urlopen(
-                request, timeout=_REVIEW_MODEL_LOOKUP_TIMEOUT,
-            ) as response:
+            with _urlopen(request, _REVIEW_MODEL_LOOKUP_TIMEOUT) as response:
                 listing = json.loads(
                     response.read(_REVIEW_MODEL_LISTING_MAX_BYTES).decode("utf-8")
                 )
@@ -541,7 +743,7 @@ def _read_review_model_cache(path, endpoint_key, now):
 def _write_review_model_cache(path, endpoint_key, model, now):
     tmp = None
     try:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
+        make_state_dir(os.path.dirname(path))
         fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix=".review_model.")
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump({"endpoint": endpoint_key, "model": model, "at": now}, f)
@@ -611,11 +813,12 @@ _gateway_check_unanswered = False
 # depend on the model, so the Sonnet attempt is not made after it.
 _gateway_review_timed_out = False
 
+_WINDOWS = os.name == "nt"
+
 
 def _user_cli_path() -> Optional[str]:
-    """The user's own `claude`: SG_AGENTIC_CLI_PATH if set ("" selects the
-    SDK's bundled CLI), else the first of the absolute paths below that
-    exists, else None."""
+    """The user's own `claude`: SG_AGENTIC_CLI_PATH if set ("" names none), else
+    the first of the absolute paths below that exists, else None."""
     cli_path = os.environ.get("SG_AGENTIC_CLI_PATH")
     if cli_path is not None:
         return cli_path
@@ -627,16 +830,69 @@ def _user_cli_path() -> Optional[str]:
     # user's (potentially attacker-supplied) repo, and Windows shutil.which
     # searches cwd first — a checked-in ./claude.exe would get spawned.
     # Absolute-path probes only.
-    for p in (
-        os.environ.get("CLAUDE_CODE_EXECPATH"),
-        os.path.expanduser("~/.local/bin/claude"),
-        "/root/.local/bin/claude",
-        # Claude Code Remote container install path.
-        "/opt/claude-code/bin/claude",
-    ):
+    probes = [os.environ.get("CLAUDE_CODE_EXECPATH")]
+    if not _WINDOWS:
+        # Where Claude Code is installed on macOS and Linux.
+        probes += [
+            os.path.expanduser("~/.local/bin/claude"),
+            "/root/.local/bin/claude",
+            # Claude Code Remote container install path.
+            "/opt/claude-code/bin/claude",
+        ]
+    for p in probes:
         if p and os.path.isfile(p):
             return p
     return None
+
+
+def _windows_user_cli() -> Optional[str]:
+    """Windows: the full path of the user's claude.exe, from the native
+    installer's folder, else from PATH; None when neither has one. Skips any
+    folder that is not given as a full path, and the working directory and
+    project root, and any folder inside them (unless that root holds the home
+    folder, and with it the user's own tools)."""
+    skipped = [d for d in (os.getcwd(), os.environ.get("CLAUDE_PROJECT_DIR")) if d and os.path.isdir(d)]
+    home = os.path.expanduser("~")
+    real_home = os.path.normcase(os.path.realpath(home)).rstrip(os.sep) + os.sep
+    roots = [r.rstrip(os.sep) + os.sep for r in (os.path.normcase(os.path.realpath(d)) for d in skipped)]
+    roots = [r for r in roots if not real_home.startswith(r)]
+    home_bin = os.path.join(home, ".local", "bin")
+    for folder in [home_bin] + os.environ.get("PATH", "").split(os.pathsep):
+        folder = folder.strip().strip('"')
+        cli = os.path.join(folder, "claude.exe")
+        try:
+            real = os.path.normcase(os.path.realpath(folder))
+            # A full path is one that abspath leaves as it is.
+            if (os.path.normcase(os.path.abspath(folder)) == os.path.normcase(os.path.normpath(folder))
+                    and os.path.isfile(cli)
+                    and not any(os.path.samefile(folder, d) for d in skipped)
+                    and not any(real.startswith(r) for r in roots)):
+                return cli
+        except OSError:
+            pass
+    return None
+
+
+def _cli_for_sdk(cli_path: Optional[str]) -> Optional[str]:
+    """What to pass the Agent SDK as `cli_path`: a given one as it is. With none
+    given, the SDK chooses, except on Windows. There this names the CLI bundled
+    with the SDK, else the user's own, by its full path, and when neither exists
+    the bundled path anyway, so that the start fails."""
+    if cli_path or not _WINDOWS:
+        return cli_path or None
+    # When the SDK module has no file, any full path at which nothing exists will do.
+    sdk_file = getattr(sys.modules.get("claude_agent_sdk"), "__file__", None) or __file__
+    bundled = os.path.join(os.path.dirname(os.path.abspath(sdk_file)), "_bundled", "claude.exe")
+    if os.path.isfile(bundled):
+        return bundled
+    cli_path = _windows_user_cli()
+    if not cli_path:
+        debug_log("no Claude Code for the Agent SDK: none is bundled with it, and there is no claude.exe "
+                  "in ~\\.local\\bin or on PATH outside this project (SG_AGENTIC_CLI_PATH can name one)")
+        return bundled
+    debug_log(f"the Agent SDK has no bundled Claude Code; using {cli_path}")
+    _tolerate_unknown_sdk_messages()
+    return cli_path
 
 
 def _tolerate_unknown_sdk_messages() -> None:
@@ -750,6 +1006,7 @@ def _call_claude_via_sdk(prompt, output_schema, *, max_tokens=16000, model=None,
     """
     global _last_call_claude_http_error, _gateway_review_timed_out
     _last_call_claude_http_error = None
+    _clear_net_error()
     route = "gateway" if cli_path else "3P"
 
     try:
@@ -778,13 +1035,14 @@ def _call_claude_via_sdk(prompt, output_schema, *, max_tokens=16000, model=None,
             debug_log(f"{route} sdk-single-turn: SDK unavailable ({e})")
             _last_call_claude_http_error = -1
             _record_http_error(-1)
+            _record_net_error(NET_ERR_NO_SDK)
             return None
 
     _send_sdk_logs_to_debug_log()
     if cli_path:
         _tolerate_unknown_sdk_messages()
     else:
-        cli_path = os.environ.get("SG_AGENTIC_CLI_PATH") or None
+        cli_path = _cli_for_sdk(os.environ.get("SG_AGENTIC_CLI_PATH") or None)
     default_model = default_review_model()
     chosen_model = model or default_model
 
@@ -800,7 +1058,7 @@ def _call_claude_via_sdk(prompt, output_schema, *, max_tokens=16000, model=None,
             system_prompt=CLAUDE_CODE_SYSTEM_PROMPT,
             cli_path=cli_path,
             allowed_tools=[],
-            extra_args=_only_tools_args(),
+            extra_args={**_only_tools_args(), **_reviewer_session_args()},
             setting_sources=[],
             max_turns=2,
             model=chosen_model,
@@ -827,9 +1085,8 @@ def _call_claude_via_sdk(prompt, output_schema, *, max_tokens=16000, model=None,
                 _record_usage(getattr(msg, "usage", None) or {}, chosen_model,
                               cost_usd=getattr(msg, "total_cost_usd", None))
             elif getattr(msg, "subtype", None) == "api_retry":
-                data = getattr(msg, "data", None)
-                status = data.get("error_status") if isinstance(data, dict) else None
-                _retried_after.add(str(status) if isinstance(status, int) else "no response")
+                status = _api_retry_status(msg)
+                _retried_after.add(str(status) if status is not None else "no response")
         return structured
 
     # 60s ceiling: a single review request on a healthy 3P endpoint completes
@@ -862,12 +1119,14 @@ def _call_claude_via_sdk(prompt, output_schema, *, max_tokens=16000, model=None,
             _gateway_review_timed_out = True
         _last_call_claude_http_error = -1
         _record_http_error(-1)
+        _record_net_error(NET_ERR_INNER_CLI_TIMEOUT)
         return None
     except Exception as e:
         debug_log(f"{route} sdk-single-turn: query failed ({e})")
         _log_child_stderr()
         _last_call_claude_http_error = -1
         _record_http_error(-1)
+        _record_net_error(NET_ERR_INNER_CLI)
         return None
 
 
@@ -890,6 +1149,7 @@ def _call_claude(prompt, output_schema, thinking_budget=10000, max_tokens=16000,
     """
     global _last_call_claude_http_error
     _last_call_claude_http_error = None
+    _clear_net_error()
 
     if _is_3p_provider():
         # On Bedrock/Vertex/Foundry/Mantle the api.anthropic.com path below
@@ -975,7 +1235,7 @@ def _call_claude(prompt, output_schema, thinking_budget=10000, max_tokens=16000,
                 headers=headers,
                 method="POST",
             )
-            with urllib.request.urlopen(request, timeout=120) as response:
+            with _urlopen(request, 120) as response:
                 response_body = response.read().decode("utf-8")
                 response_data = json.loads(response_body)
             _record_usage(response_data.get("usage") or {},
@@ -1008,6 +1268,7 @@ def _call_claude(prompt, output_schema, thinking_budget=10000, max_tokens=16000,
                 debug_log(f"Request failed after retries: {e}")
                 _last_call_claude_http_error = -1
                 _record_http_error(-1)
+                _record_net_error(_net_error_code(e))
                 return None
 
     if not response_data:
@@ -1506,6 +1767,7 @@ Respond with a JSON object. If vulnerabilities are found, set hasVulnerabilities
                                         cacheable_prefix=_CODE_REVIEW_RUBRIC)
     except Exception as e:
         debug_log(f"LLM code review: call raised {type(e).__name__}: {e}")
+        _record_net_error(_net_error_code(e))
         analysis = None
     # A reply without the schema's required flag is not a verdict either.
     if not isinstance(analysis, dict) or "hasVulnerabilities" not in analysis:
@@ -1585,6 +1847,32 @@ def _send_sdk_logs_to_debug_log() -> None:
             sdk_logger.propagate = False
 
 
+# Claude Code older than 2.0.63 exits at startup with "unknown option" when
+# given --no-session-persistence. The flag is sent until an inner CLI
+# refuses it.
+_SESSION_FLAG = "no-session-persistence"
+_send_session_flag = True
+
+
+def _reviewer_session_args() -> Dict[str, Optional[str]]:
+    """Extra CLI flags for the SDK-spawned inner `claude`.
+
+    Review runs are one-shot and never resumed, so by default the inner CLI
+    is told not to save them as session transcripts (they hold the full
+    review prompt, including diff hunks). SECURITY_GUIDANCE_PERSIST_SESSIONS=1
+    keeps the transcripts, e.g. to debug a review.
+    """
+    keep = os.environ.get("SECURITY_GUIDANCE_PERSIST_SESSIONS", "").strip().lower()
+    if not _send_session_flag or keep in ("1", "on", "true", "yes"):
+        return {}
+    return {_SESSION_FLAG: None}
+
+
+def _names_session_flag(stderr_line: Any) -> bool:
+    text = str(stderr_line)
+    return _SESSION_FLAG in text and "unknown option" in text.lower()
+
+
 # The agentic reviewer reads a diff it must not trust, so it gets
 # file-reading tools and nothing else.
 _REVIEWER_TOOLS = ("Read", "Grep", "Glob")
@@ -1619,22 +1907,57 @@ def _names_strict_mcp_flag(stderr_line: Any) -> bool:
     return "--strict-mcp-config" in str(stderr_line)
 
 
+def _refused_flags(stderr_lines: List[Any]) -> List[str]:
+    """Which of the flags this plugin can leave out the lines refuse."""
+    refused = []
+    if any(_names_strict_mcp_flag(l) for l in stderr_lines):
+        refused.append("--strict-mcp-config")
+    if any(_names_session_flag(l) for l in stderr_lines):
+        refused.append("--" + _SESSION_FLAG)
+    return refused
+
+
 def _run_inner_cli(start: Callable[[], Any], stderr_lines: List[str]) -> Any:
     """start() runs one inner CLI to its result; stderr_lines receives what
     that CLI writes to stderr. A start the CLI refused over
-    --strict-mcp-config is made once more without the flag, and the flag is
-    left out for the rest of this process."""
-    global _send_strict_mcp
-    del stderr_lines[:]
-    try:
-        return start()
-    except Exception:
-        if not any(_names_strict_mcp_flag(l) for l in stderr_lines):
-            raise
-        _send_strict_mcp = False
-        debug_log("inner CLI refused --strict-mcp-config; starting it again without the flag")
+    --strict-mcp-config or --no-session-persistence is made again without
+    that flag, and the flag is left out for the rest of this process. A CLI
+    names one flag per start, so one that refuses both is started three
+    times."""
+    global _send_strict_mcp, _send_session_flag
+    left_out: List[str] = []
+    while True:
         del stderr_lines[:]
-        return start()
+        try:
+            return start()
+        except Exception:
+            refused = [f for f in _refused_flags(stderr_lines) if f not in left_out]
+            if not refused:
+                raise
+            if "--strict-mcp-config" in refused:
+                _send_strict_mcp = False
+            if "--" + _SESSION_FLAG in refused:
+                _send_session_flag = False
+            left_out += refused
+            debug_log(f"inner CLI refused {' and '.join(refused)}; "
+                      "starting it again without")
+
+
+class _ReviewerAuthFailed(Exception):
+    """The agentic reviewer's credentials were refused; retrying cannot help."""
+
+
+# Retry notices in a row, each after a 401, at which the review stops. One is
+# normal: the CLI renews a stored login after a 401 and tries again. Not used
+# in a remote session, where the CLI waits out a short sign-in outage on purpose.
+_AGENTIC_MAX_401_RETRIES = 3
+
+
+def _api_retry_status(msg: Any) -> Optional[int]:
+    """The HTTP status of the CLI's api_retry notice, if it gives one."""
+    data = getattr(msg, "data", None)
+    status = data.get("error_status") if isinstance(data, dict) else None
+    return status if isinstance(status, int) else None
 
 
 def _agentic_spawn_env() -> Dict[str, str]:
@@ -1707,11 +2030,15 @@ def agentic_review(
                      before the review, 2 = it went missing during it
       rv_tool_err    Read/Grep/Glob calls that came back as errors
       rv_tool_calls  Read/Grep/Glob calls made
+      rv_turns       turns the reviewer took, as the CLI counts them
+      rv_api_ms      time the reviewer spent waiting on the model, in ms
 
-    The counts cover all stages of the review. Keys are left out when 0."""
+    The counts cover all stages of the review. Keys are left out when 0.
+    rv_turns and rv_api_ms come from each stage's result message, so a stage
+    that ends without one (the CLI exits early) adds nothing to them."""
     context_dir = _agentic_context_dir(repo_dir)
     gone = 0 if os.path.isdir(context_dir) else 1
-    ctx = {"rv_tool_err": 0, "rv_tool_calls": 0}
+    ctx = {"rv_tool_err": 0, "rv_tool_calls": 0, "rv_turns": 0, "rv_api_ms": 0}
     guidance, vulns, metrics = _agentic_review(repo_dir, diff_files, touched_paths, ctx)
     if not gone and not os.path.isdir(context_dir):
         gone = 2
@@ -1804,7 +2131,7 @@ def _agentic_review(
         "the findings list."
     )
 
-    # Always prefer the user's installed `claude` over the SDK's bundled CLI.
+    # Prefer the `claude` that _user_cli_path finds over the SDK's bundled CLI.
     # The bundled CLI is whatever shipped with the pip-installed SDK version
     # and can lag the user's CLI by months — protocol skew between them is a
     # top cause of agentic_fallback=2 in production (the SDK reads
@@ -1814,19 +2141,21 @@ def _agentic_review(
     cli_path = _gateway_cli or _user_cli_path()
     if cli_path:
         _tolerate_unknown_sdk_messages()
+    else:
+        cli_path = _cli_for_sdk(cli_path)
 
     # Without a callback the inner CLI writes to this hook's stderr, which
     # Claude Code shows Claude as the review notice. Log it instead.
     child_stderr_lines = [0]
-    # Lines of the current start that name --strict-mcp-config (_run_inner_cli).
+    # Lines of the current start that refuse a flag (_run_inner_cli).
     flag_refusals: List[str] = []
 
     def _child_stderr_metric() -> Dict[str, int]:
         return {"child_stderr": child_stderr_lines[0]} if child_stderr_lines[0] else {}
 
     def _on_child_stderr(line: str) -> None:
-        if _names_strict_mcp_flag(line):
-            # Not counted: where the flag is refused, every review gets this
+        if _refused_flags([line]):
+            # Not counted: where a flag is refused, every review gets this
             # line once, from the start that is then made again.
             flag_refusals.append(str(line))
             debug_log(f"agentic reviewer's CLI stderr | {str(line).rstrip()}")
@@ -1852,7 +2181,8 @@ def _agentic_review(
             # Pre-approved, and the only tools the reviewer has: no
             # permission mode can then let it write, run or fetch anything.
             allowed_tools=list(_REVIEWER_TOOLS),
-            extra_args=_only_tools_args(_REVIEWER_TOOLS),
+            extra_args={**_only_tools_args(_REVIEWER_TOOLS),
+                        **_reviewer_session_args()},
             setting_sources=[],
             max_turns=turns if turns is not None else max_turns,
             model=model,
@@ -1911,32 +2241,54 @@ def _agentic_review(
 
         # Blocks are matched by shape so older SDK builds need no extra import.
         file_tool_ids = set()
-        async for msg in query(prompt=_once(), options=opts):
-            if isinstance(msg, AssistantMessage):
-                n += 1
-                for b in getattr(msg, "content", None) or []:
-                    if (getattr(b, "name", None) in _REVIEWER_FILE_TOOLS
-                            and getattr(b, "id", None)):
-                        file_tool_ids.add(b.id)
-                        ctx["rv_tool_calls"] += 1
-            elif isinstance(msg, ResultMessage):
-                subtype = msg.subtype
-                if msg.structured_output is not None:
-                    structured = msg.structured_output
-                # SDK ResultMessage carries aggregate usage + cache-aware
-                # cost across the whole multi-turn run; prefer its cost over
-                # the price-table estimate. getattr guards older SDK builds.
-                _record_usage(getattr(msg, "usage", None) or {}, model,
-                              cost_usd=getattr(msg, "total_cost_usd", None))
-            else:
-                # Tool results come back as user messages.
-                content = getattr(msg, "content", None)
-                if isinstance(content, list):
-                    ctx["rv_tool_err"] += sum(
-                        1 for b in content
-                        if getattr(b, "is_error", None) is True
-                        and getattr(b, "tool_use_id", None) in file_tool_ids
-                    )
+        auth_retries = 0
+        # Closed on the way out, also on a raise, so the CLI stops with the review.
+        async with contextlib.aclosing(query(prompt=_once(), options=opts)) as messages:
+            async for msg in messages:
+                if isinstance(msg, AssistantMessage):
+                    # Old CLIs answer each refused request by asking the model
+                    # again, hundreds of times; the message is the same on all.
+                    if getattr(msg, "error", None) == "authentication_failed":
+                        raise _ReviewerAuthFailed("authentication_failed")
+                    auth_retries = 0
+                    n += 1
+                    for b in getattr(msg, "content", None) or []:
+                        if (getattr(b, "name", None) in _REVIEWER_FILE_TOOLS
+                                and getattr(b, "id", None)):
+                            file_tool_ids.add(b.id)
+                            ctx["rv_tool_calls"] += 1
+                elif isinstance(msg, ResultMessage):
+                    subtype = msg.subtype
+                    if msg.structured_output is not None:
+                        structured = msg.structured_output
+                    # SDK ResultMessage carries aggregate usage + cache-aware
+                    # cost across the whole multi-turn run; prefer its cost over
+                    # the price-table estimate. getattr guards older SDK builds.
+                    _record_usage(getattr(msg, "usage", None) or {}, model,
+                                  cost_usd=getattr(msg, "total_cost_usd", None))
+                    for key, attr in (("rv_turns", "num_turns"), ("rv_api_ms", "duration_api_ms")):
+                        value = getattr(msg, attr, None)
+                        # Counting must never fail the review: anything that
+                        # is not a positive finite number adds nothing.
+                        if (isinstance(value, (int, float)) and not isinstance(value, bool)
+                                and 0 < value < float("inf")):
+                            ctx[key] += int(value)
+                elif getattr(msg, "subtype", None) == "api_retry":
+                    # A gateway's 401 without the API's x-should-retry: false
+                    # keeps the CLI retrying for about three minutes.
+                    auth_retries = auth_retries + 1 if _api_retry_status(msg) == 401 else 0
+                    if (auth_retries >= _AGENTIC_MAX_401_RETRIES
+                            and not _is_remote_session()):
+                        raise _ReviewerAuthFailed(f"{auth_retries} retries after HTTP 401")
+                else:
+                    # Tool results come back as user messages.
+                    content = getattr(msg, "content", None)
+                    if isinstance(content, list):
+                        ctx["rv_tool_err"] += sum(
+                            1 for b in content
+                            if getattr(b, "is_error", None) is True
+                            and getattr(b, "tool_use_id", None) in file_tool_ids
+                        )
         return structured, n, subtype
 
     def _run(system: str, prompt: str, *, schema: Dict[str, Any]
