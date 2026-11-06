@@ -261,18 +261,13 @@ class TestHooksJson:
 
 
 def _read_state(env):
+    # The review model cache is JSON in this directory too.
     d = env["SECURITY_WARNINGS_STATE_DIR"]
-    files = [e.path for e in os.scandir(d) if e.name.endswith(".json")]
-    assert files, os.listdir(d)
+    files = [e.path for e in os.scandir(d)
+             if e.name.startswith("security_warnings_state_") and e.name.endswith(".json")]
+    assert len(files) == 1, os.listdir(d)
     with open(files[0]) as f:
         return json.load(f)
-
-
-def _read_state_or_empty(env):
-    d = env["SECURITY_WARNINGS_STATE_DIR"]
-    if not any(e.name.endswith(".json") for e in os.scandir(d)):
-        return {}
-    return _read_state(env)
 
 
 class TestCommitReview:
@@ -334,7 +329,7 @@ class TestCommitReview:
         m = metrics_of(so)
         assert m.get("skip_reason") is None, m
         assert m["repo_resolution"] == rr.RES_SHA_SCAN and m["files_reviewed"] == 1
-        assert "repo_root_hint" not in _read_state_or_empty(hook_env)
+        assert "repo_root_hint" not in _read_state(hook_env)
 
     def test_workspace_cwd_sha_scan_via_project_dir(self, workspace, hook_env, tmp_path):
         ws, repo = workspace
@@ -429,7 +424,7 @@ class TestPushSweep:
         m = metrics_of(so)
         assert m["push_sweep"] is True and m["repo_resolution"] == rr.RES_SHA_SCAN, m
         assert m.get("skip_reason") != 26
-        assert "repo_root_hint" not in _read_state_or_empty(hook_env)
+        assert "repo_root_hint" not in _read_state(hook_env)
 
     def test_cwd_is_repo_dash_C_other_repo(self, workspace, hook_env, tmp_path):
         ws, repo = workspace
