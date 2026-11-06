@@ -922,11 +922,13 @@ def _drop_gitlinks(top, env, tmp_index):
     anything else runs on the copy. A gitlink marks a directory that is, or
     can be, another repository (see diff.ignoreSubmodules in GIT_CMD):
     `git stash create` takes no flag like IGNORE_SUBMODULES, and `git add`
-    reads the gitlinks its paths cover. An entry whose directory has no
-    `.git` stays: git starts nothing there, and without the entry an older
-    `git stash create` fails on the empty directory. `top` is the work
-    tree's top directory. Returns True on success, False on any failure; the
-    copy must not be used then."""
+    reads the gitlinks its paths cover. Every gitlink goes, including one
+    whose directory has no `.git` now: whether git starts something there is
+    decided when git runs, not here. Without the entry, `git stash create` on
+    git older than 2.34 fails on a submodule that is not checked out, and the
+    baseline falls back to HEAD. `top` is the work tree's top directory.
+    Returns True on success, False on any failure; the copy must not be used
+    then."""
     global last_dropped_gitlinks
     last_dropped_gitlinks = False
     try:
@@ -935,9 +937,7 @@ def _drop_gitlinks(top, env, tmp_index):
         gitlinks = _gitlink_paths(top, env)
         if gitlinks is None:
             return False
-        top_b = os.fsencode(top)
-        nested = sorted(p for p in gitlinks
-                        if os.path.lexists(os.path.join(top_b, p, b".git")))
+        nested = sorted(gitlinks)
         if not nested:
             return True
         mtime_ns = os.stat(tmp_index).st_mtime_ns
