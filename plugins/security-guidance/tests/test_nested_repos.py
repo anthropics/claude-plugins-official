@@ -6,7 +6,7 @@ import pytest
 
 from conftest import (
     GIT_ENV, STUB_VULN, VULN_PY, git, make_repo, metrics_of, run_hook,
-    stop_payload, ups_payload,
+    stop_payload, ups_payload, write_cli,
 )
 
 import diffstate
@@ -318,8 +318,9 @@ def test_untracked_file_name_is_not_read_as_a_pattern(outer, git_env):
     assert name in copy and "other.py" not in copy
 
 
-def test_gitlink_without_a_repository_stays_in_the_copy(outer, marker, git_env):
-    """A submodule that is not checked out: an empty directory."""
+def test_gitlink_without_a_repository_is_removed_from_the_copy(outer, marker, git_env):
+    """A submodule that is not checked out: an empty directory. Its entry goes
+    too, since a `.git` can appear there before git runs."""
     nested = _record_nested_repo(outer, marker)
     # Moved, not deleted: git's object files are read-only on Windows.
     nested.rename(outer.parent / "moved-away")
@@ -330,9 +331,16 @@ def test_gitlink_without_a_repository_stays_in_the_copy(outer, marker, git_env):
         copy = _index_entries(outer, env)
     baseline = diffstate.capture_git_baseline(str(outer))
 
-    assert "160000" in copy
-    assert baseline and baseline != git(outer, "rev-parse", "HEAD").strip()
-    assert diffstate.last_baseline_fail == 0
+    assert "160000" not in copy
+    assert "160000" in git(outer, "ls-files", "-s")
+    head = git(outer, "rev-parse", "HEAD").strip()
+    version = tuple(int(n) for n in git(outer, "--version").split()[2].split(".")[:2])
+    if version >= (2, 34):
+        assert baseline and baseline != head
+        assert diffstate.last_baseline_fail == 0
+    else:  # `git stash create` fails on the empty directory
+        assert baseline == head
+        assert diffstate.last_baseline_fail == 1
 
 
 def test_gitlinks_listed_by_a_git_without_sparse_listing(outer, marker, git_env, monkeypatch):
@@ -425,3 +433,49 @@ def test_gitlink_found_in_every_index_format(outer, marker, git_env, monkeypatch
     assert seen and "160000" not in copy and "later.py" in copy
     assert baseline != git(outer, "rev-parse", "HEAD").strip()
     assert not marker.exists()
+
+
+def _signed_head(repo, tmp_path, marker):
+    """Make HEAD a commit that carries a signature, with log.showSignature on
+    and gpg.program naming a stand-in that leaves a line in `marker`."""
+    program = write_cli(tmp_path, "signature-check", (
+        "import sys\n"
+        f"open({str(marker)!r}, 'a').write('ran\\n')\n"
+        "sys.exit(1)\n"))
+    head = git(repo, "rev-parse", "HEAD").strip()
+    tree = git(repo, "rev-parse", "HEAD^{tree}").strip()
+    who = "t <t@example.com> 1800000000 +0000"
+    commit = (
+        f"tree {tree}\nparent {head}\nauthor {who}\ncommitter {who}\n"
+        "gpgsig -----BEGIN PGP SIGNATURE-----\n \n xx\n"
+        " -----END PGP SIGNATURE-----\n\nsigned\n")
+    sha = subprocess.run(
+        ["git", "hash-object", "-t", "commit", "-w", "--stdin"], cwd=repo,
+        input=commit.encode(), capture_output=True, check=True,
+    ).stdout.decode().strip()
+    git(repo, "update-ref", "--create-reflog", "-m", "commit: signed", "HEAD", sha)
+    git(repo, "config", "log.showSignature", "true")
+    git(repo, "config", "gpg.program", str(program))
+    return sha
+
+
+def test_reading_the_reflog_does_not_check_signatures(outer, marker, tmp_path, git_env):
+    sha = _signed_head(outer, tmp_path, marker)
+    # The stand-in does run for a plain `git log` in this repository.
+    git(outer, "log", "-1")
+    assert marker.exists()
+    marker.unlink()
+
+    fresh, _stale = gitutil._git_reflog_recent_commits(str(outer), max_age_s=10**10)
+
+    assert sha in fresh
+    assert not marker.exists(), marker.read_text()
+
+
+def test_reviewer_environment_turns_signature_display_off(outer, marker, tmp_path, git_env):
+    _signed_head(outer, tmp_path, marker)
+
+    gitutil.apply_safe_git_env()
+    git(outer, "log", "-1")
+
+    assert not marker.exists(), marker.read_text()

@@ -1,0 +1,17 @@
+{
+  "name": "champion-kit",
+  "version": "0.5.0",
+  "description": "Help Claude Code champions run hackathons and office hours, find patterns worth sharing, help teammates climb the steps of AI adoption, and write a maturity report.",
+  "author": {
+    "name": "Anthropic",
+    "email": "support@anthropic.com"
+  },
+  "homepage": "https://code.claude.com/docs/en/champion-kit",
+  "keywords": [
+    "champions",
+    "adoption",
+    "enablement",
+    "onboarding",
+    "claude-code"
+  ]
+}

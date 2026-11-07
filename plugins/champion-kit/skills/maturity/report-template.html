@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; form-action 'none'; base-uri 'none'">
+<title>AI maturity report: {{ORG}}</title>
+<!--
+  HOW TO FILL THIS TEMPLATE. Replace every {{PLACEHOLDER}}, then delete this comment.
+
+  Rules for every value:
+  - HTML-escape every value that comes from the repo or from answers (& < > " ' become &amp; &lt; &gt; &quot; &#39;).
+  - Keep evidence to file names and counts. Never copy setting values, tokens, or secrets.
+  - Name teams, never individuals. Fold any team under five people into a larger group named by its teams, such as "Payments, with Tax (11)".
+  - Keep the page self-contained: no scripts, no external fonts, images, or links that load anything. Keep the CSP meta as it is.
+  - Scores are whole numbers 0 to 4. You never draw anything: set data-score or data-s and the CSS draws the bars and colors.
+
+  HERO
+  {{ORG}}         org or team name. It appears in the title and the h1.
+  {{DATE}}        report date, YYYY-MM-DD.
+  {{STEP}}        overall step, 0 to 4 (average of the seven scores, rounded down). It appears three times:
+                  in the big number, in the ladder class "at-{{STEP}}" (this marks the current rung), and in the bottleneck kicker.
+  {{STEP_NAME}}   Gated, Assisted, Parallel, Supervised autonomy, or AI-native.
+  {{SUMMARY}}     two to four plain sentences: where the org is, what is strong, what the gap is.
+
+  BOTTLENECK AND NEXT MOVES
+  {{BOTTLENECK_DIMENSIONS}}  the lowest dimension and its score, such as "Automation, 1 of 4". Name all of them on a tie: "Review and Automation, 1 of 4".
+  {{BOTTLENECK}}  two or three sentences on why it holds the org back, from the evidence.
+  {{MOVES}}       one <li> per move, such as:
+                  <li><strong>Ask at the next retro.</strong> One or two sentences, with any command in <code>/champion-kit:routines</code>.</li>
+                  For a single move, replace the whole <ol class="moves">...</ol> with <p class="move-one">the move</p>.
+
+  {{DIMENSION_CARDS}}  seven <article> elements in this order: Access, Agents per engineer, Verification, Review,
+                  Shared context, Automation, Guardrails. Exact snippet:
+                  <article class="dim" data-score="3">
+                    <div class="dim-head">
+                      <h3>Access</h3>
+                      <p class="dim-score"><b>3</b> of 4</p>
+                      <span class="bar" role="img" aria-label="3 of 4"><i></i><i></i><i></i><i></i></span>
+                      <p class="lvl">Team or Enterprise plans with connectors</p>
+                    </div>
+                    <div class="dim-body">
+                      <p class="ev">Evidence: file names and counts.</p>
+                      <p class="next"><span>Next level</span> Agents can reach what they need</p>
+                    </div>
+                  </article>
+                  - data-score, the <b> number, and aria-label carry the same score. Always keep exactly four empty <i></i>.
+                  - .lvl is the rubric text for the score; .next is the rubric text for score + 1. Delete .next when the score is 4.
+                  - Bottleneck dimension(s): add class "low" (class="dim low") and put <span class="tag">Bottleneck</span> right after the <h3>.
+                  - A claim that could not be verified gets <span class="sr">(self-reported)</span> right after it.
+                    When the whole row is self-reported, start the evidence with <span class="sr-lead">Self-reported:</span>
+                  - Repo paths go in <code>.
+
+  OPTIONAL: BY TEAM. Delete the whole <section id="by-team"> if only one team is in scope.
+  {{TEAM_ROWS}}   first an org row, then one row per team. Each team is scored on its own evidence, separately from the org.
+                  <tr class="org"><th scope="row">{{ORG}} overall</th><td data-s="3">3</td><td data-s="2">2</td><td data-s="2">2</td><td data-s="2">2</td><td data-s="3">3</td><td data-s="1">1</td><td data-s="2">2</td></tr>
+                  <tr><th scope="row">Payments <span class="size">(14)</span></th><td data-s="3">3</td>...seven cells in the column order...</tr>
+                  Every cell prints its number and repeats it in data-s. Add class="low" to the <th> of each bottleneck column in <thead>.
+
+  OPTIONAL: WHAT CHANGED. Delete the whole <section id="changes"> for a first report.
+  {{PREVIOUS_DATE}}  date of the earlier report.
+  {{CHANGES}}     one or two sentences on the overall step and the biggest moves.
+  {{CHANGE_ROWS}} one <li> per dimension, all seven, in the scorecard order:
+                  <li><span class="d-name">Agents per engineer</span><span class="d-scores"><span class="chip" data-s="1">1</span><span class="arrow" aria-hidden="true">&#8594;</span><span class="chip" data-s="2">2</span></span><span class="d-note">Up 1. One short reason.</span></li>
+                  Write "Up 1", "Down 1", or "No change" at the start of d-note.
+
+  {{METHOD}}      what was read, what was asked, what could not be checked, which teams were folded.
+                  Keep the disclaimer paragraph below it as it is.
+-->
+<style>
+/* Layout: one centered column. Hero panel with the step and a five-rung ladder, a bottleneck callout,
+   a ledger of seven dimensions, a team heatmap, then changes and method. Colors follow the Anthropic brand palette: Clay marks where the org stands and what holds it back
+   (darker Clay for text and thin lines), and scores run red, orange, yellow, light green, green from 0 to 4.
+   Every score also prints its number, so color is never the only cue. */
+:root{
+  --bg:#f9f9f7; --surface:#fcfcfb; --sunk:#f3f2ee; --ink:#0b0b0b; --ink-2:#52514e; --ink-3:#6b6a65;
+  --line:#e1e0d9; --track:#e1e0d9;
+  --accent:#d97757; --accent-ink:color-mix(in srgb,#d97757 85%,#0b0b0b); --accent-tint:color-mix(in srgb,#d97757 34%,#fcfcfb);
+  --focus-wash:color-mix(in srgb,#d97757 10%,#fcfcfb); --focus-line:color-mix(in srgb,#d97757 45%,#fcfcfb);
+  --s0:#d03b3b; --s0-ink:#ffffff; --s1:#eb6834; --s1-ink:#0b0b0b; --s2:#fab219; --s2-ink:#0b0b0b;
+  --s3:color-mix(in srgb,#0ca30c 60%,#fcfcfb); --s3-ink:#0b0b0b; --s4:#008300; --s4-ink:#ffffff;
+  --shadow:0 1px 2px rgba(11,11,11,.04),0 12px 32px -18px rgba(11,11,11,.18);
+  --body:"Anthropic Sans",system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --display:var(--body);
+  --hero:"Anthropic Serif",Georgia,"Times New Roman",serif;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0d0d0d; --surface:#1a1a19; --sunk:#232322; --ink:#f0efec; --ink-2:#c3c2b7; --ink-3:#898781;
+    --line:#2c2c2a; --track:#383835;
+    --accent:#d97757; --accent-ink:#d97757; --accent-tint:color-mix(in srgb,#d97757 40%,#1a1a19);
+    --focus-wash:color-mix(in srgb,#d97757 12%,#1a1a19); --focus-line:color-mix(in srgb,#d97757 45%,#1a1a19);
+    --s0:#d03b3b; --s0-ink:#ffffff; --s1:#eb6834; --s1-ink:#0b0b0b; --s2:#fab219; --s2-ink:#0b0b0b;
+    --s3:color-mix(in srgb,#0ca30c 60%,#1a1a19); --s3-ink:#ffffff; --s4:#0ca30c; --s4-ink:#0b0b0b;
+    --shadow:0 0 0 1px rgba(255,255,255,.02);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0d0d0d; --surface:#1a1a19; --sunk:#232322; --ink:#f0efec; --ink-2:#c3c2b7; --ink-3:#898781;
+  --line:#2c2c2a; --track:#383835;
+  --accent:#d97757; --accent-ink:#d97757; --accent-tint:color-mix(in srgb,#d97757 40%,#1a1a19);
+  --focus-wash:color-mix(in srgb,#d97757 12%,#1a1a19); --focus-line:color-mix(in srgb,#d97757 45%,#1a1a19);
+  --s0:#d03b3b; --s0-ink:#ffffff; --s1:#eb6834; --s1-ink:#0b0b0b; --s2:#fab219; --s2-ink:#0b0b0b;
+  --s3:color-mix(in srgb,#0ca30c 60%,#1a1a19); --s3-ink:#ffffff; --s4:#0ca30c; --s4-ink:#0b0b0b;
+  --shadow:0 0 0 1px rgba(255,255,255,.02);
+  color-scheme:dark;
+}
+
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 var(--body);-webkit-font-smoothing:antialiased}
+.page{max-width:1080px;margin:0 auto;padding-block:40px 72px;padding-left:max(20px,env(safe-area-inset-left,0px));padding-right:max(20px,env(safe-area-inset-right,0px));display:grid;gap:56px}
+h1,h2,h3{font-family:var(--display);text-wrap:balance;margin:0;color:var(--ink)}
+p{margin:0}
+code{font-family:var(--mono);font-size:.84em;background:var(--sunk);border:1px solid var(--line);border-radius:4px;padding:.05em .35em;overflow-wrap:anywhere}
+strong{font-weight:650}
+.eyebrow{font-size:12px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3)}
+.num{font-variant-numeric:tabular-nums}
+
+/* Hero */
+.hero{display:grid;gap:20px}
+.masthead{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:8px 24px;border-bottom:1px solid var(--line);padding-bottom:14px}
+.masthead time{font-family:var(--mono);font-size:13px;color:var(--ink-3)}
+.hero h1{font-size:clamp(36px,5.2vw,56px);line-height:1.04;font-weight:700;letter-spacing:-.02em}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:clamp(20px,3.4vw,36px);display:grid;gap:32px}
+.verdict{display:grid;grid-template-columns:auto minmax(0,1fr);gap:clamp(20px,4vw,48px);align-items:center}
+.step-num{display:grid;justify-items:start;line-height:1;padding-right:clamp(20px,4vw,48px);border-right:1px solid var(--line)}
+.step-num .lbl{font-size:13px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3)}
+.step-num .n{font-family:var(--hero);font-size:clamp(104px,14vw,160px);font-weight:400;font-variation-settings:"opsz" 48;letter-spacing:-.03em;color:var(--accent-ink);font-variant-numeric:tabular-nums lining-nums;margin:4px 0 -2px -4px}
+.step-num .of{font-size:15px;color:var(--ink-3)}
+.verdict-text{display:grid;gap:10px;min-width:0}
+.step-name{font-family:var(--display);font-size:clamp(26px,3.4vw,36px);font-weight:650;line-height:1.15;letter-spacing:-.01em}
+.summary{font-size:18px;line-height:1.6;color:var(--ink-2);max-width:62ch}
+
+/* Ladder: set the current rung with the class at-0 to at-4 */
+.ladder{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+.ladder li{display:grid;grid-template-rows:120px auto;min-width:0}
+.ladder .post{display:flex;flex-direction:column;justify-content:flex-end;gap:6px}
+.ladder .here{visibility:hidden;align-self:flex-start;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink);white-space:nowrap}
+.ladder .riser{display:block;height:var(--h);background:var(--sunk);border:1px solid var(--line);border-bottom:0;border-radius:6px 6px 0 0}
+.ladder .r0{--h:24px}.ladder .r1{--h:44px}.ladder .r2{--h:64px}.ladder .r3{--h:84px}.ladder .r4{--h:104px}
+.ladder .rung{border-top:2px solid var(--line);padding-top:10px;display:grid;gap:2px}
+.ladder .rung b{font-family:var(--display);font-size:13px;color:var(--ink-3);font-variant-numeric:tabular-nums}
+.ladder .nm{font-weight:650;font-size:15px;line-height:1.25;color:var(--ink-3)}
+.ladder .ds{font-size:13px;line-height:1.45;color:var(--ink-3)}
+/* passed rungs */
+.at-1 .r0 .riser,.at-2 .r0 .riser,.at-2 .r1 .riser,.at-3 .r0 .riser,.at-3 .r1 .riser,.at-3 .r2 .riser,.at-4 .r0 .riser,.at-4 .r1 .riser,.at-4 .r2 .riser,.at-4 .r3 .riser{background:var(--accent-tint);border-color:var(--accent-tint)}
+.at-1 .r0 .nm,.at-2 .r0 .nm,.at-2 .r1 .nm,.at-3 .r0 .nm,.at-3 .r1 .nm,.at-3 .r2 .nm,.at-4 .r0 .nm,.at-4 .r1 .nm,.at-4 .r2 .nm,.at-4 .r3 .nm{color:var(--ink-2)}
+/* current rung */
+.at-0 .r0 .riser,.at-1 .r1 .riser,.at-2 .r2 .riser,.at-3 .r3 .riser,.at-4 .r4 .riser{background:var(--accent);border-color:var(--accent)}
+.at-0 .r0 .here,.at-1 .r1 .here,.at-2 .r2 .here,.at-3 .r3 .here,.at-4 .r4 .here{visibility:visible}
+.at-0 .r0 .rung,.at-1 .r1 .rung,.at-2 .r2 .rung,.at-3 .r3 .rung,.at-4 .r4 .rung{border-top-color:var(--accent-ink)}
+.at-0 .r0 .nm,.at-1 .r1 .nm,.at-2 .r2 .nm,.at-3 .r3 .nm,.at-4 .r4 .nm{color:var(--ink)}
+.at-0 .r0 .ds,.at-1 .r1 .ds,.at-2 .r2 .ds,.at-3 .r3 .ds,.at-4 .r4 .ds{color:var(--ink-2)}
+.at-0 .r0 .rung b,.at-1 .r1 .rung b,.at-2 .r2 .rung b,.at-3 .r3 .rung b,.at-4 .r4 .rung b{color:var(--ink)}
+.ladder-note{font-size:13px;color:var(--ink-3)}
+
+/* Section heads */
+.sec{display:grid;gap:20px}
+.sec-head{display:grid;gap:6px}
+.sec-head h2{font-size:clamp(22px,2.6vw,28px);font-weight:700;letter-spacing:-.01em;line-height:1.2}
+.sec-note{font-size:15px;color:var(--ink-3);max-width:70ch}
+
+/* Bottleneck callout */
+.focus{background:var(--focus-wash);border:1px solid var(--focus-line);border-radius:14px;padding:clamp(20px,3.4vw,36px);display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:clamp(20px,4vw,48px)}
+.focus-why{display:grid;gap:12px;align-content:start}
+.kicker{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--ink)}
+.kicker::before{content:"";width:10px;height:10px;border-radius:50%;background:var(--accent)}
+.focus h2{font-size:clamp(22px,2.6vw,28px);font-weight:700;line-height:1.2}
+.focus-dim{font-family:var(--display);font-size:20px;font-weight:650;color:var(--ink)}
+.focus-why p:last-child{color:var(--ink-2)}
+.focus-moves{display:grid;gap:14px;align-content:start;min-width:0}
+.focus-moves h3{font-size:13px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);font-family:var(--body)}
+.moves{list-style:none;margin:0;padding:0;display:grid;gap:12px;counter-reset:move}
+.moves li{counter-increment:move;position:relative;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 18px 14px 62px;color:var(--ink-2);min-height:62px}
+.moves li::before{content:counter(move);position:absolute;left:16px;top:14px;display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:var(--ink);color:var(--surface);font-weight:700;font-size:15px;font-variant-numeric:tabular-nums}
+.moves li strong{color:var(--ink)}
+.move-one{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px;color:var(--ink-2)}
+
+/* Dimension ledger */
+.dims{background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);overflow:hidden}
+.dim{display:grid;grid-template-columns:minmax(0,300px) minmax(0,1fr);gap:16px 40px;padding:24px clamp(18px,3vw,32px);border-top:1px solid var(--line)}
+.dim:first-child{border-top:0}
+.dim.low{background:var(--focus-wash)}
+.dim-head{display:grid;grid-template-columns:minmax(0,1fr) auto;align-content:start;gap:8px 12px;align-items:baseline}
+.dim-head h3{font-size:19px;font-weight:650;line-height:1.3;grid-column:1}
+.dim-head .tag{grid-column:1;justify-self:start}
+.dim-score{grid-column:2;grid-row:1;font-size:14px;color:var(--ink-3);white-space:nowrap;font-variant-numeric:tabular-nums}
+.dim-score b{font-family:var(--display);font-size:30px;font-weight:700;color:var(--ink);letter-spacing:-.02em;margin-right:2px}
+.bar{grid-column:1 / -1;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:3px;height:10px}
+.bar i{display:block;background:var(--track);border-radius:2px}
+.bar i:first-child{border-radius:5px 2px 2px 5px}
+.bar i:last-child{border-radius:2px 5px 5px 2px}
+[data-score="1"] .bar i:nth-child(-n+1){background:var(--s1)}
+[data-score="2"] .bar i:nth-child(-n+2){background:var(--s2)}
+[data-score="3"] .bar i:nth-child(-n+3){background:var(--s3)}
+[data-score="4"] .bar i:nth-child(-n+4){background:var(--s4)}
+.lvl{grid-column:1 / -1;font-size:14px;color:var(--ink-2);line-height:1.45}
+.dim-body{display:grid;gap:12px;align-content:start;min-width:0}
+.ev{color:var(--ink-2);max-width:72ch}
+.next{font-size:14px;color:var(--ink-3)}
+.next span{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);margin-right:6px}
+.tag{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink);border:1px solid var(--focus-line);background:var(--surface);border-radius:999px;padding:2px 10px 2px 8px}
+.tag::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--accent)}
+.sr{font-style:italic;color:var(--ink-3);white-space:nowrap}
+.sr-lead{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);border:1px dashed var(--ink-3);border-radius:999px;padding:0 8px;margin-right:6px;vertical-align:2px;font-style:normal}
+
+/* Team heatmap */
+.heat-wrap{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow)}
+.heat{width:100%;min-width:680px;border-collapse:separate;border-spacing:3px;padding:12px;font-variant-numeric:tabular-nums}
+.heat th{font-weight:600;text-align:left}
+.heat thead th{font-size:12px;letter-spacing:.04em;color:var(--ink-3);padding:6px 4px 8px;text-align:center;vertical-align:bottom;line-height:1.25}
+.heat thead th:first-child{text-align:left}
+.heat thead th.low{color:var(--ink);box-shadow:inset 0 -3px 0 var(--accent-ink)}
+.heat tbody th{font-size:15px;color:var(--ink);padding:0 16px 0 6px;white-space:nowrap}
+.heat tbody th,.heat thead th:first-child{position:sticky;left:0;z-index:1;background:var(--surface)}
+.heat .size{color:var(--ink-3);font-weight:400}
+.heat td{height:48px;min-width:64px;text-align:center;font-weight:700;font-size:17px;border-radius:6px;background:var(--s0);color:var(--s0-ink)}
+.heat tr.org th{font-family:var(--display);font-weight:700}
+.heat tr.org > *{border-bottom:3px solid var(--surface)}
+[data-s="0"]{background:var(--s0);color:var(--s0-ink)}
+[data-s="1"]{background:var(--s1);color:var(--s1-ink)}
+[data-s="2"]{background:var(--s2);color:var(--s2-ink)}
+[data-s="3"]{background:var(--s3);color:var(--s3-ink)}
+[data-s="4"]{background:var(--s4);color:var(--s4-ink)}
+.heat td[data-s="0"]{background:var(--s0);color:var(--s0-ink)}
+.heat td[data-s="1"]{background:var(--s1);color:var(--s1-ink)}
+.heat td[data-s="2"]{background:var(--s2);color:var(--s2-ink)}
+.heat td[data-s="3"]{background:var(--s3);color:var(--s3-ink)}
+.heat td[data-s="4"]{background:var(--s4);color:var(--s4-ink)}
+.legend{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;font-size:13px;color:var(--ink-3)}
+.legend ol{list-style:none;margin:0;padding:0;display:flex;gap:3px}
+.legend li{width:34px;height:24px;border-radius:5px;display:grid;place-items:center;font-weight:700;font-size:12px;font-variant-numeric:tabular-nums}
+
+/* What changed */
+.deltas{list-style:none;margin:0;padding:0;background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);overflow:hidden}
+.deltas li{display:grid;grid-template-columns:minmax(0,220px) auto minmax(0,1fr);gap:8px 24px;align-items:center;padding:14px clamp(18px,3vw,32px);border-top:1px solid var(--line)}
+.deltas li:first-child{border-top:0}
+.d-name{font-weight:600}
+.d-scores{display:flex;align-items:center;gap:8px}
+.chip{display:inline-grid;place-items:center;width:30px;height:28px;border-radius:6px;font-weight:700;font-size:14px;font-variant-numeric:tabular-nums}
+.arrow{color:var(--ink-3)}
+.d-note{color:var(--ink-2);font-size:15px}
+.lede{font-size:17px;color:var(--ink-2);max-width:70ch}
+
+/* Method */
+.method{border-top:1px solid var(--line);padding-top:28px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:16px 48px}
+.method h2{font-size:20px;font-weight:700}
+.method-body{display:grid;gap:14px;color:var(--ink-2);font-size:15px;min-width:0}
+.note{font-size:14px;color:var(--ink-3);border-left:2px solid var(--line);padding-left:14px}
+
+/* Phone */
+@media (max-width:760px){
+  .page{gap:44px;padding-block:28px 56px}
+  .verdict{grid-template-columns:1fr;gap:16px}
+  .step-num{grid-template-columns:auto auto;align-items:end;justify-content:start;column-gap:12px;border-right:0;padding-right:0;border-bottom:1px solid var(--line);padding-bottom:16px}
+  .step-num .lbl{grid-column:1 / -1}
+  .step-num .of{padding-bottom:12px}
+  .summary{font-size:17px}
+  .ladder{grid-template-columns:1fr;gap:6px}
+  .ladder li{grid-template-rows:auto;grid-template-columns:minmax(0,1fr) minmax(0,42%);align-items:center;gap:12px}
+  .ladder .post{order:2;flex-direction:row;justify-content:flex-start}
+  .ladder .riser{height:16px;width:var(--w);border:1px solid var(--line);border-radius:3px}
+  .ladder .r0{--w:20%}.ladder .r1{--w:40%}.ladder .r2{--w:60%}.ladder .r3{--w:80%}.ladder .r4{--w:100%}
+  .ladder .here{display:none}
+  .ladder .rung{order:1;border-top:0;padding-top:0;display:flex;align-items:baseline;gap:8px}
+  .ladder .ds{display:none}
+  .ladder .nm{font-size:14px}
+  .at-0 .r0 .nm::after,.at-1 .r1 .nm::after,.at-2 .r2 .nm::after,.at-3 .r3 .nm::after,.at-4 .r4 .nm::after{content:"You are here";display:block;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink)}
+  .heat tbody th{white-space:normal;min-width:120px;font-size:14px}
+  .focus{grid-template-columns:1fr}
+  .dim{grid-template-columns:1fr;gap:14px}
+  .deltas li{grid-template-columns:minmax(0,1fr) auto}
+  .d-note{grid-column:1 / -1}
+  .method{grid-template-columns:1fr}
+}
+
+/* Print: light colors, no shadows, keep blocks whole */
+@media print{
+  :root:root{
+    --bg:#f9f9f7; --surface:#fcfcfb; --sunk:#f3f2ee; --ink:#0b0b0b; --ink-2:#52514e; --ink-3:#6b6a65;
+    --line:#e1e0d9; --track:#e1e0d9;
+    --accent:#d97757; --accent-ink:color-mix(in srgb,#d97757 85%,#0b0b0b); --accent-tint:color-mix(in srgb,#d97757 34%,#fcfcfb);
+    --focus-wash:color-mix(in srgb,#d97757 10%,#fcfcfb); --focus-line:color-mix(in srgb,#d97757 45%,#fcfcfb);
+    --s0:#d03b3b; --s0-ink:#ffffff; --s1:#eb6834; --s1-ink:#0b0b0b; --s2:#fab219; --s2-ink:#0b0b0b;
+    --s3:color-mix(in srgb,#0ca30c 60%,#fcfcfb); --s3-ink:#0b0b0b; --s4:#008300; --s4-ink:#ffffff;
+    --shadow:0 1px 2px rgba(11,11,11,.04),0 12px 32px -18px rgba(11,11,11,.18);
+    --shadow:none; color-scheme:light;
+  }
+  body{-webkit-print-color-adjust:exact;print-color-adjust:exact;font-size:12pt}
+  .page{max-width:none;padding:0;gap:28px}
+  .panel,.dims,.heat-wrap,.deltas{box-shadow:none}
+  .heat-wrap{overflow:visible}
+  .heat{min-width:0}
+  .panel,.focus,.dim,.moves li,.heat-wrap,.deltas li,.method{break-inside:avoid;page-break-inside:avoid}
+  .sec-head,h2,h3{break-after:avoid;page-break-after:avoid}
+}
+</style>
+</head>
+<body>
+<main class="page">
+
+<header class="hero">
+  <div class="masthead">
+    <p class="eyebrow">AI maturity report</p>
+    <time datetime="{{DATE}}">{{DATE}}</time>
+  </div>
+  <h1>{{ORG}}</h1>
+  <div class="panel">
+    <div class="verdict">
+      <p class="step-num"><span class="lbl">Step</span><span class="n">{{STEP}}</span><span class="of">of 4</span></p>
+      <div class="verdict-text">
+        <p class="step-name">{{STEP_NAME}}</p>
+        <p class="summary">{{SUMMARY}}</p>
+      </div>
+    </div>
+    <ol class="ladder at-{{STEP}}" aria-label="Steps of AI adoption. This org is at step {{STEP}}.">
+      <li class="r0"><span class="post"><span class="here">You are here</span><span class="riser"></span></span><span class="rung"><b>0</b><span class="nm">Gated</span><span class="ds">AI tools are blocked or need sign-off.</span></span></li>
+      <li class="r1"><span class="post"><span class="here">You are here</span><span class="riser"></span></span><span class="rung"><b>1</b><span class="nm">Assisted</span><span class="ds">One session at a time, watched closely.</span></span></li>
+      <li class="r2"><span class="post"><span class="here">You are here</span><span class="riser"></span></span><span class="rung"><b>2</b><span class="nm">Parallel</span><span class="ds">Engineers run a few agents at once.</span></span></li>
+      <li class="r3"><span class="post"><span class="here">You are here</span><span class="riser"></span></span><span class="rung"><b>3</b><span class="nm">Supervised autonomy</span><span class="ds">Many agents, with checks doing the watching.</span></span></li>
+      <li class="r4"><span class="post"><span class="here">You are here</span><span class="riser"></span></span><span class="rung"><b>4</b><span class="nm">AI-native</span><span class="ds">Agents start most work; people steer.</span></span></li>
+    </ol>
+    <p class="ladder-note">The overall step is the average of the seven dimension scores, rounded down. These steps are the champion-kit's own framework, not an official benchmark.</p>
+  </div>
+</header>
+
+<section class="focus" aria-labelledby="h-focus">
+  <div class="focus-why">
+    <p class="kicker">Bottleneck</p>
+    <h2 id="h-focus">What's holding you back</h2>
+    <p class="focus-dim">{{BOTTLENECK_DIMENSIONS}}</p>
+    <p>{{BOTTLENECK}}</p>
+  </div>
+  <div class="focus-moves">
+    <h3>Next moves</h3>
+    <ol class="moves">{{MOVES}}</ol>
+  </div>
+</section>
+
+<section class="sec" aria-labelledby="h-score">
+  <div class="sec-head">
+    <h2 id="h-score">Scorecard</h2>
+    <p class="sec-note">Seven dimensions, each scored 0 to 4 from what could be seen plus the answers given. Claims marked self-reported could not be checked.</p>
+  </div>
+  <div class="dims">{{DIMENSION_CARDS}}</div>
+</section>
+
+<section class="sec" id="by-team" aria-labelledby="h-team">
+  <div class="sec-head">
+    <h2 id="h-team">By team</h2>
+    <p class="sec-note">Each team is scored on its own evidence. The legend below shows the color for each score, from red at 0 to green at 4. Teams under five people are folded into a larger group.</p>
+  </div>
+  <div class="heat-wrap">
+    <table class="heat">
+      <thead><tr><th scope="col">Team</th><th scope="col">Access</th><th scope="col">Agents</th><th scope="col">Verification</th><th scope="col">Review</th><th scope="col">Shared context</th><th scope="col">Automation</th><th scope="col">Guardrails</th></tr></thead>
+      <tbody>{{TEAM_ROWS}}</tbody>
+    </table>
+  </div>
+  <div class="legend" aria-hidden="true">
+    <span>Score</span>
+    <ol><li data-s="0">0</li><li data-s="1">1</li><li data-s="2">2</li><li data-s="3">3</li><li data-s="4">4</li></ol>
+  </div>
+</section>
+
+<section class="sec" id="changes" aria-labelledby="h-changes">
+  <div class="sec-head">
+    <h2 id="h-changes">What changed since last time</h2>
+    <p class="sec-note">Compared with the report of {{PREVIOUS_DATE}}.</p>
+  </div>
+  <p class="lede">{{CHANGES}}</p>
+  <ul class="deltas">{{CHANGE_ROWS}}</ul>
+</section>
+
+<section class="method" aria-labelledby="h-method">
+  <h2 id="h-method">How this was scored</h2>
+  <div class="method-body">
+    <p>{{METHOD}}</p>
+    <p class="note">Scores come from what Claude could see plus the answers given. Treat them as a conversation starter. This report covers teams and never individuals. It is a self-assessment made with the champion-kit plugin, not an Anthropic evaluation.</p>
+  </div>
+</section>
+
+</main>
+</body>
+</html>

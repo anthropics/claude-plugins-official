@@ -1,0 +1,18 @@
+{
+  "name": "jdtls-lsp",
+  "description": "Java language server (Eclipse JDT.LS) for code intelligence",
+  "version": "1.0.0",
+  "author": {
+    "name": "Anthropic",
+    "email": "support@anthropic.com"
+  },
+  "lspServers": {
+    "jdtls": {
+      "command": "jdtls",
+      "extensionToLanguage": {
+        ".java": "java"
+      },
+      "startupTimeout": 120000
+    }
+  }
+}
