@@ -53,11 +53,13 @@ SECURITY_REVIEW_MODEL=claude-opus-5-5
 The pattern warnings need no credentials. The LLM reviews (the diff review on Stop and the commit/push reviewer) use the first of these that applies:
 
 - **A cloud provider (Bedrock, Vertex, Foundry)** — if Claude Code is configured for one, reviews run through Claude Code with that provider config.
-- **`ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` in the environment** — used as is, against `ANTHROPIC_BASE_URL` if you set one.
-- **Signed in to Claude Code (`/login`)** — Claude Code passes your sign-in to the plugin's hooks, and reviews use that account.
+- **`ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` in the environment** — used as is, against `ANTHROPIC_BASE_URL` if you set one. With no base URL, the commit/push reviewer treats a claude.ai token (`sk-ant-oat`) the way it treats a sign-in, below.
+- **Signed in to Claude Code (`/login`)** — Claude Code passes your sign-in to the plugin's hooks, and reviews use that account. The commit/push reviewer's Claude Code runs on that token alone and does not renew the login you have stored.
 - **Signed in to a Claude apps gateway (`/login`)** — Claude Code passes no sign-in to plugins on a gateway, so reviews run through your installed Claude Code, which uses its own stored sign-in. The plugin never reads it. The plugin looks for Claude Code at `~/.local/bin/claude`, where the native installer puts it on macOS and Linux; on Windows, or for any other install, set `SG_AGENTIC_CLI_PATH` to its full path.
 
 Claude Code does not pass your sign-in to plugins in a session started with `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`, `DISABLE_TELEMETRY`, or `DO_NOT_TRACK` set. If no credentials reach the plugin, for that or any other reason, and the plugin cannot review through a Claude apps gateway sign-in, the LLM reviews are skipped and only the pattern warnings run. The plugin tells you so when Claude edits a file in a git repo, at most once a week. Set `ENABLE_CODE_SECURITY_REVIEW=0` if that is what you want; it also hides the notice.
+
+On the default API host, a claude.ai token (`sk-ant-oat`) that arrives as `ANTHROPIC_API_KEY`, for example from an `apiKeyHelper`, is sent as a bearer token. On hosts other than Claude Code, any other `ANTHROPIC_AUTH_TOKEN` is not used without a base URL, because it is meant for a gateway: set `ANTHROPIC_BASE_URL` to that gateway.
 
 ### Enabling/disabling layers
 
@@ -94,9 +96,11 @@ Drop a `claude-security-guidance.md` in any of:
 - `<project>/.claude/claude-security-guidance.md` — project rules, intended to be committed
 - `<project>/.claude/claude-security-guidance.local.md` — local overrides, intended to be `.gitignore`'d
 
+The project files keep loading after the session moves to another folder of the project (`cd src`). A `.claude` in the folder it moved to is read too, after the project's. In a linked worktree, that worktree's own files are the project files.
+
 Project files must be regular files: a link there, or a `.claude` folder that is a link, is skipped.
 
-All three are loaded and concatenated into the LLM diff review's prompt in the order user → project → project-local. If the combined size exceeds the 8 KB prompt budget, the tail is truncated, so user-wide rules are kept and project-local rules are dropped first. The agentic commit reviewer (layer 3) does not currently read this file. Example:
+These are loaded and concatenated into the LLM diff review's prompt in the order user → project → project-local. If the combined size exceeds the 8 KB prompt budget, the tail is truncated, so user-wide rules are kept and project-local rules are dropped first. The agentic commit reviewer (layer 3) does not currently read this file. Example:
 
 ```markdown
 # Acme security rules

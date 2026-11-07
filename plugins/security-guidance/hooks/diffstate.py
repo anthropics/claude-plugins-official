@@ -10,9 +10,10 @@ import hashlib
 import os
 import subprocess
 import sys
+import unicodedata
 import time
 
-from _base import debug_log, portable_output, _PV
+from _base import debug_log, make_state_dir, portable_output, _PV
 import gitutil
 from gitutil import (
     GIT_CMD,
@@ -20,8 +21,10 @@ from gitutil import (
     _git_rev_parse_head, _is_ancestor, _git_name_only, _temp_index,
     _secret_rename_origins, index_entry_count,
 )
-from session_state import with_locked_state
+from session_state import load_state, with_locked_state
 from extensibility import _same_dir
+from gitutil import turn_commit_shas
+from session_state import commit_log_files, get_commit_log_file
 
 
 # =====================================================================
@@ -60,7 +63,7 @@ def load_baseline_sha(session_id):
     return with_locked_state(session_id, _load)
 
 
-def record_touched_path(session_id, file_path):
+def record_touched_path(session_id, file_path, custom_rule_stats=None):
     """Append a file path to the touched_paths list (deduped, capped at 200).
 
     Stop is the consumer and clears under the same lock it reads with; UPS
@@ -69,12 +72,45 @@ def record_touched_path(session_id, file_path):
     stale paths so over-retention is harmless, just wasteful.
     """
     def _record(state):
+        # In the save this hook makes anyway: one more could drop another
+        # hook's change where there is no state lock (Windows).
+        _fold_custom_rule_stats(state, custom_rule_stats)
         paths = state.setdefault("touched_paths", [])
         if file_path not in paths:
             paths.append(file_path)
-            if len(paths) > 200:
-                del paths[:len(paths) - 200]
+            if len(paths) > TOUCHED_PATHS_CAP:
+                del paths[:len(paths) - TOUCHED_PATHS_CAP]
     with_locked_state(session_id, _record)
+
+
+# Reported on the Stop row; see extensibility.edit_stats. The first three are
+# kept as maximum or union over the turn's edits, the others are added up.
+CUSTOM_RULE_KEYS = ("cr_rules", "cr_slow_ms", "cr_shapes", "cr_gain", "cr_loss")
+
+
+def _fold_custom_rule_stats(state, stats):
+    if not stats:
+        return
+    kept = state.get("custom_rules")
+    if not isinstance(kept, dict):
+        kept = state["custom_rules"] = {}
+    for key in CUSTOM_RULE_KEYS:
+        new, old = stats.get(key, 0), kept.get(key, 0)
+        if not isinstance(old, int):
+            old = 0
+        if key == "cr_shapes":
+            value = old | new
+        elif key in ("cr_rules", "cr_slow_ms"):
+            value = max(old, new)
+        else:
+            value = old + new
+        if value:
+            kept[key] = value
+
+
+def record_custom_rule_stats(session_id, stats):
+    """Fold one edit's custom rule counts into the turn's. Telemetry only."""
+    with_locked_state(session_id, lambda state: _fold_custom_rule_stats(state, stats))
 
 
 def consume_stop_state(session_id, clear=True):
@@ -104,6 +140,7 @@ def consume_stop_state(session_id, clear=True):
             # Where and when the prompt hook captured it; see baseline_origin.
             "baseline_root": state.get("baseline_root"),
             "prompt_at": state.get("prompt_at"),
+            "turn_started": state.get("turn_started"),
             "baseline_kept": state.get("baseline_kept") or 0,
             "untracked_at_baseline": (
                 dict(state["untracked_at_baseline"])
@@ -117,30 +154,65 @@ def consume_stop_state(session_id, clear=True):
             "state_resets": state.get("state_resets", 0),
             "state_overwrites": state.get("state_overwrites", 0),
             "baseline_fail": state.get("baseline_fail") or 0,
+            "custom_rules": (
+                dict(state["custom_rules"])
+                if isinstance(state.get("custom_rules"), dict) else {}
+            ),
         }
         # touched_paths is cleared per Stop, but one baseline can be
         # reviewed by several Stops (rewakes). turn_touched keeps every path
-        # recorded since the baseline; only telemetry reads it.
+        # recorded since the prompt hook's baseline. Read by the scope
+        # metric and, through touched_since_prompt, by the no-edit-record note.
         turn = list(dict.fromkeys(
             [p for p in state.get("turn_touched", []) if isinstance(p, str)]
-            + snap["touched_paths"]))[-200:]
+            + snap["touched_paths"]))[-TOUCHED_PATHS_CAP:]
         snap["turn_touched"] = turn
         if clear:
+            if snap["state_resets"] or snap["state_overwrites"]:
+                # turn_touched outlives this Stop, and so does its gap.
+                state["turn_touched_lost"] = True
             state["turn_touched"] = turn
             state["touched_paths"] = []
             state.pop("reviewed_diff_hash", None)
             state.pop("state_resets", None)
             state.pop("state_overwrites", None)
+            state.pop("custom_rules", None)
         return snap
 
     return with_locked_state(session_id, _snap) or {
         "touched_paths": [], "baseline_sha": None, "head_at_capture": None,
         "untracked_at_baseline": {}, "baseline_root": None, "prompt_at": None,
-        "baseline_kept": 0,
+        "baseline_kept": 0, "turn_started": None,
         "fire_count": 0, "fire_count_expired": False, "previous_findings": [],
         "reviewed_diff_hash": None, "state_resets": 0, "state_overwrites": 0,
-        "baseline_fail": 0, "turn_touched": [],
+        "baseline_fail": 0, "turn_touched": [], "custom_rules": {},
     }
+
+
+# record_touched_path and turn_touched keep the newest paths only.
+TOUCHED_PATHS_CAP = 200
+
+
+def touched_since_prompt(session_id):
+    """(paths, complete): every path the session's edit tools recorded since
+    the prompt hook's baseline, read now and without consuming or writing
+    anything, so edits recorded while a Stop review runs are in it.
+    `complete` is False when the list is known to be missing paths: the
+    state was lost or overwritten since the prompt, it could not be read, or
+    the prompt hook's own save is not in it. Callers check the length
+    against TOUCHED_PATHS_CAP."""
+    try:
+        state = load_state(session_id)
+    except Exception:
+        return [], False
+    if not isinstance(state, dict):
+        return [], False
+    paths = list(dict.fromkeys(
+        [p for p in state.get("turn_touched", []) if isinstance(p, str)]
+        + [p for p in state.get("touched_paths", []) if isinstance(p, str)]))
+    lost = (state.get("state_resets") or state.get("state_overwrites")
+            or state.get("turn_touched_lost"))
+    return paths, not lost and state.get("prompt_at") is not None
 
 
 # Path names compare without case where the filesystem usually does.
@@ -151,13 +223,21 @@ def _rel_in_repo(real_root, path):
     """`path` relative to the repo root (a real path), or None when it lies
     outside the repo."""
     real = os.path.realpath(path)
+    if sys.platform == "darwin":
+        # git and the file system can spell one name composed and decomposed.
+        real = unicodedata.normalize("NFC", real)
+        real_root = unicodedata.normalize("NFC", real_root)
+    if _FOLD_CASE:
+        # Fold before comparing: realpath keeps the case a path was typed in,
+        # so the repo folder itself can be spelled differently too.
+        real, real_root = real.casefold(), real_root.casefold()
     try:
         rel = os.path.relpath(real, real_root)
     except ValueError:  # another drive
         return None
     if rel == os.pardir or rel.startswith(os.pardir + os.sep):
         return None
-    return rel.casefold() if _FOLD_CASE else rel
+    return rel
 
 
 def touched_scope(repo_root, cwd, touched_paths):
@@ -165,7 +245,7 @@ def touched_scope(repo_root, cwd, touched_paths):
     (scope, repo-relative paths inside the repo). scope: 0 none recorded,
     1 all inside the reviewed repo, 2 some outside, 3 all outside. Relative
     paths are read against `cwd`. The list holds the newest 200 paths, so
-    this is approximate past that. Telemetry only."""
+    this is approximate past that."""
     root = os.path.realpath(repo_root)
     inside, outside = set(), 0
     for p in touched_paths:
@@ -199,6 +279,44 @@ def review_scope_code(repo_root, scope, inside, files, base_fail):
     return int(base_fail or 0) * 100000 + scope * 10000 + min(untouched, 9999)
 
 
+def findings_without_edit_record(session_id, at_stop_start, repo_root, cwd,
+                                 finding_paths, reviewed):
+    """Which findings are in a reviewed file for which there is no record of
+    this session's edit tools writing it since the prompt: (those files as
+    the review named them, in order and without repeats; how many findings
+    they hold). The count is -1, with no files, when the record is known to
+    be incomplete: lost state, or more paths than the list keeps.
+
+    `at_stop_start`: turn_touched as the Stop began; a prompt that arrives
+    while the review runs resets the stored list. A finding path that is not
+    one of the `reviewed` files, or that cannot be resolved, is left out."""
+    since, complete = touched_since_prompt(session_id)
+    touched = list(dict.fromkeys(list(at_stop_start) + since))
+    if not complete or len(touched) >= TOUCHED_PATHS_CAP:
+        return [], -1
+    _, inside = touched_scope(repo_root, cwd, touched)
+    root = os.path.realpath(repo_root)
+
+    def rel(f):
+        try:
+            return _rel_in_repo(root, os.path.join(root, f))
+        except (ValueError, OSError):  # NUL, or a name the OS cannot encode
+            return None
+    candidates = {}
+    for f in reviewed:
+        r = rel(f)
+        if r is not None and r not in inside:
+            candidates.setdefault(r, f)
+    names, count = [], 0
+    for f in finding_paths:
+        r = rel(f) if isinstance(f, str) and f else None
+        if r in candidates:
+            count += 1
+            if candidates[r] not in names:
+                names.append(candidates[r])
+    return names, count
+
+
 def record_reviewed_diff(session_id, diff_hash):
     def _save(state):
         state["reviewed_diff_hash"] = diff_hash
@@ -221,8 +339,8 @@ def restore_unreviewed_stop_state(session_id, paths, baseline_sha):
     def _restore(state):
         existing = state.get("touched_paths", [])
         merged = list(dict.fromkeys(list(paths) + list(existing)))
-        if len(merged) > 200:
-            merged = merged[:200]
+        if len(merged) > TOUCHED_PATHS_CAP:
+            merged = merged[:TOUCHED_PATHS_CAP]
         state["touched_paths"] = merged
         if baseline_sha and not state.get("baseline_sha"):
             state["baseline_sha"] = baseline_sha
@@ -582,6 +700,91 @@ def _append_reviewed_shas(repo_root, shas, vulns_found=0):
                 f.writelines(lines)
         except OSError:
             pass
+
+
+# ─── commits of a turn, count only ──────────────────────────────────────────
+#
+# A commit review starts from a hook on the Bash tool. A commit made another
+# way (the PowerShell tool, a script, the user's own terminal) starts none.
+# The Stop row says how many commits a turn made and how many of them no
+# commit hook saw. Nothing reads these to decide whether a review runs.
+#
+# Kept in a file of its own per session, append-only: saving the session state
+# from one more background hook could drop another hook's change where there
+# is no state lock (Windows). Lines: `seen <sha prefix>` from commit hooks,
+# `counted <sha>` from the Stop hook. Every session's are read, so a commit
+# is seen by any of them and counted once on this machine.
+
+TURN_COMMITS_ERROR = -1
+
+
+def _note_commits(session_id, kind, shas):
+    """Never raises."""
+    if not shas or portable_output():
+        return
+    try:
+        path = get_commit_log_file(session_id)
+        make_state_dir(os.path.dirname(path))
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND
+                     | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        with os.fdopen(fd, "a") as f:
+            f.write("".join(f"{kind} {sha}\n" for sha in shas))
+    except Exception as e:
+        debug_log(f"{kind} commits not noted: {e}")
+
+
+def note_seen_commits(session_id, shas):
+    """A commit hook saw these commits."""
+    _note_commits(session_id, "seen", shas)
+
+
+def note_counted_commits(session_id, shas):
+    """These commits went out in a Stop row."""
+    _note_commits(session_id, "counted", shas)
+
+
+def turn_commits_code(repo_root, prompt_at, until, head_before=None):
+    """(code, shas) for the commits made in this checkout from the prompt to
+    `until` that no Stop row has counted yet:
+
+        made * 10000 + no_review * 100 + unseen     (each capped at 99)
+
+    no_review: no finished or running review in this clone, for whatever
+    reason. unseen: of those, the ones no commit hook saw. The code is None
+    when nothing was committed or the start of the turn is not known,
+    TURN_COMMITS_ERROR when git could not say."""
+    if not isinstance(prompt_at, (int, float)) or not 0 < prompt_at < 1e11:
+        return None, []
+    shas = turn_commit_shas(repo_root, prompt_at, until, head_before)
+    if not shas:
+        return (TURN_COMMITS_ERROR if shas is None else None), []
+    noted = {"seen": set(), "counted": set()}
+    for path in commit_log_files(newer_than=prompt_at):
+        try:
+            with open(path, encoding="utf-8", errors="replace") as f:
+                for line in f:
+                    kind, _, value = line.strip().partition(" ")
+                    if value and kind in noted:
+                        noted[kind].add(value)
+        except OSError:
+            return TURN_COMMITS_ERROR, []
+    new = [s for s in shas if s not in noted["counted"]]
+    if not new:
+        return None, []
+    gd = _git_dir(repo_root)
+    if not gd:
+        return TURN_COMMITS_ERROR, []
+    # The marker file, not its lock: taking the lock for a moment could make
+    # the review that is about to claim the commit leave it alone. Markers
+    # first: a review that ends in between then reads as finished.
+    missed = [s for s in new
+              if not os.path.exists(os.path.join(gd, _INFLIGHT_PREFIX + s))]
+    reviewed = _load_reviewed_shas(repo_root, _gd=gd)
+    missed = [s for s in missed if s not in reviewed]
+    seen = tuple(noted["seen"])
+    unseen = sum(1 for s in missed if not s.startswith(seen))
+    code = min(len(new), 99) * 10000 + min(len(missed), 99) * 100 + min(unseen, 99)
+    return code, new
 
 
 # ─── repeated-diff count ────────────────────────────────────────────────────

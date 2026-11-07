@@ -40,7 +40,7 @@ except ImportError:  # a Python built without TLS
 
 import extensibility
 import review_api
-from _base import debug_log, _record_usage, _record_http_error, _record_net_error, _clear_net_error, _PV, PROVENANCE_TAG, state_dir as _resolve_state_dir, agent_sdk_site_dirs, make_state_dir  # noqa: F401
+from _base import debug_log, _record_usage, _record_http_error, _record_net_error, _clear_net_error, _PV, PROVENANCE_TAG, state_dir as _resolve_state_dir, agent_sdk_site_dirs, make_state_dir, portable_output  # noqa: F401
 from session_state import load_state, with_locked_state
 from gitutil import git_config_env, SAFE_GIT_CONFIG
 
@@ -108,11 +108,45 @@ def _bootstrap_pywin32(site_packages_dir):
         debug_log(f"pywin32 bootstrap failed (may break SDK import on Windows): {e}")
 
 
-# Plan Security Check Configuration
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-# OAuth access token — Claude Code passes this for /login users.
-# The Anthropic API accepts it as `Authorization: Bearer <token>` instead of `x-api-key`.
-ANTHROPIC_AUTH_TOKEN = os.environ.get("ANTHROPIC_AUTH_TOKEN", "")
+_CLAUDE_AI_TOKEN_PREFIX = "sk-ant-oat"
+_API_HOST = "api.anthropic.com"
+
+
+def _route_credentials(env, portable: bool) -> bool:
+    """Put the credentials in `env` where the default API host can use them.
+    Returns whether a token was held back. Does nothing for another API host
+    or a cloud provider: what those take is their own business.
+
+    - Claude Code hands an apiKeyHelper's output over as ANTHROPIC_API_KEY,
+      also when it is a claude.ai token. The API takes that only as a
+      bearer, so as a key every review ends in a 401.
+    - A host other than Claude Code can hand its own gateway's bearer without
+      the gateway's address. It is no credential for the default API host, so
+      it is not sent there. Claude Code passes both, so its sessions are left
+      alone."""
+    base = env.get("ANTHROPIC_BASE_URL", "").strip()
+    try:
+        api_host = (urllib.parse.urlsplit(base).hostname or "").lower() if base else _API_HOST
+    except ValueError:
+        return False
+    if api_host != _API_HOST or _HAS_3P_PROVIDER_AT_LOAD:
+        return False
+    held_back = False
+    token = env.get("ANTHROPIC_AUTH_TOKEN", "")
+    # With a base URL the token was meant for it, whichever shape it has.
+    if portable and not base and token and not token.startswith(_CLAUDE_AI_TOKEN_PREFIX):
+        del env["ANTHROPIC_AUTH_TOKEN"]
+        token, held_back = "", True
+        debug_log("ANTHROPIC_AUTH_TOKEN not used: it is not a claude.ai token and "
+                  "ANTHROPIC_BASE_URL is not set")
+    key = env.get("ANTHROPIC_API_KEY", "")
+    if key.startswith(_CLAUDE_AI_TOKEN_PREFIX) and (
+            not token or token.startswith(_CLAUDE_AI_TOKEN_PREFIX)):
+        env["ANTHROPIC_AUTH_TOKEN"] = token or key
+        del env["ANTHROPIC_API_KEY"]
+    return held_back
+
+
 # On 3P providers (Bedrock/Vertex/Foundry/Mantle), credentials live in the
 # provider env (AWS_PROFILE, GOOGLE_APPLICATION_CREDENTIALS, etc.) — not in
 # ANTHROPIC_*. Treat presence of any 3P provider flag as "has credentials"
@@ -130,6 +164,14 @@ _HAS_3P_PROVIDER_AT_LOAD = any(
         "CLAUDE_CODE_USE_ANTHROPIC_AWS",
     )
 )
+# In os.environ itself, so the CLI a review starts gets the same credentials.
+AUTH_TOKEN_HELD_BACK = _route_credentials(os.environ, portable_output())
+
+# Plan Security Check Configuration
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+# OAuth access token — Claude Code passes this for /login users.
+# The Anthropic API accepts it as `Authorization: Bearer <token>` instead of `x-api-key`.
+ANTHROPIC_AUTH_TOKEN = os.environ.get("ANTHROPIC_AUTH_TOKEN", "")
 HAS_API_CREDENTIALS = bool(
     ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN or _HAS_3P_PROVIDER_AT_LOAD
 )
@@ -1971,6 +2013,19 @@ def _api_retry_status(msg: Any) -> Optional[int]:
     return status if isinstance(status, int) else None
 
 
+_OAUTH_TOKEN_PREFIX = "sk-ant-oat"
+
+
+def _oauth_variable_is_safe() -> bool:
+    """Whether a claude.ai token may move out of ANTHROPIC_AUTH_TOKEN. With a
+    base URL set it can be a gateway's bearer, bare mode ignores the OAuth
+    variable, and a cloud session has no stored login to protect and rotates
+    its own token."""
+    bare = os.environ.get("CLAUDE_CODE_SIMPLE", "").strip().lower()
+    return not (os.environ.get("ANTHROPIC_BASE_URL", "").strip()
+                or bare in ("1", "true", "yes", "on") or _is_remote_session())
+
+
 def _agentic_spawn_env() -> Dict[str, str]:
     """opts.env for the SDK-spawned inner `claude` CLI.
 
@@ -1986,7 +2041,8 @@ def _agentic_spawn_env() -> Dict[str, str]:
     blanking the inherited OAuth token there strands the grandchild with
     zero credentials → ProcessError → agentic silently falls back to
     single-shot on every commit. So forward the OAuth token whenever it
-    is the only credential.
+    is the only credential, as CLAUDE_CODE_OAUTH_TOKEN when it is a
+    claude.ai token.
     """
     env = {
         # Policy settings can enable this plugin inside the reviewing CLI too;
@@ -2018,12 +2074,29 @@ def _agentic_spawn_env() -> Dict[str, str]:
     # No API key — forward the OAuth token from the parent process so the
     # SDK grandchild has credentials. Empty string is fine (the SDK will
     # use whatever auth path is left).
-    env["ANTHROPIC_AUTH_TOKEN"] = os.environ.get("ANTHROPIC_AUTH_TOKEN") or ""
+    token = os.environ.get("ANTHROPIC_AUTH_TOKEN") or ""
+    if token.startswith(_OAUTH_TOKEN_PREFIX) and _oauth_variable_is_safe():
+        # Given as ANTHROPIC_AUTH_TOKEN, the inner CLI still renews a stored
+        # claude.ai login it does not run on, which can sign the user out.
+        # Given as its OAuth token, it leaves the stored login alone. That
+        # route also turns on 1-hour cache writes, which cost more.
+        env["CLAUDE_CODE_OAUTH_TOKEN"] = token
+        env["FORCE_PROMPT_CACHING_5M"] = "1"
+        token = ""
+    env["ANTHROPIC_AUTH_TOKEN"] = token
     return env
 
 
 # The tools the agentic reviewer is given to look around the repo.
 _REVIEWER_FILE_TOOLS = ("Read", "Grep", "Glob")
+
+
+def _is_wrapped_verdict(value: Any) -> bool:
+    """True for a verdict nested inside its own list key:
+    {"findings": {"findings": [...]}}."""
+    return isinstance(value, dict) and any(
+        isinstance(inner, dict) and isinstance(inner.get(key), list)
+        for key, inner in value.items())
 
 
 def _agentic_context_dir(repo_dir: str) -> str:
@@ -2041,6 +2114,9 @@ def agentic_review(
                      before the review, 2 = it went missing during it
       rv_tool_err    Read/Grep/Glob calls that came back as errors
       rv_tool_calls  Read/Grep/Glob calls made
+      rv_so_err      verdicts the CLI refused, e.g. for breaking the schema
+      rv_so_wrapped  of those, verdicts wrapped in their own key, as in
+                     {"findings": {"findings": [...]}}
       rv_turns       turns the reviewer took, as the CLI counts them
       rv_api_ms      time the reviewer spent waiting on the model, in ms
 
@@ -2049,7 +2125,8 @@ def agentic_review(
     that ends without one (the CLI exits early) adds nothing to them."""
     context_dir = _agentic_context_dir(repo_dir)
     gone = 0 if os.path.isdir(context_dir) else 1
-    ctx = {"rv_tool_err": 0, "rv_tool_calls": 0, "rv_turns": 0, "rv_api_ms": 0}
+    ctx = {"rv_tool_err": 0, "rv_tool_calls": 0, "rv_turns": 0, "rv_api_ms": 0,
+           "rv_so_err": 0, "rv_so_wrapped": 0}
     guidance, vulns, metrics = _agentic_review(repo_dir, diff_files, touched_paths, ctx)
     if not gone and not os.path.isdir(context_dir):
         gone = 2
@@ -2217,7 +2294,8 @@ def _agentic_review(
             # env as {**os.environ, **opts.env}, so the inner claude inherits
             # it and prefers it over ANTHROPIC_API_KEY — but some model
             # endpoints reject OAuth bearers (401 → exit 1 → silent
-            # fallback). Override with empty so API-key auth wins.
+            # fallback). Override with empty so API-key auth wins. With no
+            # API key, a claude.ai token moves to CLAUDE_CODE_OAUTH_TOKEN.
             #
             # On CCR (entrypoint=remote*) the daemon passes auth on file
             # descriptors to the top-level claude process; the SDK-spawned
@@ -2252,6 +2330,8 @@ def _agentic_review(
 
         # Blocks are matched by shape so older SDK builds need no extra import.
         file_tool_ids = set()
+        # StructuredOutput call id -> whether its verdict was wrapped.
+        verdicts: Dict[str, bool] = {}
         auth_retries = 0
         # Closed on the way out, also on a raise, so the CLI stops with the review.
         async with contextlib.aclosing(query(prompt=_once(), options=opts)) as messages:
@@ -2268,6 +2348,9 @@ def _agentic_review(
                                 and getattr(b, "id", None)):
                             file_tool_ids.add(b.id)
                             ctx["rv_tool_calls"] += 1
+                        elif (getattr(b, "name", None) == "StructuredOutput"
+                                and getattr(b, "id", None)):
+                            verdicts[b.id] = _is_wrapped_verdict(getattr(b, "input", None))
                 elif isinstance(msg, ResultMessage):
                     subtype = msg.subtype
                     if msg.structured_output is not None:
@@ -2300,6 +2383,11 @@ def _agentic_review(
                             if getattr(b, "is_error", None) is True
                             and getattr(b, "tool_use_id", None) in file_tool_ids
                         )
+                        for b in content:
+                            wrapped = verdicts.get(getattr(b, "tool_use_id", None))
+                            if wrapped is not None and getattr(b, "is_error", None) is True:
+                                ctx["rv_so_err"] += 1
+                                ctx["rv_so_wrapped"] += wrapped
         return structured, n, subtype
 
     def _run(system: str, prompt: str, *, schema: Dict[str, Any]
