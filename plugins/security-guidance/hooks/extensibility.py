@@ -58,6 +58,11 @@ PATTERNS_BASENAMES = ("security-patterns.yaml", "security-patterns.yml", "securi
 _guidance_block: str = ""
 _user_patterns: List[Dict[str, Any]] = []
 
+# Custom rules whose regex the slow-regex check refused. Telemetry only.
+_refused_regexes = 0
+# Seconds the slowest custom regex took in this hook. Telemetry only.
+slowest_regex = 0.0
+
 
 # ── public API ───────────────────────────────────────────────────────────────
 
@@ -68,7 +73,8 @@ def load_for_session(cwd: Optional[str]) -> None:
     Called from the hook's main() before dispatching. Failures are non-fatal —
     a malformed config file produces a debug_log entry, never a crash.
     """
-    global _guidance_block, _user_patterns
+    global _guidance_block, _user_patterns, _refused_regexes
+    _refused_regexes = 0
     try:
         _guidance_block = _wrap_guidance(_load_guidance(cwd))
     except Exception as e:
@@ -313,6 +319,8 @@ def _validate_pattern(entry: Any, source: str) -> Optional[Dict[str, Any]]:
         rule["substrings"] = substrings
     if regex:
         if _has_redos_structure(regex):
+            global _refused_regexes
+            _refused_regexes += 1
             debug_log(f"extensibility: skipping {name}: regex looks ReDoS-prone: {regex!r:.60}")
             return None
         try:
@@ -328,6 +336,7 @@ def _validate_pattern(entry: Any, source: str) -> Optional[Dict[str, Any]]:
         if not isinstance(paths, list) or not isinstance(exclude, list):
             debug_log(f"extensibility: skipping {name}: paths/exclude_paths must be lists")
             return None
+        rule["_globs"] = (tuple(paths), tuple(exclude))  # read by edit_stats
         # Capture as defaults so the lambda doesn't share state across rules.
         rule["path_filter"] = (
             lambda p, _inc=tuple(paths), _exc=tuple(exclude): _glob_match(p, _inc, _exc)
@@ -378,3 +387,117 @@ def _has_redos_structure(regex: str) -> bool:
                 if a.startswith(b) or b.startswith(a):
                     return True
     return False
+
+
+# ── telemetry: how custom rules are written ──────────────────────────────────
+# Counts and flags only, never a glob, a regex, a rule name or a path. Nothing
+# here changes which rules apply.
+
+# Bits of cr_shapes.
+_SHAPE_PLAIN_PATHS = 1      # a `paths` glob with a folder and no leading `*`
+_SHAPE_PLAIN_EXCLUDE = 2    # the same in `exclude_paths`
+_SHAPE_MID_STARS = 4        # `/**/` inside a glob
+_SHAPE_BRACES = 8           # `{a,b}`, which fnmatch takes literally
+_SHAPE_LEADING = 16         # starts with `/` or `./`
+_SHAPE_REGEX_REFUSED = 32   # a rule dropped by the slow-regex check
+_SHAPE_REGEX_COUNTED = 64   # a loaded regex repeats a repeated group by count
+
+_COUNTED_REPEAT = re.compile(r"\((?:\?:)?[^()\[\]\\]*[+*][^()\[\]\\]*\)\{\d*(?:,\d*)?\}")
+
+
+def _shape_bits(globs: Tuple[str, ...], plain: int) -> int:
+    bits = 0
+    for g in globs:
+        if not isinstance(g, str):
+            continue
+        g = g.replace("\\", "/")
+        if "/" in g and not g.startswith(("*", "/", "./")):
+            bits |= plain
+        if "/**/" in g:
+            bits |= _SHAPE_MID_STARS
+        if "{" in g:
+            bits |= _SHAPE_BRACES
+        if g.startswith(("/", "./")):
+            bits |= _SHAPE_LEADING
+    return bits
+
+
+def _zero_depth_forms(glob: str) -> List[str]:
+    """`glob`, and the globs left when each `**/` matches no folder."""
+    forms = [glob]
+    for form in forms:
+        for m in re.finditer(r"(?:^|(?<=/))\*\*/", form):
+            shorter = form[:m.start()] + form[m.end():]
+            if shorter and shorter not in forms and len(forms) < 16:
+                forms.append(shorter)
+    return forms
+
+
+def _wider_glob_match(path: str, rels: Tuple[str, ...],
+                      include: Tuple[str, ...], exclude: Tuple[str, ...]) -> bool:
+    """What _glob_match would say if globs were also read against the path
+    inside the project (`rels`), and `**/` could match no folder."""
+    norm = path.replace(os.sep, "/")
+    names = [norm, norm.lstrip("/"), os.path.basename(norm)]
+    for rel in rels:
+        names += [rel, "/" + rel, "./" + rel]
+
+    def _hit(globs: Tuple[str, ...]) -> bool:
+        return any(fnmatch.fnmatch(n, f) for g in globs
+                   for f in _zero_depth_forms(g) for n in names)
+    if include and not _hit(include):
+        return False
+    if exclude and _hit(exclude):
+        return False
+    return True
+
+
+def _inside(root: Optional[str], path: str) -> Optional[str]:
+    if not root:
+        return None
+    try:
+        rel = os.path.relpath(os.path.realpath(path), os.path.realpath(root))
+    except (OSError, ValueError):
+        return None
+    if rel == os.pardir or rel.startswith(os.pardir + os.sep):
+        return None
+    return rel.replace(os.sep, "/")
+
+
+def edit_stats(file_path: str, cwd: Optional[str], project_dir: Optional[str]) -> Dict[str, int]:
+    """Counts for one edit; empty for a user with no custom rules.
+    Telemetry only."""
+    stats: Dict[str, int] = {}
+    shapes = _SHAPE_REGEX_REFUSED if _refused_regexes else 0
+    gain = loss = 0
+    # From both folders: in a worktree the session's own is the one that fits.
+    rels = tuple(dict.fromkeys(
+        r for r in (_inside(d, file_path) for d in (cwd, project_dir)) if r is not None
+    )) if _user_patterns else ()
+    for rule in _user_patterns:
+        include, exclude = rule.get("_globs", ((), ()))
+        if include or exclude:
+            shapes |= _shape_bits(include, _SHAPE_PLAIN_PATHS)
+            shapes |= _shape_bits(exclude, _SHAPE_PLAIN_EXCLUDE)
+            try:
+                now = _glob_match(file_path.lstrip("/"), include, exclude)
+                wider = _wider_glob_match(file_path, rels, include, exclude)
+            except Exception:
+                continue
+            gain += wider and not now
+            loss += now and not wider
+        if _COUNTED_REPEAT.search(rule.get("regex", "")):
+            shapes |= _SHAPE_REGEX_COUNTED
+    if _user_patterns:
+        stats["cr_rules"] = len(_user_patterns)
+    if shapes:
+        stats["cr_shapes"] = shapes
+    if gain:
+        stats["cr_gain"] = int(gain)
+    if loss:
+        stats["cr_loss"] = int(loss)
+    return stats
+
+
+# A custom regex that takes at least this long is reported, in seconds.
+SLOW_REGEX_S = 0.1

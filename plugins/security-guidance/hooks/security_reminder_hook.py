@@ -228,7 +228,7 @@ _TAIL_METRICS: Dict[str, Any] = {}
 # Of those, the ones that go after the others whenever they were set: a row
 # over CC's key cap loses them before any older review key. Only the launcher
 # keys below come later; those are also on every smaller row of the session.
-_LAST_METRIC_KEYS = ("diff_seen",)
+_LAST_METRIC_KEYS = ("diff_seen", *diffstate.CUSTOM_RULE_KEYS)
 
 # The launcher's slow interpreter probes, if any. After the keys above.
 _LAUNCHER_METRICS: Dict[str, Any] = launcher_probe_metrics()
@@ -679,11 +679,15 @@ def check_patterns(file_path, content):
                     break
 
         if not matched and "regex" in pattern and content:
+            started = time.perf_counter()
             try:
                 if re.search(pattern["regex"], content):
                     matched = True
             except Exception:
                 pass
+            if "_source" in pattern:  # a custom rule
+                extensibility.slowest_regex = max(
+                    extensibility.slowest_regex, time.perf_counter() - started)
 
         if matched:
             matches.append((pattern["ruleName"], pattern["reminder"]))
@@ -2596,6 +2600,10 @@ def handle_stop_hook(input_data):
             if isinstance(snap.get(_k), int) and snap[_k] > 0:
                 _TAIL_METRICS[_k] = snap[_k]
 
+        for _k in diffstate.CUSTOM_RULE_KEYS:
+            if snap.get("custom_rules", {}).get(_k):
+                _TAIL_METRICS[_k] = snap["custom_rules"][_k]
+
     # Sweep pattern-warning outcomes (pure local work; stop_hook_active is
     # already guaranteed False here so no double-count guard needed).
     sweep = {}
@@ -3182,7 +3190,15 @@ def main():
         if file_path.startswith(plans_dir):
             sys.exit(0)
 
-        record_touched_path(session_id, file_path)
+        # Telemetry only: how this edit's custom rules are written.
+        rule_stats = None
+        if ENABLE_PATTERN_RULES:
+            try:
+                rule_stats = extensibility.edit_stats(
+                    file_path, input_data.get("cwd"), os.environ.get("CLAUDE_PROJECT_DIR"))
+            except Exception as e:
+                debug_log(f"custom rule stats failed: {e}")
+        record_touched_path(session_id, file_path, rule_stats)
 
         content = extract_content_from_input(
             tool_name, tool_input, input_data.get("tool_response"))
@@ -3207,6 +3223,10 @@ def main():
                         debug_log(f"New patterns (not in baseline): {[r for r, _ in pattern_matches]}")
                     else:
                         debug_log("All patterns existed in baseline, skipping")
+
+            if extensibility.slowest_regex >= extensibility.SLOW_REGEX_S:
+                diffstate.record_custom_rule_stats(
+                    session_id, {"cr_slow_ms": int(extensibility.slowest_regex * 1000)})
 
             for rule_name, reminder in pattern_matches:
                 warning_key = f"{file_path}-{rule_name}"
