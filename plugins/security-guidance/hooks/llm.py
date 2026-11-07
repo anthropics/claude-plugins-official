@@ -1972,10 +1972,16 @@ def _api_retry_status(msg: Any) -> Optional[int]:
 
 
 _OAUTH_TOKEN_PREFIX = "sk-ant-oat"
-# Where a token with that prefix stays in ANTHROPIC_AUTH_TOKEN: a custom base
-# URL means it is a gateway's bearer, bare mode ignores the OAuth variable, and
-# a cloud session has no stored login to protect and rotates its own token.
-_OAUTH_VARIABLE_UNSAFE_ENV = ("ANTHROPIC_BASE_URL", "CLAUDE_CODE_SIMPLE", "CLAUDE_CODE_REMOTE")
+
+
+def _oauth_variable_is_safe() -> bool:
+    """Whether a claude.ai token may move out of ANTHROPIC_AUTH_TOKEN. With a
+    base URL set it can be a gateway's bearer, bare mode ignores the OAuth
+    variable, and a cloud session has no stored login to protect and rotates
+    its own token."""
+    bare = os.environ.get("CLAUDE_CODE_SIMPLE", "").strip().lower()
+    return not (os.environ.get("ANTHROPIC_BASE_URL", "").strip()
+                or bare in ("1", "true", "yes", "on") or _is_remote_session())
 
 
 def _agentic_spawn_env() -> Dict[str, str]:
@@ -2027,9 +2033,7 @@ def _agentic_spawn_env() -> Dict[str, str]:
     # SDK grandchild has credentials. Empty string is fine (the SDK will
     # use whatever auth path is left).
     token = os.environ.get("ANTHROPIC_AUTH_TOKEN") or ""
-    if token.startswith(_OAUTH_TOKEN_PREFIX) and not any(
-        os.environ.get(name) for name in _OAUTH_VARIABLE_UNSAFE_ENV
-    ):
+    if token.startswith(_OAUTH_TOKEN_PREFIX) and _oauth_variable_is_safe():
         # Given as ANTHROPIC_AUTH_TOKEN, the inner CLI still renews a stored
         # claude.ai login it does not run on, which can sign the user out.
         # Given as its OAuth token, it leaves the stored login alone. That

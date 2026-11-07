@@ -36,6 +36,13 @@ class TestReviewerOauthToken:
         assert env["ANTHROPIC_AUTH_TOKEN"] == OAUTH_TOKEN
         assert "CLAUDE_CODE_OAUTH_TOKEN" not in env
 
+    @pytest.mark.parametrize("name, value", [
+        ("ANTHROPIC_BASE_URL", ""), ("ANTHROPIC_BASE_URL", "  "),
+        ("CLAUDE_CODE_SIMPLE", "0"), ("CLAUDE_CODE_REMOTE", "0"), ("CLAUDE_CODE_REMOTE", "false")])
+    def test_blank_or_off_counts_as_not_set(self, monkeypatch, name, value):
+        env = _spawn_env(monkeypatch, ANTHROPIC_AUTH_TOKEN=OAUTH_TOKEN, **{name: value})
+        assert env["CLAUDE_CODE_OAUTH_TOKEN"] == OAUTH_TOKEN
+
     def test_api_key_wins_over_a_claude_ai_token(self, monkeypatch):
         env = _spawn_env(monkeypatch, ANTHROPIC_API_KEY="key", ANTHROPIC_AUTH_TOKEN=OAUTH_TOKEN)
         assert env["ANTHROPIC_AUTH_TOKEN"] == ""
