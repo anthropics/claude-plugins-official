@@ -15,6 +15,8 @@ Discovery, in precedence order (matching CLAUDE.md / settings.json):
   - ``$CLAUDE_CONFIG_DIR/<name>``         (user, when set to another directory)
   - ``<cwd>/.claude/<name>``              (project, committed)
   - ``<cwd>/.claude/<name>.local.<ext>``  (project local, gitignored)
+  - the last two again in the project's own folder (``CLAUDE_PROJECT_DIR``)
+    once the session has moved away from it, see ``_project_dirs``
 
 Managed delivery via ``managed-settings.json`` is not yet supported.
 Org admins can still push files to ``~/.claude/`` (or the directory
@@ -115,26 +117,97 @@ def _same_dir(a: str, b: str) -> bool:
         return os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))
 
 
-def _config_paths(cwd: Optional[str], basename: str) -> List[Tuple[str, str]]:
-    """Existing config file paths, lowest precedence first (so concat reads in
-    precedence order user → project → project-local). Truncation is done on
-    the concatenated string, so lowest-precedence content is dropped last."""
-    paths = [("User", os.path.join(d, basename)) for d in _user_config_dirs()]
-    if cwd:
-        paths.append(("Project", os.path.join(cwd, ".claude", basename)))
-        # claude-security-guidance.local.md / security-patterns.local.yaml
-        stem, ext = os.path.splitext(basename)
-        paths.append(("Project (local)", os.path.join(cwd, ".claude", f"{stem}.local{ext}")))
+def _config_paths(cwd: Optional[str], basename: str) -> List[Tuple[str, str, Optional[str]]]:
+    """(label, path, project folder or None for a user file) of every config
+    file to look for, lowest precedence first (so concat reads in precedence
+    order user → project → project-local). Truncation is done on the
+    concatenated string, so lowest-precedence content is dropped last, and a
+    subfolder's files never push out the project's."""
+    paths: List[Tuple[str, str, Optional[str]]] = [
+        ("User", os.path.join(d, basename), None) for d in _user_config_dirs()]
+    # claude-security-guidance.local.md / security-patterns.local.yaml
+    stem, ext = os.path.splitext(basename)
+    for folder in _project_dirs(cwd):
+        paths.append(("Project", os.path.join(folder, ".claude", basename), folder))
+        paths.append(("Project (local)",
+                      os.path.join(folder, ".claude", f"{stem}.local{ext}"), folder))
     return paths
 
 
-def _readable_config(path: str, cwd: Optional[str]) -> bool:
-    """Whether a config file may be read. A project file (`cwd` given) must be
+def _checkout_of(path: str) -> Tuple[Optional[str], Optional[str]]:
+    """(top folder, shared git directory) of the checkout `path` is in, both
+    real paths, or (None, None). Read from disk, so no git process starts.
+    Linked worktrees of one repository share the second."""
+    top = os.path.realpath(path)
+    while not os.path.lexists(os.path.join(top, ".git")):
+        parent = os.path.dirname(top)
+        if parent == top:
+            return None, None
+        top = parent
+    git_dir = os.path.join(top, ".git")
+    if os.path.isfile(git_dir):
+        try:
+            with open(git_dir, encoding="utf-8", errors="replace") as f:
+                text = f.read(4096)
+        except OSError:
+            return top, None
+        if not text.startswith("gitdir:"):
+            return top, None
+        git_dir = os.path.join(top, text[len("gitdir:"):].strip())
+    try:
+        # A linked worktree's own git directory names the shared one here.
+        with open(os.path.join(git_dir, "commondir"), encoding="utf-8", errors="replace") as f:
+            git_dir = os.path.join(git_dir, f.read(4096).strip())
+    except OSError:
+        pass
+    return top, os.path.realpath(git_dir)
+
+
+def _is_inside(path: str, folder: str) -> bool:
+    """Compared on disk, so another spelling of a folder's name (case, an
+    8.3 name, a link) does not matter."""
+    path = os.path.realpath(path)
+    while not _same_dir(path, folder):
+        parent = os.path.dirname(path)
+        if parent == path:
+            return False
+        path = parent
+    return True
+
+
+def _project_dirs(cwd: Optional[str]) -> List[str]:
+    """Folders whose ``.claude`` holds this session's project files: the
+    project's own when the session has moved to another folder of it
+    (``cd src``), then the session's current folder. In a linked worktree the
+    first is the same folder of the worktree, which has that branch's files.
+    A folder of another repository outside the project gets its own only."""
+    if not cwd:
+        return []
+    project = (os.environ.get("CLAUDE_PROJECT_DIR") or "").strip()
+    if not project or not os.path.isabs(project) or _same_dir(cwd, project):
+        return [cwd]
+    top, shared = _checkout_of(cwd)
+    project_top, project_shared = _checkout_of(project)
+    same_top = bool(top and project_top and _same_dir(top, project_top))
+    if not same_top and shared and project_shared and _same_dir(shared, project_shared):
+        rel = os.path.relpath(os.path.realpath(project), project_top)
+        project = os.path.normpath(os.path.join(top, rel))
+    elif not (same_top or _is_inside(cwd, project)):
+        return [cwd]
+    # A session started in the home folder: those are the user files.
+    config = os.path.join(project, ".claude")
+    if _same_dir(cwd, project) or any(_same_dir(config, d) for d in _user_config_dirs()):
+        return [cwd]
+    return [project, cwd]
+
+
+def _readable_config(path: str, folder: Optional[str]) -> bool:
+    """Whether a config file may be read. A project file (`folder` given) must be
     a regular file at that very place: a link, or a `.claude` that is one,
     would bring in text from wherever it points."""
-    if cwd is None or not os.path.lexists(path):
+    if folder is None or not os.path.lexists(path):
         return True
-    expected = os.path.join(os.path.realpath(cwd), os.path.relpath(path, cwd))
+    expected = os.path.join(os.path.realpath(folder), os.path.relpath(path, folder))
     real = os.path.realpath(path)
     if os.path.normcase(real) == os.path.normcase(expected) and os.path.isfile(real):
         return True
@@ -144,8 +217,8 @@ def _readable_config(path: str, cwd: Optional[str]) -> bool:
 
 def _load_guidance(cwd: Optional[str]) -> str:
     parts = []
-    for label, path in _config_paths(cwd, GUIDANCE_BASENAME):
-        if not _readable_config(path, cwd if label.startswith("Project") else None):
+    for label, path, folder in _config_paths(cwd, GUIDANCE_BASENAME):
+        if not _readable_config(path, folder):
             continue
         try:
             with open(path, encoding="utf-8") as f:
@@ -194,7 +267,7 @@ def _wrap_guidance(guidance: str) -> str:
 
 def _load_user_patterns(cwd: Optional[str]) -> List[Dict[str, Any]]:
     rules: List[Dict[str, Any]] = []
-    for label, path in _config_paths(cwd, "security-patterns"):
+    for label, path, folder in _config_paths(cwd, "security-patterns"):
         # _config_paths returns an extensionless stem (e.g.
         # ".claude/security-patterns" or ".claude/security-patterns.local");
         # try each supported extension.
@@ -203,7 +276,7 @@ def _load_user_patterns(cwd: Optional[str]) -> List[Dict[str, Any]]:
             # One unusable file is skipped on its own, so the rules from the
             # other locations still load.
             try:
-                if not _readable_config(candidate, cwd if label.startswith("Project") else None):
+                if not _readable_config(candidate, folder):
                     continue
                 found = _rules_from_file(candidate, label)
             except Exception as e:
