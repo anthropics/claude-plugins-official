@@ -47,6 +47,31 @@ def get_lock_file(session_id):
     return os.path.join(state_dir, f"security_warnings_state_{_state_key(session_id)}.lock")
 
 
+def get_commit_log_file(session_id):
+    """Where diffstate notes the commits a session's hooks saw and counted."""
+    state_dir = _state_dir()
+    return os.path.join(state_dir, f"security_warnings_state_{_state_key(session_id)}.commits")
+
+
+def commit_log_files(newer_than):
+    """Those files of all sessions, written to since `newer_than` (epoch
+    seconds, with some slack for coarse file times)."""
+    state_dir = _state_dir()
+    out = []
+    try:
+        for name in os.listdir(state_dir):
+            if name.startswith("security_warnings_state_") and name.endswith(".commits"):
+                path = os.path.join(state_dir, name)
+                try:
+                    if os.path.getmtime(path) >= newer_than - 5:
+                        out.append(path)
+                except OSError:
+                    pass
+    except OSError:
+        pass
+    return out
+
+
 def cleanup_old_state_files():
     """Remove state files, lock files and leftover temporary files older than 30 days."""
     try:
@@ -59,7 +84,7 @@ def cleanup_old_state_files():
 
         for filename in os.listdir(state_dir):
             if filename.startswith("security_warnings_state_") and (
-                filename.endswith((".json", ".lock", ".tmp"))
+                filename.endswith((".json", ".lock", ".tmp", ".commits"))
             ):
                 file_path = os.path.join(state_dir, filename)
                 try:

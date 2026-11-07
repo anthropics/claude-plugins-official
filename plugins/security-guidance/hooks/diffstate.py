@@ -12,7 +12,7 @@ import subprocess
 import sys
 import time
 
-from _base import debug_log, portable_output, _PV
+from _base import debug_log, make_state_dir, portable_output, _PV
 import gitutil
 from gitutil import (
     GIT_CMD,
@@ -22,6 +22,8 @@ from gitutil import (
 )
 from session_state import with_locked_state
 from extensibility import _same_dir
+from gitutil import turn_commit_shas
+from session_state import commit_log_files, get_commit_log_file
 
 
 # =====================================================================
@@ -104,6 +106,7 @@ def consume_stop_state(session_id, clear=True):
             # Where and when the prompt hook captured it; see baseline_origin.
             "baseline_root": state.get("baseline_root"),
             "prompt_at": state.get("prompt_at"),
+            "turn_started": state.get("turn_started"),
             "baseline_kept": state.get("baseline_kept") or 0,
             "untracked_at_baseline": (
                 dict(state["untracked_at_baseline"])
@@ -136,7 +139,7 @@ def consume_stop_state(session_id, clear=True):
     return with_locked_state(session_id, _snap) or {
         "touched_paths": [], "baseline_sha": None, "head_at_capture": None,
         "untracked_at_baseline": {}, "baseline_root": None, "prompt_at": None,
-        "baseline_kept": 0,
+        "baseline_kept": 0, "turn_started": None,
         "fire_count": 0, "fire_count_expired": False, "previous_findings": [],
         "reviewed_diff_hash": None, "state_resets": 0, "state_overwrites": 0,
         "baseline_fail": 0, "turn_touched": [],
@@ -582,6 +585,91 @@ def _append_reviewed_shas(repo_root, shas, vulns_found=0):
                 f.writelines(lines)
         except OSError:
             pass
+
+
+# ─── commits of a turn, count only ──────────────────────────────────────────
+#
+# A commit review starts from a hook on the Bash tool. A commit made another
+# way (the PowerShell tool, a script, the user's own terminal) starts none.
+# The Stop row says how many commits a turn made and how many of them no
+# commit hook saw. Nothing reads these to decide whether a review runs.
+#
+# Kept in a file of its own per session, append-only: saving the session state
+# from one more background hook could drop another hook's change where there
+# is no state lock (Windows). Lines: `seen <sha prefix>` from commit hooks,
+# `counted <sha>` from the Stop hook. Every session's are read, so a commit
+# is seen by any of them and counted once on this machine.
+
+TURN_COMMITS_ERROR = -1
+
+
+def _note_commits(session_id, kind, shas):
+    """Never raises."""
+    if not shas or portable_output():
+        return
+    try:
+        path = get_commit_log_file(session_id)
+        make_state_dir(os.path.dirname(path))
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND
+                     | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        with os.fdopen(fd, "a") as f:
+            f.write("".join(f"{kind} {sha}\n" for sha in shas))
+    except Exception as e:
+        debug_log(f"{kind} commits not noted: {e}")
+
+
+def note_seen_commits(session_id, shas):
+    """A commit hook saw these commits."""
+    _note_commits(session_id, "seen", shas)
+
+
+def note_counted_commits(session_id, shas):
+    """These commits went out in a Stop row."""
+    _note_commits(session_id, "counted", shas)
+
+
+def turn_commits_code(repo_root, prompt_at, until, head_before=None):
+    """(code, shas) for the commits made in this checkout from the prompt to
+    `until` that no Stop row has counted yet:
+
+        made * 10000 + no_review * 100 + unseen     (each capped at 99)
+
+    no_review: no finished or running review in this clone, for whatever
+    reason. unseen: of those, the ones no commit hook saw. The code is None
+    when nothing was committed or the start of the turn is not known,
+    TURN_COMMITS_ERROR when git could not say."""
+    if not isinstance(prompt_at, (int, float)) or not 0 < prompt_at < 1e11:
+        return None, []
+    shas = turn_commit_shas(repo_root, prompt_at, until, head_before)
+    if not shas:
+        return (TURN_COMMITS_ERROR if shas is None else None), []
+    noted = {"seen": set(), "counted": set()}
+    for path in commit_log_files(newer_than=prompt_at):
+        try:
+            with open(path, encoding="utf-8", errors="replace") as f:
+                for line in f:
+                    kind, _, value = line.strip().partition(" ")
+                    if value and kind in noted:
+                        noted[kind].add(value)
+        except OSError:
+            return TURN_COMMITS_ERROR, []
+    new = [s for s in shas if s not in noted["counted"]]
+    if not new:
+        return None, []
+    gd = _git_dir(repo_root)
+    if not gd:
+        return TURN_COMMITS_ERROR, []
+    # The marker file, not its lock: taking the lock for a moment could make
+    # the review that is about to claim the commit leave it alone. Markers
+    # first: a review that ends in between then reads as finished.
+    missed = [s for s in new
+              if not os.path.exists(os.path.join(gd, _INFLIGHT_PREFIX + s))]
+    reviewed = _load_reviewed_shas(repo_root, _gd=gd)
+    missed = [s for s in missed if s not in reviewed]
+    seen = tuple(noted["seen"])
+    unseen = sum(1 for s in missed if not s.startswith(seen))
+    code = min(len(new), 99) * 10000 + min(len(missed), 99) * 100 + min(unseen, 99)
+    return code, new
 
 
 # ─── repeated-diff count ────────────────────────────────────────────────────
