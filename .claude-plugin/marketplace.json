@@ -4451,6 +4451,21 @@
         "sha": "10573bac239b7062a476667eaa574d400335c70e"
       },
       "homepage": "https://github.com/amzn/selling-partner-agentic-toolkit"
+    },
+    {
+      "name": "amnitex",
+      "displayName": "AmniTex (Native Helium LUT)",
+      "description": "Lossless byte-page memory layer and Fresh-Turn Conversation LUT in native Gold/Helium. 1.66 µs spatial TexGrid retrieval, 100% exact recall, and 95%–99.65% cumulative context savings across turns.",
+      "author": {
+        "name": "Amniscient, LLC"
+      },
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/Amnibro/amnitex.git",
+        "sha": "95600ef592d7decc70922e912ede2878d5a41ab3"
+      },
+      "homepage": "https://amni-scient.com/amnitex-lut.html"
     }
   ]
 }
