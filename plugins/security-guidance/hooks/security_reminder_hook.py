@@ -446,7 +446,10 @@ def _no_credentials_notice(file_path, session_id):
     except OSError:
         return None
     withheld_by = _credential_withholding_env_vars()
-    if withheld_by:
+    if llm.AUTH_TOKEN_HELD_BACK:
+        why = ("ANTHROPIC_AUTH_TOKEN is not a claude.ai token and "
+               "ANTHROPIC_BASE_URL is not set, so it was not sent anywhere")
+    elif withheld_by:
         why = ("Claude Code does not pass your sign-in to plugins while "
                + " or ".join(withheld_by) + " is set")
     else:
