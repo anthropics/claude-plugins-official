@@ -240,10 +240,11 @@ NO_EDIT_RECORD_NOTE_MAX_FILES = 10
 
 
 def _no_edit_record_note(names):
-    """The note for `names` (from findings_without_edit_record), or ""."""
+    """The note for `names` (from findings_without_edit_record), or "".
+    Quoted as JSON: a file name can hold a line break."""
     if not names:
         return ""
-    shown = ", ".join(f"`{n}`" for n in names[:NO_EDIT_RECORD_NOTE_MAX_FILES])
+    shown = ", ".join(json.dumps(n) for n in names[:NO_EDIT_RECORD_NOTE_MAX_FILES])
     if len(names) > NO_EDIT_RECORD_NOTE_MAX_FILES:
         shown += (f" and {len(names) - NO_EDIT_RECORD_NOTE_MAX_FILES} more of "
                   "the files above")
@@ -883,6 +884,7 @@ def handle_user_prompt_submit(input_data):
             state["baseline_sha"] = sha
             state["head_at_capture"] = head
             state.pop("turn_touched", None)
+            state.pop("turn_touched_lost", None)
             _store_baseline_fail(state, baseline_fail)
             # A Stop review that ends up in another checkout does not use
             # this baseline.
@@ -2982,8 +2984,8 @@ def handle_stop_hook(input_data):
                         [fp for fp, _ in diff_files])
                 no_record_note = _no_edit_record_note(names)
                 # Findings in such files; -1 when the record was incomplete
-                # and no note was added. Sent even when 0, as the last key
-                # of the row, so a row without it was cut by the key cap.
+                # and no note was added. Sent even when 0 and after the review
+                # keys, so a row without it was cut by the key cap.
                 _TAIL_METRICS["finding_no_edit_record"] = n_no_record
         except Exception as e:
             debug_log(f"no-edit-record note skipped: {e}")

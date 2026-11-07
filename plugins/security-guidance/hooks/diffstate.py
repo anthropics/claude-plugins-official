@@ -61,10 +61,6 @@ def load_baseline_sha(session_id):
     return with_locked_state(session_id, _load)
 
 
-# record_touched_path and turn_touched keep the newest paths only.
-TOUCHED_PATHS_CAP = 200
-
-
 def record_touched_path(session_id, file_path):
     """Append a file path to the touched_paths list (deduped, capped at 200).
 
@@ -132,6 +128,9 @@ def consume_stop_state(session_id, clear=True):
             + snap["touched_paths"]))[-TOUCHED_PATHS_CAP:]
         snap["turn_touched"] = turn
         if clear:
+            if snap["state_resets"] or snap["state_overwrites"]:
+                # turn_touched outlives this Stop, and so does its gap.
+                state["turn_touched_lost"] = True
             state["turn_touched"] = turn
             state["touched_paths"] = []
             state.pop("reviewed_diff_hash", None)
@@ -149,13 +148,18 @@ def consume_stop_state(session_id, clear=True):
     }
 
 
+# record_touched_path and turn_touched keep the newest paths only.
+TOUCHED_PATHS_CAP = 200
+
+
 def touched_since_prompt(session_id):
     """(paths, complete): every path the session's edit tools recorded since
     the prompt hook's baseline, read now and without consuming or writing
     anything, so edits recorded while a Stop review runs are in it.
     `complete` is False when the list is known to be missing paths: the
-    state file was lost or overwritten since the last Stop, or it could not
-    be read. Callers check the length against TOUCHED_PATHS_CAP."""
+    state was lost or overwritten since the prompt, it could not be read, or
+    the prompt hook's own save is not in it. Callers check the length
+    against TOUCHED_PATHS_CAP."""
     try:
         state = load_state(session_id)
     except Exception:
@@ -165,8 +169,9 @@ def touched_since_prompt(session_id):
     paths = list(dict.fromkeys(
         [p for p in state.get("turn_touched", []) if isinstance(p, str)]
         + [p for p in state.get("touched_paths", []) if isinstance(p, str)]))
-    lost = state.get("state_resets") or state.get("state_overwrites")
-    return paths, not lost
+    lost = (state.get("state_resets") or state.get("state_overwrites")
+            or state.get("turn_touched_lost"))
+    return paths, not lost and state.get("prompt_at") is not None
 
 
 # Path names compare without case where the filesystem usually does.
