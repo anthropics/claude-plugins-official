@@ -2026,6 +2026,14 @@ def _agentic_spawn_env() -> Dict[str, str]:
 _REVIEWER_FILE_TOOLS = ("Read", "Grep", "Glob")
 
 
+def _is_wrapped_verdict(value: Any) -> bool:
+    """True for a verdict nested inside its own list key:
+    {"findings": {"findings": [...]}}."""
+    return isinstance(value, dict) and any(
+        isinstance(inner, dict) and isinstance(inner.get(key), list)
+        for key, inner in value.items())
+
+
 def _agentic_context_dir(repo_dir: str) -> str:
     """The directory the agentic reviewer runs in."""
     return os.environ.get("SG_AGENTIC_CONTEXT_DIR") or repo_dir
@@ -2041,6 +2049,9 @@ def agentic_review(
                      before the review, 2 = it went missing during it
       rv_tool_err    Read/Grep/Glob calls that came back as errors
       rv_tool_calls  Read/Grep/Glob calls made
+      rv_so_err      verdicts the CLI refused, e.g. for breaking the schema
+      rv_so_wrapped  of those, verdicts wrapped in their own key, as in
+                     {"findings": {"findings": [...]}}
       rv_turns       turns the reviewer took, as the CLI counts them
       rv_api_ms      time the reviewer spent waiting on the model, in ms
 
@@ -2049,7 +2060,8 @@ def agentic_review(
     that ends without one (the CLI exits early) adds nothing to them."""
     context_dir = _agentic_context_dir(repo_dir)
     gone = 0 if os.path.isdir(context_dir) else 1
-    ctx = {"rv_tool_err": 0, "rv_tool_calls": 0, "rv_turns": 0, "rv_api_ms": 0}
+    ctx = {"rv_tool_err": 0, "rv_tool_calls": 0, "rv_turns": 0, "rv_api_ms": 0,
+           "rv_so_err": 0, "rv_so_wrapped": 0}
     guidance, vulns, metrics = _agentic_review(repo_dir, diff_files, touched_paths, ctx)
     if not gone and not os.path.isdir(context_dir):
         gone = 2
@@ -2252,6 +2264,8 @@ def _agentic_review(
 
         # Blocks are matched by shape so older SDK builds need no extra import.
         file_tool_ids = set()
+        # StructuredOutput call id -> whether its verdict was wrapped.
+        verdicts: Dict[str, bool] = {}
         auth_retries = 0
         # Closed on the way out, also on a raise, so the CLI stops with the review.
         async with contextlib.aclosing(query(prompt=_once(), options=opts)) as messages:
@@ -2268,6 +2282,9 @@ def _agentic_review(
                                 and getattr(b, "id", None)):
                             file_tool_ids.add(b.id)
                             ctx["rv_tool_calls"] += 1
+                        elif (getattr(b, "name", None) == "StructuredOutput"
+                                and getattr(b, "id", None)):
+                            verdicts[b.id] = _is_wrapped_verdict(getattr(b, "input", None))
                 elif isinstance(msg, ResultMessage):
                     subtype = msg.subtype
                     if msg.structured_output is not None:
@@ -2300,6 +2317,11 @@ def _agentic_review(
                             if getattr(b, "is_error", None) is True
                             and getattr(b, "tool_use_id", None) in file_tool_ids
                         )
+                        for b in content:
+                            wrapped = verdicts.get(getattr(b, "tool_use_id", None))
+                            if wrapped is not None and getattr(b, "is_error", None) is True:
+                                ctx["rv_so_err"] += 1
+                                ctx["rv_so_wrapped"] += wrapped
         return structured, n, subtype
 
     def _run(system: str, prompt: str, *, schema: Dict[str, Any]
