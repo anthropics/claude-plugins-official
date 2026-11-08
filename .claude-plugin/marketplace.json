@@ -2463,7 +2463,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/mintlify/mintlify-claude-plugin.git",
-        "sha": "c1c1700d405dc375c2d90a1d4f8b283e6422b7ec"
+        "sha": "a4f4310a0565e912a6ae9936441214a3fde8ac97"
       },
       "homepage": "https://www.mintlify.com/"
     },
