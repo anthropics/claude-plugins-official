@@ -43,10 +43,11 @@ def _merge_forward(repo):
 
 
 def _merge_with_conflict(repo, ref):
-    """Start a merge expected to stop on a conflict. Without the test identity
-    git refuses before it writes the merge message."""
-    return subprocess.run(["git", "merge", "--no-ff", "--no-edit", ref], cwd=repo,
-                          capture_output=True, env={**os.environ, **GIT_ENV})
+    """Start a merge and check that it stopped on a conflict, not on some
+    other refusal: exit 1 with the merge still open."""
+    r = subprocess.run(["git", "merge", "--no-ff", "--no-edit", ref], cwd=repo,
+                       capture_output=True, env={**os.environ, **GIT_ENV})
+    assert r.returncode == 1 and (repo / ".git" / "MERGE_HEAD").exists(), r.stderr
 
 
 def _push_fwd(repo, remote, env):
@@ -85,7 +86,7 @@ def test_conflict_resolution_is_still_reviewed(tmp_path, hook_env, stub_api):
     git(repo, "push", "-q", "origin", "release")
     _record_reviewed(repo, fix, other)
     git(repo, "switch", "-q", "-c", "fwd", "main")
-    assert _merge_with_conflict(repo, "origin/release").returncode != 0
+    _merge_with_conflict(repo, "origin/release")
     (repo / "app.py").write_text("a = resolved_by_hand\n")
     git(repo, "add", "-A")
     git(repo, "commit", "-q", "--no-edit")
