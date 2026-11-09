@@ -1097,6 +1097,51 @@ def _detect_main_branch(repo_root):
     return None
 
 
+# Commits turn_commit_shas reads.
+TURN_COMMITS_MAX = 100
+
+
+def turn_commit_shas(repo_root, since, until, head_before=None):
+    """SHAs that `git commit` made in this checkout from `since` to `until`
+    (epoch seconds), newest first, from its HEAD reflog. None when git cannot
+    say. Not merges, picks, reverts or rebases: no review hook waits for
+    those.
+
+    Goes by the time of the reflog entry, so checking out or pulling
+    somebody's recent commit does not count as making one (a commit made
+    with GIT_COMMITTER_DATE set is dated by that). Those times are whole
+    seconds; `head_before`, what HEAD was at `since`, leaves out the commits
+    made earlier in that second."""
+    try:
+        # --date=unix makes %gd `HEAD@{<seconds>}`; %gs is free text, so last.
+        r = subprocess.run(
+            [*GIT_CMD, "log", "-g", "--no-show-signature", "--date=unix",
+             "--basic-regexp", "--grep-reflog=^commit", "-n", str(TURN_COMMITS_MAX),
+             "--format=%H %gd %gs", "HEAD", "--"],
+            cwd=repo_root, capture_output=True, timeout=5,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError, ValueError):
+        return None
+    if r.returncode != 0:
+        # A repository without a commit has nothing to count.
+        return None if _git_rev_parse_head(repo_root) or not _git_toplevel(repo_root) else []
+    since = int(since)
+    entries = []
+    for line in r.stdout.decode("utf-8", errors="replace").splitlines():
+        # 40 digits only: the reviewed record knows no SHA-256 ids.
+        m = re.match(r"([0-9a-f]{40}) HEAD@\{(\d+)\} commit(?! \((?:merge|cherry-pick)\))", line)
+        if m and since <= int(m.group(2)) <= until:
+            entries.append((m.group(1), int(m.group(2))))
+    # Oldest match, as the turn itself can come back to where it started.
+    for i in range(len(entries) - 1, -1, -1):
+        if entries[i][1] > since:
+            break
+        if entries[i][0] == head_before:
+            del entries[i:]
+            break
+    return list(dict.fromkeys(sha for sha, _ in entries))
+
+
 def _git_reflog_recent_commits(repo_root, max_age_s=120, max_n=5):
     """Return (fresh_commit_shas, stale_count) from the HEAD reflog.
 

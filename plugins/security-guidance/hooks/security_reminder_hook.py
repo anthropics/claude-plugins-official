@@ -261,6 +261,13 @@ _TAIL_METRICS: Dict[str, Any] = {}
 # keys below come later; those are also on every smaller row of the session.
 _LAST_METRIC_KEYS = ("diff_seen",)
 
+# CC keeps this many keys of a row.
+_METRIC_KEY_CAP = 20
+# How long a Stop row waits for its commit count.
+_TURN_COMMITS_WAIT_S = 2.0
+# Set by the Stop hook: queues the commit count for the row being emitted.
+_turn_commits_request = None
+
 # The launcher's slow interpreter probes, if any. After the keys above.
 _LAUNCHER_METRICS: Dict[str, Any] = launcher_probe_metrics()
 # Whether the launcher skipped a packaged alias. Only on rows sent anyway.
@@ -291,6 +298,47 @@ def _note_reviewer_context(agentic_metrics):
     if turns or api_ms:
         _REVIEWER_EFFORT_METRICS["rv_effort"] = (
             turns * _EFFORT_TURNS_UNIT + min(api_ms, _EFFORT_TURNS_UNIT - 1))
+
+
+def _request_turn_commits(session_id, cwd, turn_started):
+    """Count the commits from the prompt to now on this Stop row."""
+    global _turn_commits_request
+    import time as _time
+    try:
+        started_at, head_before = turn_started
+    except (TypeError, ValueError):
+        return
+    _turn_commits_request = (session_id, cwd, started_at, head_before, _time.time())
+
+
+def _add_turn_commits(metrics):
+    """Append `turn_commits` to a Stop row that has room for it. Computed
+    here, once the row is ready, so the turn's commit hooks have had the
+    length of the review to start. On a thread with a short limit: findings
+    wait for this row. Commits that find no room are left for a later Stop
+    row of the turn. Never raises."""
+    if not _turn_commits_request or len(metrics) >= _METRIC_KEY_CAP:
+        return
+    session_id, cwd, started_at, head_before, until = _turn_commits_request
+    result = []
+
+    def _count():
+        try:
+            repo_root = _git_toplevel(cwd) if cwd else None
+            result.append(diffstate.turn_commits_code(
+                repo_root, started_at, until, head_before) if repo_root else (None, []))
+        except Exception as e:
+            debug_log(f"turn commit count failed: {e}")
+    try:
+        counter = threading.Thread(target=_count, daemon=True)
+        counter.start()
+        counter.join(_TURN_COMMITS_WAIT_S)
+    except RuntimeError as e:  # no thread to be had
+        debug_log(f"turn commit count failed: {e}")
+    code, shas = result[0] if result else (diffstate.TURN_COMMITS_ERROR, [])
+    if code is not None:
+        metrics["turn_commits"] = code
+        diffstate.note_counted_commits(session_id, shas)
 
 
 def emit_metrics(
@@ -401,6 +449,7 @@ def emit_metrics(
     # Last of all: the first key a full row loses.
     tail.update(_LAUNCHER_DIRECT)
     metrics = {**metrics, **{k: v for k, v in tail.items() if k not in metrics}}
+    _add_turn_commits(metrics)
     out = {"metrics": metrics}
     if rewake_summary:
         out["rewakeSummary"] = rewake_summary
@@ -862,6 +911,9 @@ def handle_user_prompt_submit(input_data):
     preserved = {"value": False}
 
     def _save(state):
+        # Where this turn's own commits start, also when the baseline below
+        # stays an earlier turn's. Telemetry only.
+        state["turn_started"] = [captured_at, head]
         # Only preserve if there's actually an old baseline to preserve.
         # First UPS of a session can have touched_paths if PostToolUse
         # somehow ran first (print mode, odd harnesses) — in that case
@@ -1678,6 +1730,7 @@ def handle_commit_review_posttooluse(input_data):
     # `git commit || git log --stat` where `N files changed` appears in output
     # even though the commit itself failed.
     all_shas = _COMMIT_SHA_RE.findall(bash_output)
+    diffstate.note_seen_commits(session_id, all_shas)
     commit_succeeded = (
         not interrupted
         and bool(all_shas)
@@ -1724,6 +1777,7 @@ def handle_commit_review_posttooluse(input_data):
                 _base["repo_resolution"] = repo_res
         _root = repo_root
         _fresh, _stale = _git_reflog_recent_commits(_root)
+        diffstate.note_seen_commits(session_id, _fresh)
         if _fresh:
             # Commits an earlier call's review is still working on are that
             # review's: it records them when it has a verdict. (Read before
@@ -2620,6 +2674,8 @@ def handle_stop_hook(input_data):
     head_at_capture = snap["head_at_capture"]
     untracked_at_baseline = snap.get("untracked_at_baseline") or {}
     previous_findings = snap["previous_findings"]
+    if not is_subagent and not portable_output():
+        _request_turn_commits(session_id, cwd, snap["turn_started"])
     # Only when it happened: state lost to an unreadable file, and saves that
     # overwrote another hook's (possible only without locking). SubagentStop
     # does not clear them, so it does not report them either.
