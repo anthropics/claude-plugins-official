@@ -13,6 +13,18 @@ GLOBS = ["*.ts", "**/*.ts", "**/src/**", "**/src/**/*.ts", "src/**", "src/*.ts",
 FILES = ["config.ts", "t.ts", "src/a.ts", "src/t.ts", "src/lib/a.ts", "src/lib/deep/t.ts", "other/a.ts"]
 
 
+@pytest.fixture(autouse=True)
+def _home_without_user_rules(tmp_path, monkeypatch):
+    """A home directory without the user's own rules and guidance."""
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    monkeypatch.setattr(extensibility, "_guidance_block", "")
+    monkeypatch.setattr(extensibility, "_user_patterns", [])
+
+
 @pytest.mark.parametrize("glob", GLOBS)
 def test_the_wider_reading_never_loses_an_include(glob, tmp_path):
     for f in FILES:
