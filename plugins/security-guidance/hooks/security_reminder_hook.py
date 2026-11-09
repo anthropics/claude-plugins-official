@@ -129,6 +129,7 @@ from diffstate import (  # noqa: E402,F401
     _diff_review_started, _diff_review_done,
     UNTRACKED_BASELINE_CAP, _list_untracked, compute_v2_review_set,
     touched_scope, review_scope_code,
+    findings_without_edit_record,
     baseline_origin, baseline_origin_metric, FOREIGN_ORIGINS,
     KEPT_NO_CAPTURE, KEPT_UNREVIEWED,
 )
@@ -220,6 +221,36 @@ CONTINUATION_SUFFIX = (
     "response."
 )
 
+# Added to a Stop finding in a file with no record of this session's edit
+# tools writing it since the prompt. The review set comes from git, so it can
+# hold another session's or process's work in the same checkout, and without
+# a turn-start snapshot also earlier work. The record is not proof (a shell
+# command leaves none, and a record can be lost), so the note states only
+# what is known and leaves the decision to the session.
+NO_EDIT_RECORD_NOTE = (
+    "\n\nNote: this review has no record of this session's edit tools "
+    "writing {files} since the last prompt. It reviews every change it "
+    "finds in the checkout, so that change may have been made another way: "
+    "by a shell command, in an earlier turn, or by another process or "
+    "session working in this checkout. If it is not your change, leave the "
+    "file as it is and tell the user about the finding instead of fixing "
+    "it. If it is your change, handle the finding as usual."
+)
+NO_EDIT_RECORD_NOTE_MAX_FILES = 10
+
+
+def _no_edit_record_note(names):
+    """The note for `names` (from findings_without_edit_record), or "".
+    Quoted as JSON: a file name can hold a line break."""
+    if not names:
+        return ""
+    shown = ", ".join(json.dumps(n) for n in names[:NO_EDIT_RECORD_NOTE_MAX_FILES])
+    if len(names) > NO_EDIT_RECORD_NOTE_MAX_FILES:
+        shown += (f" and {len(names) - NO_EDIT_RECORD_NOTE_MAX_FILES} more of "
+                  "the files above")
+    return NO_EDIT_RECORD_NOTE.format(files=shown)
+
+
 # New files named in the notice for a failed `git add -N`.
 _LEFT_OUT_NAMES_SHOWN = 5
 
@@ -229,6 +260,13 @@ _TAIL_METRICS: Dict[str, Any] = {}
 # over CC's key cap loses them before any older review key. Only the launcher
 # keys below come later; those are also on every smaller row of the session.
 _LAST_METRIC_KEYS = ("diff_seen",)
+
+# CC keeps this many keys of a row.
+_METRIC_KEY_CAP = 20
+# How long a Stop row waits for its commit count.
+_TURN_COMMITS_WAIT_S = 2.0
+# Set by the Stop hook: queues the commit count for the row being emitted.
+_turn_commits_request = None
 
 # The launcher's slow interpreter probes, if any. After the keys above.
 _LAUNCHER_METRICS: Dict[str, Any] = launcher_probe_metrics()
@@ -260,6 +298,47 @@ def _note_reviewer_context(agentic_metrics):
     if turns or api_ms:
         _REVIEWER_EFFORT_METRICS["rv_effort"] = (
             turns * _EFFORT_TURNS_UNIT + min(api_ms, _EFFORT_TURNS_UNIT - 1))
+
+
+def _request_turn_commits(session_id, cwd, turn_started):
+    """Count the commits from the prompt to now on this Stop row."""
+    global _turn_commits_request
+    import time as _time
+    try:
+        started_at, head_before = turn_started
+    except (TypeError, ValueError):
+        return
+    _turn_commits_request = (session_id, cwd, started_at, head_before, _time.time())
+
+
+def _add_turn_commits(metrics):
+    """Append `turn_commits` to a Stop row that has room for it. Computed
+    here, once the row is ready, so the turn's commit hooks have had the
+    length of the review to start. On a thread with a short limit: findings
+    wait for this row. Commits that find no room are left for a later Stop
+    row of the turn. Never raises."""
+    if not _turn_commits_request or len(metrics) >= _METRIC_KEY_CAP:
+        return
+    session_id, cwd, started_at, head_before, until = _turn_commits_request
+    result = []
+
+    def _count():
+        try:
+            repo_root = _git_toplevel(cwd) if cwd else None
+            result.append(diffstate.turn_commits_code(
+                repo_root, started_at, until, head_before) if repo_root else (None, []))
+        except Exception as e:
+            debug_log(f"turn commit count failed: {e}")
+    try:
+        counter = threading.Thread(target=_count, daemon=True)
+        counter.start()
+        counter.join(_TURN_COMMITS_WAIT_S)
+    except RuntimeError as e:  # no thread to be had
+        debug_log(f"turn commit count failed: {e}")
+    code, shas = result[0] if result else (diffstate.TURN_COMMITS_ERROR, [])
+    if code is not None:
+        metrics["turn_commits"] = code
+        diffstate.note_counted_commits(session_id, shas)
 
 
 def emit_metrics(
@@ -370,6 +449,7 @@ def emit_metrics(
     # Last of all: the first key a full row loses.
     tail.update(_LAUNCHER_DIRECT)
     metrics = {**metrics, **{k: v for k, v in tail.items() if k not in metrics}}
+    _add_turn_commits(metrics)
     out = {"metrics": metrics}
     if rewake_summary:
         out["rewakeSummary"] = rewake_summary
@@ -831,6 +911,9 @@ def handle_user_prompt_submit(input_data):
     preserved = {"value": False}
 
     def _save(state):
+        # Where this turn's own commits start, also when the baseline below
+        # stays an earlier turn's. Telemetry only.
+        state["turn_started"] = [captured_at, head]
         # Only preserve if there's actually an old baseline to preserve.
         # First UPS of a session can have touched_paths if PostToolUse
         # somehow ran first (print mode, odd harnesses) — in that case
@@ -853,6 +936,7 @@ def handle_user_prompt_submit(input_data):
             state["baseline_sha"] = sha
             state["head_at_capture"] = head
             state.pop("turn_touched", None)
+            state.pop("turn_touched_lost", None)
             _store_baseline_fail(state, baseline_fail)
             # A Stop review that ends up in another checkout does not use
             # this baseline.
@@ -1646,6 +1730,7 @@ def handle_commit_review_posttooluse(input_data):
     # `git commit || git log --stat` where `N files changed` appears in output
     # even though the commit itself failed.
     all_shas = _COMMIT_SHA_RE.findall(bash_output)
+    diffstate.note_seen_commits(session_id, all_shas)
     commit_succeeded = (
         not interrupted
         and bool(all_shas)
@@ -1692,6 +1777,7 @@ def handle_commit_review_posttooluse(input_data):
                 _base["repo_resolution"] = repo_res
         _root = repo_root
         _fresh, _stale = _git_reflog_recent_commits(_root)
+        diffstate.note_seen_commits(session_id, _fresh)
         if _fresh:
             # Commits an earlier call's review is still working on are that
             # review's: it records them when it has a verdict. (Read before
@@ -2588,6 +2674,8 @@ def handle_stop_hook(input_data):
     head_at_capture = snap["head_at_capture"]
     untracked_at_baseline = snap.get("untracked_at_baseline") or {}
     previous_findings = snap["previous_findings"]
+    if not is_subagent and not portable_output():
+        _request_turn_commits(session_id, cwd, snap["turn_started"])
     # Only when it happened: state lost to an unreadable file, and saves that
     # overwrote another hook's (possible only without locking). SubagentStop
     # does not clear them, so it does not report them either.
@@ -2941,6 +3029,27 @@ def handle_stop_hook(input_data):
         if new_sha:
             debug_log(f"Updated git baseline after stop hook: {new_sha[:12]}")
 
+        # Say so when a finding is in a file with no record of the session's
+        # edit tools writing it. Not when the state file was already found
+        # lost at the start of this Stop. Never fails the delivery.
+        no_record_note = ""
+        try:
+            if v2_metrics.get("dirty_now_count", -1) >= 0:
+                names, n_no_record = [], -1
+                if not (snap.get("state_resets") or snap.get("state_overwrites")):
+                    names, n_no_record = findings_without_edit_record(
+                        session_id, snap["turn_touched"], repo_root,
+                        input_data.get("cwd", ""),
+                        [v.get("filePath") for v in vulns],
+                        [fp for fp, _ in diff_files])
+                no_record_note = _no_edit_record_note(names)
+                # Findings in such files; -1 when the record was incomplete
+                # and no note was added. Sent even when 0 and after the review
+                # keys, so a row without it was cut by the key cap.
+                _TAIL_METRICS["finding_no_edit_record"] = n_no_record
+        except Exception as e:
+            debug_log(f"no-edit-record note skipped: {e}")
+
         sev = {"critical": 0, "high": 0, "medium": 0}
         for v in vulns:
             s = v.get("severity", "medium")
@@ -2972,7 +3081,8 @@ def handle_stop_hook(input_data):
             **({"secret_shaped_skipped": len(gitutil._secret_shaped_skipped)}
                if gitutil._secret_shaped_skipped else {}),
         }, rewake_summary=_format_vulns_summary(vulns),
-           additional_context=(PROVENANCE_BANNER + "\n\n" + concrete_guidance
+           additional_context=(PROVENANCE_BANNER + "\n\n"
+                               + concrete_guidance + no_record_note
                                + ("\n\n" + left_out_notice[1] if left_out_notice else "")
                                + CONTINUATION_SUFFIX + "\n"),
            hook_event_name=hook_event_name)
