@@ -4451,6 +4451,22 @@
         "sha": "10573bac239b7062a476667eaa574d400335c70e"
       },
       "homepage": "https://github.com/amzn/selling-partner-agentic-toolkit"
+    },
+    {
+      "name": "zai-web-search-mcp",
+      "description": "Z.ai (GLM Coding Plan) web search and reading for Claude Code via MCP: web_search_prime search, webReader page reading, vision image tools and zread GitHub repository analysis, using the user's own GLM Coding Plan API key.",
+      "author": {
+        "name": "FamousMonsterr"
+      },
+      "category": "productivity",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/FamousMonsterr/zai-web-search-mcp.git",
+        "path": "claude-code-plugin",
+        "ref": "main",
+        "sha": "4392b8837a9d4bdad240b607f3db817e2f29fdcc"
+      },
+      "homepage": "https://github.com/FamousMonsterr/zai-web-search-mcp"
     }
   ]
 }
