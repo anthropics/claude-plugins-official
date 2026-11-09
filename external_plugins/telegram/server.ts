@@ -55,27 +55,7 @@ if (!TOKEN) {
 const INBOX_DIR = join(STATE_DIR, 'inbox')
 const PID_FILE = join(STATE_DIR, 'bot.pid')
 
-// Telegram allows exactly one getUpdates consumer per token. If a previous
-// session crashed (SIGKILL, terminal closed) its server.ts grandchild can
-// survive as an orphan and hold the slot forever, so every new session sees
-// 409 Conflict. Kill any stale holder before we start polling.
 mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 })
-try {
-  const stale = parseInt(readFileSync(PID_FILE, 'utf8'), 10)
-  if (stale > 1 && stale !== process.pid) {
-    process.kill(stale, 0)
-    // PID files race with OS PID recycling — verify the holder is actually a
-    // server.ts process before SIGTERM. Otherwise a recycled PID can point at
-    // our own bun-run wrapper (kills our stdin → immediate self-shutdown) or
-    // an unrelated user process.
-    const cmd = execFileSync('ps', ['-p', String(stale), '-o', 'args='], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
-    if (cmd.includes('server.ts')) {
-      process.stderr.write(`telegram channel: replacing stale poller pid=${stale}\n`)
-      process.kill(stale, 'SIGTERM')
-    }
-  }
-} catch {}
-writeFileSync(PID_FILE, String(process.pid))
 
 // Last-resort safety net — without these the process dies silently on any
 // unhandled promise rejection. With them it logs and keeps serving tools.
@@ -94,6 +74,16 @@ const PERMISSION_REPLY_RE = /^\s*(y|yes|n|no)\s+([a-km-z]{5})\s*$/i
 
 const bot = new Bot(TOKEN)
 let botUsername = ''
+
+// Poller election state. Declared here because the approval and permission
+// paths above the election block consult it. See "Single-poller election".
+let pollerState: 'idle' | 'polling' | 'stopping' = 'idle'
+let pollingDisabled = false
+let standbySince = 0
+let mayTakeOver = true
+let acquireBlockedUntil = 0
+let staleLeasePid = 0
+let staleLeaseSeenAt = 0
 
 type PendingEntry = {
   senderId: string
@@ -123,6 +113,13 @@ type Access = {
   textChunkLimit?: number
   /** Split on paragraph boundaries instead of hard char count. */
   chunkMode?: 'length' | 'newline'
+  /**
+   * Seconds a newly started instance waits before taking the polling slot
+   * from another instance that is alive and polling. 0 (or negative) means
+   * never take it — the first poller keeps the slot until it exits.
+   * Default: 120.
+   */
+  pollerTakeoverSeconds?: number
 }
 
 function defaultAccess(): Access {
@@ -167,6 +164,7 @@ function readAccessFile(): Access {
       replyToMode: parsed.replyToMode,
       textChunkLimit: parsed.textChunkLimit,
       chunkMode: parsed.chunkMode,
+      pollerTakeoverSeconds: parsed.pollerTakeoverSeconds,
     }
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return defaultAccess()
@@ -337,6 +335,10 @@ function isMentioned(ctx: Context, extraPatterns?: string[]): boolean {
 // chatId == senderId, so we can send directly without stashing chatId.
 
 function checkApprovals(): void {
+  // Every session that has the plugin loaded runs this timer over one shared
+  // directory. Only the instance holding the polling slot sends, or the user
+  // gets one "Paired!" per open session.
+  if (pollerState !== 'polling') return
   let files: string[]
   try {
     files = readdirSync(APPROVED_DIR)
@@ -436,6 +438,16 @@ mcp.setNotificationHandler(
   }),
   async ({ params }) => {
     const { request_id, tool_name, description, input_preview } = params
+    // The answer comes back as an inbound Telegram update, which only the
+    // instance holding the polling slot receives. A standby sending the
+    // buttons would hand the user a prompt whose answer reaches a different
+    // session; better to leave the request to the terminal.
+    if (pollerState !== 'polling') {
+      process.stderr.write(
+        `telegram channel: another session holds the polling slot — permission request for ${tool_name} not sent to Telegram\n`,
+      )
+      return
+    }
     pendingPermissions.set(request_id, { tool_name, description, input_preview })
     const access = loadAccess()
     const text = `🔐 Permission: ${tool_name}`
@@ -659,9 +671,7 @@ function shutdown(): void {
   if (shuttingDown) return
   shuttingDown = true
   process.stderr.write('telegram channel: shutting down\n')
-  try {
-    if (parseInt(readFileSync(PID_FILE, 'utf8'), 10) === process.pid) rmSync(PID_FILE)
-  } catch {}
+  releaseLease()
   // bot.stop() signals the poll loop to end; the current getUpdates request
   // may take up to its long-poll timeout to return. Force-exit after 2s.
   setTimeout(() => process.exit(0), 2000)
@@ -998,17 +1008,218 @@ bot.catch(err => {
   process.stderr.write(`telegram channel: handler error (polling continues): ${err.error}\n`)
 })
 
+// ---------------------------------------------------------------------------
+// Single-poller election
+//
+// Telegram allows exactly one getUpdates consumer per bot token, but a machine
+// routinely has several server.ts processes alive at once: one per Claude Code
+// session, plus the throwaway instances `claude mcp list` spawns to
+// health-check MCP servers. Every instance serves tools; exactly one polls.
+//
+// The poller advertises itself in bot.pid as {pid, heartbeat} and refreshes
+// the heartbeat every HEARTBEAT_MS. Another instance takes the slot outright
+// only when that heartbeat has gone stale — a holder that is hung, or an
+// orphan left behind by a crashed session. A holder that is alive and
+// heartbeating is never signalled; a newcomer that wants the slot waits out
+// pollerTakeoverSeconds (long enough that a health-check probe comes and goes
+// without disturbing anything), then claims the lease and lets the old holder
+// notice and step down to standby, where it keeps serving tools.
+
+const HEARTBEAT_MS = 5000
+const LEASE_STALE_MS = 30000 // six missed beats
+const DEFAULT_TAKEOVER_MS = 120000
+const CONFLICT_ATTEMPTS = 8
+const CONFLICT_BACKOFF_MS = 60000
+const HEALTHY_RUN_MS = 30000
+
+type Lease = { pid: number; heartbeat: number }
+
+function readLease(): Lease | null {
+  let raw: string
+  try {
+    raw = readFileSync(PID_FILE, 'utf8').trim()
+  } catch {
+    return null
+  }
+  // Plugin 0.0.7 and earlier wrote a bare pid. Read it as a lease that can
+  // never look fresh, so such a holder is replaced rather than deferred to
+  // forever during an upgrade.
+  if (/^\d+$/.test(raw)) return { pid: Number(raw), heartbeat: 0 }
+  try {
+    const parsed = JSON.parse(raw) as Partial<Lease>
+    if (typeof parsed.pid !== 'number' || typeof parsed.heartbeat !== 'number') return null
+    return { pid: parsed.pid, heartbeat: parsed.heartbeat }
+  } catch {
+    return null
+  }
+}
+
+function writeLease(): void {
+  try {
+    const tmp = `${PID_FILE}.${process.pid}.tmp`
+    writeFileSync(tmp, JSON.stringify({ pid: process.pid, heartbeat: Date.now() }))
+    renameSync(tmp, PID_FILE)
+  } catch (err) {
+    process.stderr.write(`telegram channel: could not update ${PID_FILE}: ${err}\n`)
+  }
+}
+
+function releaseLease(): void {
+  try {
+    if (readLease()?.pid === process.pid) rmSync(PID_FILE, { force: true })
+  } catch {}
+}
+
+function pidIsAlive(pid: number): boolean {
+  // kill(0, …) signals our own process group and would report any lease
+  // holding a zero or negative pid as alive.
+  if (pid <= 1) return false
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (err) {
+    // EPERM means the pid exists but belongs to another user: alive, and not
+    // ours to signal.
+    return (err as NodeJS.ErrnoException).code === 'EPERM'
+  }
+}
+
+// True only when the pid can be positively confirmed as a server.ts process.
+// PID files race with OS pid recycling, and a recycled pid can point at our
+// own bun-run wrapper (killing its stdin shuts us down) or an unrelated user
+// process. `ps -p` exits non-zero once the pid is gone, and does not exist at
+// all on native Windows — there we cannot confirm, so we take the lease
+// without signalling anyone and let the other instance step down on its own
+// next tick.
+function pidIsPoller(pid: number): boolean {
+  try {
+    return execFileSync('ps', ['-p', String(pid), '-o', 'args='], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).includes('server.ts')
+  } catch {
+    return false
+  }
+}
+
+// Two instances can acquire in the same tick; the later write wins the file
+// and the loser steps down on its next tick, so the overlap is one heartbeat.
+function tryAcquireLease(force: boolean): boolean {
+  const lease = readLease()
+  if (!lease || lease.pid === process.pid || !pidIsAlive(lease.pid)) {
+    staleLeasePid = 0
+    writeLease()
+    return true
+  }
+
+  if (Date.now() - lease.heartbeat < LEASE_STALE_MS) {
+    staleLeasePid = 0
+    if (!force) return false
+    // The holder finds out by reading the lease on its own next tick and
+    // steps down then — nothing is signalled.
+    process.stderr.write(`telegram channel: taking the polling slot from pid=${lease.pid}\n`)
+    writeLease()
+    return true
+  }
+
+  // A stale heartbeat usually means a crashed or wedged holder, but it also
+  // describes a machine that just woke from sleep, where the holder simply
+  // has not had its tick yet. Require the lease to still be stale a tick
+  // later before terminating anyone over it.
+  if (staleLeasePid !== lease.pid) {
+    staleLeasePid = lease.pid
+    staleLeaseSeenAt = Date.now()
+    return false
+  }
+  if (Date.now() - staleLeaseSeenAt < HEARTBEAT_MS) return false
+  staleLeasePid = 0
+  // Claim the lease before signalling: a holder that shuts down first would
+  // otherwise delete the record it still believes is its own.
+  writeLease()
+  if (pidIsPoller(lease.pid)) {
+    process.stderr.write(`telegram channel: replacing unresponsive poller pid=${lease.pid}\n`)
+    try {
+      process.kill(lease.pid, 'SIGTERM')
+    } catch {}
+  }
+  return true
+}
+
+function takeoverDelayMs(): number | null {
+  const configured = loadAccess().pollerTakeoverSeconds
+  if (configured == null) return DEFAULT_TAKEOVER_MS
+  return configured > 0 ? configured * 1000 : null
+}
+
+function stepDown(reason: string): void {
+  pollerState = 'stopping'
+  // Don't reach for the slot again. Two long-lived sessions trading the lease
+  // every takeover interval would drop inbound messages on every flip.
+  mayTakeOver = false
+  process.stderr.write(`telegram channel: ${reason} — standing by, tools still work\n`)
+  void Promise.resolve(bot.stop())
+    .catch(() => {})
+    .then(() => {
+      pollerState = 'idle'
+      standbySince = Date.now()
+    })
+}
+
+function electionTick(): void {
+  if (shuttingDown || pollingDisabled || pollerState === 'stopping') return
+  const now = Date.now()
+
+  if (pollerState === 'polling') {
+    const lease = readLease()
+    if (lease && lease.pid !== process.pid && pidIsAlive(lease.pid)) {
+      // Someone claimed the slot. Hand it over rather than fight for it.
+      stepDown(`polling slot claimed by pid=${lease.pid}`)
+      return
+    }
+    writeLease()
+    return
+  }
+
+  if (now < acquireBlockedUntil) return
+
+  let force = false
+  if (mayTakeOver && standbySince > 0) {
+    const delay = takeoverDelayMs()
+    force = delay != null && now - standbySince >= delay
+  }
+
+  if (!tryAcquireLease(force)) {
+    if (standbySince === 0) {
+      standbySince = now
+      process.stderr.write(
+        'telegram channel: another instance is polling this bot token — standing by, tools still work\n',
+      )
+    }
+    return
+  }
+
+  standbySince = 0
+  pollerState = 'polling'
+  void runPoller().finally(() => {
+    if (pollerState === 'polling') {
+      pollerState = 'idle'
+      standbySince = Date.now()
+    }
+  })
+}
+
 // Retry polling with backoff on any error. Previously only 409 was retried —
 // a single ETIMEDOUT/ECONNRESET/DNS failure rejected bot.start(), the catch
 // returned, and polling stopped permanently while the process stayed alive
 // (MCP stdin keeps it running). Outbound tools kept working but the bot was
 // deaf to inbound messages until a full restart.
-void (async () => {
-  for (let attempt = 1; ; attempt++) {
+async function runPoller(): Promise<void> {
+  let failures = 0
+  for (;;) {
+    const startedAt = Date.now()
     try {
       await bot.start({
         onStart: info => {
-          attempt = 0
           botUsername = info.username
           process.stderr.write(`telegram channel: polling as @${info.username}\n`)
           void bot.api.setMyCommands(
@@ -1023,23 +1234,52 @@ void (async () => {
       })
       return // bot.stop() was called — clean exit from the loop
     } catch (err) {
-      if (shuttingDown) return
+      if (shuttingDown || pollerState !== 'polling') return
       // bot.stop() mid-setup rejects with grammy's "Aborted delay" — expected, not an error.
       if (err instanceof Error && err.message === 'Aborted delay') return
-      const is409 = err instanceof GrammyError && err.error_code === 409
-      if (is409 && attempt >= 8) {
+      if (err instanceof GrammyError && err.error_code === 401) {
+        // A revoked or mistyped token. No amount of retrying fixes it, and a
+        // loop that never gives up is what kept these servers busy for days
+        // in sessions nobody was watching.
         process.stderr.write(
-          `telegram channel: 409 Conflict persists after ${attempt} attempts — ` +
-          `another poller is holding the bot token (stray 'bun server.ts' process or a second session). Exiting.\n`,
+          `telegram channel: Telegram rejected the bot token (401 ${err.description}) — ` +
+          `polling disabled. Fix TELEGRAM_BOT_TOKEN in ${ENV_FILE} and restart the session.\n`,
         )
+        pollingDisabled = true
+        pollerState = 'idle'
+        releaseLease()
         return
       }
-      const delay = Math.min(1000 * attempt, 15000)
+      // grammy calls onStart before its first getUpdates, so reaching it
+      // proves nothing — a 409 arrives immediately after. Count a run that
+      // polled for a while as a transient fault and reset the backoff; one
+      // that failed straight away escalates it. Counting onStart as success
+      // instead is what pinned the retry delay at zero and burned a core.
+      failures = Date.now() - startedAt >= HEALTHY_RUN_MS ? 1 : failures + 1
+      const is409 = err instanceof GrammyError && err.error_code === 409
+      if (is409 && failures >= CONFLICT_ATTEMPTS) {
+        process.stderr.write(
+          `telegram channel: 409 Conflict persists after ${failures} attempts — another poller holds ` +
+          `this token. Releasing the slot, retrying in ${CONFLICT_BACKOFF_MS / 1000}s.\n`,
+        )
+        pollerState = 'idle'
+        releaseLease()
+        acquireBlockedUntil = Date.now() + CONFLICT_BACKOFF_MS
+        standbySince = Date.now()
+        return
+      }
+      const delay = Math.min(1000 * failures, 15000)
       const detail = is409
-        ? `409 Conflict${attempt === 1 ? ' — another instance is polling (zombie session, or a second Claude Code running?)' : ''}`
+        ? `409 Conflict${failures === 1 ? ' — another instance is polling (zombie session, or a second Claude Code running?)' : ''}`
         : `polling error: ${err}`
       process.stderr.write(`telegram channel: ${detail}, retrying in ${delay / 1000}s\n`)
       await new Promise(r => setTimeout(r, delay))
+      // The slot can be claimed while we sleep; resuming then would make us
+      // the real getUpdates consumer again without holding the lease.
+      if (shuttingDown || pollerState !== 'polling') return
     }
   }
-})()
+}
+
+electionTick()
+setInterval(electionTick, HEARTBEAT_MS).unref()

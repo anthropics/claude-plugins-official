@@ -65,7 +65,7 @@ Pairing is for capturing IDs. Once you're in, switch to `allowlist` so strangers
 
 ## Access control
 
-See **[ACCESS.md](./ACCESS.md)** for DM policies, groups, mention detection, delivery config, skill commands, and the `access.json` schema.
+See **[ACCESS.md](./ACCESS.md)** for DM policies, groups, mention detection, delivery config, how the polling slot is shared between concurrent sessions, skill commands, and the `access.json` schema.
 
 Quick reference: IDs are **numeric user IDs** (get yours from [@userinfobot](https://t.me/userinfobot)). Default policy is `pairing`. `ackReaction` only accepts Telegram's fixed emoji whitelist.
 

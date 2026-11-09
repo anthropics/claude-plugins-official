@@ -92,6 +92,20 @@ Configure outbound behavior with `/telegram:access set <key> <value>`.
 
 **`chunkMode`** chooses the split strategy: `length` cuts exactly at the limit; `newline` prefers paragraph boundaries.
 
+## Several sessions, one bot token
+
+Telegram allows exactly one long-polling consumer per bot token, so when more than one Claude Code session has the plugin loaded, only one of them polls. The others serve the tools (`reply`, `react`, `edit_message`) normally and wait; whichever is polling records itself in `bot.pid`.
+
+A session that starts while another is already polling waits **`pollerTakeoverSeconds`** (default 120) and then takes the slot, so the session you just started does end up receiving your messages. The session that had it notices on its next check and steps down to serving tools only — nothing signals it and it keeps running. The wait is what keeps short-lived instances, such as the throwaway servers `claude mcp list` spawns to health-check, from disturbing a working session at all.
+
+```
+/telegram:access set pollerTakeoverSeconds 0
+```
+
+Set it to `0` to pin the slot to the first session that claims it; no later session will take it while that one is alive. A poller that stops responding (crashed session, hung process) is replaced either way, within about half a minute — that one is terminated, since it cannot step down on its own.
+
+While another session holds the slot, permission prompts from this session are not sent to Telegram: the tap would come back to whichever session is polling. Answer those in the terminal.
+
 ## Skill reference
 
 | Command | Effect |
@@ -104,7 +118,7 @@ Configure outbound behavior with `/telegram:access set <key> <value>`.
 | `/telegram:access policy allowlist` | Set `dmPolicy`. Values: `pairing`, `allowlist`, `disabled`. |
 | `/telegram:access group add -1001654782309` | Enable a group. Flags: `--no-mention` (also requires disabling privacy mode), `--allow id1,id2`. |
 | `/telegram:access group rm -1001654782309` | Disable a group. |
-| `/telegram:access set ackReaction 👀` | Set a config key: `ackReaction`, `replyToMode`, `textChunkLimit`, `chunkMode`, `mentionPatterns`. |
+| `/telegram:access set ackReaction 👀` | Set a config key: `ackReaction`, `replyToMode`, `textChunkLimit`, `chunkMode`, `mentionPatterns`, `pollerTakeoverSeconds`. |
 
 ## Config file
 
@@ -142,6 +156,10 @@ Configure outbound behavior with `/telegram:access set <key> <value>`.
   "textChunkLimit": 4096,
 
   // length = cut at limit. newline = prefer paragraph boundaries.
-  "chunkMode": "newline"
+  "chunkMode": "newline",
+
+  // Seconds a new session waits before taking the polling slot from a
+  // session that already has it. 0 = never take it.
+  "pollerTakeoverSeconds": 120
 }
 ```
