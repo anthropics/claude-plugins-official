@@ -25,6 +25,16 @@ def _session_id_from_the_payload(monkeypatch):
     monkeypatch.delenv("CLAUDE_CODE_REMOTE_SESSION_ID", raising=False)
 
 
+@pytest.fixture(autouse=True)
+def _home_without_user_rules(tmp_path, monkeypatch):
+    """A home directory without the user's own rules, whose keys could fill the row."""
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+
+
 def session_state_file(hook_env):
     [path] = [p for p in Path(hook_env["SECURITY_WARNINGS_STATE_DIR"]).glob("security_warnings_state_*.json")]
     return path
@@ -358,7 +368,6 @@ def test_parts_are_capped(tmp_path, monkeypatch):
 
 def test_old_commit_records_are_removed(tmp_path, monkeypatch):
     monkeypatch.setenv("SECURITY_WARNINGS_STATE_DIR", str(tmp_path))
-    monkeypatch.setenv("HOME", str(tmp_path))
     diffstate.note_seen_commits("s1", ["abc1234"])
     diffstate.note_seen_commits("s2", ["abc1234"])
     os.utime(session_state.get_commit_log_file("s1"), (1, 1))
