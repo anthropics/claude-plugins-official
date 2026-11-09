@@ -5,7 +5,7 @@ import subprocess
 
 import pytest
 
-from conftest import bash_payload, commit_file, git, make_repo, metrics_of, run_hook
+from conftest import GIT_ENV, bash_payload, commit_file, git, make_repo, metrics_of, run_hook
 
 import diffstate
 import gitutil
@@ -40,6 +40,13 @@ def _merge_forward(repo):
     git(repo, "switch", "-q", "-c", "fwd", "main")
     git(repo, "merge", "-q", "--no-ff", "--no-edit", "origin/release")
     return git(repo, "rev-parse", "HEAD").strip()
+
+
+def _merge_with_conflict(repo, ref):
+    """Start a merge expected to stop on a conflict. Without the test identity
+    git refuses before it writes the merge message."""
+    return subprocess.run(["git", "merge", "--no-ff", "--no-edit", ref], cwd=repo,
+                          capture_output=True, env={**os.environ, **GIT_ENV})
 
 
 def _push_fwd(repo, remote, env):
@@ -78,8 +85,7 @@ def test_conflict_resolution_is_still_reviewed(tmp_path, hook_env, stub_api):
     git(repo, "push", "-q", "origin", "release")
     _record_reviewed(repo, fix, other)
     git(repo, "switch", "-q", "-c", "fwd", "main")
-    assert subprocess.run(["git", "merge", "--no-ff", "--no-edit", "origin/release"],
-                          cwd=repo, capture_output=True).returncode != 0
+    assert _merge_with_conflict(repo, "origin/release").returncode != 0
     (repo / "app.py").write_text("a = resolved_by_hand\n")
     git(repo, "add", "-A")
     git(repo, "commit", "-q", "--no-edit")
@@ -108,8 +114,7 @@ def test_edit_after_a_merge_keeps_both_diffs(tmp_path, hook_env, stub_api):
     git(repo, "push", "-q", "origin", "release")
     _record_reviewed(repo, fix)
     git(repo, "switch", "-q", "-c", "fwd", "main")
-    subprocess.run(["git", "merge", "--no-ff", "--no-edit", "origin/release"],
-                   cwd=repo, capture_output=True)
+    _merge_with_conflict(repo, "origin/release")
     (repo / "app.py").write_text("a = resolved_by_hand\n")
     git(repo, "add", "-A")
     git(repo, "commit", "-q", "--no-edit")
@@ -237,7 +242,7 @@ def test_resolved_path_with_a_quote(tmp_path):
     commit_file(repo, name, "side\n")
     git(repo, "switch", "-q", "main")
     commit_file(repo, name, "main\n")
-    subprocess.run(["git", "merge", "--no-edit", "side"], cwd=repo, capture_output=True)
+    _merge_with_conflict(repo, "side")
     (repo / name).write_text("resolved\n")
     git(repo, "add", "-A")
     git(repo, "commit", "-q", "--no-edit")
