@@ -105,7 +105,10 @@ probe() {
     # Only for `$(probe ...)`: the `exec` replaces that subshell instead of
     # forking a second process from it.
     [ "${BASH_SUBSHELL:-0}" -gt 0 ] || return 1
-    exec "$@" -c 'import os, sys; t = (sys.argv[1:] or [""])[0]; sys.exit(3) if t and not (os.path.isfile(t) and os.access(t, os.R_OK)) else print(f"{sys.version_info[0]}.{sys.version_info[1]}"); sys.platform == "win32" and sys.version_info >= (3, 10) and print(sys.executable)' "$SG_TARGET" 2>/dev/null
+    # PYTHONSAFEPATH (3.11+, ignored before): the probe needs the standard
+    # library only, so Python is told not to add its usual first entry to the
+    # import path. For this call alone; the hook's environment is unchanged.
+    PYTHONSAFEPATH=1 exec "$@" -c 'import os, sys; t = (sys.argv[1:] or [""])[0]; sys.exit(3) if t and not (os.path.isfile(t) and os.access(t, os.R_OK)) else print(f"{sys.version_info[0]}.{sys.version_info[1]}"); sys.platform == "win32" and sys.version_info >= (3, 10) and print(sys.executable)' "$SG_TARGET" 2>/dev/null
 }
 
 # Use as `ask ... || { note_unreadable "<name>"; continue; }` (see ask below).
@@ -409,7 +412,7 @@ done
 for cmd in "python3" "python" "py -3"; do
     case "$sg_unreadable" in *"|$cmd|"*) ;; *) continue ;; esac
     # shellcheck disable=SC2086
-    c=$($cmd -c 'import sys; print(sys.executable)' 2>/dev/null) || continue
+    c=$(PYTHONSAFEPATH=1 $cmd -c 'import sys; print(sys.executable)' 2>/dev/null) || continue
     c=${c%$'\r'}  # native Windows Python prints CRLF
     [ -n "$c" ] || continue
     if command -v cygpath >/dev/null 2>&1; then
