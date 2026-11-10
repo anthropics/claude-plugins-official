@@ -666,14 +666,39 @@ class TestPowerShellTool:
     @pytest.mark.parametrize("command", [
         "Set-Location {d}; git commit -m x",
         "set-location -Path {d}; git commit -m x",
-        "sl {d}; git commit -m x",
         "Push-Location -LiteralPath {d}; git.exe commit -m x",
         "cd {d}; git.exe commit -m x",
+        "Push-Location {d}\ngit commit -m x\nPop-Location",
+        "Set-Location {d}; if ($?) {{ git commit -m x }}",
+        "Git.EXE -C {d} commit -m x",
     ])
     def test_folder_from_the_command(self, tmp_path, command):
         target = tmp_path / "work"
         got = rr.dirs_from_command(command.format(d=target), str(tmp_path), {("git", "commit")})
         assert got == [str(target)]
+
+    def test_push_location_ends_at_pop_location(self, tmp_path):
+        command = f"Push-Location {tmp_path / 'other'}; git status; Pop-Location; git commit -m x"
+        assert rr.dirs_from_command(command, str(tmp_path), {("git", "commit")}) == [str(tmp_path)]
+
+    @pytest.mark.parametrize("command", [
+        "git.exe push", "GIT push origin main", "& 'C:\\Git\\cmd\\git.exe' push",
+    ])
+    def test_push_spellings(self, command):
+        assert hook._GIT_PUSH_RE.search(command)
+
+    @pytest.mark.parametrize("command", [
+        "Git commit -m x", "git.cmd commit -m x", '& "C:\\Program Files\\Git\\cmd\\git.exe" commit -m x',
+    ])
+    def test_commit_spellings(self, command):
+        assert hook._GIT_COMMIT_RE.search(command)
+
+    def test_git_commit_tree_is_still_left_alone(self):
+        assert not hook._GIT_COMMIT_RE.search("git.exe commit-tree abc")
+
+    def test_bash_line_continuation_stays_one_statement(self, tmp_path):
+        got = rr.dirs_from_command("git \\\n  commit -m x", str(tmp_path), {("git", "commit")})
+        assert got == [str(tmp_path)]
 
     def test_hook_entries(self):
         with open(os.path.join(HOOKS_DIR, "hooks.json")) as f:

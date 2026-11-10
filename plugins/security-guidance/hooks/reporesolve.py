@@ -26,11 +26,13 @@ SCAN_MAX_DEPTH = int(os.environ.get("SG_REPO_SCAN_MAX_DEPTH", "3"))
 SCAN_MAX_REPOS = int(os.environ.get("SG_REPO_SCAN_MAX_REPOS", "64"))
 SCAN_BUDGET_S = float(os.environ.get("SG_REPO_SCAN_BUDGET_S", "4"))
 
-_SEPARATORS = frozenset(";&|()\n")
+_SEPARATORS = frozenset(";&|(){}\n")
 _SHA_RE = re.compile(r"^[0-9a-f]{7,40}$")
 _ENV_ASSIGN_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 _PREFIX_WORDS = frozenset(("env", "time", "exec", "command", "nohup"))
-_CHANGE_DIR_WORDS = frozenset(("cd", "pushd", "chdir", "set-location", "sl", "push-location"))
+_CHANGE_DIR_WORDS = frozenset(("cd", "pushd", "set-location", "push-location"))
+_PUSH_DIR_WORDS = frozenset(("pushd", "push-location"))
+_POP_DIR_WORDS = frozenset(("popd", "pop-location"))
 
 
 def _abs(base, p):
@@ -48,6 +50,10 @@ def _is_sep(tok):
 
 
 def _tokenize(command):
+    # shlex reads a line end as a space, but it ends a statement, unless a
+    # backslash or a PowerShell backtick continues the line.
+    command = re.sub(r"[\\`]\r?\n", " ", command)
+    command = re.sub(r"\r?\n", " ; ", command)
     if os.sep == "\\":
         command = command.replace("\\", "\\\\")
     try:
@@ -67,6 +73,7 @@ def dirs_from_command(command, cwd, subcommands=None):
     tokens = _tokenize(command)
     out = []
     cur = cwd or ""
+    pushed = []
     i = 0
     n = len(tokens)
     at_start = True
@@ -79,7 +86,15 @@ def dirs_from_command(command, cwd, subcommands=None):
         if at_start and (_ENV_ASSIGN_RE.match(t) or t in _PREFIX_WORDS):
             i += 1
             continue
+        if at_start and t.lower() in _POP_DIR_WORDS:
+            if pushed:
+                cur = pushed.pop()
+            i += 1
+            at_start = False
+            continue
         if at_start and t.lower() in _CHANGE_DIR_WORDS:
+            if t.lower() in _PUSH_DIR_WORDS:
+                pushed.append(cur)
             # PowerShell names the folder with an optional -Path.
             if i + 2 < n and tokens[i + 1].lower() in ("-path", "-literalpath"):
                 i += 1
@@ -94,7 +109,7 @@ def dirs_from_command(command, cwd, subcommands=None):
             at_start = False
             continue
         prog = os.path.basename(t) if t else t
-        if prog.lower() == "git.exe":
+        if prog.lower() in ("git", "git.exe", "git.cmd"):
             prog = "git"
         if at_start and prog in ("git", "gt"):
             j = i + 1

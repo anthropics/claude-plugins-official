@@ -1097,12 +1097,15 @@ _GIT_GLOBAL_OPTS = (
     # `--help` / `--version` run no subcommand.
     + r'|\s+(?:--(?!(?:' + _GIT_VALUE_OPTS + r'|help|version)\s)[^\s=]+|-[pP])(?=\s))*'
 )
+# PowerShell runs programs by any case and with their extension, and a quoted
+# full path ends in a quote.
+_GIT_PROGRAM = r"""(?i:git(?:\.(?:exe|cmd))?)["']?"""
 _GIT_COMMIT_RE = re.compile(
     # Without the global-option tolerance, `git -C /repo commit` is silently
     # dropped by the handler — see #2089's secondary finding. The gt branch
     # has no global-option layer to worry about.
     # `(?!-)`: not the plumbing commands `git commit-graph` / `git commit-tree`.
-    r'\bgit(?:\.exe)?' + _GIT_GLOBAL_OPTS + r'\s+commit\b(?!-)'
+    r'\b' + _GIT_PROGRAM + _GIT_GLOBAL_OPTS + r'\s+commit\b(?!-)'
     r'|\bgt\s+(?:create|modify)\b'
 )
 # Match either the `--amend` flag (with the leading whitespace boundary
@@ -1143,7 +1146,7 @@ COMMIT_REVIEW_RATE_WINDOW_S = int(
 # but the bash hook fires on Claude's top-level command so we need to
 # recognize gt submit at the matcher level. See #2048.
 _GIT_PUSH_RE = re.compile(
-    r'(?:\bgit(?:\.exe)?' + _GIT_GLOBAL_OPTS + r'\s+push\b|\bgt\s+submit\b)'
+    r'(?:\b' + _GIT_PROGRAM + _GIT_GLOBAL_OPTS + r'\s+push\b|\bgt\s+submit\b)'
 )
 
 # `git push` stdout: "abc1234..def5678  branch -> branch" (or `+abc..def` on
@@ -3246,7 +3249,7 @@ def main():
         handle_stop_hook(input_data)
         return
 
-    # Handle PostToolUse[Bash] — commit review or push sweep (asyncRewake).
+    # Handle PostToolUse[Bash or PowerShell] — commit review or push sweep (asyncRewake).
     #
     # hooks.json has three `if` configs under the Bash matcher (`git*commit*`,
     # `git*push*` and `gt *`), kept to one per kind because CC runs EVERY
