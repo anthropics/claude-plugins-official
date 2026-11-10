@@ -26,6 +26,28 @@ _UNSAFE_TORCH_LOAD_REMINDER = """⚠️ Security Warning: torch.load() defaults 
 
 If the file only contains tensors and simple data structures, pass weights_only=True (or set TORCH_FORCE_WEIGHTS_ONLY_LOAD=1)."""
 
+
+def _call_args():
+    """Regex for the arguments of one call, read from just after its "(".
+
+    Steps over strings, comments and up to three levels of nested brackets as
+    units, across lines, so text that follows it is an argument of this call: not
+    of a nested one, not part of a comment, and not past the closing bracket.
+    Each alternative starts with a different character and every repeat is
+    bounded, so it cannot backtrack badly.
+    """
+    char = r"[^()\x22\x27#]"
+    string = r"\x22(?:[^\x22\\\n]|\\.){0,300}\x22|\x27(?:[^\x27\\\n]|\\.){0,300}\x27"
+    comment = r"#[^\n]{0,300}\n"
+    leaf = rf"{char}|{string}|{comment}"
+    group = rf"\((?:{leaf}){{0,200}}\)"
+    for _ in range(2):
+        group = rf"\((?:{leaf}|{group}){{0,200}}\)"
+    return rf"(?:{leaf}|{group}){{0,400}}"
+
+
+_CALL_ARGS = _call_args()
+
 # Security patterns configuration
 SECURITY_PATTERNS = [
     {
@@ -188,7 +210,8 @@ Additionally, validate user inputs:
     },
     {
         "ruleName": "unsafe_yaml_load",
-        "regex": r"\byaml\.load\s*\((?![^)\n]{0,80}\bSafe)",
+        # Suppressed by SafeLoader or CSafeLoader among the call's own arguments.
+        "regex": rf"\byaml\.load\s*\((?![^)\n]{{0,80}}\bC?Safe|{_CALL_ARGS}\bC?SafeLoader\b)",
         "reminder": _UNSAFE_YAML_LOAD_REMINDER,
     },
     {
@@ -254,9 +277,12 @@ Additionally, validate user inputs:
     },
     {
         "ruleName": "torch_unsafe_load",
-        # Suppressed by weights_only=True on the same line (within 200 chars). weights_only=False
-        # still triggers. Multi-line calls false-positive — same known limitation as unsafe_yaml_load.
-        "regex": r"(?:\btorch\.load|\.torch_load)\s*\((?![^)\n]{0,200}weights_only\s*=\s*True)",
+        # Suppressed by weights_only=True among the call's own arguments. weights_only=False
+        # still triggers.
+        "regex": (
+            r"(?:\btorch\.load|\.torch_load)\s*\("
+            rf"(?![^)\n]{{0,200}}weights_only\s*=\s*True|{_CALL_ARGS}\bweights_only\s*=\s*True)"
+        ),
         "reminder": _UNSAFE_TORCH_LOAD_REMINDER,
     },
     {
@@ -270,7 +296,10 @@ Additionally, validate user inputs:
         "ruleName": "pickle_wrapper_load",
         # Library APIs that unpickle without saying "pickle". numpy.load only triggers
         # when allow_pickle=True is explicit (defaults to False since numpy 1.16.3).
-        "regex": r"\bjoblib\.load\s*\(|\b(?:pd|pandas)\.read_pickle\s*\(|\.cloudpickle_load\s*\(|\b(?:np|numpy)\.load\s*\([^)\n]{0,200}allow_pickle\s*=\s*True",
+        "regex": (
+            r"\bjoblib\.load\s*\(|\b(?:pd|pandas)\.read_pickle\s*\(|\.cloudpickle_load\s*\("
+            rf"|\b(?:np|numpy)\.load\s*\((?:[^)\n]{{0,200}}|{_CALL_ARGS}\b)allow_pickle\s*=\s*True"
+        ),
         "reminder": _UNSAFE_DESERIALIZATION_REMINDER,
     },
 ]
