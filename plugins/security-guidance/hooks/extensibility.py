@@ -78,10 +78,8 @@ def load_for_session(cwd: Optional[str]) -> None:
     Called from the hook's main() before dispatching. Failures are non-fatal —
     a malformed config file produces a debug_log entry, never a crash.
     """
-    global _guidance_block, _user_patterns, _refused_regexes, _regex_seconds_left
+    global _guidance_block, _user_patterns, _refused_regexes
     _refused_regexes = 0
-    _regex_seconds_left = REGEX_TIME_LIMIT_S
-    _stopped_regexes.clear()
     try:
         _guidance_block = _wrap_guidance(_load_guidance(cwd))
     except Exception as e:
@@ -92,6 +90,7 @@ def load_for_session(cwd: Optional[str]) -> None:
     except Exception as e:
         debug_log(f"extensibility: failed to load security-patterns: {e}")
         _user_patterns = []
+    _reset_regex_limit()
 
 
 def guidance_block() -> str:
@@ -603,6 +602,12 @@ for regex in job["regexes"]:
         hit = False
     print(int(hit), time.perf_counter() - started, flush=True)
 """
+
+
+def _reset_regex_limit() -> None:
+    global _regex_seconds_left
+    _regex_seconds_left = REGEX_TIME_LIMIT_S
+    _stopped_regexes.clear()
 
 
 def search_custom_regexes(regexes: List[str], content: str) -> List[bool]:
