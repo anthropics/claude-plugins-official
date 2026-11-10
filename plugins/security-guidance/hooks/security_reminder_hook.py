@@ -1218,7 +1218,7 @@ def _unmatched_bash_sampled(input_data):
     return int.from_bytes(digest[:4], "big") % _UNMATCHED_BASH_SAMPLE == 0
 
 
-def _claim_bash_hook_once(input_data):
+def _claim_bash_hook_once(input_data, route="once"):
     """De-dupe across hooks.json `if` matchers firing for the same Bash call.
 
     `git commit -m x && git push` matches both `Bash(git*commit*)` and
@@ -1264,7 +1264,9 @@ def _claim_bash_hook_once(input_data):
     # Sanitize tuid into a filesystem-safe basename — defensive, the value is
     # CC-generated (toolu_<b64ish>), but it ends up in a path.
     safe = re.sub(r"[^A-Za-z0-9_-]", "_", tuid)[:80]
-    sentinel = os.path.join(gd, f"sg-hook-once-{safe}")
+    # A second route ("push") lets the other spawn of a commit-and-push run
+    # its own review, once.
+    sentinel = os.path.join(gd, f"sg-hook-once-{safe}" + ("" if route == "once" else f"-{route}"))
     try:
         fd = os.open(sentinel, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         os.close(fd)
@@ -2313,6 +2315,21 @@ def handle_commit_review_posttooluse(input_data):
     # uses as the "force fix" signal that triggers the rewakeMessage flow.
     sys.exit(2)
 
+def _pushed_beyond_commit_review(repo_root, push_range, bash_output):
+    """True when a command that both commits and pushes sent out a commit no
+    review covers. The other spawn's commit review takes the commit the
+    output names last, or the reflog's fresh ones when the output hides them.
+    """
+    covered = []
+    if COMMIT_REVIEW_ENABLED:
+        named = _COMMIT_SHA_RE.findall(bash_output)
+        covered = named[-1:] or _git_reflog_recent_commits(repo_root)[0]
+    rest = [s for s in push_range if not any(s.startswith(c) for c in covered)]
+    reviewed = _load_reviewed_shas(repo_root)
+    held = _load_inflight_shas(repo_root, rest)
+    return any(s not in reviewed and s not in held for s in rest)
+
+
 def handle_push_sweep_posttooluse(input_data):
     """Review the just-pushed range as one diff, advancing the base past the
     contiguous prefix of already-per-commit-reviewed shas.
@@ -2488,6 +2505,12 @@ def handle_push_sweep_posttooluse(input_data):
     if len(push_range) > MAX_PUSH_SWEEP_RANGE:
         # Huge first-push of a long-lived branch — Stop hook is the backstop.
         emit_metrics({"skipped": True, "skip_reason": 43, **_base,
+                      "pushed": len(push_range)})
+        sys.exit(0)
+
+    if _GIT_COMMIT_RE.search(command) and not _pushed_beyond_commit_review(
+            repo_root, push_range, bash_output):
+        emit_metrics({"skipped": True, "skip_reason": 47, **_base,
                       "pushed": len(push_range)})
         sys.exit(0)
 
@@ -3327,17 +3350,16 @@ def main():
     #
     # Routing therefore MUST check commit FIRST so that compound commit+push
     # commands continue to hit commit-review (the pre-existing behaviour) on
-    # the commit-matcher invocation. The push-matcher invocation of the SAME
-    # compound command is deduped by `_claim_bash_hook_once` below: the second
-    # spawn loses the tool_use_id sentinel race and exits early with
-    # `bash_hook_dedup`, so commit-review runs exactly once. The alternative —
+    # the commit-matcher invocation. The second spawn of the SAME compound
+    # command loses the tool_use_id sentinel race in `_claim_bash_hook_once`
+    # below, so commit-review runs exactly once. The alternative —
     # checking push first — would silently DROP commit-review
     # on `git commit && git push`, which is a regression.
     #
-    # The push-sweep does NOT run on the compound call. That's acceptable: the
-    # just-made commit is recorded by commit-review, so the next standalone
-    # push sees it as reviewed and the sweep base advances past it. Older
-    # unreviewed commits in the range are caught on that next push.
+    # The push-matcher spawn then claims the "push" route and runs the push
+    # sweep, which reviews only when the command pushed a commit that
+    # commit-review will not see: once behind the upstream, no later push
+    # would cover it.
     if tool_name == "Bash" and hook_event_name == "PostToolUse":
         cmd = (input_data.get("tool_input") or {}).get("command", "") or ""
         if not (_GIT_COMMIT_RE.search(cmd) or _GIT_PUSH_RE.search(cmd)):
@@ -3354,7 +3376,13 @@ def main():
             # Rides on whichever row this start emits; nothing is skipped.
             global _precheck_miss
             _precheck_miss = True
-        if not _claim_bash_hook_once(input_data):
+        run_commit_review = bool(_GIT_COMMIT_RE.search(cmd))
+        if _claim_bash_hook_once(input_data):
+            pass
+        elif (run_commit_review and _GIT_PUSH_RE.search(cmd)
+              and _claim_bash_hook_once(input_data, "push")):
+            run_commit_review = False
+        else:
             # Another spawn for this same tool_use_id already claimed the
             # work (compound matched multiple `if` configs). Emit a single
             # metric so telemetry can count how often the de-dupe kicks in.
@@ -3363,9 +3391,9 @@ def main():
                 dedup = {"pv": _PV, "precheck_miss": 1, **dedup}
             _write_hook_output({"metrics": dedup})
             sys.exit(0)
-        if _GIT_COMMIT_RE.search(cmd):
+        if run_commit_review:
             handle_commit_review_posttooluse(input_data)
-        elif _GIT_PUSH_RE.search(cmd):
+        else:
             handle_push_sweep_posttooluse(input_data)
         return
 
