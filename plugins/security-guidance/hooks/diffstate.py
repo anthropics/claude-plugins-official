@@ -63,7 +63,7 @@ def load_baseline_sha(session_id):
     return with_locked_state(session_id, _load)
 
 
-def record_touched_path(session_id, file_path):
+def record_touched_path(session_id, file_path, custom_rule_stats=None):
     """Append a file path to the touched_paths list (deduped, capped at 200).
 
     Stop is the consumer and clears under the same lock it reads with; UPS
@@ -72,12 +72,45 @@ def record_touched_path(session_id, file_path):
     stale paths so over-retention is harmless, just wasteful.
     """
     def _record(state):
+        # In the save this hook makes anyway: one more could drop another
+        # hook's change where there is no state lock (Windows).
+        _fold_custom_rule_stats(state, custom_rule_stats)
         paths = state.setdefault("touched_paths", [])
         if file_path not in paths:
             paths.append(file_path)
             if len(paths) > TOUCHED_PATHS_CAP:
                 del paths[:len(paths) - TOUCHED_PATHS_CAP]
     with_locked_state(session_id, _record)
+
+
+# Reported on the Stop row; see extensibility.edit_stats. The first three are
+# kept as maximum or union over the turn's edits, the others are added up.
+CUSTOM_RULE_KEYS = ("cr_rules", "cr_slow_ms", "cr_shapes", "cr_gain", "cr_loss")
+
+
+def _fold_custom_rule_stats(state, stats):
+    if not stats:
+        return
+    kept = state.get("custom_rules")
+    if not isinstance(kept, dict):
+        kept = state["custom_rules"] = {}
+    for key in CUSTOM_RULE_KEYS:
+        new, old = stats.get(key, 0), kept.get(key, 0)
+        if not isinstance(old, int):
+            old = 0
+        if key == "cr_shapes":
+            value = old | new
+        elif key in ("cr_rules", "cr_slow_ms"):
+            value = max(old, new)
+        else:
+            value = old + new
+        if value:
+            kept[key] = value
+
+
+def record_custom_rule_stats(session_id, stats):
+    """Fold one edit's custom rule counts into the turn's. Telemetry only."""
+    with_locked_state(session_id, lambda state: _fold_custom_rule_stats(state, stats))
 
 
 def consume_stop_state(session_id, clear=True):
@@ -121,6 +154,10 @@ def consume_stop_state(session_id, clear=True):
             "state_resets": state.get("state_resets", 0),
             "state_overwrites": state.get("state_overwrites", 0),
             "baseline_fail": state.get("baseline_fail") or 0,
+            "custom_rules": (
+                dict(state["custom_rules"])
+                if isinstance(state.get("custom_rules"), dict) else {}
+            ),
         }
         # touched_paths is cleared per Stop, but one baseline can be
         # reviewed by several Stops (rewakes). turn_touched keeps every path
@@ -139,6 +176,7 @@ def consume_stop_state(session_id, clear=True):
             state.pop("reviewed_diff_hash", None)
             state.pop("state_resets", None)
             state.pop("state_overwrites", None)
+            state.pop("custom_rules", None)
         return snap
 
     return with_locked_state(session_id, _snap) or {
@@ -147,7 +185,7 @@ def consume_stop_state(session_id, clear=True):
         "baseline_kept": 0, "turn_started": None,
         "fire_count": 0, "fire_count_expired": False, "previous_findings": [],
         "reviewed_diff_hash": None, "state_resets": 0, "state_overwrites": 0,
-        "baseline_fail": 0, "turn_touched": [],
+        "baseline_fail": 0, "turn_touched": [], "custom_rules": {},
     }
 
 
