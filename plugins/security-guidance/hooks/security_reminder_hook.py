@@ -1102,7 +1102,7 @@ _GIT_COMMIT_RE = re.compile(
     # dropped by the handler — see #2089's secondary finding. The gt branch
     # has no global-option layer to worry about.
     # `(?!-)`: not the plumbing commands `git commit-graph` / `git commit-tree`.
-    r'\bgit' + _GIT_GLOBAL_OPTS + r'\s+commit\b(?!-)'
+    r'\bgit(?:\.exe)?' + _GIT_GLOBAL_OPTS + r'\s+commit\b(?!-)'
     r'|\bgt\s+(?:create|modify)\b'
 )
 # Match either the `--amend` flag (with the leading whitespace boundary
@@ -1143,7 +1143,7 @@ COMMIT_REVIEW_RATE_WINDOW_S = int(
 # but the bash hook fires on Claude's top-level command so we need to
 # recognize gt submit at the matcher level. See #2048.
 _GIT_PUSH_RE = re.compile(
-    r'(?:\bgit' + _GIT_GLOBAL_OPTS + r'\s+push\b|\bgt\s+submit\b)'
+    r'(?:\bgit(?:\.exe)?' + _GIT_GLOBAL_OPTS + r'\s+push\b|\bgt\s+submit\b)'
 )
 
 # `git push` stdout: "abc1234..def5678  branch -> branch" (or `+abc..def` on
@@ -3271,14 +3271,15 @@ def main():
     # just-made commit is recorded by commit-review, so the next standalone
     # push sees it as reviewed and the sweep base advances past it. Older
     # unreviewed commits in the range are caught on that next push.
-    if tool_name == "Bash" and hook_event_name == "PostToolUse":
+    if tool_name in ("Bash", "PowerShell") and hook_event_name == "PostToolUse":
         cmd = (input_data.get("tool_input") or {}).get("command", "") or ""
         if not (_GIT_COMMIT_RE.search(cmd) or _GIT_PUSH_RE.search(cmd)):
             # Measurement only: this start matched no commit or push. Count
             # it, and say whether a plain text check could have told so before
             # Python. Both values carry the sample weight, so they sum to
             # estimates of all such starts.
-            if _unmatched_bash_sampled(input_data) and not portable_output():
+            if (tool_name == "Bash" and _unmatched_bash_sampled(input_data)
+                    and not portable_output()):
                 skip = 0 if _shell_precheck_passes(raw_input) else _UNMATCHED_BASH_SAMPLE
                 emit_metrics({"bash_no_match": _UNMATCHED_BASH_SAMPLE, "precheck_skip": skip})
             return

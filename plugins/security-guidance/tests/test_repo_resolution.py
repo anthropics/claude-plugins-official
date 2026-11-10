@@ -639,3 +639,45 @@ class TestStop:
         m = metrics_of(so)
         assert m["skip_reason"] == 9 and m["repo_resolution"] == rr.RES_NONE
         assert not stub_api.calls
+
+
+class TestPowerShellTool:
+    def _payload(self, ws, command, out):
+        return {**bash_payload(ws, command, out), "tool_name": "PowerShell"}
+
+    def test_commit_is_reviewed(self, workspace, hook_env, stub_api):
+        ws, repo = workspace
+        sha, out = commit_file(repo, "app.py", VULN_PY)
+        rc, so, se = run_hook(self._payload(ws, "git commit -m change", out), hook_env)
+        m = metrics_of(so)
+        assert m.get("skip_reason") is None and m["files_reviewed"] == 1, m
+
+    def test_git_exe_commit_is_reviewed(self, workspace, hook_env, stub_api):
+        ws, repo = workspace
+        sha, out = commit_file(repo, "app.py", VULN_PY)
+        rc, so, se = run_hook(self._payload(repo, "git.exe commit -m change", out), hook_env)
+        assert metrics_of(so)["files_reviewed"] == 1
+
+    def test_other_command_starts_no_review(self, workspace, hook_env, stub_api):
+        ws, repo = workspace
+        rc, so, se = run_hook(self._payload(repo, "Get-ChildItem | Select-Object Name", ""), hook_env)
+        assert rc == 0 and not so.strip()
+
+    @pytest.mark.parametrize("command", [
+        "Set-Location {d}; git commit -m x",
+        "set-location -Path {d}; git commit -m x",
+        "sl {d}; git commit -m x",
+        "Push-Location -LiteralPath {d}; git.exe commit -m x",
+        "cd {d}; git.exe commit -m x",
+    ])
+    def test_folder_from_the_command(self, tmp_path, command):
+        target = tmp_path / "work"
+        got = rr.dirs_from_command(command.format(d=target), str(tmp_path), {("git", "commit")})
+        assert got == [str(target)]
+
+    def test_hook_entries(self):
+        with open(os.path.join(HOOKS_DIR, "hooks.json")) as f:
+            groups = json.load(f)["hooks"]["PostToolUse"]
+        group = next(g for g in groups if g["matcher"] == "PowerShell")
+        assert [h["if"] for h in group["hooks"]] == ["PowerShell(git*commit*)", "PowerShell(git*push*)"]
+        assert all(h["asyncRewake"] for h in group["hooks"])

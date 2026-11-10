@@ -30,6 +30,7 @@ _SEPARATORS = frozenset(";&|()\n")
 _SHA_RE = re.compile(r"^[0-9a-f]{7,40}$")
 _ENV_ASSIGN_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 _PREFIX_WORDS = frozenset(("env", "time", "exec", "command", "nohup"))
+_CHANGE_DIR_WORDS = frozenset(("cd", "pushd", "chdir", "set-location", "sl", "push-location"))
 
 
 def _abs(base, p):
@@ -78,7 +79,10 @@ def dirs_from_command(command, cwd, subcommands=None):
         if at_start and (_ENV_ASSIGN_RE.match(t) or t in _PREFIX_WORDS):
             i += 1
             continue
-        if at_start and t in ("cd", "pushd"):
+        if at_start and t.lower() in _CHANGE_DIR_WORDS:
+            # PowerShell names the folder with an optional -Path.
+            if i + 2 < n and tokens[i + 1].lower() in ("-path", "-literalpath"):
+                i += 1
             if i + 1 < n and not _is_sep(tokens[i + 1]) and tokens[i + 1] not in ("-",) \
                     and not tokens[i + 1].startswith("-"):
                 nxt = _abs(cur, tokens[i + 1])
@@ -90,6 +94,8 @@ def dirs_from_command(command, cwd, subcommands=None):
             at_start = False
             continue
         prog = os.path.basename(t) if t else t
+        if prog.lower() == "git.exe":
+            prog = "git"
         if at_start and prog in ("git", "gt"):
             j = i + 1
             cdir = cur
