@@ -40,6 +40,7 @@ Trust model:
 """
 
 import fnmatch
+import functools
 import json
 import os
 import re
@@ -64,6 +65,9 @@ _user_patterns: List[Dict[str, Any]] = []
 _refused_regexes = 0
 # Seconds the slowest custom regex took in this hook. Telemetry only.
 slowest_regex = 0.0
+# The folder a custom rule's globs are relative to: the project's own.
+_match_roots: Tuple[Optional[str], ...] = ()
+_rels_cache: Dict[str, Tuple[str, ...]] = {}
 
 
 # ── public API ───────────────────────────────────────────────────────────────
@@ -75,8 +79,11 @@ def load_for_session(cwd: Optional[str]) -> None:
     Called from the hook's main() before dispatching. Failures are non-fatal —
     a malformed config file produces a debug_log entry, never a crash.
     """
-    global _guidance_block, _user_patterns, _refused_regexes
+    global _guidance_block, _user_patterns, _refused_regexes, _match_roots
     _refused_regexes = 0
+    env_project = os.environ.get("CLAUDE_PROJECT_DIR") or None
+    _match_roots = tuple(_project_dirs(cwd)[:1]) or ((env_project,) if env_project else ())
+    _rels_cache.clear()
     try:
         _guidance_block = _wrap_guidance(_load_guidance(cwd))
     except Exception as e:
@@ -412,13 +419,28 @@ def _validate_pattern(entry: Any, source: str) -> Optional[Dict[str, Any]]:
         rule["_globs"] = (tuple(paths), tuple(exclude))  # read by edit_stats
         # Capture as defaults so the lambda doesn't share state across rules.
         rule["path_filter"] = (
-            lambda p, _inc=tuple(paths), _exc=tuple(exclude): _glob_match(p, _inc, _exc)
+            lambda p, _inc=tuple(paths), _exc=tuple(exclude): _rule_covers(p, _inc, _exc)
         )
     return rule
 
 
+def _rule_covers(path: str, include: Tuple[str, ...], exclude: Tuple[str, ...]) -> bool:
+    """Whether a rule's globs let it apply to `path`, as check_patterns hands it
+    over (POSIX absolute paths without their leading `/`). Globs are read against
+    the full path and the path inside the project, and `**/` can match no folder."""
+    full = path if os.path.isabs(path) else "/" + path
+    rels = _rels_cache.get(full)
+    if rels is None:
+        # As written, and resolved: a linked folder is matched by either name.
+        rels = _rels_cache[full] = tuple(dict.fromkeys(
+            r for d in _match_roots
+            for r in (_inside(d, full, resolve=False), _inside(d, full)) if r is not None))
+    return _wider_glob_match(full, rels, include, exclude)
+
+
 def _glob_match(path: str, include: Tuple[str, ...], exclude: Tuple[str, ...]) -> bool:
-    """Match a path against include/exclude globs. ``**`` matches any depth."""
+    """The reading of globs before _rule_covers, kept for edit_stats: full path
+    or file name only, and `**/` needs a folder."""
     norm = path.replace(os.sep, "/")
     base = os.path.basename(norm)
     def _hit(globs: Tuple[str, ...]) -> bool:
@@ -495,7 +517,8 @@ def _shape_bits(globs: Tuple[str, ...], plain: int) -> int:
     return bits
 
 
-def _zero_depth_forms(glob: str) -> List[str]:
+@functools.lru_cache(maxsize=512)
+def _zero_depth_forms(glob: str) -> Tuple[str, ...]:
     """`glob`, and the globs left when each `**/` matches no folder."""
     forms = [glob]
     for form in forms:
@@ -503,21 +526,23 @@ def _zero_depth_forms(glob: str) -> List[str]:
             shorter = form[:m.start()] + form[m.end():]
             if shorter and shorter not in forms and len(forms) < 16:
                 forms.append(shorter)
-    return forms
+    return tuple(forms)
 
 
 def _wider_glob_match(path: str, rels: Tuple[str, ...],
                       include: Tuple[str, ...], exclude: Tuple[str, ...]) -> bool:
-    """What _glob_match would say if globs were also read against the path
-    inside the project (`rels`), and `**/` could match no folder."""
+    """_glob_match, with globs also read against the path inside the project
+    (`rels`), and `**/` able to match no folder."""
     norm = path.replace(os.sep, "/")
     names = [norm, norm.lstrip("/"), os.path.basename(norm)]
-    for rel in rels:
-        names += [rel, "/" + rel, "./" + rel]
+    inside = [n for rel in rels for n in (rel, "/" + rel, "./" + rel)]
 
     def _hit(globs: Tuple[str, ...]) -> bool:
+        # A glob with no folder in it is about the file name: `*` crosses `/`,
+        # so against the path inside the project `test*` would take in a tree.
         return any(fnmatch.fnmatch(n, f) for g in globs
-                   for f in _zero_depth_forms(g) for n in names)
+                   for f in _zero_depth_forms(g)
+                   for n in (names + inside if "/" in g.replace("\\", "/") else names))
     if include and not _hit(include):
         return False
     if exclude and _hit(exclude):
@@ -525,11 +550,12 @@ def _wider_glob_match(path: str, rels: Tuple[str, ...],
     return True
 
 
-def _inside(root: Optional[str], path: str) -> Optional[str]:
+def _inside(root: Optional[str], path: str, resolve: bool = True) -> Optional[str]:
     if not root:
         return None
+    normal = os.path.realpath if resolve else os.path.normpath
     try:
-        rel = os.path.relpath(os.path.realpath(path), os.path.realpath(root))
+        rel = os.path.relpath(normal(path), normal(root))
     except (OSError, ValueError):
         return None
     if rel == os.pardir or rel.startswith(os.pardir + os.sep):
@@ -537,16 +563,13 @@ def _inside(root: Optional[str], path: str) -> Optional[str]:
     return rel.replace(os.sep, "/")
 
 
-def edit_stats(file_path: str, cwd: Optional[str], project_dir: Optional[str]) -> Dict[str, int]:
-    """Counts for one edit; empty for a user with no custom rules.
-    Telemetry only."""
+def edit_stats(file_path: str) -> Dict[str, int]:
+    """Counts for one edit; empty for a user with no custom rules. cr_gain and
+    cr_loss are rule and edit pairs that _rule_covers decides differently from
+    the older reading. Telemetry only."""
     stats: Dict[str, int] = {}
     shapes = _SHAPE_REGEX_REFUSED if _refused_regexes else 0
     gain = loss = 0
-    # From both folders: in a worktree the session's own is the one that fits.
-    rels = tuple(dict.fromkeys(
-        r for r in (_inside(d, file_path) for d in (cwd, project_dir)) if r is not None
-    )) if _user_patterns else ()
     for rule in _user_patterns:
         include, exclude = rule.get("_globs", ((), ()))
         if include or exclude:
@@ -554,7 +577,7 @@ def edit_stats(file_path: str, cwd: Optional[str], project_dir: Optional[str]) -
             shapes |= _shape_bits(exclude, _SHAPE_PLAIN_EXCLUDE)
             try:
                 now = _glob_match(file_path.lstrip("/"), include, exclude)
-                wider = _wider_glob_match(file_path, rels, include, exclude)
+                wider = _rule_covers(file_path.lstrip("/"), include, exclude)
             except Exception:
                 continue
             gain += wider and not now
