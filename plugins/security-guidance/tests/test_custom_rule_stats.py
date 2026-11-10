@@ -82,21 +82,20 @@ def _stats(repo, env, files, cwd=None):
     return _unpack(m), outs
 
 
-def test_rules_that_would_start_to_apply(env, workspace):
+def test_rules_the_older_reading_missed(env, workspace):
     _, repo = workspace
     _rules(repo, {"paths": ["src/**"]}, {"paths": ["*.ts"]})
     stats, outs = _stats(repo, env, ["src/a.ts", "src/b.ts"])
     assert stats == {"cr_rules": 2, "cr_shapes": 1, "cr_gain": 2}
-    # The rule that does not apply today still does not.
     assert all("additionalContext" in o for o in outs)
 
 
-def test_excludes_that_would_start_to_apply(env, workspace):
+def test_excludes_the_older_reading_missed(env, workspace):
     _, repo = workspace
     _rules(repo, {"exclude_paths": ["src/**"]})
     stats, outs = _stats(repo, env, ["src/a.ts"])
     assert stats == {"cr_rules": 1, "cr_shapes": 2, "cr_loss": 1}
-    assert "additionalContext" in outs[0]
+    assert "additionalContext" not in outs[0]
 
 
 def test_no_extra_save_of_the_state(env, workspace, monkeypatch, tmp_path):
@@ -118,7 +117,7 @@ def test_worktree_outside_the_project(env, workspace, tmp_path):
     tree = tmp_path / "tree"
     git(repo, "worktree", "add", "-q", "-b", "side", str(tree))
     extensibility.load_for_session(str(tree))
-    stats = extensibility.edit_stats(str(tree / "src" / "a.ts"), str(tree), str(repo))
+    stats = extensibility.edit_stats(str(tree / "src" / "a.ts"))
     assert stats["cr_gain"] == 1
 
 

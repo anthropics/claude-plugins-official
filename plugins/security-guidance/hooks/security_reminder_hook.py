@@ -3376,8 +3376,7 @@ def main():
         rule_stats = None
         if ENABLE_PATTERN_RULES:
             try:
-                rule_stats = extensibility.edit_stats(
-                    file_path, input_data.get("cwd"), os.environ.get("CLAUDE_PROJECT_DIR"))
+                rule_stats = extensibility.edit_stats(file_path)
             except Exception as e:
                 debug_log(f"custom rule stats failed: {e}")
         record_touched_path(session_id, file_path, rule_stats)
