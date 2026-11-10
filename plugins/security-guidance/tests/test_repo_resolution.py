@@ -388,8 +388,11 @@ class TestCommitReview:
         p = bash_payload(ws, "git -C sub commit -m change && git -C sub push", out, tool_use_id="toolu_1")
         rc1, so1, _ = run_hook(p, hook_env)
         rc2, so2, _ = run_hook(p, hook_env)
+        rc3, so3, _ = run_hook(p, hook_env)
         assert metrics_of(so1).get("commit_review") is True
-        assert metrics_of(so2) == {"bash_hook_dedup": True}
+        # A commit-and-push command gets one more start, for the push review.
+        assert metrics_of(so2).get("push_sweep") is True
+        assert metrics_of(so3) == {"bash_hook_dedup": True}
 
 
 class TestPushSweep:
