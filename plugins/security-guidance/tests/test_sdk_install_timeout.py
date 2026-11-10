@@ -235,7 +235,7 @@ def _link(target, path):
         pytest.skip("cannot create links here")
 
 
-def test_sweep_does_not_follow_a_link_at_the_temp_folder(install, tmp_path):
+def test_sweep_needs_a_real_temp_folder(install, tmp_path):
     other = tmp_path / "other"
     (other / "old").mkdir(parents=True)
     then = time.time() - boot._PIP_TEMP_STALE_SEC - 60
