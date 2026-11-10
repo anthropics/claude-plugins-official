@@ -40,7 +40,7 @@ except ImportError:  # a Python built without TLS
 
 import extensibility
 import review_api
-from _base import debug_log, _record_usage, _record_http_error, _record_net_error, _clear_net_error, _PV, PROVENANCE_TAG, state_dir as _resolve_state_dir, agent_sdk_site_dirs, make_state_dir, portable_output  # noqa: F401
+from _base import debug_log, _record_usage, _record_http_error, _record_net_error, _clear_net_error, _PV, PROVENANCE_TAG, state_dir as _resolve_state_dir, agent_sdk_site_dirs, make_state_dir, other_host  # noqa: F401
 from session_state import load_state, with_locked_state
 from gitutil import git_config_env, SAFE_GIT_CONFIG
 
@@ -112,7 +112,7 @@ _CLAUDE_AI_TOKEN_PREFIX = "sk-ant-oat"
 _API_HOST = "api.anthropic.com"
 
 
-def _route_credentials(env, portable: bool) -> bool:
+def _route_credentials(env, on_other_host: bool) -> bool:
     """Put the credentials in `env` where the default API host can use them.
     Returns whether a token was held back. Does nothing for another API host
     or a cloud provider: what those take is their own business.
@@ -134,7 +134,7 @@ def _route_credentials(env, portable: bool) -> bool:
     held_back = False
     token = env.get("ANTHROPIC_AUTH_TOKEN", "")
     # With a base URL the token was meant for it, whichever shape it has.
-    if portable and not base and token and not token.startswith(_CLAUDE_AI_TOKEN_PREFIX):
+    if on_other_host and not base and token and not token.startswith(_CLAUDE_AI_TOKEN_PREFIX):
         del env["ANTHROPIC_AUTH_TOKEN"]
         token, held_back = "", True
         debug_log("ANTHROPIC_AUTH_TOKEN not used: it is not a claude.ai token and "
@@ -165,7 +165,7 @@ _HAS_3P_PROVIDER_AT_LOAD = any(
     )
 )
 # In os.environ itself, so the CLI a review starts gets the same credentials.
-AUTH_TOKEN_HELD_BACK = _route_credentials(os.environ, portable_output())
+AUTH_TOKEN_HELD_BACK = _route_credentials(os.environ, other_host())
 
 # Plan Security Check Configuration
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
