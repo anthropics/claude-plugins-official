@@ -1,5 +1,6 @@
 """Which credential a review sends to the default API host. Made-up values."""
 import os
+import subprocess
 import sys
 
 import pytest
@@ -91,7 +92,7 @@ def test_api_key_is_unchanged(hook_env):
 
 
 def test_held_back_token_reaches_nothing(hook_env):
-    assert _load(hook_env, SECURITY_GUIDANCE_PORTABLE_OUTPUT="1", **{T: BEARER}) == [
+    assert _load(hook_env, PLUGIN_ROOT="/plugin", **{T: BEARER}) == [
         "", "", False, True, "", ""]
 
 
@@ -103,9 +104,9 @@ class TestHook:
     @pytest.fixture
     def env(self, hook_env):
         e = {k: v for k, v in hook_env.items() if k not in (K, T, B)}
-        for name in ("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "DISABLE_TELEMETRY", "DO_NOT_TRACK"):
+        for name in ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "DISABLE_TELEMETRY", "DO_NOT_TRACK"):
             e.pop(name, None)
-        e["SECURITY_GUIDANCE_PORTABLE_OUTPUT"] = "1"
+        e["PLUGIN_ROOT"] = "/plugin"
         return e
 
     @pytest.mark.parametrize("other", [{}, {"DISABLE_TELEMETRY": "1"}])
@@ -129,3 +130,23 @@ class TestHook:
         (repo / "app.py").write_text(VULN_PY)
         run_hook(stop_payload(repo), env)
         assert stub_api.calls.count("/v1/messages") == 1
+
+
+@pytest.mark.parametrize("extra,held_back", [
+    ({"CLAUDECODE": "1", "SECURITY_GUIDANCE_PORTABLE_OUTPUT": "1"}, False),
+    ({"CLAUDECODE": "1", "PLUGIN_ROOT": "/p", "SECURITY_GUIDANCE_PORTABLE_OUTPUT": "1"}, False),
+    ({"PLUGIN_ROOT": "/p", "SECURITY_GUIDANCE_PORTABLE_OUTPUT": "0"}, True),
+    ({"PLUGIN_ROOT": "/p"}, True),
+    ({"SECURITY_GUIDANCE_PORTABLE_OUTPUT": "1"}, True),
+    ({}, False),
+])
+def test_the_output_setting_does_not_decide_the_host(extra, held_back):
+    hooks = os.path.dirname(os.path.abspath(llm.__file__))
+    env = {k: v for k, v in os.environ.items()
+           if k not in ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "PLUGIN_ROOT", B,
+                        "SECURITY_GUIDANCE_PORTABLE_OUTPUT")}
+    out = subprocess.run(
+        [sys.executable, "-c", "import llm; print(llm.AUTH_TOKEN_HELD_BACK)"],
+        cwd=hooks, env={**env, T: BEARER, **extra, "PYTHONDONTWRITEBYTECODE": "1"},
+        capture_output=True, text=True, timeout=60)
+    assert out.stdout.strip().splitlines()[-1] == str(held_back), out.stderr

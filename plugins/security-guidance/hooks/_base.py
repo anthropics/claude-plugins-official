@@ -175,19 +175,33 @@ _CLAUDE_CODE_OUTPUT_FIELDS = ("metrics", "rewakeSummary")
 
 
 def _detect_portable_output():
+    forced = _forced_portable_output()
+    if forced is not None:
+        return forced
+    return _detect_other_host()
+
+
+def _forced_portable_output():
     forced = os.environ.get("SECURITY_GUIDANCE_PORTABLE_OUTPUT", "").strip().lower()
     if forced in ("1", "true", "yes", "on"):
         return True
     if forced in ("0", "false", "no", "off"):
         return False
+    return None
+
+
+def _detect_other_host():
+    """The host does not identify itself as Claude Code, and passes PLUGIN_ROOT
+    or was told to use portable output, which a host we cannot detect needs."""
     if os.environ.get("CLAUDECODE") or os.environ.get("CLAUDE_CODE_ENTRYPOINT"):
         return False
-    return bool(os.environ.get("PLUGIN_ROOT"))
+    return bool(os.environ.get("PLUGIN_ROOT")) or _forced_portable_output() is True
 
 
 # Decided once, from the environment the host started the hook with: code the
 # hook runs in-process later can set these variables itself.
 _PORTABLE_OUTPUT = _detect_portable_output()
+_OTHER_HOST = _detect_other_host()
 
 
 def portable_output():
@@ -197,6 +211,13 @@ def portable_output():
     is on only when the host passes PLUGIN_ROOT and does not identify itself as
     Claude Code, so Claude Code and direct invocations are unchanged."""
     return _PORTABLE_OUTPUT
+
+
+def other_host():
+    """True when a host other than Claude Code started this hook. Unlike
+    portable_output(), a Claude Code session stays one whatever
+    SECURITY_GUIDANCE_PORTABLE_OUTPUT says."""
+    return _OTHER_HOST
 
 
 def write_hook_output(out):
