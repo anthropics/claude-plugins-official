@@ -107,6 +107,7 @@ from gitutil import (  # noqa: E402,F401
     on_windows_drive,
     _git_rev_parse_head, _find_git_index, _diff_pathspec, _temp_index,
     _git_toplevel, _git_dir, _git_rev_list_range, _git_diff_range,
+    _git_range_parents, _git_merge_resolved_files,
     _git_toplevel_and_head, _git_head_at,
     _detect_main_branch, _git_reflog_recent_commits, _git_name_only,
     _git_status_porcelain, _is_ancestor, get_git_diff,
@@ -1308,6 +1309,50 @@ def _compute_push_sweep_base(prev_upstream, push_range, reviewed):
     base = push_range[i - 1] if i > 0 else prev_upstream
     return base, push_range[i:]
 
+def _push_sweep_base_with_merges(prev_upstream, push_range, reviewed, parents):
+    """Choose the base when the range has merge commits.
+
+    The reviewed prefix can end on a merged-in branch, and a diff from there
+    holds everything the first parent has that the merged-in branch lacks:
+    code this push did not add. So the base must be on HEAD's first-parent
+    line, or be `prev_upstream`.
+
+    A merge on that line whose history in the range is all reviewed brought in
+    nothing unreviewed. Such merges are returned as `settled`: only what each
+    one resolved itself still needs a look.
+
+    Returns (base, settled). `push_range` must be in topological order, HEAD
+    last.
+    """
+    first_parent_line = set()
+    sha = push_range[-1]
+    while sha in parents:
+        first_parent_line.add(sha)
+        sha = parents[sha][0] if parents[sha] else None
+    settled = []
+    covered = 0
+    for sha in push_range:
+        if sha not in reviewed:
+            if len(parents.get(sha, ())) < 2 or sha not in first_parent_line:
+                break
+            settled.append(sha)
+        covered += 1
+    base = next((s for s in reversed(push_range[:covered]) if s in first_parent_line),
+                prev_upstream)
+    return base, settled
+
+def _merge_resolved_diff_files(repo_root, merges):
+    """{path: combined-diff hunks} of what `merges` resolved themselves, or
+    None if git failed."""
+    resolved = {}
+    for sha in merges:
+        files = _git_merge_resolved_files(repo_root, sha)
+        if files is None:
+            return None
+        for path, hunks in files:
+            resolved[path] = resolved[path] + "\n" + hunks if path in resolved else hunks
+    return resolved
+
 def _push_section(bash_output):
     """Return the slice of `bash_output` that contains the push's range lines.
 
@@ -2266,7 +2311,8 @@ def handle_push_sweep_posttooluse(input_data):
 
     Spec: review `git diff B..HEAD` where `B` is the newest commit such that
     `prev_upstream..B` is entirely in `.git/sg-reviewed-shas`. Skip if
-    `B == HEAD`. Mark `B..HEAD` reviewed afterward.
+    `B == HEAD`. Mark `B..HEAD` reviewed afterward. With merges in the range,
+    see `_push_sweep_base_with_merges`.
 
     Diff and Read are both at HEAD (push doesn't move the working tree), so the
     agentic reviewer sees a consistent view — a vuln introduced in commit A and
@@ -2448,6 +2494,19 @@ def handle_push_sweep_posttooluse(input_data):
         debug_log(f"Push sweep: waited {_waited:.0f}s for a running commit review")
     base, tail = _compute_push_sweep_base(prev_upstream, push_range, reviewed)
     prefix_advanced = len(push_range) - len(tail)
+    _parents = _git_range_parents(repo_root, prev_upstream, "HEAD") if base else {}
+    _settled = []
+    if any(len(p) > 1 for p in _parents.values()):
+        base, _settled = _push_sweep_base_with_merges(
+            prev_upstream, push_range, reviewed, _parents)
+    _resolved = _merge_resolved_diff_files(repo_root, _settled)
+    if _resolved is None:
+        # Could not read what a merge resolved: review the whole range instead.
+        base, _settled, _resolved = prev_upstream, [], {}
+    if _settled:
+        _TAIL_METRICS["merges_settled"] = len(_settled)
+    if base == prev_upstream:
+        prefix_advanced = 0
     if base is None:
         debug_log("Push sweep: every pushed commit already reviewed")
         emit_metrics({**_base, "pushed": len(push_range), "unreviewed": 0,
@@ -2477,6 +2536,9 @@ def handle_push_sweep_posttooluse(input_data):
                       "unreviewed": len(tail), "skip_reason": 45})
         sys.exit(0)
     diff_files = parse_diff_into_files(diff_text)
+    for _path, _hunks in diff_files:
+        _resolved[_path] = _resolved[_path] + "\n" + _hunks if _path in _resolved else _hunks
+    diff_files = list(_resolved.items())
     if not diff_files:
         emit_metrics({**_base, "pushed": len(push_range),
                       "unreviewed": len(tail), "skip_reason": 30})
