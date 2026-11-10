@@ -59,6 +59,8 @@ The pattern warnings need no credentials. The LLM reviews (the diff review on St
 
 Claude Code does not pass your sign-in to plugins in a session started with `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`, `DISABLE_TELEMETRY`, or `DO_NOT_TRACK` set. If no credentials reach the plugin, for that or any other reason, and the plugin cannot review through a Claude apps gateway sign-in, the LLM reviews are skipped and only the pattern warnings run. The plugin tells you so when Claude edits a file in a git repo, at most once a week. Set `ENABLE_CODE_SECURITY_REVIEW=0` if that is what you want; it also hides the notice.
 
+On the default API host, a claude.ai token (`sk-ant-oat`) that arrives as `ANTHROPIC_API_KEY`, for example from an `apiKeyHelper`, is sent as a bearer token. On hosts other than Claude Code, any other `ANTHROPIC_AUTH_TOKEN` is not used without a base URL, because it is meant for a gateway: set `ANTHROPIC_BASE_URL` to that gateway.
+
 ### Enabling/disabling layers
 
 | Variable | Default | What it does |

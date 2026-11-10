@@ -40,7 +40,7 @@ except ImportError:  # a Python built without TLS
 
 import extensibility
 import review_api
-from _base import debug_log, _record_usage, _record_http_error, _record_net_error, _clear_net_error, _PV, PROVENANCE_TAG, state_dir as _resolve_state_dir, agent_sdk_site_dirs, make_state_dir  # noqa: F401
+from _base import debug_log, _record_usage, _record_http_error, _record_net_error, _clear_net_error, _PV, PROVENANCE_TAG, state_dir as _resolve_state_dir, agent_sdk_site_dirs, make_state_dir, portable_output  # noqa: F401
 from session_state import load_state, with_locked_state
 from gitutil import git_config_env, SAFE_GIT_CONFIG
 
@@ -108,11 +108,45 @@ def _bootstrap_pywin32(site_packages_dir):
         debug_log(f"pywin32 bootstrap failed (may break SDK import on Windows): {e}")
 
 
-# Plan Security Check Configuration
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-# OAuth access token — Claude Code passes this for /login users.
-# The Anthropic API accepts it as `Authorization: Bearer <token>` instead of `x-api-key`.
-ANTHROPIC_AUTH_TOKEN = os.environ.get("ANTHROPIC_AUTH_TOKEN", "")
+_CLAUDE_AI_TOKEN_PREFIX = "sk-ant-oat"
+_API_HOST = "api.anthropic.com"
+
+
+def _route_credentials(env, portable: bool) -> bool:
+    """Put the credentials in `env` where the default API host can use them.
+    Returns whether a token was held back. Does nothing for another API host
+    or a cloud provider: what those take is their own business.
+
+    - Claude Code hands an apiKeyHelper's output over as ANTHROPIC_API_KEY,
+      also when it is a claude.ai token. The API takes that only as a
+      bearer, so as a key every review ends in a 401.
+    - A host other than Claude Code can hand its own gateway's bearer without
+      the gateway's address. It is no credential for the default API host, so
+      it is not sent there. Claude Code passes both, so its sessions are left
+      alone."""
+    base = env.get("ANTHROPIC_BASE_URL", "").strip()
+    try:
+        api_host = (urllib.parse.urlsplit(base).hostname or "").lower() if base else _API_HOST
+    except ValueError:
+        return False
+    if api_host != _API_HOST or _HAS_3P_PROVIDER_AT_LOAD:
+        return False
+    held_back = False
+    token = env.get("ANTHROPIC_AUTH_TOKEN", "")
+    # With a base URL the token was meant for it, whichever shape it has.
+    if portable and not base and token and not token.startswith(_CLAUDE_AI_TOKEN_PREFIX):
+        del env["ANTHROPIC_AUTH_TOKEN"]
+        token, held_back = "", True
+        debug_log("ANTHROPIC_AUTH_TOKEN not used: it is not a claude.ai token and "
+                  "ANTHROPIC_BASE_URL is not set")
+    key = env.get("ANTHROPIC_API_KEY", "")
+    if key.startswith(_CLAUDE_AI_TOKEN_PREFIX) and (
+            not token or token.startswith(_CLAUDE_AI_TOKEN_PREFIX)):
+        env["ANTHROPIC_AUTH_TOKEN"] = token or key
+        del env["ANTHROPIC_API_KEY"]
+    return held_back
+
+
 # On 3P providers (Bedrock/Vertex/Foundry/Mantle), credentials live in the
 # provider env (AWS_PROFILE, GOOGLE_APPLICATION_CREDENTIALS, etc.) — not in
 # ANTHROPIC_*. Treat presence of any 3P provider flag as "has credentials"
@@ -130,6 +164,14 @@ _HAS_3P_PROVIDER_AT_LOAD = any(
         "CLAUDE_CODE_USE_ANTHROPIC_AWS",
     )
 )
+# In os.environ itself, so the CLI a review starts gets the same credentials.
+AUTH_TOKEN_HELD_BACK = _route_credentials(os.environ, portable_output())
+
+# Plan Security Check Configuration
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+# OAuth access token — Claude Code passes this for /login users.
+# The Anthropic API accepts it as `Authorization: Bearer <token>` instead of `x-api-key`.
+ANTHROPIC_AUTH_TOKEN = os.environ.get("ANTHROPIC_AUTH_TOKEN", "")
 HAS_API_CREDENTIALS = bool(
     ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN or _HAS_3P_PROVIDER_AT_LOAD
 )
