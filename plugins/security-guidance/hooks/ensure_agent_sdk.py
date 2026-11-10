@@ -18,6 +18,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import stat
 import subprocess
 import sys
 import time
@@ -496,18 +497,34 @@ def _pip_temp_root(state_dir) -> Path:
     return Path(state_dir) / "pip-tmp"
 
 
+def _is_own_real_dir(path) -> bool:
+    """True for a real directory (not a link) of this user. Raises OSError."""
+    st = os.lstat(path)
+    if not stat.S_ISDIR(st.st_mode):
+        return False
+    if os.name == "nt":
+        # A junction also reads as a directory here.
+        return not st.st_file_attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT
+    return st.st_uid == os.getuid()
+
+
 def _sweep_pip_temp(state_dir) -> None:
     """Remove pip temp folders left by a bootstrap that was killed before it
     could remove its own. Best-effort; a folder still in use is too young."""
+    root = _pip_temp_root(state_dir)
     try:
-        entries = list(_pip_temp_root(state_dir).iterdir())
+        if not _is_own_real_dir(root):
+            if root.is_symlink():
+                root.unlink()
+            return
+        entries = list(root.iterdir())
     except OSError:
         return  # the usual case: nothing was ever left
     import shutil
     now = time.time()
     for entry in entries:
         try:
-            if now - entry.stat().st_mtime > _PIP_TEMP_STALE_SEC:
+            if _is_own_real_dir(entry) and now - entry.lstat().st_mtime > _PIP_TEMP_STALE_SEC:
                 shutil.rmtree(entry, ignore_errors=True)
         except OSError:
             pass
@@ -522,7 +539,11 @@ def _run_pip_install(cmd, state_dir):
     tmp = env = None
     try:
         root = _pip_temp_root(state_dir)
-        root.mkdir(parents=True, exist_ok=True)
+        root.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if not _is_own_real_dir(root):
+            raise OSError("pip temp folder is not ours")
+        if os.name != "nt":
+            root.chmod(0o700)  # an older version left it open under umask 002
         tmp = tempfile.mkdtemp(dir=root)
         # tempfile reads TMPDIR, TEMP, TMP in that order on every platform.
         env = {**os.environ, "TMPDIR": tmp, "TEMP": tmp, "TMP": tmp}
@@ -687,6 +708,12 @@ def main() -> tuple[int, str, str]:
     _venv_was_emptied = False
     _skipped_for_pip_timeout = False
     # Before any early return: nothing else ever clears the state dir.
+    # Narrow an existing state dir first; a new one is made only if needed.
+    if os.path.isdir(_resolve_state_dir()):
+        try:
+            make_state_dir(_resolve_state_dir())
+        except OSError:
+            pass
     _sweep_pip_temp(_resolve_state_dir())
     # The SDK only serves the LLM reviews. With those switched off, or the
     # whole plugin (SECURITY_GUIDANCE_DISABLE=1), a venv of a few hundred MB
