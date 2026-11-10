@@ -1620,7 +1620,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/gemini-cli-extensions/firestore-native.git",
-        "sha": "6e6a841c2173b1fa1f95a9743f589bdbaa275caf"
+        "sha": "aa1ee7c165a59bbc157b3e882f0735e469a4c468"
       },
       "homepage": "https://github.com/gemini-cli-extensions/firestore-native"
     },
