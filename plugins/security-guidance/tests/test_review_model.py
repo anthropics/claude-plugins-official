@@ -64,7 +64,8 @@ def api(tmp_path, monkeypatch):
     )
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     for var in ("SECURITY_REVIEW_MODEL", "SG_AGENTIC_MODEL", "SG_DUAL_OR",
-                "CLAUDE_CODE_EXECPATH", "SG_AGENTIC_CLI_PATH", *llm._PROVIDER_ENV_VARS):
+                "CLAUDE_CODE_EXECPATH", "SG_AGENTIC_CLI_PATH", "ANTHROPIC_DEFAULT_OPUS_MODEL",
+                "CLAUDE_CODE_EFFORT_LEVEL", *llm._PROVIDER_ENV_VARS):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setenv("ANTHROPIC_BASE_URL", f"http://127.0.0.1:{srv.server_port}")
     monkeypatch.setenv("SECURITY_WARNINGS_STATE_DIR", str(tmp_path / "state"))
@@ -79,6 +80,10 @@ def api(tmp_path, monkeypatch):
         yield srv
     finally:
         srv.shutdown()
+
+
+def _newest_opus(ids):
+    return llm._newest_in_family(ids, "opus")
 
 
 def _new_process(monkeypatch):
@@ -96,15 +101,15 @@ def _review():
 class TestNewestOpus:
     def test_highest_version_wins_whatever_the_order(self):
         ids = ["claude-opus-4-7", "claude-opus-5-5", "claude-opus-5", "claude-opus-4-8"]
-        assert llm._newest_opus(ids) == "claude-opus-5-5"
-        assert llm._newest_opus(reversed(ids)) == "claude-opus-5-5"
+        assert _newest_opus(ids) == "claude-opus-5-5"
+        assert _newest_opus(reversed(ids)) == "claude-opus-5-5"
 
     def test_minor_version_compares_as_a_number(self):
-        assert llm._newest_opus(["claude-opus-5-9", "claude-opus-5-10"]) == "claude-opus-5-10"
+        assert _newest_opus(["claude-opus-5-9", "claude-opus-5-10"]) == "claude-opus-5-10"
 
     def test_snapshot_date_is_not_a_version(self):
         ids = ["claude-opus-4-20250514", "claude-opus-4-1-20250805", "claude-opus-4-5-20251101"]
-        assert llm._newest_opus(ids) == "claude-opus-4-5-20251101"
+        assert _newest_opus(ids) == "claude-opus-4-5-20251101"
 
     def test_other_families_and_malformed_ids_are_ignored(self):
         ids = [
@@ -112,10 +117,10 @@ class TestNewestOpus:
             "claude-opus-9-preview", "bedrock/claude-opus-9", "claude-opus-9 --flag",
             "us.anthropic.claude-opus-9", None, 7, "claude-opus-4-7",
         ]
-        assert llm._newest_opus(ids) == "claude-opus-4-7"
+        assert _newest_opus(ids) == "claude-opus-4-7"
 
     def test_no_opus_listed(self):
-        assert llm._newest_opus(["claude-sonnet-5-5", "gpt-x"]) is None
+        assert _newest_opus(["claude-sonnet-5-5", "gpt-x"]) is None
 
 
 class TestReviewRequestModel:
@@ -322,22 +327,142 @@ def fake_sdk(monkeypatch):
     return spawned
 
 
-class TestSdkPaths:
-    """Reviews that run through the Agent SDK name the CLI's own `opus` alias,
-    so the CLI that drives the model is the one that picks it."""
+class TestAgenticReviewer:
+    """The agentic reviewer always runs through a CLI, which may be far older
+    than the newest model, so it is told the model by name when it can be."""
 
-    def test_agentic_review_defaults_to_the_cli_alias(self, api, fake_sdk, tmp_path):
+    def _run(self, tmp_path):
         llm.agentic_review(str(tmp_path), [("a.py", "+x = 1\n")], ["a.py"])
+
+    def test_uses_the_newest_opus_the_endpoint_lists(self, api, fake_sdk, tmp_path):
+        self._run(tmp_path)
+        assert fake_sdk[0]["model"] == "claude-opus-5-5"
+        assert fake_sdk[0]["fallback_model"] == "opus"
+        assert fake_sdk[0]["env"]["CLAUDE_CODE_EFFORT_LEVEL"] == "medium"
+
+    def test_a_new_release_needs_no_change_to_the_plugin(self, api, fake_sdk, tmp_path):
+        api.models_body = _models("claude-opus-6", "claude-opus-5-5")
+        self._run(tmp_path)
+        assert fake_sdk[0]["model"] == "claude-opus-6"
+
+    def test_shares_the_lookup_with_the_diff_review(self, api, fake_sdk, tmp_path):
+        llm.default_review_model()
+        self._run(tmp_path)
+        assert len(api.gets) == 1
+
+    def test_lookup_failure_leaves_the_choice_to_the_cli(self, api, fake_sdk, tmp_path):
+        api.models_status = 500
+        self._run(tmp_path)
         assert fake_sdk[0]["model"] == "opus"
         assert fake_sdk[0]["fallback_model"] is None
+        assert "CLAUDE_CODE_EFFORT_LEVEL" not in fake_sdk[0]["env"]
+
+    def test_truncated_listing_with_no_opus_leaves_the_choice_to_the_cli(self, api, fake_sdk, tmp_path):
+        api.models_body = {**_models("org-model-2", "org-model-1"), "has_more": True}
+        self._run(tmp_path)
+        assert fake_sdk[0]["model"] == "opus"
+
+    def test_no_credentials_leaves_the_choice_to_the_cli(self, api, fake_sdk, tmp_path, monkeypatch):
+        monkeypatch.setattr(llm, "HAS_API_CREDENTIALS", False)
+        self._run(tmp_path)
+        assert fake_sdk[0]["model"] == "opus"
         assert api.gets == []
 
-    def test_agentic_review_override_falls_back_to_the_alias(self, api, fake_sdk,
-                                                             tmp_path, monkeypatch):
+    def test_users_opus_setting_is_kept(self, api, fake_sdk, tmp_path, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_DEFAULT_OPUS_MODEL", "my-opus")
+        self._run(tmp_path)
+        assert fake_sdk[0]["model"] == "opus"
+        assert api.gets == []
+
+    @pytest.mark.parametrize("provider_var", [
+        "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY",
+    ])
+    def test_3p_keeps_the_alias(self, api, fake_sdk, tmp_path, monkeypatch, provider_var):
+        monkeypatch.setenv(provider_var, "1")
+        self._run(tmp_path)
+        assert fake_sdk[0]["model"] == "opus"
+        assert "CLAUDE_CODE_EFFORT_LEVEL" not in fake_sdk[0]["env"]
+        assert api.gets == []
+
+    def test_users_effort_setting_is_kept(self, api, fake_sdk, tmp_path, monkeypatch):
+        monkeypatch.setenv("CLAUDE_CODE_EFFORT_LEVEL", "low")
+        self._run(tmp_path)
+        assert fake_sdk[0]["model"] == "claude-opus-5-5"
+        assert "CLAUDE_CODE_EFFORT_LEVEL" not in fake_sdk[0]["env"]
+
+    def test_override_is_used_as_is(self, api, fake_sdk, tmp_path, monkeypatch):
         monkeypatch.setenv("SG_AGENTIC_MODEL", "claude-sonnet-5")
-        llm.agentic_review(str(tmp_path), [("a.py", "+x = 1\n")], ["a.py"])
+        self._run(tmp_path)
         assert fake_sdk[0]["model"] == "claude-sonnet-5"
         assert fake_sdk[0]["fallback_model"] == "opus"
+        assert "CLAUDE_CODE_EFFORT_LEVEL" not in fake_sdk[0]["env"]
+        assert api.gets == []
+
+
+class TestRetryModel:
+    def _fail_first_post(self, api):
+        calls = []
+        original = api.RequestHandlerClass.do_POST
+        def do_POST(handler):
+            calls.append(1)
+            if len(calls) == 1:
+                handler.rfile.read(int(handler.headers.get("Content-Length") or 0))
+                return handler._send(400, {"type": "error"})
+            return original(handler)
+        api.RequestHandlerClass.do_POST = do_POST
+        return lambda: setattr(api.RequestHandlerClass, "do_POST", original)
+
+    def test_retry_uses_the_newest_sonnet_listed(self, api):
+        restore = self._fail_first_post(api)
+        try:
+            api.models_body = _models("claude-opus-5-5", "claude-sonnet-6", "claude-sonnet-5-5")
+            _review()
+        finally:
+            restore()
+        assert [p["model"] for p in api.posts] == ["claude-sonnet-6"]
+
+    def test_listing_failure_gives_the_named_fallback(self, api):
+        api.models_status = 500
+        assert llm.retry_review_model() == llm._PINNED_RETRY_MODEL
+
+    @pytest.mark.parametrize("provider_var", [
+        "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY",
+    ])
+    def test_3p_retry_uses_the_alias(self, api, monkeypatch, provider_var):
+        monkeypatch.setenv(provider_var, "1")
+        assert llm.retry_review_model() == "sonnet"
+        assert api.gets == []
+
+    def test_cache_from_an_older_version_is_looked_up_again(self, api, monkeypatch, tmp_path):
+        assert llm.default_review_model() == "claude-opus-5-5"
+        cache = tmp_path / "state" / llm._REVIEW_MODEL_CACHE_FILE
+        entry = json.loads(cache.read_text())
+        del entry["sonnet"]
+        cache.write_text(json.dumps(entry))
+        _new_process(monkeypatch)
+        assert llm.retry_review_model() == "claude-sonnet-5-5"
+        assert len(api.gets) == 2
+
+    def test_dated_first_release_gets_the_thinking_form_it_takes(self):
+        assert not llm._model_supports_adaptive_thinking("claude-sonnet-4-20250514")
+        assert llm._model_supports_adaptive_thinking("claude-sonnet-5-5")
+
+    def test_non_ascii_digits_are_not_an_id(self):
+        assert llm._newest_in_family(["claude-sonnet-\u0665"], "sonnet") is None
+
+    @pytest.mark.parametrize("value", ["claude-sonnet-9 --flag", "../x", "claude-opus-6", 7])
+    def test_tampered_sonnet_entry_is_ignored(self, api, monkeypatch, tmp_path, value):
+        assert llm.default_review_model() == "claude-opus-5-5"
+        cache = tmp_path / "state" / llm._REVIEW_MODEL_CACHE_FILE
+        entry = json.loads(cache.read_text())
+        entry["sonnet"] = value
+        cache.write_text(json.dumps(entry))
+        _new_process(monkeypatch)
+        assert llm.retry_review_model() == llm._PINNED_RETRY_MODEL
+
+
+class TestSdkPaths:
+    """Other reviews through the Agent SDK name the CLI's own `opus` alias."""
 
     @pytest.mark.parametrize("provider_var", [
         "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY",

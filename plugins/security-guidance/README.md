@@ -30,8 +30,10 @@ All configuration is via environment variables. None are required for default be
 
 By default both reviews run on the newest Claude Opus, and move to the next one when it is released — there is no model version to bump:
 
-- The LLM diff review asks your API endpoint (`GET /v1/models`) which Opus models it serves and uses the newest. The answer is cached for a day in the plugin's state directory. If the endpoint can't answer, the review uses `claude-opus-5-5`.
-- The agentic commit reviewer, and every review in a session signed in to a Claude apps gateway with `/login`, run through your installed Claude Code. Other reviews on Bedrock, Vertex, and Foundry run through the copy of Claude Code bundled with the Agent SDK, or `SG_AGENTIC_CLI_PATH` if set. On Windows the agentic commit reviewer runs through the bundled copy too, unless `SG_AGENTIC_CLI_PATH` is set. Where the Agent SDK has no bundled copy for Windows, those reviews run through `~\.local\bin\claude.exe`, or else a `claude.exe` on `PATH`; if there is neither, set `SG_AGENTIC_CLI_PATH`. All of them use Claude Code's `opus` alias: the model `/model opus` selects, including any `ANTHROPIC_DEFAULT_OPUS_MODEL` you have set. On a gateway that alias may name an older Opus than the newest one.
+- The plugin asks your API endpoint (`GET /v1/models`) which Opus models it serves and uses the newest. The answer is cached for a day in the plugin's state directory.
+- A diff review call that fails is retried on the newest Sonnet the endpoint lists.
+- If the endpoint can't answer, the diff review uses `claude-opus-5-5` (retrying on `claude-sonnet-5-5`), and the agentic commit reviewer uses Claude Code's `opus` alias. When it does use the listed Opus, the agentic commit reviewer runs at medium effort unless you set `CLAUDE_CODE_EFFORT_LEVEL`.
+- The agentic commit reviewer runs through your installed Claude Code. Every review in a session signed in to a Claude apps gateway with `/login` also does, and they use Claude Code's `opus` and `sonnet` aliases. On Bedrock, Vertex, and Foundry reviews use those aliases too, through the copy of Claude Code bundled with the Agent SDK, or `SG_AGENTIC_CLI_PATH` if set. On Windows the agentic commit reviewer runs through the bundled copy too, unless `SG_AGENTIC_CLI_PATH` is set. Where the Agent SDK has no bundled copy for Windows, those reviews run through `~\.local\bin\claude.exe`, or else a `claude.exe` on `PATH`; if there is neither, set `SG_AGENTIC_CLI_PATH`. If you set `ANTHROPIC_DEFAULT_OPUS_MODEL`, the agentic commit reviewer uses the `opus` alias so that setting applies. On a gateway that alias may name an older Opus than the newest one.
 
 To pin a model, or to use a cheaper one:
 
@@ -138,7 +140,7 @@ Review usage: review=stop session=<session id> model=claude-opus-5-5 calls=1 in=
 ```
 
 - `review` is `stop`, `commit` or `push`; `session` is the Claude Code session that triggered it.
-- `calls` counts API requests for the diff review and reviewer runs for the agentic commit/push review, where `model` is the model that was asked for (`opus` by default).
+- `calls` counts API requests for the diff review and reviewer runs for the agentic commit/push review, where `model` is the model that was asked for (`opus` if the endpoint can't list its models).
 - `est_cost_usd` is an estimate at list prices, not a bill: on a subscription the review counts against your usage limits instead. A trailing `~` means the model had no entry in the plugin's price table and a default rate was used. A review cut short (timeout, session exit) may not be counted.
 - The log rotates at 1 MB, so copy these lines out if you need a longer history.
 
