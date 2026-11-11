@@ -4451,6 +4451,34 @@
         "sha": "10573bac239b7062a476667eaa574d400335c70e"
       },
       "homepage": "https://github.com/amzn/selling-partner-agentic-toolkit"
+    },
+    {
+      "name": "shopify-ai-seo-toolkit",
+      "description": "Automate Shopify AI SEO, Product Schema JSON-LD validation, robots.txt AI crawler audits (GPTBot, ClaudeBot, GrokBot), and shoppable blog product card generation directly in Claude Code. Designed for Shopify merchants and theme developers to optimize store discovery for ChatGPT Shopping and AI commerce.",
+      "author": {
+        "name": "ClickFrom.AI"
+      },
+      "category": "developer-tools",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/kuaai/shopify-liquid-ai-seo.git",
+        "sha": "3601435201103f538e1a16e788bcad01997d91ec"
+      },
+      "homepage": "https://www.clickfrom.ai"
+    },
+    {
+      "name": "amazon-listing-optimizer",
+      "description": "Optimize Amazon Seller Central listings directly in Claude Code: strictly validate and format 249-byte UTF-8 generic backend search terms, sanitize product description HTML tags, and align listing copy with Amazon Rufus and COSMO AI recommendation algorithms.",
+      "author": {
+        "name": "AmazonSEO.ai"
+      },
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/kuaai/amazon-search-terms-bytes-counter.git",
+        "sha": "e22ce99c73e04aa2948c26bbefaa4708764b8109"
+      },
+      "homepage": "https://www.amazonseo.ai"
     }
   ]
 }
