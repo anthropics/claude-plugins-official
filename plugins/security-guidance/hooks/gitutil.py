@@ -1047,7 +1047,7 @@ def _git_rev_list_range(repo_root, base, head="HEAD"):
         # See #2099: stdout is ASCII SHAs, but stderr can carry git error
         # messages referencing non-ASCII filenames — keep bytes raw.
         r = subprocess.run(
-            [*GIT_CMD, "rev-list", "--reverse", f"{base}..{head}"],
+            [*GIT_CMD, "rev-list", "--reverse", "--topo-order", f"{base}..{head}"],
             cwd=repo_root, capture_output=True, timeout=10,
         )
         if r.returncode != 0:
@@ -1055,6 +1055,59 @@ def _git_rev_list_range(repo_root, base, head="HEAD"):
         return [s for s in r.stdout.decode("utf-8", errors="replace").strip().split("\n") if s]
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
         return []
+
+
+def _git_range_parents(repo_root, base, head="HEAD"):
+    """{sha: [parent shas, first parent first]} for `base..head`.
+
+    Empty on error: the caller then treats the range as linear, which reviews
+    more, never less.
+    """
+    try:
+        r = subprocess.run(
+            [*GIT_CMD, "rev-list", "--parents", f"{base}..{head}"],
+            cwd=repo_root, capture_output=True, timeout=10,
+        )
+        if r.returncode != 0:
+            return {}
+        rows = [line.split() for line in r.stdout.decode("utf-8", errors="replace").splitlines()]
+        return {row[0]: row[1:] for row in rows if row}
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return {}
+
+
+def _git_merge_resolved_files(repo_root, merge_sha):
+    """(path, combined-diff hunks) for each source file a merge changed itself,
+    or None on error.
+
+    The combined diff shows only lines that match none of the merge's parents:
+    conflict resolutions and hand edits. A clean merge has none, and neither
+    does a conflict settled by taking one side whole.
+    """
+    try:
+        r = subprocess.run(
+            [*GIT_CMD, "diff-tree", "--cc", "-M", "--no-commit-id", "-r", "--no-color",
+             "--no-ext-diff", "--no-textconv", merge_sha],
+            cwd=repo_root, capture_output=True, timeout=30,
+        )
+        if r.returncode != 0:
+            return None
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return None
+    files = []
+    # Hunk lines start with one marker column per parent, so only a file
+    # header starts with "diff --cc " in the first column.
+    text = r.stdout.decode("utf-8", errors="replace")
+    for section in re.split(r"^diff --cc ", text, flags=re.M)[1:]:
+        header, _, body = section.partition("\n")
+        path = header
+        if header.startswith('"'):
+            quoted = _read_quoted_path(header, 0)
+            path = quoted[0] if quoted else None
+        at = body.find("@@@")
+        if path and at >= 0 and _section_is_reviewable(path, path):
+            files.append((path, body[at:].rstrip("\n")))
+    return files
 
 
 def _git_diff_range(repo_root, base, head="HEAD"):
