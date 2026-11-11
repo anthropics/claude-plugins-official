@@ -14,8 +14,8 @@ Execute local MCP servers as child processes with communication via stdin/stdout
 ```json
 {
   "my-server": {
-    "command": "node",
-    "args": ["${CLAUDE_PLUGIN_ROOT}/servers/my-server.js"]
+    "command": "npx",
+    "args": ["-y", "my-mcp-server"]
   }
 }
 ```
@@ -463,8 +463,8 @@ Combine different types:
 ```json
 {
   "local-db": {
-    "command": "node",
-    "args": ["${CLAUDE_PLUGIN_ROOT}/servers/local-db.js", "--db-path", "${CLAUDE_PLUGIN_DATA}/data.db"]
+    "command": "npx",
+    "args": ["-y", "mcp-server-sqlite", "./data.db"]
   },
   "cloud-api": {
     "type": "sse",
@@ -479,8 +479,6 @@ Combine different types:
   }
 }
 ```
-
-`${CLAUDE_PLUGIN_DATA}` is one folder per plugin, shared by all projects. It survives plugin updates; `${CLAUDE_PLUGIN_ROOT}` does not, so don't store data there.
 
 ### Conditional Configuration
 
@@ -500,7 +498,7 @@ Use environment variables to switch servers:
 
 Set different values for dev/prod:
 - Dev: `API_URL=http://localhost:8080/mcp`
-- Prod: `API_URL=https://api.example.com/mcp`
+- Prod: `API_URL=https://api.production.com/mcp`
 
 ## Security Considerations
 
