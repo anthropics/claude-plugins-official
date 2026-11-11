@@ -745,6 +745,8 @@ def check_patterns(file_path, content):
         if cell_sources is not None:
             content = cell_sources
 
+    custom_searches = []  # (where in matches the rule goes, its pattern)
+
     for pattern in list(SECURITY_PATTERNS) + extensibility.user_patterns():
         # path_filter is a gate: when present, the rule only applies to
         # matching paths. Distinct from path_check, which is itself a
@@ -772,18 +774,24 @@ def check_patterns(file_path, content):
                     break
 
         if not matched and "regex" in pattern and content:
-            started = time.perf_counter()
+            if "_source" in pattern:  # a custom rule: searched below
+                custom_searches.append((len(matches), pattern))
+                continue
             try:
                 if re.search(pattern["regex"], content):
                     matched = True
             except Exception:
                 pass
-            if "_source" in pattern:  # a custom rule
-                extensibility.slowest_regex = max(
-                    extensibility.slowest_regex, time.perf_counter() - started)
 
         if matched:
             matches.append((pattern["ruleName"], pattern["reminder"]))
+
+    if custom_searches:
+        found = extensibility.search_custom_regexes(
+            [pattern["regex"] for _, pattern in custom_searches], content)
+        for (where, pattern), hit in reversed(list(zip(custom_searches, found))):
+            if hit:
+                matches.insert(where, (pattern["ruleName"], pattern["reminder"]))
 
     return matches
 

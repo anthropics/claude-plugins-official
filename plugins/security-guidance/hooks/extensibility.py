@@ -44,6 +44,9 @@ import functools
 import json
 import os
 import re
+import subprocess
+import sys
+import time
 from typing import Any, Dict, List, Optional, Tuple
 
 from _base import debug_log
@@ -94,6 +97,7 @@ def load_for_session(cwd: Optional[str]) -> None:
     except Exception as e:
         debug_log(f"extensibility: failed to load security-patterns: {e}")
         _user_patterns = []
+    _reset_regex_limit()
 
 
 def guidance_block() -> str:
@@ -597,3 +601,90 @@ def edit_stats(file_path: str) -> Dict[str, int]:
 
 # A custom regex that takes at least this long is reported, in seconds.
 SLOW_REGEX_S = 0.1
+
+# A project's own files can make a custom regex arbitrarily slow, and the shape
+# check at load cannot catch every slow pattern. So they run in a child process
+# that can be stopped, on every platform: re holds the GIL, so a thread cannot
+# interrupt a search, and Windows has no setitimer.
+# Seconds of child process time per hook run.
+REGEX_TIME_LIMIT_S = 3.0
+_regex_seconds_left = REGEX_TIME_LIMIT_S
+# Regexes stopped in this hook run. They are not tried again.
+_stopped_regexes: set = set()
+
+_REGEX_WORKER = """
+import faulthandler, json, re, sys, time
+job = json.load(sys.stdin)
+# Ends this process if the hook that started it is killed first.
+faulthandler.dump_traceback_later(job["limit"] + 1, exit=True)
+for regex in job["regexes"]:
+    started = time.perf_counter()
+    try:
+        hit = bool(re.search(regex, job["content"]))
+    except Exception:
+        hit = False
+    print(int(hit), time.perf_counter() - started, flush=True)
+"""
+
+
+def _reset_regex_limit() -> None:
+    global _regex_seconds_left
+    _regex_seconds_left = REGEX_TIME_LIMIT_S
+    _stopped_regexes.clear()
+
+
+def search_custom_regexes(regexes: List[str], content: str) -> List[bool]:
+    """Whether each regex is found in content. A regex that does not finish in
+    time counts as not found and is left out for the rest of this hook run;
+    the ones after it are still searched while time remains."""
+    global slowest_regex, _regex_seconds_left
+    found = [False] * len(regexes)
+    waiting = [i for i, r in enumerate(regexes) if r not in _stopped_regexes]
+    while waiting and _regex_seconds_left > 0.05:
+        limit = _regex_seconds_left / 2  # one stuck regex leaves time for the rest
+        started = time.monotonic()
+        timed_out = False
+        try:
+            done = subprocess.run(
+                [sys.executable, "-I", "-S", "-c", _REGEX_WORKER],
+                input=json.dumps({
+                    "regexes": [regexes[i] for i in waiting],
+                    "content": content,
+                    "limit": limit,
+                }).encode("ascii"),
+                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=limit)
+            lines = done.stdout
+            if done.returncode:
+                raise OSError(f"exit {done.returncode}")
+        except subprocess.TimeoutExpired as e:
+            timed_out = True
+            lines = e.stdout or b""
+        except (OSError, TypeError, ValueError, subprocess.SubprocessError) as e:
+            # As it was before the limit: no worse than a machine with no child.
+            debug_log(f"extensibility: regex worker failed: {e}")
+            return _search_here(regexes, content)
+        _regex_seconds_left -= time.monotonic() - started
+        results = lines.split(b"\n")[:-1][:len(waiting)]  # whole lines only
+        for i, line in zip(waiting, results):
+            hit, seconds = line.split()
+            found[i] = hit == b"1"
+            slowest_regex = max(slowest_regex, float(seconds))
+        waiting = waiting[len(results):]
+        if timed_out and waiting:
+            stuck = regexes[waiting.pop(0)]
+            _stopped_regexes.add(stuck)
+            slowest_regex = max(slowest_regex, limit)
+            debug_log(f"extensibility: stopped a custom regex after {limit:.1f} s: {stuck!r:.60}")
+    if waiting:
+        debug_log(f"extensibility: no time left for {len(waiting)} custom regexes")
+    return found
+
+
+def _search_here(regexes: List[str], content: str) -> List[bool]:
+    found = []
+    for regex in regexes:
+        try:
+            found.append(bool(re.search(regex, content)))
+        except Exception:
+            found.append(False)
+    return found
