@@ -64,6 +64,21 @@ class TestStopRow:
         assert m["turn_commits"] == 10101
         assert m["files_reviewed"] == 1
 
+    def test_custom_rule_counts_take_one_place(self, repo, stop, hook_env, stub_api):
+        (repo / ".claude").mkdir()
+        (repo / ".claude" / "security-patterns.json").write_text(json.dumps({"patterns": [
+            {"rule_name": "r1", "substrings": ["NEEDLE("], "reminder": "x", "paths": ["src/**"]},
+            {"rule_name": "r2", "substrings": ["NEEDLE("], "reminder": "x", "exclude_paths": ["src/**"]},
+        ]}))
+        (repo / "src").mkdir()
+        (repo / "src" / "a.ts").write_text("NEEDLE(1)\n")
+        env = {**hook_env, "CLAUDE_PROJECT_DIR": str(repo)}
+        run_hook(edit_payload(repo, repo / "src" / "a.ts", "NEEDLE(1)\n"), env)
+        commit_file(repo, "a.py", "print('a')\n")
+        m = stop(repo, CLAUDE_PROJECT_DIR=str(repo))
+        assert [k for k in m if k.startswith("cr_")] == ["cr_pack"]
+        assert "turn_commits" in m
+
     def test_commit_the_hook_reviewed(self, repo, stop, hook_env):
         _, out = commit_file(repo, "a.py", "print('a')\n")
         run_hook(bash_payload(repo, "git commit -m change", out), hook_env)

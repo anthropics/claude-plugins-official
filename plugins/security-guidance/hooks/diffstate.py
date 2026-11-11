@@ -83,9 +83,31 @@ def record_touched_path(session_id, file_path, custom_rule_stats=None):
     with_locked_state(session_id, _record)
 
 
-# Reported on the Stop row; see extensibility.edit_stats. The first three are
-# kept as maximum or union over the turn's edits, the others are added up.
-CUSTOM_RULE_KEYS = ("cr_rules", "cr_slow_ms", "cr_shapes", "cr_gain", "cr_loss")
+# A full Stop row lost these and the turn's commit count, so they travel as
+# one decimal number, each field capped to its digits:
+#   rules (2) shapes (3) gain (3) loss (3) slow_ms (4)
+# 15 digits at most, well inside what a JSON number holds exactly.
+_CUSTOM_RULE_PACK = (("cr_rules", 99), ("cr_shapes", 999), ("cr_gain", 999),
+                     ("cr_loss", 999), ("cr_slow_ms", 9999))
+
+
+# Kept in the state per turn. See extensibility.edit_stats. cr_rules, cr_shapes
+# and cr_slow_ms are maximum or union over the turn's edits, the others are
+# added up.
+CUSTOM_RULE_KEYS = tuple(key for key, _ in _CUSTOM_RULE_PACK)
+
+
+def custom_rule_pack(kept):
+    """The turn's custom rule counts as one number; 0 when there are none."""
+    if not isinstance(kept, dict):
+        return 0
+    value = 0
+    for key, cap in _CUSTOM_RULE_PACK:
+        part = kept.get(key, 0)
+        if not isinstance(part, int) or isinstance(part, bool) or part < 0:
+            part = 0
+        value = value * (10 ** len(str(cap))) + min(part, cap)
+    return value
 
 
 def _fold_custom_rule_stats(state, stats):
