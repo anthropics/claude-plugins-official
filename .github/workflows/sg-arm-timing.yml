@@ -1,0 +1,39 @@
+name: security-guidance timing check
+on:
+  push:
+    branches: [mhegazy/sg2020modelarm]
+permissions:
+  contents: read
+jobs:
+  timing:
+    runs-on: windows-11-arm
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: this }
+      - uses: actions/checkout@v4
+        with: { ref: main, path: base }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - run: pip install pytest
+      - name: Alternate the two trees
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          T=tests/test_inflight_reviews.py::test_a_push_that_waited_ends_within_the_hook_limit
+          one() { ( cd "$1/plugins/security-guidance" && python -m pytest -q -p no:cacheprovider "$2" 2>&1 | tail -30 ); }
+          declare -A pass fail; pass[this]=0; pass[base]=0; fail[this]=0; fail[base]=0
+          for i in $(seq 1 40); do
+            for t in this base; do
+              o=$(one "$t" "$T")
+              if echo "$o" | grep -q ' 1 passed'; then pass[$t]=$((pass[$t]+1)); else fail[$t]=$((fail[$t]+1)); echo "::notice title=$t failure $i::$(echo "$o" | grep -E '^E +assert' | head -2 | tr '\n' ' ')"; fi
+            done
+          done
+          echo "::notice title=single test alone::this ${pass[this]} passed ${fail[this]} failed; main ${pass[base]} passed ${fail[base]} failed"
+          for t in this base this base; do
+            n=$(one "$t" tests/test_inflight_reviews.py | tail -1)
+            echo "::notice title=whole file $t::$n"
+          done
