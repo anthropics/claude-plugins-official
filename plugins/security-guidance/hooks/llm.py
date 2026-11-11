@@ -1004,7 +1004,13 @@ def gateway_review_cli(session_id) -> Optional[str]:
     global _gateway_cli, _gateway_check_unanswered
     if _gateway_cli is not None:
         return _gateway_cli or None
-    cli = _user_cli_path() or ""
+    cli = _user_cli_path()
+    if cli is None and _WINDOWS:
+        # The native installer's fixed path, as on macOS and Linux. Not PATH:
+        # this check starts the program with no user action.
+        native = os.path.join(os.path.expanduser("~"), ".local", "bin", "claude.exe")
+        cli = native if os.path.isfile(native) else None
+    cli = cli or ""
     ok = None
     # No skip for CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC, as on Bedrock and Vertex:
     # the gateway docs suggest setting it, and the review goes through the
