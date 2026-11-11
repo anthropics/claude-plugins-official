@@ -145,7 +145,7 @@ import gitutil  # noqa: E402  module ref for per-run counters
 import llm  # noqa: E402  module ref for reassignable globals (_last_call_claude_http_error etc.)
 from llm import (  # noqa: E402,F401
     ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, HAS_API_CREDENTIALS,
-    SECURITY_REVIEW_MODEL, CLAUDE_CODE_SYSTEM_PROMPT,
+    CLAUDE_CODE_SYSTEM_PROMPT,
     _last_call_claude_http_error,
     ensure_anthropic_reachable,
     _last_review_truncated_bytes, _auth_prefer_token,

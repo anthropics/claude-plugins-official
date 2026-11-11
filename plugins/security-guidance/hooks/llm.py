@@ -181,14 +181,23 @@ HAS_API_CREDENTIALS = bool(
 # driver, so the default favors precision over recall and over latency.
 # Override via the SECURITY_REVIEW_MODEL env var (see README).
 #
-# Without an override the review follows the newest Opus rather than a
-# release named here: default_review_model() resolves it per call path.
-# _PINNED_REVIEW_MODEL is only what a review uses when that lookup fails.
+# Every review gets its model from default_review_model(), retry_review_model()
+# or agentic_review_model(); nothing else in this plugin picks one. Without an
+# override they follow the newest Opus (and Sonnet, for a retry) the endpoint
+# lists rather than a release named here.
+#
+# These two names are only what a direct API call uses when the endpoint can't
+# list its models, because the API takes no alias.
 _PINNED_REVIEW_MODEL = "claude-opus-5-5"
-# Claude Code's own alias. The CLI the Agent SDK spawns resolves it to the
-# newest Opus it knows how to drive, in the provider's id form on 3P.
+_PINNED_RETRY_MODEL = "claude-sonnet-5-5"
+# Claude Code's own aliases, for reviews that run through a CLI. The CLI
+# resolves them to the newest model it knows how to drive, in the provider's
+# id form on 3P. A CLI that is out of date resolves them to an old model.
 _CLI_OPUS_ALIAS = "opus"
-SECURITY_REVIEW_MODEL = os.environ.get("SECURITY_REVIEW_MODEL", "").strip() or _PINNED_REVIEW_MODEL
+_CLI_SONNET_ALIAS = "sonnet"
+# What a named model runs at: a CLI older than the model doesn't know the
+# effort it should default to.
+_REVIEWER_EFFORT = "medium"
 
 # OAuth subscriber tokens (ANTHROPIC_AUTH_TOKEN) require this exact system prompt
 # for api.anthropic.com/v1/messages — the API checks for one of the known Claude
@@ -635,6 +644,9 @@ _LEGACY_THINKING_MODELS = (
     "claude-sonnet-4-0",
     "claude-sonnet-4-5",
     "claude-haiku-4-5",
+    # Dated ids of the first 4.0 releases, which a listing can name.
+    "claude-opus-4-2",
+    "claude-sonnet-4-2",
 )
 
 
@@ -700,19 +712,23 @@ _REVIEW_MODEL_RETRY_SECONDS = 3600
 _REVIEW_MODEL_LOOKUP_TIMEOUT = 5
 _REVIEW_MODEL_LISTING_MAX_BYTES = 4 * 1024 * 1024
 
-# claude-opus-<major>[-<minor>][-<yyyymmdd>]. Anything else a listing or the
+# claude-<family>-<major>[-<minor>][-<yyyymmdd>]. Anything else a listing or the
 # cache file holds (other families, gateway-prefixed names, free text) is
 # never sent as a model id.
-_OPUS_ID = re.compile(r"claude-opus-(\d{1,2})(?:-(\d{1,2}))?(?:-(\d{8}))?")
+_MODEL_ID = {
+    family: re.compile(rf"claude-{family}-(\d{{1,2}})(?:-(\d{{1,2}}))?(?:-(\d{{8}}))?", re.ASCII)
+    for family in ("opus", "sonnet")
+}
 
-_review_model_memo: Optional[str] = None
+# The newest models this process knows the endpoint lists; None before the lookup.
+_review_model_memo: Optional[Dict[str, Optional[str]]] = None
 
 
-def _newest_opus(model_ids) -> Optional[str]:
-    """The highest-versioned Opus id in `model_ids`, or None."""
+def _newest_in_family(model_ids, family) -> Optional[str]:
+    """The highest-versioned id of `family` in `model_ids`, or None."""
     best = None
     for model_id in model_ids:
-        m = _OPUS_ID.fullmatch(model_id) if isinstance(model_id, str) else None
+        m = _MODEL_ID[family].fullmatch(model_id) if isinstance(model_id, str) else None
         if not m:
             continue
         version = (int(m.group(1)), int(m.group(2) or 0), m.group(3) or "")
@@ -721,8 +737,8 @@ def _newest_opus(model_ids) -> Optional[str]:
     return best[1] if best else None
 
 
-def _fetch_newest_opus() -> Optional[str]:
-    """Newest Opus the configured endpoint lists; None if it can't say."""
+def _fetch_newest_models() -> Dict[str, Optional[str]]:
+    """Newest Opus and Sonnet the configured endpoint lists; {} if it can't say."""
     # Newest first, so one modest page is enough; an org with many models
     # otherwise returns a megabyte-sized listing.
     url = _anthropic_base_url() + "/v1/models?limit=100"
@@ -739,58 +755,69 @@ def _fetch_newest_opus() -> Optional[str]:
             entries = listing.get("data") if isinstance(listing, dict) else None
             if not isinstance(entries, list):
                 debug_log("review model lookup: no model list in response")
-                return None
+                return {}
             ids = [e.get("id") for e in entries if isinstance(e, dict)]
-            if listing.get("has_more"):
-                # A truncated page may hold no current Opus at all (an org's
-                # own models can fill it); never let it pick an older one.
-                ids.append(_PINNED_REVIEW_MODEL)
-            return _newest_opus(ids)
+            def newest(family, pinned):
+                if not listing.get("has_more"):
+                    return _newest_in_family(ids, family)
+                # A truncated page may hold no current model at all (an org's
+                # own models can fill it). Never let it pick an older one.
+                found = _newest_in_family(ids + [pinned], family)
+                return None if found == pinned and pinned not in ids else found
+            return {"opus": newest("opus", _PINNED_REVIEW_MODEL),
+                    "sonnet": newest("sonnet", _PINNED_RETRY_MODEL)}
         except urllib.error.HTTPError as e:
             if e.code == 401 and not use_token and ANTHROPIC_AUTH_TOKEN:
                 use_token = True
                 continue
             debug_log(f"review model lookup: HTTP {e.code}")
-            return None
+            return {}
         except Exception as e:
             debug_log(f"review model lookup failed: {type(e).__name__}")
-            return None
-    return None
+            return {}
+    return {}
 
 
 def _read_review_model_cache(path, endpoint_key, now):
-    """(hit, model) from the cache file. `model` is None for a remembered
-    failed lookup. The file is user-writable state: every field is checked
-    and a model id is accepted only if it has the shape of an Opus id."""
+    """(hit, models) from the cache file. `models` has no "opus" for a
+    remembered failed lookup. The file is user-writable state: every field is
+    checked and a model id is accepted only if it has the shape of its family's
+    ids."""
     try:
         with open(path, "r", encoding="utf-8") as f:
             entry = json.loads(f.read(4096))
     except (OSError, ValueError):
-        return False, None
-    if not isinstance(entry, dict) or entry.get("endpoint") != endpoint_key:
-        return False, None
+        return False, {}
+    # Without "sonnet" it was written by a version that didn't look that up.
+    if (not isinstance(entry, dict) or entry.get("endpoint") != endpoint_key
+            or "sonnet" not in entry):
+        return False, {}
     at = entry.get("at")
     if isinstance(at, bool) or not isinstance(at, (int, float)):
-        return False, None
+        return False, {}
     model = entry.get("model")
     if model is None:
         ttl = _REVIEW_MODEL_RETRY_SECONDS
-    elif isinstance(model, str) and _OPUS_ID.fullmatch(model):
+    elif isinstance(model, str) and _MODEL_ID["opus"].fullmatch(model):
         ttl = _REVIEW_MODEL_TTL_SECONDS
     else:
-        return False, None
+        return False, {}
     if not 0 <= now - at < ttl:
-        return False, None
-    return True, model
+        return False, {}
+    sonnet = entry.get("sonnet")
+    if not (isinstance(sonnet, str) and _MODEL_ID["sonnet"].fullmatch(sonnet)):
+        sonnet = None
+    return True, {"opus": model, "sonnet": sonnet}
 
 
-def _write_review_model_cache(path, endpoint_key, model, now):
+def _write_review_model_cache(path, endpoint_key, models, now):
     tmp = None
     try:
         make_state_dir(os.path.dirname(path))
         fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix=".review_model.")
         with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump({"endpoint": endpoint_key, "model": model, "at": now}, f)
+            json.dump({"endpoint": endpoint_key, "model": models.get("opus"),
+                       "sonnet": models.get("sonnet"), "at": now}, f)
         os.replace(tmp, path)
     except OSError as e:
         debug_log(f"review model cache not written: {type(e).__name__}")
@@ -801,24 +828,12 @@ def _write_review_model_cache(path, endpoint_key, model, now):
                 pass
 
 
-def default_review_model() -> str:
-    """Model for a review the user hasn't pinned with SECURITY_REVIEW_MODEL.
-
-    3P providers and Claude apps gateway sign-ins go through the Agent SDK,
-    so the CLI alias does the work. 1P and LLM gateways set with
-    ANTHROPIC_BASE_URL get the newest Opus the endpoint lists, looked up at
-    most once per _REVIEW_MODEL_TTL_SECONDS; _PINNED_REVIEW_MODEL when the
-    lookup can't answer. Never raises.
-    """
+def _listed_models() -> Dict[str, Optional[str]]:
+    """Newest models the endpoint lists, looked up at most once per
+    _REVIEW_MODEL_TTL_SECONDS. {} (or no "opus") when it can't answer. Never
+    raises."""
     global _review_model_memo
-    explicit = os.environ.get("SECURITY_REVIEW_MODEL", "").strip()
-    if explicit:
-        return explicit
-    if _is_3p_provider() or _gateway_cli:
-        return _CLI_OPUS_ALIAS
-    if not HAS_API_CREDENTIALS:
-        return _PINNED_REVIEW_MODEL
-    if _review_model_memo:
+    if _review_model_memo is not None:
         return _review_model_memo
     try:
         path = os.path.join(_resolve_state_dir(), _REVIEW_MODEL_CACHE_FILE)
@@ -827,15 +842,62 @@ def default_review_model() -> str:
             _anthropic_base_url().encode("utf-8")
         ).hexdigest()[:16]
         now = time.time()
-        hit, model = _read_review_model_cache(path, endpoint_key, now)
+        hit, models = _read_review_model_cache(path, endpoint_key, now)
         if not hit:
-            model = _fetch_newest_opus()
-            _write_review_model_cache(path, endpoint_key, model, now)
+            models = _fetch_newest_models()
+            _write_review_model_cache(path, endpoint_key, models, now)
     except Exception as e:
         debug_log(f"review model resolution failed: {type(e).__name__}")
-        model = None
-    _review_model_memo = model or _PINNED_REVIEW_MODEL
-    return _review_model_memo
+        models = {}
+    _review_model_memo = models
+    return models
+
+
+def default_review_model() -> str:
+    """Model for a review the user hasn't pinned with SECURITY_REVIEW_MODEL.
+
+    3P providers and Claude apps gateway sign-ins go through the Agent SDK,
+    so the CLI alias does the work. 1P and LLM gateways set with
+    ANTHROPIC_BASE_URL get the newest Opus the endpoint lists;
+    _PINNED_REVIEW_MODEL when the lookup can't answer. Never raises.
+    """
+    explicit = os.environ.get("SECURITY_REVIEW_MODEL", "").strip()
+    if explicit:
+        return explicit
+    if _is_3p_provider() or _gateway_cli:
+        return _CLI_OPUS_ALIAS
+    if not HAS_API_CREDENTIALS:
+        return _PINNED_REVIEW_MODEL
+    return _listed_models().get("opus") or _PINNED_REVIEW_MODEL
+
+
+def retry_review_model() -> str:
+    """Model a review retries on when the default model's call fails: the CLI
+    alias through the Agent SDK, else the newest Sonnet the endpoint lists."""
+    if _is_3p_provider() or _gateway_cli:
+        # Through the user's CLI, the alias gives the Sonnet id the user's own
+        # sessions use, including any ANTHROPIC_DEFAULT_SONNET_MODEL.
+        return _CLI_SONNET_ALIAS
+    if not HAS_API_CREDENTIALS:
+        return _PINNED_RETRY_MODEL
+    return _listed_models().get("sonnet") or _PINNED_RETRY_MODEL
+
+
+def agentic_review_model() -> Tuple[str, bool]:
+    """(model, listed) for the agentic reviewer, which always runs through a
+    CLI. `listed` is True for the newest Opus the endpoint lists, named so that
+    a CLI that is out of date (the copy bundled with the Agent SDK is frozen
+    when the SDK is installed) still uses it. Otherwise the model is
+    SG_AGENTIC_MODEL, or the CLI alias where the plugin can't list models or
+    the user has told the CLI what `opus` means. Never raises."""
+    explicit = os.environ.get("SG_AGENTIC_MODEL", "").strip()
+    if explicit:
+        return explicit, False
+    if (_is_3p_provider() or _gateway_cli or not HAS_API_CREDENTIALS
+            or os.environ.get("ANTHROPIC_DEFAULT_OPUS_MODEL", "").strip()):
+        return _CLI_OPUS_ALIAS, False
+    model = _listed_models().get("opus")
+    return (model, True) if model else (_CLI_OPUS_ALIAS, False)
 
 
 # A session signed in to a Claude apps gateway with /login gives hooks no
@@ -1387,9 +1449,8 @@ def _call_claude_dual_or(prompt, output_schema, *, bool_key: str, list_key: str,
 
     explicit = os.environ.get("SECURITY_REVIEW_MODEL", "").strip()
     primary = default_review_model()
-    # Through the user's CLI, the alias gives the Sonnet id the user's own
-    # sessions use on the gateway, including any ANTHROPIC_DEFAULT_SONNET_MODEL.
-    fallback = "sonnet" if _gateway_cli else "claude-sonnet-4-6"
+    # Not looked up for a pinned model, which is never retried on another.
+    fallback = None if explicit else retry_review_model()
 
     if not _dual_or_enabled():
         # Single-call path. Reuse the same sonnet-fallback retry as a dual_or
@@ -2193,8 +2254,10 @@ def _agentic_review(
             return None, [], {"agentic_fallback": f"import:{type(e).__name__}"}
 
     _send_sdk_logs_to_debug_log()
-    # Overridable via SG_AGENTIC_MODEL.
-    model = os.environ.get("SG_AGENTIC_MODEL") or _CLI_OPUS_ALIAS
+    model, listed = agentic_review_model()
+    spawn_env = _agentic_spawn_env()
+    if listed and not os.environ.get("CLAUDE_CODE_EFFORT_LEVEL", "").strip():
+        spawn_env["CLAUDE_CODE_EFFORT_LEVEL"] = _REVIEWER_EFFORT
     max_turns = int(os.environ.get("SG_AGENTIC_MAX_TURNS", "18"))
     # In production repo_dir is the user's working tree (full repo). Under the
     # eval harness it's a temp dir with ONLY touched_paths — the agent can't
@@ -2288,10 +2351,8 @@ def _agentic_review(
             #
             # Identical --model/--fallback-model is rejected by the inner CLI
             # at startup ("Fallback model cannot be the same as the main
-            # model", exit 1 → ProcessError). The default model here IS
-            # _CLI_OPUS_ALIAS, so an unconditional fallback_model would
-            # kill every spawn before the first API call. Omit the fallback
-            # when it would equal the primary.
+            # model", exit 1 → ProcessError). The check compares the two
+            # strings, so a listed id may fall back to the alias.
             fallback_model=(
                 _CLI_OPUS_ALIAS if model != _CLI_OPUS_ALIAS else None
             ),
@@ -2316,7 +2377,7 @@ def _agentic_review(
             # versions. Clearing WEBSOCKET_AUTH_FILE_DESCRIPTOR alone lets
             # the review run end-to-end; the others are belt-and-suspenders
             # for the same fd-passing pattern.
-            env=_agentic_spawn_env(),
+            env=spawn_env,
             stderr=_on_child_stderr,
         )
         n = 0
