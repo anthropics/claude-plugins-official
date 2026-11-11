@@ -20,20 +20,26 @@ jobs:
         with: { python-version: '3.12' }
       - run: pip install pytest
       - name: Alternate the two trees
+        shell: python
         env:
           PYTHONDONTWRITEBYTECODE: "1"
         run: |
-          T=tests/test_inflight_reviews.py::test_a_push_that_waited_ends_within_the_hook_limit
-          one() { ( cd "$1/plugins/security-guidance" && python -m pytest -q -p no:cacheprovider "$2" 2>&1 | tail -30 ); }
-          declare -A pass fail; pass[this]=0; pass[base]=0; fail[this]=0; fail[base]=0
-          for i in $(seq 1 40); do
-            for t in this base; do
-              o=$(one "$t" "$T")
-              if echo "$o" | grep -q ' 1 passed'; then pass[$t]=$((pass[$t]+1)); else fail[$t]=$((fail[$t]+1)); echo "::notice title=$t failure $i::$(echo "$o" | grep -E '^E +assert' | head -2 | tr '\n' ' ')"; fi
-            done
-          done
-          echo "::notice title=single test alone::this ${pass[this]} passed ${fail[this]} failed; main ${pass[base]} passed ${fail[base]} failed"
-          for t in this base this base; do
-            n=$(one "$t" tests/test_inflight_reviews.py | tail -1)
-            echo "::notice title=whole file $t::$n"
-          done
+          import re, subprocess, sys
+          T = "tests/test_inflight_reviews.py::test_a_push_that_waited_ends_within_the_hook_limit"
+          def run(tree, target):
+              r = subprocess.run([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", target],
+                                 cwd=tree + "/plugins/security-guidance", capture_output=True, text=True, errors="replace")
+              return r.returncode, r.stdout
+          counts = {"this": [0, 0], "base": [0, 0]}
+          fails = []
+          for i in range(40):
+              for t in ("this", "base"):
+                  rc, out = run(t, T)
+                  counts[t][0 if rc == 0 else 1] += 1
+                  if rc:
+                      fails.append(t + ": " + " ".join(re.findall(r"^E +assert.*$", out, re.M)[:1]))
+          print("::notice title=single test alone::this %d passed %d failed; main %d passed %d failed" % (*counts["this"], *counts["base"]), flush=True)
+          print("::notice title=failures::" + (" / ".join(fails)[:3000] or "none"), flush=True)
+          for t in ("this", "base", "this", "base"):
+              rc, out = run(t, "tests/test_inflight_reviews.py")
+              print("::notice title=whole file %s::%s" % (t, out.strip().splitlines()[-1]), flush=True)
