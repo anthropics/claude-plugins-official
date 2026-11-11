@@ -60,6 +60,27 @@
           }
         ],
         "matcher": "Bash"
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/sg-python.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/security_reminder_hook.py\"",
+            "if": "PowerShell(git*commit*)",
+            "asyncRewake": true,
+            "rewakeMessage": "Background security review of committed or pushed changes — address or acknowledge the findings below, then continue with the user's original request or continue waiting for their reply:",
+            "rewakeSummary": "Security review found issues"
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/sg-python.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/security_reminder_hook.py\"",
+            "if": "PowerShell(git*push*)",
+            "asyncRewake": true,
+            "rewakeMessage": "Background security review of committed or pushed changes — address or acknowledge the findings below, then continue with the user's original request or continue waiting for their reply:",
+            "rewakeSummary": "Security review found issues"
+          }
+        ],
+        "matcher": "PowerShell"
       }
     ],
     "Stop": [

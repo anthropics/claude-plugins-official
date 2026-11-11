@@ -726,8 +726,8 @@ def _append_reviewed_shas(repo_root, shas, vulns_found=0):
 
 # ─── commits of a turn, count only ──────────────────────────────────────────
 #
-# A commit review starts from a hook on the Bash tool. A commit made another
-# way (the PowerShell tool, a script, the user's own terminal) starts none.
+# A commit review starts from a hook on the Bash or PowerShell tool. A commit
+# made another way (a script, the user's own terminal) starts none.
 # The Stop row says how many commits a turn made and how many of them no
 # commit hook saw. Nothing reads these to decide whether a review runs.
 #
