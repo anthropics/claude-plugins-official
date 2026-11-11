@@ -140,7 +140,7 @@ Review usage: review=stop session=<session id> model=claude-opus-5-5 calls=1 in=
 ```
 
 - `review` is `stop`, `commit` or `push`; `session` is the Claude Code session that triggered it.
-- `calls` counts API requests for the diff review and reviewer runs for the agentic commit/push review, where `model` is the model that was asked for (`opus` by default).
+- `calls` counts API requests for the diff review and reviewer runs for the agentic commit/push review, where `model` is the model that was asked for (`opus` if the endpoint can't list its models).
 - `est_cost_usd` is an estimate at list prices, not a bill: on a subscription the review counts against your usage limits instead. A trailing `~` means the model had no entry in the plugin's price table and a default rate was used. A review cut short (timeout, session exit) may not be counted.
 - The log rotates at 1 MB, so copy these lines out if you need a longer history.
 
