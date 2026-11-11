@@ -4,6 +4,7 @@ import os
 
 import pytest
 
+import diffstate
 import extensibility
 
 from conftest import edit_payload, git, metrics_of, run_hook, stop_payload, ups_payload
@@ -59,6 +60,14 @@ def _rules(repo, *rules, name="security-patterns.json"):
     git(repo, "commit", "-q", "-m", "rules")
 
 
+def _unpack(metrics):
+    """The custom rule counts on a Stop row, by name; zeros left out."""
+    digits = f"{metrics.get('cr_pack', 0):015d}"
+    fields = (("cr_rules", digits[:2]), ("cr_shapes", digits[2:5]), ("cr_gain", digits[5:8]),
+              ("cr_loss", digits[8:11]), ("cr_slow_ms", digits[11:]))
+    return {k: int(v) for k, v in fields if int(v)}
+
+
 def _stats(repo, env, files, cwd=None):
     env = {**env, "CLAUDE_PROJECT_DIR": str(repo)}
     run_hook(ups_payload(repo), env)
@@ -69,7 +78,8 @@ def _stats(repo, env, files, cwd=None):
         p.write_text("NEEDLE(1)\n")
         outs.append(run_hook(edit_payload(cwd or repo, p, "NEEDLE(1)\n"), env)[1])
     m = metrics_of(run_hook(stop_payload(repo), env)[1])
-    return {k: v for k, v in m.items() if k.startswith("cr_")}, outs
+    assert not [k for k in m if k.startswith("cr_") and k != "cr_pack"]
+    return _unpack(m), outs
 
 
 def test_rules_that_would_start_to_apply(env, workspace):
@@ -119,7 +129,7 @@ def test_they_come_after_the_review_keys(env, workspace):
     run_hook(ups_payload(repo), e)
     run_hook(edit_payload(repo, repo / "src" / "a.ts", "NEEDLE("), e)
     keys = list(metrics_of(run_hook(stop_payload(repo), e)[1]))
-    assert "cr_rules" in keys
+    assert "cr_pack" in keys
     first = min(i for i, k in enumerate(keys) if k.startswith("cr_"))
     assert not [k for k in keys[first:] if not k.startswith(("cr_", "launcher"))]
 
@@ -147,7 +157,7 @@ def test_a_slow_regex_is_timed(env, workspace):
     run_hook(ups_payload(repo), env)
     run_hook(edit_payload(repo, repo / "n.txt", "a" * 23 + "!"), env)
     m = metrics_of(run_hook(stop_payload(repo), env)[1])
-    assert m["cr_slow_ms"] >= 100
+    assert _unpack(m)["cr_slow_ms"] >= 100
 
 
 def test_no_custom_rules_no_keys(env, workspace):
@@ -171,10 +181,26 @@ def test_a_subagent_stop_leaves_them_for_the_turn(env, workspace):
     run_hook(edit_payload(repo, repo / "src" / "a.ts", "NEEDLE("), e)
     run_hook(stop_payload(repo, event="SubagentStop"), e)
     m = metrics_of(run_hook(stop_payload(repo), e)[1])
-    assert m["cr_gain"] == 1
+    assert _unpack(m)["cr_gain"] == 1
 
 
 def test_wrong_kind_in_state_does_not_break_the_hook(env, workspace):
     _, repo = workspace
     _rules(repo, {"paths": [5]}, {"paths": ["src/**"]})
     assert _stats(repo, env, ["src/a.ts"])[0]["cr_rules"] == 2
+
+
+def test_pack_layout_and_caps():
+    assert diffstate.custom_rule_pack(
+        {"cr_rules": 2, "cr_shapes": 65, "cr_gain": 7, "cr_loss": 3, "cr_slow_ms": 450}
+    ) == 2_065_007_003_0450
+    biggest = diffstate.custom_rule_pack(
+        {"cr_rules": 500, "cr_shapes": 5000, "cr_gain": 5000, "cr_loss": 5000, "cr_slow_ms": 99999})
+    assert biggest == 10 ** 15 - 1 and biggest < 2 ** 53
+    assert _unpack({"cr_pack": biggest}) == {
+        "cr_rules": 99, "cr_shapes": 999, "cr_gain": 999, "cr_loss": 999, "cr_slow_ms": 9999}
+
+
+@pytest.mark.parametrize("kept", [None, [], "x", {}, {"cr_rules": "2"}, {"cr_gain": -1}, {"cr_gain": True}])
+def test_pack_of_nothing_usable_is_zero(kept):
+    assert diffstate.custom_rule_pack(kept) == 0

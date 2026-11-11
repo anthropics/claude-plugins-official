@@ -259,7 +259,7 @@ _TAIL_METRICS: Dict[str, Any] = {}
 # Of those, the ones that go after the others whenever they were set: a row
 # over CC's key cap loses them before any older review key. Only the launcher
 # keys below come later; those are also on every smaller row of the session.
-_LAST_METRIC_KEYS = ("diff_seen", *diffstate.CUSTOM_RULE_KEYS)
+_LAST_METRIC_KEYS = ("diff_seen", "cr_pack")
 
 # CC keeps this many keys of a row.
 _METRIC_KEY_CAP = 20
@@ -2675,7 +2675,7 @@ def handle_stop_hook(input_data):
     # paths the concurrent active=False fire needs.
     if stop_hook_active:
         debug_log("Stop hook: stop_hook_active=True, skipping to avoid recursion")
-        emit_metrics({"skipped": True, "skip_reason": 1, "diff_strategy_v2": True})
+        emit_metrics({"skipped": True, "skip_reason": 1})
         sys.exit(0)
 
     # Snapshot all state under one lock BEFORE any slow work (sweep file I/O,
@@ -2701,9 +2701,9 @@ def handle_stop_hook(input_data):
             if isinstance(snap.get(_k), int) and snap[_k] > 0:
                 _TAIL_METRICS[_k] = snap[_k]
 
-        for _k in diffstate.CUSTOM_RULE_KEYS:
-            if snap.get("custom_rules", {}).get(_k):
-                _TAIL_METRICS[_k] = snap["custom_rules"][_k]
+        _cr_pack = diffstate.custom_rule_pack(snap.get("custom_rules"))
+        if _cr_pack:
+            _TAIL_METRICS["cr_pack"] = _cr_pack
 
     # Sweep pattern-warning outcomes (pure local work; stop_hook_active is
     # already guaranteed False here so no double-count guard needed).
@@ -2757,7 +2757,6 @@ def handle_stop_hook(input_data):
         # diagnostics survive when extra adds touched_paths_count + ip_* keys.
         emit_metrics({
             "skipped": True, "skip_reason": reason, "fire_index": fire_count + 1,
-            "diff_strategy_v2": True,
             **v2_metrics, **extra, **sweep,
             **({"diff_hdr_unparsed": len(gitutil._unparsed_diff_headers)}
                if gitutil._unparsed_diff_headers else {}),
@@ -3087,7 +3086,6 @@ def handle_stop_hook(input_data):
         emit_metrics({
             "vulns_found": len(vulns),
             "untracked_baseline_n": len(untracked_at_baseline),
-            "diff_strategy_v2": True,
             "critical_count": sev["critical"],
             "high_count": sev["high"],
             "files_reviewed": len(diff_files),
@@ -3128,7 +3126,6 @@ def handle_stop_hook(input_data):
     emit_metrics({
         **({"review_failed": True} if stop_review_failed else {}),
         "vulns_found": 0,
-        "diff_strategy_v2": True,
         "files_reviewed": len(diff_files),
         "touched_paths_count": len(touched_paths),
         "review_ms": review_ms,
