@@ -3224,6 +3224,9 @@ def main():
     tool_input = input_data.get("tool_input", {})
     hook_event_name = input_data.get("hook_event_name", "")
     debug_log(f"Processing: hook_event={hook_event_name}, tool={tool_name}")
+    if tool_name == "PowerShell":
+        # Same fields and same git commands as Bash: commit review and push sweep.
+        tool_name = "Bash"
 
     # Load project-specific security guidance and custom patterns once
     # per invocation. Failures are non-fatal (debug-logged) so a malformed
@@ -3249,7 +3252,7 @@ def main():
         handle_stop_hook(input_data)
         return
 
-    # Handle PostToolUse[Bash or PowerShell] — commit review or push sweep (asyncRewake).
+    # Handle PostToolUse[Bash] — commit review or push sweep (asyncRewake).
     #
     # hooks.json has three `if` configs under the Bash matcher (`git*commit*`,
     # `git*push*` and `gt *`), kept to one per kind because CC runs EVERY
@@ -3274,14 +3277,14 @@ def main():
     # just-made commit is recorded by commit-review, so the next standalone
     # push sees it as reviewed and the sweep base advances past it. Older
     # unreviewed commits in the range are caught on that next push.
-    if tool_name in ("Bash", "PowerShell") and hook_event_name == "PostToolUse":
+    if tool_name == "Bash" and hook_event_name == "PostToolUse":
         cmd = (input_data.get("tool_input") or {}).get("command", "") or ""
         if not (_GIT_COMMIT_RE.search(cmd) or _GIT_PUSH_RE.search(cmd)):
             # Measurement only: this start matched no commit or push. Count
             # it, and say whether a plain text check could have told so before
             # Python. Both values carry the sample weight, so they sum to
             # estimates of all such starts.
-            if (tool_name == "Bash" and _unmatched_bash_sampled(input_data)
+            if (input_data.get("tool_name") == "Bash" and _unmatched_bash_sampled(input_data)
                     and not portable_output()):
                 skip = 0 if _shell_precheck_passes(raw_input) else _UNMATCHED_BASH_SAMPLE
                 emit_metrics({"bash_no_match": _UNMATCHED_BASH_SAMPLE, "precheck_skip": skip})
