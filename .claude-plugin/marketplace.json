@@ -89,7 +89,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/AikidoSec/aikido-claude-plugin.git",
-        "sha": "8fdc995a44102a30ad54164e0bdd249d158c725c"
+        "sha": "75e45f337568bf3e0f5d99bc1b41d8844492df19"
       },
       "homepage": "https://github.com/AikidoSec/aikido-claude-plugin"
     },
