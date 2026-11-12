@@ -48,6 +48,22 @@ def _call_args():
 
 _CALL_ARGS = _call_args()
 
+
+def _page_function_call():
+    """Regex for Playwright's and Puppeteer's `$eval('selector', function`, read
+    from its "eval(". It runs the function, so nothing is evaluated from a string.
+
+    Both have to be written out in the call: a string with nothing put into it,
+    then a function. AngularJS `scope.$eval(expr)` and any other `$eval(` do not
+    match. Every repeat is bounded.
+    """
+    selector = r"\x22[^\x22\\\n]{0,300}\x22|\x27[^\x27\\\n]{0,300}\x27|`[^`$\\]{0,300}`"
+    arrow = r"(?:[\w$]{1,60}|\([^()]{0,200}\))\s{0,20}(?::[^=\n]{0,60})?=>"
+    return rf"eval\(\s{{0,200}}(?:{selector})\s{{0,20}},\s{{0,200}}(?:async\b\s{{0,20}})?(?:function\b|{arrow})"
+
+
+_PAGE_FUNCTION_CALL = _page_function_call()
+
 # Security patterns configuration
 SECURITY_PATTERNS = [
     {
@@ -119,15 +135,18 @@ Only use exec() if you absolutely need shell features and the input is guarantee
         # JS-only construct: gate to JS/TS files so docs/.md and other prose
         # mentioning "new Function" don't trip the warning.
         "path_filter": lambda p: p.endswith(_JS_EXTS),
-        "substrings": ["new Function"],
+        # The whole word: `new FunctionRegistry()` is another class. The two names
+        # code gives to Function itself still count.
+        "regex": r"new Function(?:Constructor|Ctor)?(?![\w$])",
         "reminder": "\u26a0\ufe0f Security Warning: Using new Function() with string interpolation is a CODE INJECTION vulnerability. If any variable is concatenated or interpolated into the function body string, an attacker controlling that variable can execute arbitrary code. Use safe alternatives: for property access use obj[key] or array.reduce((o, k) => o[k], root); for computation use a safe expression parser. NEVER interpolate untrusted strings into new Function() bodies.",
     },
     {
         "ruleName": "eval_injection",
         # Lookbehind excludes `.` so method calls like PyTorch model.eval(),
-        # redis.eval(), spec.eval() don't match. Skip doc/prose files.
+        # redis.eval(), spec.eval() don't match. Playwright's page.$eval('selector',
+        # function) is left out too. Skip doc/prose files.
         "path_filter": lambda p: not p.endswith(_DOC_EXTS),
-        "regex": r"(?<![a-zA-Z0-9_\.])eval\(",
+        "regex": rf"(?<![a-zA-Z0-9_\.])(?!(?<=\$){_PAGE_FUNCTION_CALL})eval\(",
         "reminder": "⚠️ Security Warning: eval() executes arbitrary code and is a major security risk. Use JSON.parse() for data, ast.literal_eval() for Python literals, or a safe expression parser. If this is safe or is explicitly needed, briefly document that in a comment before continuing.",
     },
     {
@@ -150,7 +169,8 @@ Only use exec() if you absolutely need shell features and the input is guarantee
         # docs/example HTML, playground/self-contained skills that hardcode
         # innerHTML strings with zero user input (#410).
         "path_filter": lambda p: p.endswith(_JS_EXTS),
-        "substrings": [".innerHTML =", ".innerHTML="],
+        # An assignment, not a `==` or `===` comparison.
+        "regex": r"\.innerHTML ?=(?!=)",
         "reminder": "⚠️ Security Warning: Setting innerHTML with untrusted content can lead to XSS vulnerabilities. Use textContent for plain text or safe DOM methods for HTML content. If you need HTML support, consider using an HTML sanitizer library such as DOMPurify.",
     },
     {
@@ -253,7 +273,7 @@ Additionally, validate user inputs:
         "ruleName": "outerHTML_xss",
         # Browser DOM API: only meaningful in JS/TS source.
         "path_filter": lambda p: p.endswith(_JS_EXTS),
-        "substrings": [".outerHTML =", ".outerHTML="],
+        "regex": r"\.outerHTML ?=(?!=)",
         "reminder": "⚠️ Security Warning: Use textContent or sanitize with DOMPurify. outerHTML assignment is an XSS sink equivalent to innerHTML.",
     },
     {
