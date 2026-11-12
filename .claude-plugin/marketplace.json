@@ -3778,6 +3778,38 @@
       "homepage": "https://docs.stackhawk.com/ai-security/"
     },
     {
+      "name": "hawkscan-ci",
+      "description": "Configure HawkScan in your CI/CD pipeline. Provider-agnostic: detects GitHub Actions, GitLab CI, Jenkins, CircleCI, Azure Pipelines, Bitbucket, Buildkite, and other CI systems from repo files, edits the pipeline file in place to add a HawkScan job, and prompts for HAWK_API_KEY storage (CI-native secrets store or external secrets manager).",
+      "author": {
+        "name": "StackHawk"
+      },
+      "category": "security",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/stackhawk/agent-skills.git",
+        "path": "plugins/hawkscan-ci",
+        "ref": "main",
+        "sha": "ecc998e80a0d81ae27a433ef0882950366d21915"
+      },
+      "homepage": "https://docs.stackhawk.com/ai-security/"
+    },
+    {
+      "name": "stackhawk-data-seed",
+      "description": "Read a target repo and emit checked-in seed artifacts so HawkScan has data to scan. Generates SQL / HTTP / gRPC / Mongo / shell steps across the target repo and any upstream services it depends on, plus a manifest and a credentials handoff file that hawkscan consumes.",
+      "author": {
+        "name": "StackHawk"
+      },
+      "category": "security",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/stackhawk/agent-skills.git",
+        "path": "plugins/stackhawk-data-seed",
+        "ref": "main",
+        "sha": "ecc998e80a0d81ae27a433ef0882950366d21915"
+      },
+      "homepage": "https://docs.stackhawk.com/ai-security/"
+    },
+    {
       "name": "streaming-skills-plugin",
       "description": "Skills for streaming application developers, covering Kafka and Flink client libraries and Schema Registry",
       "author": {
