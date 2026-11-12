@@ -66,8 +66,10 @@ def test_one_call_in_ten_is_sampled():
 def test_pairs_cover_every_verb_in_the_regexes():
     # A verb added to either regex has to be added to _SHELL_PRECHECK_PAIRS
     # and to _commands() below.
-    assert hook._GIT_COMMIT_RE.pattern.endswith(r"\s+commit\b(?!-)|\bgt\s+(?:create|modify)\b")
-    assert hook._GIT_PUSH_RE.pattern.endswith(r"\s+push\b|\bgt\s+submit\b)")
+    assert hook._GIT_COMMIT_RE.pattern.endswith(
+        rf"{hook._WORD_GAP}commit\b(?!-)|\bgt{hook._WORD_GAP}(?:create|modify)\b")
+    assert hook._GIT_PUSH_RE.pattern.endswith(
+        rf"{hook._WORD_GAP}push\b|\bgt{hook._WORD_GAP}submit\b)")
 
 
 def _commands():
