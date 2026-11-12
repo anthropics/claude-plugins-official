@@ -1228,6 +1228,71 @@ def _mark_inflight(repo_root, shas):
         pass
 
 
+def hold_until_exit(path):
+    """Lock the file at `path` until this process ends, so that others can
+    see it `is_held`. Best-effort; never raises."""
+    import time as _time
+    try:
+        fd = _open_own_file(path, os.O_RDWR)
+    except (OSError, TypeError):
+        return
+    try:
+        for _ in range(10):  # another process may be looking at this moment
+            if _flock_nb(fd, exclusive=True):
+                return  # left open: the lock goes when the process does
+            _time.sleep(0.01)
+    except OSError:
+        pass
+    os.close(fd)
+
+
+def is_held(path):
+    """Whether a live process holds the file at `path`; None when that cannot
+    be told (no such file, or no locks here)."""
+    try:
+        fd = _open_own_file(path, os.O_RDONLY)
+    except (OSError, TypeError):
+        return None
+    try:
+        # Shared, so two processes looking at once do not look like a holder
+        # to each other.
+        return not _flock_nb(fd, exclusive=False)
+    except OSError:
+        return None
+    finally:
+        os.close(fd)
+
+
+def becomes_held(path, max_wait_s, poll_s=0.1):
+    """Whether a live process holds the file at `path` or does so soon."""
+    import time as _time
+    end = _time.monotonic() + max_wait_s
+    while not is_held(path):
+        if _time.monotonic() >= end:
+            return False
+        _time.sleep(poll_s)
+    return True
+
+
+def wait_for_holder(path, max_wait_s, poll_s=0.5):
+    """Wait for the process holding the file at `path` to end. Returns
+    (ended, waited_s); `ended` is False when it still runs after `max_wait_s`,
+    or when that cannot be told."""
+    import time as _time
+    start = _time.monotonic()
+    waited, looks_free = False, 0
+    while True:
+        held = is_held(path)
+        # Free twice in a row: a holder creates the file a moment before it
+        # locks it.
+        looks_free = 0 if held else looks_free + 1
+        spent = _time.monotonic() - start
+        if held is None or looks_free == 2 or (held and spent >= max_wait_s):
+            return looks_free == 2 and held is False, spent if waited else 0.0
+        waited = waited or held
+        _time.sleep(poll_s)
+
+
 def _load_inflight_shas(repo_root, shas, _gd=None):
     """Which of `shas` another live review in this clone holds right now."""
     out = set()
@@ -1238,18 +1303,8 @@ def _load_inflight_shas(repo_root, shas, _gd=None):
         p = os.path.join(gd, _INFLIGHT_PREFIX + sha)
         if not _is_full_sha(sha) or p in _inflight_held:
             continue
-        try:
-            fd = _open_own_file(p, os.O_RDONLY)
-        except OSError:
-            continue
-        try:
-            # Shared, so two reviews asking at once do not look like a
-            # holder to each other.
-            if not _flock_nb(fd, exclusive=False):
-                out.add(sha)
-        except OSError:
-            pass
-        os.close(fd)
+        if is_held(p):
+            out.add(sha)
     return out
 
 
