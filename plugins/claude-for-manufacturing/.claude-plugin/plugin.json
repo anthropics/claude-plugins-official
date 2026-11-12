@@ -1,0 +1,25 @@
+{
+  "name": "claude-for-manufacturing",
+  "displayName": "Claude for Manufacturing",
+  "version": "1.0.0",
+  "description": "The manufacturing plugin. Skills for the work a plant actually runs on: joining the exports and systems into one dataset, quoting make-to-order jobs from drawings, writing nonconformances and 8Ds, diagnosing breakdowns, and reporting the morning numbers. Works with Microsoft 365, Oracle NetSuite, Infor M3 and Autodesk Fusion once connected, connects anything else through custom-connector, and runs on scheduled file exports when a system has no connector at all. Install and then ask Claude to help you get onboarded.",
+  "author": {
+    "name": "Anthropic",
+    "email": "support@anthropic.com"
+  },
+  "keywords": [
+    "8d",
+    "capa",
+    "cmms",
+    "erp",
+    "manufacturing",
+    "mes",
+    "nonconformance",
+    "oee",
+    "operations",
+    "production",
+    "quality",
+    "quoting",
+    "supply-chain"
+  ]
+}
