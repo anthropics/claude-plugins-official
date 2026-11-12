@@ -47,7 +47,8 @@ jobs:
             if (!result.ok) {
               core.setFailed(
                 `Scope guard: a non-member PR may only ADD marketplace.json entries whose source repo already backs a live plugin here.\n - ` +
-                result.problems.join('\n - ')
+                result.problems.join('\n - ') +
+                `\nPlugins are submitted at https://claude.ai/directory/manage. Pull requests here are not monitored.`
               );
               return;
             }
