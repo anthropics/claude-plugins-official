@@ -23,7 +23,7 @@ jobs:
           script: |
             const author = context.payload.pull_request.user.login;
 
-            const { evaluate, isExemptAuthor } = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/external-pr-scope.js`);
+            const { evaluate, isExemptAuthor, SUBMISSION_NOTICE } = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/external-pr-scope.js`);
 
             // Members (write/admin) and the repo's own automation bot (bump SHA PRs) are never
             // auto-closed.
@@ -41,19 +41,21 @@ jobs:
             // approval still gate the merge (the External PR Scope Guard is advisory signal,
             // not a required check).
             const result = await evaluate({ github, context });
-            if (result.ok && result.added.length > 0) {
-              console.log(`In-scope external contribution (adds: ${result.added.join(', ')}) — allowing PR.`);
-              return;
-            }
-
-            console.log(`Closing PR from ${author}: ${result.problems.join('; ') || 'out of scope'}`);
+            const inScope = result.ok && result.added.length > 0;
 
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.payload.pull_request.number,
-              body: `Thanks for your interest! This repo only accepts contributions from Anthropic team members. If you'd like to submit a plugin to the marketplace, please submit your plugin [here](https://clau.de/plugin-directory-submission).`
+              body: inScope ? SUBMISSION_NOTICE : `${SUBMISSION_NOTICE}\n\nThis pull request has been closed automatically, because this repository only takes changes from Anthropic team members.`
             });
+
+            if (inScope) {
+              console.log(`In-scope external contribution (adds: ${result.added.join(', ')}) — allowing PR.`);
+              return;
+            }
+
+            console.log(`Closing PR from ${author}: ${result.problems.join('; ') || 'out of scope'}`);
 
             await github.rest.pulls.update({
               owner: context.repo.owner,

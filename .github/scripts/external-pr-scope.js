@@ -18,6 +18,13 @@
 
 const MARKETPLACE = '.claude-plugin/marketplace.json';
 
+// Posted on every pull request from outside Anthropic.
+const SUBMISSION_NOTICE = [
+  'Thanks for your interest! Plugins are now submitted at **https://claude.ai/directory/manage**. Plugins accepted there are served across Claude products.',
+  'The `marketplace.json` in this repository is being phased out: it will be reduced over time to Anthropic\'s own plugins.',
+  'Pull requests here are not monitored, so please use the link above to submit or update a plugin.',
+].join('\n\n');
+
 function normalizeRepo(u) {
   return String(u || '').trim().toLowerCase()
     .replace(/^git\+/, '')
@@ -153,4 +160,4 @@ async function isExemptAuthor({ github, context }) {
   return { exempt: false };
 }
 
-module.exports = { normalizeRepo, liveReposOf, analyze, readPlugins, evaluate, isExemptAuthor, MARKETPLACE };
+module.exports = { normalizeRepo, liveReposOf, analyze, readPlugins, evaluate, isExemptAuthor, MARKETPLACE, SUBMISSION_NOTICE };

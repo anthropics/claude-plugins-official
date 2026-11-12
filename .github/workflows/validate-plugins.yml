@@ -1,72 +1,18 @@
 name: Validate Plugins
 
+# Checks the plugin folders in this repository (.github/scripts/plugin-dirs.sh).
+# A folder is checked whether or not marketplace.json lists it.
+#
+# `validate` is a required status check on main, so this has no path filter: a
+# filtered-out run never reports, and the PR then waits for it forever.
+
 on:
   pull_request:
-    paths:
-      - '.claude-plugin/**'
-      - '*/.claude-plugin/**'
-      - '*/agents/**'
-      - '*/skills/**'
-      - '*/commands/**'
-      # Vendored plugins live TWO levels deep (plugins/<name>/, external_plugins/<name>/),
-      # and `*` doesn't cross a `/` — so the one-level patterns above never match them.
-      # Without these, a PR touching only e.g. plugins/<name>/.claude-plugin/plugin.json
-      # (a manifest version bump) fires nothing and the required `validate` check sits
-      # "Expected — Waiting for status to be reported" forever (PR #5416 hit this; same
-      # per-level spell-out as the README/assets entries below).
-      - 'plugins/*/.claude-plugin/**'
-      - 'plugins/*/agents/**'
-      - 'plugins/*/skills/**'
-      - 'plugins/*/commands/**'
-      - 'external_plugins/*/.claude-plugin/**'
-      - 'external_plugins/*/agents/**'
-      - 'external_plugins/*/skills/**'
-      - 'external_plugins/*/commands/**'
-      # `validate` is a required status check, so a PR that touches ONLY workflow
-      # files (e.g. an action-SHA re-pin) would otherwise never trigger validate
-      # and sit "Expected — Waiting for status to be reported" forever (workflow_dispatch
-      # check runs aren't associated with the PR, so they don't satisfy it). Run
-      # validate on workflow changes too so those PRs can clear the gate in-context.
-      - '.github/workflows/**'
-      # Same rationale for the scan policy prompt: a policy-only PR (.github/policy/**)
-      # touches none of the plugin paths above, so validate would never trigger via
-      # pull_request and the required check would sit "Expected" forever (a dispatch
-      # check run isn't associated with the PR, so it can't satisfy the gate either).
-      - '.github/policy/**'
-      # Same again for the bump-tracking ledger: a PR that only edits
-      # .github/bump-tracking.json (e.g. enrolling slugs in releases-only
-      # tracking) matches nothing above, so the required check sits
-      # "Expected" forever and even a dispatched validate run on the PR
-      # head can't satisfy the gate (it only counts pull_request suites).
-      - '.github/bump-tracking.json'
-      # And once more for a plugin's own docs: a PR that only edits a README or
-      # adds a screenshot matches nothing above, so the required check never
-      # reports and the PR can't be merged. Spelled out per level because `*`
-      # doesn't cross a `/` — plugins live at plugins/<name>/, so `*/README.md`
-      # would not match one.
-      - 'plugins/*/README.md'
-      - 'plugins/*/assets/**'
-      - 'external_plugins/*/README.md'
-      - 'external_plugins/*/assets/**'
-      # And for a vendored plugin's MCP server config / hooks: a PR that only edits
-      # plugins/<name>/.mcp.json (e.g. repointing a partner's remote MCP URL, as
-      # #4985 and its follow-up did for context7) or a hooks file matches nothing
-      # above, so `validate` never reports and the PR sits "Expected" forever.
-      - 'plugins/*/.mcp.json'
-      - 'plugins/*/hooks/**'
-      - 'external_plugins/*/.mcp.json'
-      - 'external_plugins/*/hooks/**'
   push:
     branches: [main]
-    paths:
-      - '.claude-plugin/**'
-  # `validate` is a required status check on main. Bump PRs are opened with
-  # GITHUB_TOKEN, which doesn't fire on:pull_request (recursion guard), so the
-  # path-filtered trigger above never reports on them and the PR would be
-  # blocked forever. The bump workflow dispatches this against each per-entry
-  # bump branch instead; the check run lands on the branch HEAD (= PR head)
-  # and satisfies the required check. The validate job runs unconditionally,
-  # so a dispatch always reports.
+  # Bump PRs are opened with GITHUB_TOKEN, which doesn't fire on:pull_request
+  # (recursion guard), so the bump workflow dispatches this against each bump
+  # branch instead.
   workflow_dispatch:
 
 permissions:
@@ -75,17 +21,68 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - uses: anthropics/claude-plugins-community/.github/actions/validate-plugins@163301d1904c0a994539f5226ce0fcd65b8652bf
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0 (sha-pinned)
+
+      - name: Install Claude Code
+        run: |
+          # The native binary is an optional dependency whose download sometimes
+          # stalls, so check that it runs and retry from a clean state.
+          for attempt in 1 2 3; do
+            timeout -k 10 300 npm install -g --include=optional @anthropic-ai/claude-code@latest || true
+            if claude --version; then exit 0; fi
+            timeout -k 10 300 node "$(npm root -g)/@anthropic-ai/claude-code/install.cjs" || true
+            if claude --version; then exit 0; fi
+            npm uninstall -g @anthropic-ai/claude-code || true
+            npm cache clean --force || true
+            sleep $((attempt * 10))
+          done
+          echo "::error::Claude Code did not install after 3 attempts."
+          exit 1
+
+      - name: Validate plugin folders
+        run: bun .github/scripts/validate-plugin-folders.ts
+
+      - name: Validate frontmatter of agents, skills and commands
+        run: |
+          set -euo pipefail
+          (cd .github/scripts && bun install --no-save yaml@2)
+          dirs="$(bash .github/scripts/plugin-dirs.sh)"
+          failed=0
+          while IFS= read -r dir; do
+            bun .github/scripts/validate-frontmatter.ts "$dir" || failed=1
+          done <<< "$dirs"
+          exit "$failed"
+
+      # TODO: remove this step and the next once marketplace.json lists only
+      # first-party plugins. Until then it still serves third-party entries, so a
+      # change to the file must keep it loadable and every source SHA-pinned (I5).
+      - name: Check whether marketplace.json changed
+        id: marketplace
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before || 'origin/main' }}
+        run: |
+          if [[ "$EVENT" != "workflow_dispatch" ]] &&
+             git diff --quiet "$BASE"...HEAD -- .claude-plugin/ .github/workflows/validate-plugins.yml; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            # On a dispatch (bump branches), and when the diff itself fails:
+            # check rather than skip.
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Validate marketplace.json
+        if: steps.marketplace.outputs.changed == 'true'
+        uses: anthropics/claude-plugins-community/.github/actions/validate-plugins@163301d1904c0a994539f5226ce0fcd65b8652bf
         with:
           marketplace-path: .claude-plugin/marketplace.json
-          # Official curated marketplace: SHA-pin (I5) is a HARD error.
-          # I8/I11 are warnings until the 15 known vendored-path/name issues
-          # are cleaned up (see PR body); tighten to "I1 I3" after.
+          skip-local-folders: "true"
           warn-invariants: "I1 I3 I8 I11"
           # Plugins resolved by a local command instead of a git repo (no sha to
           # pin). Each name here is a listing decision: add one only with
