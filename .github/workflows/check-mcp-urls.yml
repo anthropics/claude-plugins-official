@@ -1,14 +1,8 @@
 name: Check MCP URLs
 
-# Liveness check for http/sse MCP server URLs declared by plugins vendored
-# in this repo. Catches typos in new submissions and upstream endpoints that
-# disappear after merge.
-#
-# Scope: only plugins whose files live in this working tree (marketplace
-# entries with a string `source`, e.g. "./plugins/foo"). External entries
-# are pinned to an upstream repo at a SHA — reading their .mcp.json would
-# mean cloning every upstream on each run, which is slow and flaky. Those
-# are out of scope for now.
+# Liveness check for http/sse MCP server URLs declared by the plugins in this
+# repository (.github/scripts/plugin-dirs.sh). Catches typos, and endpoints
+# that disappear after merge.
 #
 # What counts as "alive": anything that proves the hostname/path resolves to
 # a server. 401/403/405/5xx all pass — auth and method errors are expected
@@ -17,9 +11,9 @@ name: Check MCP URLs
 on:
   pull_request:
     paths:
-      - '.claude-plugin/marketplace.json'
       - 'plugins/**'
       - 'external_plugins/**'
+      - '.github/scripts/plugin-dirs.sh'
       - '.github/workflows/check-mcp-urls.yml'
   schedule:
     - cron: '0 6 * * *'
@@ -39,16 +33,11 @@ jobs:
         run: |
           set -euo pipefail
 
-          MARKETPLACE=".claude-plugin/marketplace.json"
-
-          # Each line: "<plugin>\t<server>\t<url>". Marketplace entries with a
-          # string `source` are local paths; objects describe an external repo
-          # pinned at a SHA, which we don't have checked out — skip those.
+          # Each line: "<plugin>\t<server>\t<url>".
           discover() {
-            jq -r '.plugins[] | select(.source | type == "string") | "\(.name)\t\(.source)"' "$MARKETPLACE" |
-            while IFS=$'\t' read -r plugin src; do
-              dir="${src#./}"
-              [[ -d "$dir" ]] || continue
+            bash .github/scripts/plugin-dirs.sh |
+            while IFS= read -r dir; do
+              plugin="${dir##*/}"
               for cfg in "$dir/.mcp.json" "$dir/mcp.json" "$dir/.claude-plugin/plugin.json"; do
                 [[ -f "$cfg" ]] || continue
                 # MCP config comes in two shapes: a bare map of server name ->
@@ -108,7 +97,7 @@ jobs:
 
           entries="$(discover)"
           if [[ -z "$entries" ]]; then
-            echo "::notice::No http/sse MCP server URLs found in vendored plugins."
+            echo "::notice::No http/sse MCP server URLs found in this repository's plugins."
             exit 0
           fi
 
@@ -119,6 +108,11 @@ jobs:
             # and can't be probed as-is.
             if [[ "$url" == *'${'* || "$url" == *'{{'* ]]; then
               printf '%-24s %-18s %-52s %s\n' "$plugin" "$server" "$url" "SKIP  templated"
+              continue
+            fi
+            # example.com is reserved for documentation, so nothing is ever there.
+            if [[ "$url" =~ ^https?://([^/:]+\.)?example\.com([/:]|$) ]]; then
+              printf '%-24s %-18s %-52s %s\n' "$plugin" "$server" "$url" "SKIP  example"
               continue
             fi
             result="$(probe "$url")" || true

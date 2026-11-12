@@ -1,13 +1,21 @@
-# Claude Code Plugins Directory
+# Claude Plugins
 
-A curated directory of high-quality plugins for Claude Code.
+Anthropic's own plugins for Claude, and the `claude-plugins-official` marketplace for Claude Code.
+
+> **Submitting a plugin?** Submit it at **[claude.ai/directory/manage](https://claude.ai/directory/manage)**. Plugins accepted there are served across Claude products. Pull requests to this repository are not monitored.
+
+## What is changing
+
+- **All plugins are now submitted at [claude.ai/directory/manage](https://claude.ai/directory/manage)**, and are served across Claude products from there.
+- **`.claude-plugin/marketplace.json` is being phased out for third-party plugins.** It will be reduced over time to Anthropic's own plugins.
+- **This repository is the home of Anthropic's own plugins.** Its checks cover the plugin folders here, not the plugins hosted in other repositories.
 
 > **⚠️ Important:** Make sure you trust a plugin before installing, updating, or using it. Anthropic does not control what MCP servers, files, or other software are included in plugins and cannot verify that they will work as intended or that they won't change. See each plugin's homepage for more information.
 
 ## Structure
 
 - **`/plugins`** - Internal plugins developed and maintained by Anthropic
-- **`/external_plugins`** - Third-party plugins from partners and the community
+- **`/external_plugins`** - Third-party plugins added before submissions moved to [claude.ai/directory/manage](https://claude.ai/directory/manage), and Anthropic's channel plugins (Discord, fakechat, iMessage and Telegram)
 
 ## Installation
 
@@ -19,13 +27,13 @@ or browse for the plugin in `/plugin > Discover`
 
 ## Contributing
 
-### Internal Plugins
+### Third-party plugins
 
-Internal plugins are developed by Anthropic team members. See `/plugins/example-plugin` for a reference implementation.
+Submit and manage your plugin at [claude.ai/directory/manage](https://claude.ai/directory/manage). Do not open a pull request here: pull requests are not monitored, and `marketplace.json` is being reduced to Anthropic's own plugins.
 
-### External Plugins
+### Anthropic plugins
 
-Third-party partners can submit plugins for inclusion in the marketplace. External plugins must meet quality and security standards for approval. To submit a new plugin, use the [plugin directory submission form](https://clau.de/plugin-directory-submission).
+Plugins in `/plugins` are developed by Anthropic team members. See `/plugins/example-plugin` for a reference implementation. Every folder there is checked on each pull request, whether or not `marketplace.json` lists it.
 
 ## Plugin Structure
 
