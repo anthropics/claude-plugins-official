@@ -110,6 +110,7 @@ SAFE_GIT_CONFIG = (
     ("diff.ignoreSubmodules", "all"),
     ("diff.submodule", "short"),
     ("log.showSignature", "false"),
+    ("safe.bareRepository", "explicit"),
 )
 
 # The hook's git runs in the background beside the session's own git. Without
@@ -963,6 +964,13 @@ def _drop_gitlinks(top, env, tmp_index):
         return False
 
 
+def _has_git_entry(top):
+    """True when a work tree root has its own `.git`, or the caller named the
+    repository through the environment. Git versions before 2.38 have no
+    safe.bareRepository, so this is what keeps them to ordinary checkouts."""
+    return bool(os.environ.get("GIT_DIR")) or os.path.lexists(os.path.join(top, ".git"))
+
+
 def _git_toplevel(cwd):
     """Absolute repo root for `cwd`, or None if not in a work tree."""
     try:
@@ -976,7 +984,7 @@ def _git_toplevel(cwd):
         if r.returncode != 0:
             return None
         path = r.stdout.decode("utf-8", errors="replace").strip()
-        return path if path else None
+        return path if path and _has_git_entry(path) else None
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
         return None
 
@@ -995,7 +1003,10 @@ def _git_toplevel_and_head(cwd):
         return None, None
     # See #2099: the first line is a PATH, so decode the bytes manually.
     top, _, head = r.stdout.decode("utf-8", errors="replace").strip().rpartition("\n")
-    return (top.strip() or None), (head.strip() or None)
+    top = top.strip()
+    if not top or not _has_git_entry(top):
+        return None, None
+    return top, (head.strip() or None)
 
 
 def _git_head_at(cwd, epoch):
