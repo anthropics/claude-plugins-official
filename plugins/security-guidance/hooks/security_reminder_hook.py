@@ -264,6 +264,14 @@ _LAST_METRIC_KEYS = ("diff_seen", "cr_pack")
 
 # CC keeps this many keys of a row.
 _METRIC_KEY_CAP = 20
+# A review row's result, kind and time. emit_metrics puts them right after its
+# own keys (pv, launcher, usage, net_err), so the key cap cuts descriptive keys
+# before any of these. Keep it short: a failed row can carry 12 keys ahead of
+# them, and commit_review / push_sweep tell the rows apart under the old cap
+# of 10.
+_LEAD_METRIC_KEYS = ("review_failed", "api_error", "vulns_found",
+                     "commit_review", "push_sweep", "review_ms",
+                     "files_reviewed", "agentic", "deduped")
 # How long a Stop row waits for its commit count.
 _TURN_COMMITS_WAIT_S = 2.0
 # Set by the Stop hook: queues the commit count for the row being emitted.
@@ -374,7 +382,8 @@ def emit_metrics(
     the same reason but stale: once `rate_count` was added to every
     commit-review emit, the with-vulns dict hit 10 keys, `pv` was skipped, and
     findings metrics landed without a plugin version attached, breaking
-    per-version breakdowns.
+    per-version breakdowns. `_LEAD_METRIC_KEYS` come next on a review row,
+    wherever the caller put them.
 
     `rewake_summary` (asyncRewake only): per-run override of the static
     rewakeSummary in hooks.json, shown to the user in the terminal as the
@@ -431,8 +440,10 @@ def emit_metrics(
     net_err = _net_error_metric()
     if net_err:
         head["net_err"] = net_err
-    if head:
-        metrics = {**head, **metrics}
+    # Skip rows are left as they are: theirs is the skip reason.
+    lead = {} if metrics.get("skipped") else {
+        k: metrics[k] for k in _LEAD_METRIC_KEYS if k in metrics}
+    metrics = {**head, **lead, **metrics}
     # Diagnostic keys go last, so they are the first dropped when a row is
     # over CC's key cap and never displace an existing key.
     tail = {}
@@ -2176,7 +2187,7 @@ def handle_commit_review_posttooluse(input_data):
     # severity filter; `survived_after_sev` is the count the user actually
     # sees. Include `survived_after_sev` ONLY when the filter actually
     # dropped candidates — otherwise it's redundant with `survived` and eats
-    # into CC's metric-key cap, pushing files_reviewed/review_ms out of the
+    # into CC's metric-key cap, pushing critical_count/high_count out of the
     # emitted metrics.
     #
     # CC accepts only booleans and finite numbers as metric values.
@@ -3214,7 +3225,7 @@ def handle_stop_hook(input_data):
             record_reviewed_diff(session_id, diff_hash)
     wake = _left_out_wake()
     # CC keeps the first 20 metric keys (10 in older versions), in insertion
-    # order, after the pv and usage keys emit_metrics puts first. The previous
+    # order, after the keys emit_metrics puts first. The previous
     # **sweep,**v2_metrics tail meant the 3 v2_metrics keys were always sliced
     # off this most-common path, so the diff-strategy diagnostics never reached
     # telemetry. Drop sweep here (it's PostToolUse-warning state, orthogonal to
