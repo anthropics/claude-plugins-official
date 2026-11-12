@@ -6,8 +6,10 @@ there so callers keep resolving bare names through the hook module's
 globals — tests that ``monkeypatch.setattr(hook, "<fn>", …)`` continue
 to work without retargeting.
 """
+import errno
 import hashlib
 import os
+import stat
 import subprocess
 import sys
 import unicodedata
@@ -652,6 +654,52 @@ def capture_git_baseline(cwd):
 _REVIEWED_SHAS_BASENAME = "sg-reviewed-shas"
 _REVIEWED_SHAS_CAP = 500
 
+# The records and markers this module keeps in the git directory are small
+# regular files of its own. Whatever else has one of their names is not one of
+# them: a link leads to a file that is not the plugin's to read or change, and
+# opening a pipe can hold a hook until its timeout. The largest of them is cut
+# back at 1 MiB, and no more than this is ever read from one.
+_OWN_FILE_MAX_BYTES = 4 * 1024 * 1024
+_NO_FOLLOW = getattr(os, "O_NOFOLLOW", 0)
+
+
+def _is_own_file(st):
+    return (stat.S_ISREG(st.st_mode) and st.st_nlink <= 1
+            and st.st_size <= _OWN_FILE_MAX_BYTES)
+
+
+def _open_own_file(path, flags, mode=0o666):
+    """os.open for one of those files. Also works as the `opener` of open().
+    Anything else at `path` is replaced by a new file when `flags` would create
+    one, as session_state does for the state file, and refused with OSError
+    otherwise. The open itself never waits.
+
+    After the open the name is looked at again and has to be that very file:
+    it can come to mean something else at any moment before that."""
+    try:
+        if not _is_own_file(os.lstat(path)):
+            if not flags & os.O_CREAT:
+                raise OSError(errno.EINVAL, "not a file of the plugin's", path)
+            flags |= os.O_EXCL
+            try:
+                os.unlink(path)
+            except FileNotFoundError:
+                pass
+    except FileNotFoundError:
+        pass
+    fd = os.open(path, flags | _NO_FOLLOW | getattr(os, "O_NONBLOCK", 0), mode)
+    try:
+        seen, st = os.lstat(path), os.fstat(fd)
+        own = (_is_own_file(seen) and _is_own_file(st)
+               and (st.st_ino, st.st_dev) == (seen.st_ino, seen.st_dev))
+    except OSError:
+        own = False
+    if not own:
+        os.close(fd)
+        raise OSError(errno.EINVAL, "not a file of the plugin's", path)
+    return fd
+
+
 def _is_full_sha(sha):
     return len(sha) == 40 and all(c in "0123456789abcdef" for c in sha)
 
@@ -669,8 +717,8 @@ def _load_reviewed_shas(repo_root, _gd=None):
         return set()
     out = set()
     try:
-        with open(p, "r") as f:
-            for line in f:
+        with open(p, "r", errors="replace", opener=_open_own_file) as f:
+            for line in f.read(_OWN_FILE_MAX_BYTES).splitlines():
                 sha = line.split("\t", 1)[0].strip()
                 if _is_full_sha(sha):
                     out.add(sha)
@@ -684,7 +732,8 @@ def _append_reviewed_shas(repo_root, shas, vulns_found=0):
 
     Uses fcntl.flock for the read-gc-write; appends are O_APPEND-atomic but
     GC needs the lock so concurrent CC sessions in the same clone don't race
-    each other's truncation.
+    each other's truncation. The findings go out after this call, so it waits
+    for the lock only a moment, then appends without it.
     """
     p = _reviewed_shas_path(repo_root)
     if not p or not shas:
@@ -695,11 +744,12 @@ def _append_reviewed_shas(repo_root, shas, vulns_found=0):
     lines = [f"{s}\t{ts}\t{pv}\t{int(vulns_found)}\n" for s in shas]
     try:
         import fcntl
-        with open(p, "a+") as f:
-            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+        with open(p, "a+", errors="replace", opener=_open_own_file) as f:
+            if not _seen_lock(f.fileno()):
+                raise OSError("record is locked")
             try:
                 f.seek(0)
-                existing = f.read().splitlines(keepends=True)
+                existing = f.read(_OWN_FILE_MAX_BYTES).splitlines(keepends=True)
                 # Dedup by sha (first column) — keep newest, then cap.
                 seen = set()
                 merged = []
@@ -712,13 +762,14 @@ def _append_reviewed_shas(repo_root, shas, vulns_found=0):
                 f.seek(0)
                 f.truncate()
                 f.writelines(merged)
+                f.flush()  # while the lock is still held
             finally:
                 fcntl.flock(f.fileno(), fcntl.LOCK_UN)
     except (OSError, ImportError):
-        # fcntl unavailable (Windows) or write failed — degrade to plain
-        # append; cap enforcement happens on the next locked write.
+        # fcntl unavailable (Windows), lock held or write failed — degrade to
+        # plain append; cap enforcement happens on the next locked write.
         try:
-            with open(p, "a") as f:
+            with open(p, "a", opener=_open_own_file) as f:
                 f.writelines(lines)
         except OSError:
             pass
@@ -895,7 +946,7 @@ def _append_diff_row(f, locked, token, done):
     if locked is not False and size + len(row) > _SEEN_DIFFS_TRIM_BYTES:
         f.seek(0)
         keep, room = [], _SEEN_DIFFS_TRIM_BYTES // 2
-        for ln in reversed(f.read().splitlines(keepends=True)):
+        for ln in reversed(f.read(_OWN_FILE_MAX_BYTES).splitlines(keepends=True)):
             room -= len(ln)
             if room < 0:
                 break
@@ -929,12 +980,12 @@ def _diff_review_started(repo_root, diff_files, tip="HEAD"):
         best = dict.fromkeys(keys, DIFF_SEEN_NO)
         # Read and note under one lock, so two reviews of one diff that start
         # together cannot both miss each other.
-        with open(token[0], "a+b") as f:
+        with open(token[0], "a+b", opener=_open_own_file) as f:
             locked = _seen_lock(f.fileno())
             if locked is False:
                 raise OSError("record is locked")
             f.seek(0)
-            for ln in f.read().decode("ascii", "replace").splitlines():
+            for ln in f.read(_OWN_FILE_MAX_BYTES).decode("ascii", "replace").splitlines():
                 row = ln.split("\t")
                 if len(row) != 4 or not row[0].isdigit() or len(row[0]) > 12:
                     continue
@@ -961,7 +1012,7 @@ def _diff_review_done(token):
     if not token:
         return
     try:
-        with open(token[0], "a+b") as f:
+        with open(token[0], "a+b", opener=_open_own_file) as f:
             _append_diff_row(f, _seen_lock(f.fileno()), token, done=True)
     except Exception as e:
         debug_log(f"Repeated-diff count: verdict not noted ({type(e).__name__}: {e})")
@@ -1111,9 +1162,13 @@ def _sweep_inflight(gd):
         if not name.startswith(_INFLIGHT_PREFIX) or p in _inflight_held:
             continue
         try:
-            if os.path.getmtime(p) > cutoff:
+            st = os.lstat(p)
+            if st.st_mtime > cutoff:
                 continue
-            fd = os.open(p, os.O_RDWR)
+            if not _is_own_file(st):
+                os.unlink(p)  # no marker, so nobody holds it
+                continue
+            fd = _open_own_file(p, os.O_RDWR)
         except OSError:
             continue
         try:
@@ -1137,7 +1192,7 @@ def _mark_inflight(repo_root, shas):
             if not _is_full_sha(sha) or p in _inflight_held:
                 continue
             try:
-                fd = _again_if_refused(os.open, p, os.O_RDWR | os.O_CREAT, 0o600)
+                fd = _again_if_refused(_open_own_file, p, os.O_RDWR | os.O_CREAT, 0o600)
             except OSError:
                 # One marker that cannot be opened does not cost the others
                 # their claim.
@@ -1163,7 +1218,9 @@ def _mark_inflight(repo_root, shas):
                 import atexit
                 atexit.register(_release_inflight)
             _inflight_held[p] = fd
-            os.utime(p)
+            # The open file where that can be named; Windows keeps the name
+            # on this file for as long as it is open.
+            os.utime(fd if os.utime in os.supports_fd else p)
     except Exception:
         pass
 
@@ -1179,7 +1236,7 @@ def _load_inflight_shas(repo_root, shas, _gd=None):
         if not _is_full_sha(sha) or p in _inflight_held:
             continue
         try:
-            fd = os.open(p, os.O_RDONLY)
+            fd = _open_own_file(p, os.O_RDONLY)
         except OSError:
             continue
         try:
