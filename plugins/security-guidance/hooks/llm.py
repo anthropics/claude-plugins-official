@@ -1937,6 +1937,33 @@ def _agentic_commit_review_enabled() -> bool:
 # precedents and an adversarial refute taxonomy to drop low-signal findings.
 
 _AGENTIC_INVESTIGATE_SYSTEM = review_api.AGENTIC_INVESTIGATE_SYSTEM
+
+# The investigate stages return their findings through the StructuredOutput
+# tool and nothing reads what they write beside it. Told so here, not in
+# review_api: a caller of that module may take its answer from the text.
+_REVIEWER_OUTPUT_RULE = (
+    "\n\nOUTPUT: only the `findings` you return are read, not text you write. "
+    "Write no prose before, between or after tool calls, and no verdicts "
+    "for files you clear: think them through instead. Ask for the files "
+    "and searches you can already name in one message, within the budget "
+    "above. `explanation` must still name the source, the sink and the path "
+    "between them. When you are done, return the findings at once."
+)
+
+
+def _investigate_system() -> str:
+    """The investigate stages' system prompt. Text between tool calls is where
+    a model reasons when thinking is off or the user picked the model, so the
+    output rule is left out there."""
+    thinking_off = (os.environ.get("MAX_THINKING_TOKENS", "").strip() == "0"
+                    or any(os.environ.get(v, "").strip().lower() in ("1", "true", "yes", "on")
+                           for v in ("CLAUDE_CODE_DISABLE_THINKING",
+                                     "CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING")))
+    if thinking_off or os.environ.get("SG_AGENTIC_MODEL", "").strip():
+        return _AGENTIC_INVESTIGATE_SYSTEM
+    return _AGENTIC_INVESTIGATE_SYSTEM + _REVIEWER_OUTPUT_RULE
+
+
 _FINDINGS_SCHEMA = review_api.FINDINGS_SCHEMA
 _SURVIVED_SCHEMA = review_api.SURVIVED_SCHEMA
 
@@ -2468,7 +2495,7 @@ def _agentic_review(
     t0 = _t.time()
     try:
         inv, inv_turns, inv_subtype = _run(
-            _AGENTIC_INVESTIGATE_SYSTEM, user_prompt, schema=_FINDINGS_SCHEMA
+            _investigate_system(), user_prompt, schema=_FINDINGS_SCHEMA
         )
         if os.environ.get("SG_AGENTIC_DEBUG_DIR"):
             _dd = os.environ["SG_AGENTIC_DEBUG_DIR"]
@@ -2534,7 +2561,7 @@ def _agentic_review(
         )
         try:
             inv2, _, _ = _run(
-                _AGENTIC_INVESTIGATE_SYSTEM, iter2_prompt, schema=_FINDINGS_SCHEMA
+                _investigate_system(), iter2_prompt, schema=_FINDINGS_SCHEMA
             )
             if inv2:
                 seen = {(c.get("filePath"), c.get("category")) for c in candidates}
