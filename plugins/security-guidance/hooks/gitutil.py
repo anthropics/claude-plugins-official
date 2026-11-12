@@ -18,6 +18,7 @@ import contextlib
 import errno
 import os
 import re
+import stat
 import subprocess
 import sys
 import tempfile
@@ -964,11 +965,48 @@ def _drop_gitlinks(top, env, tmp_index):
         return False
 
 
-def _has_git_entry(top):
-    """True when a work tree root has its own `.git`, or the caller named the
-    repository through the environment. Git versions before 2.38 have no
-    safe.bareRepository, so this is what keeps them to ordinary checkouts."""
-    return bool(os.environ.get("GIT_DIR")) or os.path.lexists(os.path.join(top, ".git"))
+def _looks_like_git_dir(path):
+    """git's own test for a repository directory, near enough: objects and refs
+    it can enter, and a HEAD that is a link into refs/ or a file holding a ref
+    or a SHA. Anything else named HEAD stays unopened: a named pipe would block."""
+    # With a commondir file, objects and refs are in the folder that it names.
+    if not (os.path.lexists(os.path.join(path, "commondir"))
+            or ((os.access(os.path.join(path, "objects"), os.X_OK)
+                 or os.environ.get("GIT_OBJECT_DIRECTORY"))
+                and os.access(os.path.join(path, "refs"), os.X_OK))):
+        return False
+    head_path = os.path.join(path, "HEAD")
+    try:
+        mode = os.lstat(head_path).st_mode
+        if stat.S_ISLNK(mode):
+            return os.readlink(head_path).startswith("refs/")  # git does not follow it
+        if not stat.S_ISREG(mode):
+            return False
+        with open(head_path, "rb") as f:
+            head = f.read(64)
+    except OSError:
+        return False
+    return bool(re.match(rb"ref:\s*refs/|[0-9a-fA-F]{40}", head))
+
+
+def _found_through_bare_folder(cwd):
+    """True when git, searching up from `cwd`, would take a folder with no
+    `.git` entry for the repository. Git versions before 2.38 have no
+    safe.bareRepository, so this is what keeps them to ordinary checkouts.
+    A repository the caller named through the environment is not searched for."""
+    if os.environ.get("GIT_DIR"):
+        return False
+    d = os.path.realpath(cwd or os.curdir)
+    while True:
+        entry = os.path.join(d, ".git")
+        if os.path.isfile(entry) or _looks_like_git_dir(entry):
+            return False  # git passes over an empty `.git` folder or a broken link
+        if _looks_like_git_dir(d):
+            return os.path.basename(d) != ".git"
+        parent = os.path.dirname(d)
+        if parent == d:
+            return False
+        d = parent
 
 
 def _git_toplevel(cwd):
@@ -984,7 +1022,7 @@ def _git_toplevel(cwd):
         if r.returncode != 0:
             return None
         path = r.stdout.decode("utf-8", errors="replace").strip()
-        return path if path and _has_git_entry(path) else None
+        return path if path and not _found_through_bare_folder(cwd) else None
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
         return None
 
@@ -1004,7 +1042,7 @@ def _git_toplevel_and_head(cwd):
     # See #2099: the first line is a PATH, so decode the bytes manually.
     top, _, head = r.stdout.decode("utf-8", errors="replace").strip().rpartition("\n")
     top = top.strip()
-    if not top or not _has_git_entry(top):
+    if not top or _found_through_bare_folder(cwd):
         return None, None
     return top, (head.strip() or None)
 
@@ -1037,6 +1075,8 @@ def _git_dir(repo_root):
     if a different worktree later pushes it. Returns None on failure so
     callers can degrade (push-sweep state is best-effort).
     """
+    if _found_through_bare_folder(repo_root):
+        return None
     try:
         # See #2099: stdout is a PATH (shared gitdir), may be non-ASCII.
         # Decode bytes manually to avoid cp1252 reader-thread crash.
