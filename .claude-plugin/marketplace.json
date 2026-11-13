@@ -4313,7 +4313,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/Zoominfo/zoominfo-mcp-plugin.git",
-        "sha": "31a1ec506078e0aaf4e14e098e39865f32777d8a"
+        "sha": "e3b6ec9765cefad549ea8bb888d9cc3a259fdd11"
       },
       "homepage": "https://www.zoominfo.com"
     },
