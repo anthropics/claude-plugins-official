@@ -586,7 +586,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/blackrock/advisor-center-agent-skills.git",
-        "sha": "591c758960c18c26fe8342ddb8ad3ba4dcfac6fe"
+        "sha": "736344f85fd43d5038f35170abd034f8fd0e1684"
       },
       "homepage": "https://github.com/blackrock/advisor-center-agent-skills"
     },
@@ -1185,7 +1185,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/CrowdStrike/foundry-skills.git",
-        "sha": "61572f38592d47c747e2595182459781bf0bc679"
+        "sha": "90082f829c6c2c4192b1459a01488863a1e82d1e"
       },
       "homepage": "https://github.com/CrowdStrike/foundry-skills"
     },
@@ -1199,7 +1199,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/CrowdStrike/fusion-skills.git",
-        "sha": "38527dc5afa970543859c31ca5dbf69352bfaa28"
+        "sha": "d4e2abf93b1f0900fcc67fe040e98d086fa1fb0c"
       },
       "homepage": "https://github.com/CrowdStrike/fusion-skills"
     },
@@ -3088,7 +3088,7 @@
         "url": "https://github.com/qodo-ai/qodo-skills.git",
         "path": "packages/qodo",
         "ref": "main",
-        "sha": "b8c21854199c538b1c35c981c12a93bab4839ef2"
+        "sha": "588e413a73b466ec4fe9cec79a34051d13f06ab3"
       },
       "homepage": "https://github.com/qodo-ai/qodo-skills.git"
     },
@@ -3483,7 +3483,7 @@
     {
       "name": "security-guidance",
       "description": "Security review for Claude-generated code. Pattern-based warnings on edits, LLM-powered diff review on Stop, and an agentic commit reviewer that catches injection, XSS, SSRF, hardcoded secrets, and 25+ other vulnerability classes.",
-      "version": "2.0.19",
+      "version": "2.0.20",
       "author": {
         "name": "Anthropic",
         "email": "support@anthropic.com"
@@ -3915,6 +3915,17 @@
       "category": "development",
       "source": "./external_plugins/terraform",
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/terraform"
+    },
+    {
+      "name": "theme-examples",
+      "description": "An example plugin to read, copy and change: twenty animated backdrops behind the chat in the Claude desktop app, with frosted-glass panels, one per project or per session. Needs a version of Claude Desktop that draws a plugin's backdrop.",
+      "author": {
+        "name": "Anthropic",
+        "email": "support@anthropic.com"
+      },
+      "source": "./plugins/theme-examples",
+      "category": "design",
+      "homepage": "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/theme-examples"
     },
     {
       "name": "togetherai-skills",
