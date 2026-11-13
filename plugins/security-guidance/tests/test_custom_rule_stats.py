@@ -43,7 +43,8 @@ def test_the_wider_reading_never_loses_an_include(glob, tmp_path):
     ("/src/**", "src/a.ts", False, True),
     ("*.ts", "src/lib/deep/t.ts", True, True),
     ("src/**", "other/a.ts", False, False),
-    ("*.{ts,js}", "config.ts", False, False),
+    ("*.{ts,js}", "config.ts", False, True),
+    ("*.{ts,js}", "config.py", False, False),
 ])
 def test_readings(glob, f, now, wider, tmp_path):
     path = str(tmp_path.joinpath(*f.split("/")))
