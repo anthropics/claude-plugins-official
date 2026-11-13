@@ -3,14 +3,13 @@
 #
 # On Windows + Git Bash, `python3` typically resolves to the Microsoft Store
 # stub at C:\Users\<user>\AppData\Local\Microsoft\WindowsApps\python3, which
-# exits 49 silently in non-TTY subprocess context (a known Microsoft Store
-# stub behavior). This shim
-# probes each candidate with `-c ""` and skips any that fails, so the Store
-# stub falls through to the real python.org install (`python` in Git Bash) or
+# is not a Python; it is told by its link and not started (sg_is_redirector).
+# This shim probes each other candidate with `-c ""` and skips any that fails,
+# so the search reaches the real python.org install (`python` in Git Bash) or
 # the `py -3` launcher.
 #
 # Order:
-#   1. python3   — canonical on macOS/Linux; the Store stub fails the probe.
+#   1. python3   — canonical on macOS/Linux; the Store stub is skipped.
 #   2. python    — python.org installs on Windows; some Linux distros (RHEL 7
 #                  EOL'd 2024-06) point this at Python 2, but `-c ""` succeeds
 #                  on Python 2 too — guard with a version check.
@@ -117,11 +116,50 @@ note_unreadable() {
     return 0
 }
 
+# Where packaged aliases exist (and bash has what telling them apart needs).
+sg_windows=""
+case "${OSTYPE:-}" in
+    msys*|cygwin*) [ "${BASH_VERSINFO[0]:-0}" -lt 4 ] || sg_windows=1 ;;
+esac
+
 # True iff the command's executable is on PATH ($1 of a possibly multi-word
 # command like `py -3`). A builtin lookup: `$(probe ...)` costs a process even
-# when the interpreter does not exist, so missing names are skipped first.
+# when the interpreter does not exist, so missing names are skipped first. On
+# Windows a python or python3 that is only App Installer's alias counts as
+# missing; that check takes one process, in place of starting the alias.
+sg_skipped=""
 on_path() {
-    command -v "$1" >/dev/null 2>&1
+    case "$sg_windows:$1" in
+        1:python|1:python3)
+            hash "$1" 2>/dev/null || return 1
+            if sg_is_redirector "${BASH_CMDS[$1]:-}"; then
+                sg_skipped="${sg_skipped:+$sg_skipped, }$1"
+                return 1
+            fi ;;
+        *) command -v "$1" >/dev/null 2>&1 ;;
+    esac
+}
+
+# True iff $1 is the path of App Installer's python or python3, which Windows
+# puts under ...\Microsoft\WindowsApps when no packaged Python is installed.
+# It is not a Python, it points the user to the Store, so nothing is lost by
+# telling it by where its link leads instead of starting it. Starting it is a
+# packaged app activation on every hook, and waits for Windows' package
+# services: normally a fraction of a second, but until they answer again when
+# they are stuck, in every session on the machine at once. See #3870, #6348.
+# Git Bash shows these aliases as symbolic links; where the link cannot be
+# read, the name is probed like any other. Aliases of a packaged Python are
+# interpreters and are probed too.
+sg_is_redirector() {
+    local to
+    [ -n "$sg_windows" ] && sg_is_alias_path "$1" || return 1
+    # Full path: another readlink on PATH may not know these links.
+    to=$(/usr/bin/readlink -- "$1" 2>/dev/null </dev/null) || return 1
+    # Not lowercased: the result would depend on the locale.
+    case "$to" in
+        *[/\\]Microsoft.DesktopAppInstaller_*) return 0 ;;
+    esac
+    return 1
 }
 
 # How long the probes took, for the launcher_probe_max_ms / launcher_probe_ms
@@ -404,7 +442,7 @@ for name in "python3" "python"; do
     first=1
     while IFS= read -r c; do
         if [ -n "$first" ]; then first=""; continue; fi
-        [ -n "$c" ] && sg_candidates+=("$c")
+        [ -n "$c" ] && ! sg_is_redirector "$c" && sg_candidates+=("$c")
     done <<EOF
 $(type -ap "$name" 2>/dev/null)
 EOF
@@ -452,6 +490,9 @@ if [ -n "$sg_unreadable" ]; then
 fi
 echo "security-guidance: no working Python 3 interpreter found." >&2
 echo "  tried: python3.13 to python3.10, python3, python, py -3, python3.14 to python3.19" >&2
+if [ -n "$sg_skipped" ]; then
+    echo "  not started: $sg_skipped (App Installer's alias, which is not a Python)" >&2
+fi
 echo "  on Windows, install Python from https://python.org (NOT the Microsoft Store)" >&2
 echo "  on macOS, install Python 3.10+ via Homebrew (\`brew install python\`)" >&2
 exit 1
