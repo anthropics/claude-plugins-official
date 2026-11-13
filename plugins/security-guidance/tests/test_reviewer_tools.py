@@ -90,6 +90,10 @@ def sdk(monkeypatch, tmp_path):
     for var in ("CONTEXT_DIR", "DEBUG_DIR", "MODEL", "ITER2", "FILTER", "NO_ADJUDICATE",
                 "DIFF_INTERSECT", "EXCLUDE_MEDIUM", "MAX_TURNS"):
         monkeypatch.delenv("SG_AGENTIC_" + var, raising=False)
+    for var in ("MAX_THINKING_TOKENS", "CLAUDE_CODE_DISABLE_THINKING",
+                "CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING", "ANTHROPIC_DEFAULT_OPUS_MODEL"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setattr(llm, "_listed_models", lambda: {})
     return spawned
 
 
@@ -109,10 +113,10 @@ def _systems(sdk, tmp_path):
     return [opts["system_prompt"] for opts in sdk]
 
 
-def test_investigate_stages_are_told_their_text_is_not_read(sdk, tmp_path, monkeypatch):
-    for var in ("MAX_THINKING_TOKENS", "CLAUDE_CODE_DISABLE_THINKING",
-                "CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING"):
-        monkeypatch.delenv(var, raising=False)
+@pytest.mark.parametrize("opus", [None, "", " "])
+def test_investigate_stages_are_told_their_text_is_not_read(sdk, tmp_path, monkeypatch, opus):
+    if opus is not None:
+        monkeypatch.setenv("ANTHROPIC_DEFAULT_OPUS_MODEL", opus)
     investigate, second, refute = _systems(sdk, tmp_path)
     for system in (investigate, second):
         assert system == llm._AGENTIC_INVESTIGATE_SYSTEM + llm._REVIEWER_OUTPUT_RULE
@@ -124,11 +128,12 @@ def test_investigate_stages_are_told_their_text_is_not_read(sdk, tmp_path, monke
 
 @pytest.mark.parametrize("name,value", [
     ("MAX_THINKING_TOKENS", "0"), ("CLAUDE_CODE_DISABLE_THINKING", "1"),
-    ("CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING", "true"), ("SG_AGENTIC_MODEL", "some-model")])
+    ("CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING", "true"), ("SG_AGENTIC_MODEL", "some-model"),
+    ("ANTHROPIC_DEFAULT_OPUS_MODEL", "some-model")])
 def test_output_rule_is_left_out_where_text_is_the_reasoning(sdk, tmp_path, monkeypatch, name, value):
     monkeypatch.setenv(name, value)
-    for system in _systems(sdk, tmp_path)[:2]:
-        assert system == llm._AGENTIC_INVESTIGATE_SYSTEM
+    investigate, second, _ = _systems(sdk, tmp_path)
+    assert investigate == second == llm._AGENTIC_INVESTIGATE_SYSTEM
 
 
 def test_single_turn_sdk_review_gets_no_tools(sdk):
