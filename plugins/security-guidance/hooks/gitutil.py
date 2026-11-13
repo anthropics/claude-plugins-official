@@ -685,6 +685,16 @@ def _env_with_private_objects(env, cwd, objects_dir):
     return out
 
 
+def _literal_paths_env(env):
+    """`env` with every path a git command is given taken as a file name, not
+    a pattern: a file named `:(glob)**` stands only for itself. git refuses
+    that together with a glob or icase setting from the user's environment."""
+    env = {k: v for k, v in env.items()
+           if k not in ("GIT_GLOB_PATHSPECS", "GIT_ICASE_PATHSPECS")}
+    env["GIT_LITERAL_PATHSPECS"] = "1"
+    return env
+
+
 def _add_new_files(cwd, paths, env, tmp_index):
     """`git add --intent-to-add` the untracked `paths` to the index copy `env`
     names, so the diff shows them. The add has to store the empty blob, so a
@@ -697,12 +707,8 @@ def _add_new_files(cwd, paths, env, tmp_index):
     reader threads that decode stderr — git error messages can reference
     non-ASCII filenames and crash on cp1252. See #2099. Drop text=True so bytes
     stay raw."""
-    # The paths are file names, not patterns, for this git add only: an
-    # untracked file named `:(glob)**` must add only itself. git refuses that
-    # together with a glob or icase setting from the user's environment.
-    env = {k: v for k, v in env.items()
-           if k not in ("GIT_GLOB_PATHSPECS", "GIT_ICASE_PATHSPECS")}
-    env["GIT_LITERAL_PATHSPECS"] = "1"
+    # For this git add only.
+    env = _literal_paths_env(env)
 
     def add(add_env):
         results = _run_git_on_review_paths(
@@ -1344,6 +1350,25 @@ def _note_rename(old_path, new_path):
         _secret_rename_origins[new_path] = old_path
 
 
+def _name_status_pairs(stdout):
+    """(old path or None, path) for each entry of `git diff --name-status -z`
+    output. Fields are `status\\0path\\0`, or `R<score>\\0old\\0new\\0` for a
+    rename or copy, which is listed by its new name."""
+    fields = (stdout or b"").decode("utf-8", errors="replace").split("\0")
+    i = 0
+    while i + 1 < len(fields):
+        if not fields[i]:
+            # `git log` can put an empty field between two commits.
+            i += 1
+            continue
+        old = None
+        if fields[i][:1] in ("R", "C") and i + 2 < len(fields):
+            old = fields[i + 1]
+            i += 1
+        yield old, fields[i + 1]
+        i += 2
+
+
 def _git_name_only(cwd, base, include_untracked=False):
     """Return the set of repo-root-relative paths that differ from `base`,
     or None if git failed (unresolvable ref, not a repo, timeout). Callers
@@ -1371,18 +1396,11 @@ def _git_name_only(cwd, base, include_untracked=False):
             stderr_str = (result.stderr or b"").decode("utf-8", errors="replace")
             debug_log(f"_git_name_only({base!r}) rc={result.returncode}: {stderr_str[:200]}")
             return None
-        stdout = (result.stdout or b"").decode("utf-8", errors="replace")
-        # Fields are `status\0path\0`, or `R<score>\0old\0new\0` for a rename
-        # or copy, which is listed by its new name only.
-        fields = stdout.split("\0")
         names = set()
-        i = 0
-        while i + 1 < len(fields):
-            if fields[i][:1] in ("R", "C") and i + 2 < len(fields):
-                _note_rename(fields[i + 1], fields[i + 2])
-                i += 1
-            names.add(fields[i + 1])
-            i += 2
+        for old, new in _name_status_pairs(result.stdout):
+            if old:
+                _note_rename(old, new)
+            names.add(new)
         return names
 
     try:
@@ -2108,6 +2126,11 @@ def _parse_diff_header(header):
     `"a/we\\"ird.py" "b/we\\"ird.py"`. Either side can be quoted on its own.
     """
     old = new = None
+    # The same name on both sides, as in every section but a rename or a copy.
+    # A name that contains ` b/` can only be told apart this way.
+    same = header[2:(len(header) - 1) // 2]
+    if same and header == f"a/{same} b/{same}":
+        return same, same
     if header.startswith('"'):
         first = _read_quoted_path(header, 0)
         if not first:
@@ -2145,11 +2168,32 @@ def _section_is_reviewable(file_path, old_path):
     return _is_reviewable_source(file_path) and not _skip_secret_shaped(old_path)
 
 
+def _rename_of(lines):
+    """(old path, new path) of a section git shows as a rename or a copy, or
+    None. Read from its `rename from` / `rename to` lines, where each path
+    stands alone; the header line is ambiguous when a name contains ` b/`."""
+    old = None
+    for line in lines:
+        if line.startswith('@@'):
+            break
+        m = re.match(r'(?:rename|copy) (from|to) (.+)', line)
+        if not m:
+            continue
+        path = m.group(2)
+        if path.startswith('"'):
+            quoted = _read_quoted_path(path, 0)
+            path = quoted[0] if quoted else path
+        if m.group(1) == 'to':
+            return (old, path) if old else None
+        old = path
+    return None
+
+
 def _iter_diff_sections(diff_output):
     """Yield (new_path, old_path, lines after the header line) per file section."""
     for section in _DIFF_SECTION_RE.split(diff_output)[1:]:
         lines = section.split('\n')
-        paths = _parse_diff_header(lines[0])
+        paths = _rename_of(lines[1:]) or _parse_diff_header(lines[0])
         if paths:
             yield paths[1] or paths[0], paths[0], lines[1:]
         else:
@@ -2198,6 +2242,109 @@ def parse_diff_into_files(diff_output):
             files.append((file_path, '\n'.join(diff_lines)))
 
     return files
+
+
+# Names whose content the commit and push reviews never read although it can
+# be code: text and documents. Not every name they leave out: a key, an
+# archive or a vendored file under a new name is still what it was.
+_TEXT_EXTENSIONS = frozenset(('.txt', '.text', '.md', '.markdown', '.rst'))
+_DATA_EXTENSIONS = frozenset((
+    '.json', '.yaml', '.yml', '.toml', '.properties', '.tfvars', '.ipynb',
+))
+_CODE_EXTENSIONS = SOURCE_CODE_EXTENSIONS - _DATA_EXTENSIONS
+
+
+def _is_secret_stem(file_path):
+    """`credentials.txt`, `id_rsa.md`: a secret's name with an extension."""
+    stem = os.path.splitext(os.path.basename(file_path))[0].lower()
+    return (_is_secret_shaped(stem) or stem in _SECRET_NAMED_STEMS
+            or stem.startswith('password'))
+
+
+def _is_text_turned_code(old_path, new_path):
+    ext = os.path.splitext(new_path)[1].lower()
+    return (os.path.splitext(old_path)[1].lower() in _TEXT_EXTENSIONS
+            and not _is_secret_stem(old_path) and not _is_secret_stem(new_path)
+            and (ext in _CODE_EXTENSIONS
+                 or os.path.basename(new_path).lower() in SOURCE_CODE_BASENAMES)
+            and _section_is_reviewable(new_path, old_path)
+            and not _is_reviewable_source(old_path))
+
+
+def renamed_into_review(diff_output):
+    """The new names of the files a diff renames or copies from a text name
+    the review leaves out (`notes.txt`) to a code name it reviews. git shows
+    only what changed across a rename, and nothing at all when the content did
+    not, so what nobody reviewed as text would never be read as code.
+
+    Empty when the diff also removes or renames a secret-shaped file: git
+    picks which old name a new file came from, and between two alike it can be
+    the other one.
+    """
+    if "\nrename to " not in diff_output and "\ncopy to " not in diff_output:
+        return []
+    names = []
+    for file_path, old_path, lines in _iter_diff_sections(diff_output):
+        renamed = _rename_of(lines)
+        if (renamed or lines[:1] and lines[0].startswith("deleted file mode")) \
+                and _is_secret_shaped(old_path):
+            return []
+        if renamed and _is_text_turned_code(old_path, file_path):
+            names.append(file_path)
+    return names
+
+
+# How many commits back came_from_secret looks.
+_SECRET_ORIGIN_COMMITS = 50
+
+
+def came_from_secret(repo_root, rev, paths, timeout):
+    """Those of `paths` at `rev` that one of the last commits renamed from a
+    secret-shaped name, whatever they were called in between. None on error."""
+    try:
+        result = subprocess.run(
+            [*GIT_CMD, "-c", "log.diffMerges=separate", "log", "-m",
+             "-n", str(_SECRET_ORIGIN_COMMITS), "--format=", "--name-status", "-z",
+             "--no-ext-diff", rev, "--"],
+            cwd=repo_root, capture_output=True, timeout=timeout,
+            # A partial clone would download old files to compare them.
+            env={**os.environ, "GIT_NO_LAZY_FETCH": "1"})
+    except (subprocess.TimeoutExpired, OSError) as e:
+        debug_log(f"came_from_secret: {e}")
+        return None
+    if result.returncode != 0:
+        return None
+    # Newest commit first: every name each path has had so far.
+    had = {path: {path} for path in paths}
+    for old, new in _name_status_pairs(result.stdout):
+        for names in had.values():
+            if old and new in names:
+                names.add(old)
+    return {path for path, names in had.items() if any(map(_is_secret_shaped, names))}
+
+
+def git_diff_unpaired(repo_root, revs, paths, timeout):
+    """{path: hunks} for those of `paths` the commit or range `revs` names
+    (`show` or `diff` arguments) changed, each shown whole instead of against
+    the name it was renamed from. Empty hunks for a file git shows none for (a
+    binary one). None on error."""
+    try:
+        result = _run_diff_bounded(
+            [*GIT_CMD, revs[0], "-p", "--no-renames", "--no-color", "--no-ext-diff",
+             "--no-textconv", *revs[1:], "--", *paths],
+            timeout, cwd=repo_root, env=_literal_paths_env(os.environ))
+    except (subprocess.TimeoutExpired, OSError) as e:
+        debug_log(f"git_diff_unpaired: {e}")
+        return None
+    if result.returncode != 0:
+        debug_log(f"git_diff_unpaired: rc={result.returncode}: "
+                  f"{result.stderr[:200].decode('utf-8', errors='replace')}")
+        return None
+    text = result.stdout.decode("utf-8", errors="replace")
+    # A path that used to be a directory also matches the files under it.
+    shown = {name: "" for name, _, _ in _iter_diff_sections(text)}
+    shown.update(parse_diff_into_files(text))
+    return {name: hunks for name, hunks in shown.items() if name in paths}
 
 
 def filter_preexisting_from_diff(diff_files, cwd, baseline_sha):
