@@ -3,7 +3,7 @@ name: siege
 description: "Work on one hard mathematics problem in rounds: each round a judge writes a few self-contained questions, independent workers answer them, and the judge keeps a ledger of what is proved, refuted and open, until the judge concludes or the rounds run out, and then a proof.md says plainly what is and is not proved. A run takes hours and dozens of worker runs. Usage: /math-proof:siege [NAME=value settings] <the problem, stated in full, or the path of a file holding it>."
 argument-hint: "[NAME=value ...] [DIR=run-directory] <problem statement | problem-file>"
 disable-model-invocation: true
-disallowed-tools: WebSearch, WebFetch, AskUserQuestion
+disallowed-tools: AskUserQuestion
 allowed-tools: Read, Write, Edit, Glob, Grep, Agent, Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/ledger.py *), Bash(python3 ${CLAUDE_PLUGIN_ROOT}/skills/siege/scripts/ledger.py *), Bash(python ${CLAUDE_SKILL_DIR}/scripts/ledger.py *), Bash(python ${CLAUDE_PLUGIN_ROOT}/skills/siege/scripts/ledger.py *), Bash(mkdir *), Bash(cp *), Bash(mv *), Bash(cat *), Bash(test *), Bash(ls *), Bash(wc *), Bash(cmp *), Bash(grep *), Bash(printf *), Bash(echo *)
 ---
 
@@ -21,8 +21,9 @@ copy the proved result to DIR/result-so-far.md). When an answer holds a complete
 line by line. Once both pass, the judge concludes or raises the goal. Before round MIN_ROUNDS, that is the only
 way to conclude. From round ESC_ROUND on, if no complete proof or disproof is in hand, a round may
 hold up to WAVE_DEEP questions for higher-effort workers. All but at most two of them aim at the one statement
-still missing from the proof. After the rounds end, the judge writes a self-contained proof.md, a worker
-checks it, and the judge finalizes it. Unless the goal the run ends on was both proved and checked twice during
+still missing from the proof. After the rounds end, the judge writes a self-contained proof.md, a worker checks it,
+and the judge finalizes it (when the rounds ran out without the judge concluding, one more judge step first records the
+last wave's answers in the summary and the ledger). Unless the goal the run ends on was both proved and checked twice during
 the rounds, there are also extra revision passes and a last wave of full proof attempts before finalizing.
 proof.md has a Status section that says plainly what is and is not proved. This section is only a summary: you do none of the mathematics
 yourself, and you follow the steps below exactly, launching a fresh sub-agent for every judge step and every
@@ -155,10 +156,58 @@ before ESC_ROUND, `math-proof-worker-deep` from round ESC_ROUND on —, all in o
 re-run of the queries not answered, then the FLOOR stop rule).
 **(d) Screen (no launch).** There is no separate screening step: the next round's plan judge screens this wave's
 answers itself (PLAN BRIEF, item 0) and writes DIR/judge/screen_r{r}.md; step (b) of the next round copies its
-verdicts into the index. Update state.md ("phase: round {r+1} plan, attempt 1"; R = r) and continue the loop.
+verdicts into the index. Update state.md ("phase: round {r+1} plan, attempt 1"; R = r) and continue the loop — or,
+after round MAX_ROUNDS's wave, record "phase: closing record" (R = r): the loop is then over; go to the proof tail.
 
 ## The proof tail (after the loop ends, by CONCLUDE, TAIL, or finishing round MAX_ROUNDS)
-First fix the tail's shape: run `SCRIPT gate DIR`. If its output begins `CONCLUDE`, the claims ledger holds the
+**Closing the record** — only when the loop ended by finishing round MAX_ROUNDS's wave (not on a `CONCLUDE` or `TAIL`
+verdict) and DIR/proof.md does not yet exist (`test -e`). The last wave's answers are not yet in the summary or the
+ledger — certifications that came back in it are not yet [AUDIT] lines — and the gate below reads only the ledger.
+With N = MAX_ROUNDS and M = N+1 (written as numbers wherever {N} and {M} appear below), launch ONE `math-proof-judge`
+whose prompt is the PLAN BRIEF with {r} = M (its "previous round", {r-1}, is round N), the other slots ({MAX_ROUNDS},
+{CAP}, {ESC_SUMMARY}) filled as they were for round N, {HORIZON}, {CONCLUDE_RULE} and {ESC_WAVE} empty, and the RECORD
+NOTE below added as its first paragraph. This step composes nothing: do not run `SCRIPT check` for round M (it would
+demand query files or a DONE file), and should query files or a DONE file for round M appear, leave them unused. The
+step's output is complete when DIR/round{M}_summary.md is non-empty (`test -s`) and DIR/round{M}_ledger_block.md
+exists (`test -e`; it may be empty); a resume that finds it complete launches no judge and goes on to the bookkeeping
+below, and one that finds it incomplete launches the judge as for the first time. If the judge returns — errored or
+not — and the output is not complete, launch it once more (this step's one relaunch) with this paragraph added after
+the note: "An earlier launch of this step did not finish: DIR/round{M}_summary.md or DIR/round{M}_ledger_block.md is
+missing or incomplete. Carry out the whole step as the note above describes and write both files (the ledger block
+empty only if item 2 gives it no line)."; if DIR/round{M}_summary.md is still missing or empty after that, the step
+has failed twice: stop, and tell the user where things stand and that the same /math-proof:siege line given again in
+this directory retries this step (state.md keeps "phase: closing record"). The bookkeeping — only after those
+launches, and then whenever DIR/round{M}_summary.md is non-empty, whether or not the ledger block exists: append the
+verdicts of DIR/judge/screen_r{N}.md, if it exists, to round {N}'s index lines as in (b); run `SCRIPT append DIR {M}`,
+which numbers the lines of DIR/round{M}_ledger_block.md (none, if the file is missing) on from the ledger, rebuilds
+DIR/ledger.md and prints "APPENDED n" (safe to run again; a line beginning `ERROR:` means the command was malformed —
+DIR first, as an absolute path, then the one number: correct it and run it again); copy DIR/round{M}_summary.md over
+DIR/summary.md; give the goal-change notice of (b) if the latest launch's reply has a "Goal change:" sentence; and
+record "closing record: made (ledger +n)" in state.md. R stays MAX_ROUNDS, and the run's round count is MAX_ROUNDS.
+RECORD NOTE: "This is not the plan of a further round. Round {N} was the final round and its wave has run; no further
+round will run, and the brief below calls this step round {M} only because its files are numbered on from round {N}.
+The proof-writing steps come next; they take what the attempt established from the running summary, and whether the
+goal is settled and certified from the claims ledger, and neither yet includes anything from round {N}'s answers. So
+carry out items 0, 1 and 2 of the brief as in any round, and nothing else. Item 0: screen round {N}'s results. Item 1:
+rewrite the summary into DIR/round{M}_summary.md, but end it with one line saying the rounds have ended, in place of
+the section on where a next round should concentrate (keep every other section the brief asks for). Item 2: write
+DIR/round{M}_ledger_block.md. In it, for each verify query answered in round {N}: if it certifies the written chain,
+write a PROVED [AUDIT] line naming that query's locator and citing, as 'entry K' or '#K', the settled [GOAL] entry it
+checked, as the audit rule under item 3 says (certification is recorded by [AUDIT] lines alone: do not write the
+[GOAL] line again unless its status changes or you come back under item 2 (iv)); if it finds a gap, change the goal's
+status as item 2 (i) and (iii) describe. If round {N}'s results are the first to hold a complete written proof or
+refutation of the [GOAL] claim, write its settled [GOAL] line as item 2 (i) describes, even though no verify query can
+now follow. Record any other claim settled, opened or retracted as usual. And if the [GOAL] line now in force is a
+raised goal that is still OPEN once the lines above are written — no result file of any round holds a complete written
+proof of it — come back to the goal already proved exactly as item 2 (iv) describes. Write the ledger block file even
+when it is empty: its existence shows that this step finished. Beyond that, do nothing: compose no queries — not even
+verify queries the audit rule or the summary rules would otherwise call for —, write no DONE file, do not raise the
+goal, and disregard whatever else the brief says about choosing a target, composing a wave, an escalation or Closing
+rule, or concluding (this brief carries none of those rules: there is nothing to compose or conclude). Then rewrite
+DIR/notes.md and reply in under 150 words: whether a complete written proof or refutation of the goal is in hand and
+in which file, how many verify queries have certified it, and how many ledger lines you wrote — plus the brief's 'Goal
+change:' sentence if you came back to or replaced a goal."
+Then fix the tail's shape: run `SCRIPT gate DIR`. If its output begins `CONCLUDE`, the claims ledger holds the
 headline goal settled and certified by two separate verify queries, and the tail is SHORT: (e) draft, (f) no refine step, no select step — build DIR/r3_verify.md yourself by the shell concatenation described under (g) and
 write no r3_q files —, (h) a commit wave consisting of DIR/r3_verify.md alone, (i) finalize. If it prints
 anything else (normally `REJECT: …`), the tail is FULL: steps (e)–(i) exactly as written below — except that a line
@@ -500,9 +549,11 @@ the raised statement has not yielded, you may conclude on the goal already prove
 [GOAL] line as item 2 (iv) describes. In the final round, do that rather than letting the rounds simply run out."
 
 {HORIZON} is empty when r ≤ MAX_ROUNDS−2; when r = MAX_ROUNDS−1 it is exactly: " So at most one further round
-can run after this one." and when r = MAX_ROUNDS exactly: " So this is the final round: whatever its queries
-return goes straight to the proof-writing steps, with no further round to act on it." (Note the leading space.
-{MAX_ROUNDS} in the brief is the MAX_ROUNDS setting written as a number, every round.)
+can run after this one." and when r = MAX_ROUNDS exactly: " So this is the final round: no further round will act
+on what its queries return — one last judge step records those answers, certifications included, in the summary and
+the ledger, and then the proof-writing steps begin." (Note the leading space.
+{MAX_ROUNDS} in the brief is the MAX_ROUNDS setting written as a number, every round. r = MAX_ROUNDS+1 occurs once, in
+the closing record of "The proof tail", which says how the slots are filled then.)
 
 {ESC_SUMMARY} is empty when r < ESC_ROUND; when r ≥ ESC_ROUND it is exactly (leading space included):
 " From this round on four further rules govern the summary; because rule (iii) asks you for mathematics of your
@@ -576,10 +627,10 @@ them (settling it for part of the objects only is not a reduction). Do not spend
 polishing, re-deriving or verifying results that do not complete the [GOAL] chain — the proof-writing steps
 after the rounds do that, with their own query budget — so the only verify queries in a round are the audit
 rule's (the verify queries certifying a goal that was proved and then raised count as the audit rule's) and
-the one chain check item (c) allows. Do not spend a query asking an engine to recall or reconstruct a
-proof from the literature, of the [GOAL] claim or of anything else: the engines have no library to consult, and
-such a task gives them nothing to reason with (invoking known theorems inside an attack is another matter, and
-fine). (Only in the final two rounds — this brief's opening 'Step: plan round …' line will then say so
+the one chain check item (c) allows. Do not spend a query asking an engine to recall or reconstruct a published
+proof from memory, of the [GOAL] claim or of anything else: such a task gives it nothing to reason with (invoking
+known theorems inside an attack is another matter, and fine; and if you have web search the engines have it too,
+so a query may ask for the exact published statement of a result the chain needs). (Only in the final two rounds — this brief's opening 'Step: plan round …' line will then say so
 explicitly, in the words "one further round" or "the final round"; if it carries neither, this is not one of
 them — up to two queries may instead verify, or write up in full, the standing results the final document will
 present.) (b) Closing rule.
