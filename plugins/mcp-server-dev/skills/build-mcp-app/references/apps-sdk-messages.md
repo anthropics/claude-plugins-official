@@ -152,11 +152,11 @@ For long-running operations, emit progress notifications. The client sends a `pr
 
 ```typescript
 // In the tool handler
-async ({ query }, extra) => {
-  const token = extra._meta?.progressToken;
+async ({ query }, ctx) => {
+  const token = ctx.mcpReq._meta?.progressToken;
   for (let i = 0; i < steps.length; i++) {
     if (token !== undefined) {
-      await extra.sendNotification({
+      await ctx.mcpReq.notify({
         method: "notifications/progress",
         params: { progressToken: token, progress: i, total: steps.length, message: steps[i].name },
       });
@@ -167,7 +167,7 @@ async ({ query }, extra) => {
 }
 ```
 
-No `{ notify }` destructure — `extra` is `RequestHandlerExtra`; progress goes through `sendNotification`.
+The second handler argument is the SDK's `ServerContext`; progress goes through `ctx.mcpReq.notify`.
 
 ---
 

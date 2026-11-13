@@ -99,10 +99,10 @@ A widget-enabled tool has **two separate registrations**:
 When Claude calls the tool, the host sees `_meta.ui.resourceUri`, fetches that resource, renders it in an iframe, and pipes the tool's return value into the iframe via the `ontoolresult` event.
 
 ```typescript
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer } from "@modelcontextprotocol/server";
 import { registerAppTool, registerAppResource, RESOURCE_MIME_TYPE }
   from "@modelcontextprotocol/ext-apps/server";
-import { z } from "zod";
+import * as z from "zod/v4";
 
 const server = new McpServer({ name: "contacts", version: "1.0.0" });
 
@@ -110,7 +110,7 @@ const server = new McpServer({ name: "contacts", version: "1.0.0" });
 registerAppTool(server, "pick_contact", {
   description: "Open an interactive contact picker",
   annotations: { title: "Pick Contact", readOnlyHint: true },
-  inputSchema: { filter: z.string().optional() },
+  inputSchema: z.object({ filter: z.string().optional() }),
   _meta: { ui: { resourceUri: "ui://widgets/contact-picker.html" } },
 }, async ({ filter }) => {
   const contacts = await db.contacts.search(filter);
@@ -200,29 +200,29 @@ Keep widgets **small and single-purpose**. A picker picks. A chart displays. Don
 **Install:**
 
 ```bash
-npm install @modelcontextprotocol/sdk @modelcontextprotocol/ext-apps zod express
+npm pkg set type=module
+npm install @modelcontextprotocol/server @modelcontextprotocol/express @modelcontextprotocol/node @modelcontextprotocol/ext-apps zod express
 ```
 
 **Server (`src/server.ts`):**
 
 ```typescript
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { createMcpExpressApp } from "@modelcontextprotocol/express";
 import { registerAppTool, registerAppResource, RESOURCE_MIME_TYPE }
   from "@modelcontextprotocol/ext-apps/server";
-import express from "express";
+import { toNodeHandler } from "@modelcontextprotocol/node";
+import { McpServer, createMcpHandler } from "@modelcontextprotocol/server";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { z } from "zod";
+import * as z from "zod/v4";
 
 const require = createRequire(import.meta.url);
-const server = new McpServer({ name: "contact-picker", version: "1.0.0" });
 
 // Inline the ext-apps browser bundle into the widget HTML.
 // The iframe CSP blocks CDN script fetches — bundling is mandatory.
 const bundle = readFileSync(
   require.resolve("@modelcontextprotocol/ext-apps/app-with-deps"), "utf8",
-).replace(/export\{([^}]+)\};?\s*$/, (_, body) =>
+).replace(/export\{([^}]+)\};?\s*$/, (_, body: string) =>
   "globalThis.ExtApps={" +
   body.split(",").map((p) => {
     const [local, exported] = p.split(" as ").map((s) => s.trim());
@@ -232,34 +232,39 @@ const bundle = readFileSync(
 const pickerHtml = readFileSync("./widgets/picker.html", "utf8")
   .replace("/*__EXT_APPS_BUNDLE__*/", () => bundle);
 
-registerAppTool(server, "pick_contact", {
-  description: "Open an interactive contact picker. User selects one contact.",
-  annotations: { title: "Pick Contact", readOnlyHint: true },
-  inputSchema: { filter: z.string().optional().describe("Name/email prefix filter") },
-  _meta: { ui: { resourceUri: "ui://widgets/picker.html" } },
-}, async ({ filter }) => {
-  const contacts = await db.contacts.search(filter ?? "");
-  return { content: [{ type: "text", text: JSON.stringify(contacts) }] };
-});
+// Called once per HTTP request. Always build a new McpServer here:
+// a shared instance fails as soon as two requests overlap.
+function createServer(): McpServer {
+  const server = new McpServer({ name: "contact-picker", version: "1.0.0" });
 
-registerAppResource(server, "Contact Picker", "ui://widgets/picker.html", {},
-  async () => ({
-    contents: [{ uri: "ui://widgets/picker.html", mimeType: RESOURCE_MIME_TYPE, text: pickerHtml }],
-  }),
-);
+  registerAppTool(server, "pick_contact", {
+    description: "Open an interactive contact picker. User selects one contact.",
+    annotations: { title: "Pick Contact", readOnlyHint: true },
+    inputSchema: z.object({ filter: z.string().optional().describe("Name/email prefix filter") }),
+    _meta: { ui: { resourceUri: "ui://widgets/picker.html" } },
+  }, async ({ filter }) => {
+    const contacts = await db.contacts.search(filter ?? "");
+    return { content: [{ type: "text", text: JSON.stringify(contacts) }] };
+  });
 
-const app = express();
-app.use(express.json());
-app.post("/mcp", async (req, res) => {
-  const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-  res.on("close", () => transport.close());
-  await server.connect(transport);
-  await transport.handleRequest(req, res, req.body);
-});
-app.listen(process.env.PORT ?? 3000);
+  registerAppResource(server, "Contact Picker", "ui://widgets/picker.html", {},
+    async () => ({
+      contents: [{ uri: "ui://widgets/picker.html", mimeType: RESOURCE_MIME_TYPE, text: pickerHtml }],
+    }),
+  );
+
+  return server;
+}
+
+// Local dev: accepts only localhost Host/Origin headers (DNS-rebinding protection).
+// Deployed: createMcpExpressApp({ host: "0.0.0.0", allowedHosts: ["mcp.example.com"] })
+const app = createMcpExpressApp();
+const handler = toNodeHandler(createMcpHandler(createServer));
+app.all("/mcp", (req, res) => void handler(req, res, req.body));
+app.listen(Number(process.env.PORT ?? 3000));
 ```
 
-For local-only widget apps (driving a desktop app, reading local files), swap the transport to `StdioServerTransport` and package via the `build-mcpb` skill.
+For local-only widget apps (driving a desktop app, reading local files), replace the last four lines with `serveStdio(createServer)` from `@modelcontextprotocol/server/stdio` and package via the `build-mcpb` skill.
 
 **Widget (`widgets/picker.html`):**
 

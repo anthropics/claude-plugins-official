@@ -19,7 +19,7 @@ const require = createRequire(import.meta.url);
 
 const bundle = readFileSync(
   require.resolve("@modelcontextprotocol/ext-apps/app-with-deps"), "utf8",
-).replace(/export\{([^}]+)\};?\s*$/, (_, body) =>
+).replace(/export\{([^}]+)\};?\s*$/, (_, body: string) =>
   "globalThis.ExtApps={" +
   body.split(",").map((p) => {
     const [local, exported] = p.split(" as ").map((s) => s.trim());
@@ -171,7 +171,7 @@ const { App } = globalThis.ExtApps;
 </script>
 ```
 
-Server side, emit progress via `extra.sendNotification({ method: "notifications/progress", ... })` — see `apps-sdk-messages.md`.
+Server side, emit progress via `ctx.mcpReq.notify({ method: "notifications/progress", ... })` — see `apps-sdk-messages.md`.
 
 ---
 
@@ -182,7 +182,7 @@ Display widgets don't call `sendMessage` — they render and sit there. The tool
 ```typescript
 registerAppTool(server, "show_chart", {
   description: "Render a revenue chart",
-  inputSchema: { range: z.enum(["week", "month", "year"]) },
+  inputSchema: z.object({ range: z.enum(["week", "month", "year"]) }),
   _meta: { ui: { resourceUri: "ui://widgets/chart.html" } },
 }, async ({ range }) => {
   const data = await fetchRevenue(range);

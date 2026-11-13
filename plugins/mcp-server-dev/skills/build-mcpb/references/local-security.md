@@ -41,25 +41,26 @@ def safe_join(root: Path, user_path: str) -> Path:
 
 ---
 
-## Roots — ask the host, don't hardcode
+## Allowed directories — let the user pick, don't hardcode
 
-Before hardcoding `ROOT` from a config env var, check if the host supports `roots/list`. This is the spec-native way to get user-approved workspace boundaries.
+Declare a `user_config` entry of `type: "directory"` in the manifest and pass it to the server through `mcp_config.env`. The host shows a native folder picker at install time, and the user can change it later.
 
 ```typescript
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+const allowedRoots = [process.env.ROOT_DIR ?? process.cwd()];
+```
 
-const server = new McpServer({ name: "...", version: "..." });
+**`roots/list` is deprecated** as of protocol revision 2026-07-28 (SEP-2577), so don't build on it. If you need it for an older host, ask inside a tool handler and keep the env var as the fallback:
 
-let allowedRoots: string[] = [];
-server.server.oninitialized = async () => {
-  const caps = server.getClientCapabilities();
-  if (caps?.roots) {
-    const { roots } = await server.server.listRoots();
-    allowedRoots = roots.map(r => new URL(r.uri).pathname);
-  } else {
-    allowedRoots = [process.env.ROOT_DIR ?? process.cwd()];
-  }
-};
+```typescript
+import { inputRequired, inputResponse } from "@modelcontextprotocol/server";
+
+// Inside a tool handler, after checking the client's `roots` capability
+// (see the clientCapabilities(ctx) helper in build-mcp-server/references/elicitation.md)
+const answer = inputResponse(ctx.mcpReq.inputResponses, "roots");
+if (answer.kind !== "roots") {
+  return inputRequired({ inputRequests: { roots: inputRequired.listRoots() } });
+}
+const allowedRoots = answer.roots.map(r => fileURLToPath(r.uri));
 ```
 
 ```python
@@ -72,7 +73,7 @@ async def my_tool(ctx: Context) -> str:
         allowed = [os.environ.get("ROOT_DIR", os.getcwd())]
 ```
 
-If roots are available, use them. If not, fall back to config. Either way, validate every path against the allowed set.
+Either way, validate every path against the allowed set.
 
 ---
 
