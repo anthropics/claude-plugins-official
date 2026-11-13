@@ -117,7 +117,8 @@ from gitutil import (  # noqa: E402,F401
     _LOW_PRIORITY_SUFFIXES, _LOW_PRIORITY_PATH_TOKENS,
     _prioritize_diff_files, _is_reviewable_source,
     extract_file_paths_from_diff, parse_diff_into_files,
-    filter_preexisting_from_diff,
+    filter_preexisting_from_diff, renamed_into_review,
+    came_from_secret, git_diff_unpaired,
 )
 from diffstate import (  # noqa: E402,F401
     STOP_LOOP_STATE_TTL_SEC, PREVIOUS_FINDINGS_TTL_SEC,
@@ -260,7 +261,7 @@ _TAIL_METRICS: Dict[str, Any] = {}
 # Of those, the ones that go after the others whenever they were set: a row
 # over CC's key cap loses them before any older review key. Only the launcher
 # keys below come later; those are also on every smaller row of the session.
-_LAST_METRIC_KEYS = ("diff_seen", "cr_pack")
+_LAST_METRIC_KEYS = ("diff_seen", "cr_pack", "renamed_in")
 
 # CC keeps this many keys of a row.
 _METRIC_KEY_CAP = 20
@@ -1366,6 +1367,78 @@ def _merge_resolved_diff_files(repo_root, merges):
             resolved[path] = resolved[path] + "\n" + hunks if path in resolved else hunks
     return resolved
 
+
+# Files renamed into review that one review takes, by priority, how much of
+# the prompt they get, and the time for the git calls behind it.
+MAX_RENAMED_IN = 10
+RENAMED_IN_BYTES = DIFF_TOTAL_BYTES // 4
+RENAMED_IN_TIMEOUT_S = 15
+
+
+def _with_renamed_in(repo_root, diff_files, renamed, cap):
+    """`diff_files` plus, whole, files renamed into review (see
+    renamed_into_review). `renamed` is (name, git arguments that show it, the
+    commit they end at) per file. Returns (files, whether git failed to show
+    some of them).
+
+    No file reviewed without them is dropped or cut because of them: a new
+    entry goes behind the others in a place they leave free, and a file
+    already there for an edit becomes the whole of it plus the lines the edit
+    removed. The rest is reviewed as before.
+    """
+    origin = {}
+    for name, revs, rev in renamed:
+        origin.setdefault(name, (revs, rev))
+    if not origin or len(diff_files) > cap:
+        return diff_files, False
+    there = dict(diff_files)
+    room = cap - len(diff_files)
+    by_revs = {}
+    for name, _ in _prioritize_diff_files([(n, "") for n in origin], MAX_RENAMED_IN)[0]:
+        if there.get(name, "").startswith("@@@"):
+            continue  # a merge's own hunks, in another format
+        if name not in there:
+            if room <= 0:
+                continue
+            room -= 1
+        by_revs.setdefault(origin[name], []).append(name)
+
+    deadline = time.monotonic() + RENAMED_IN_TIMEOUT_S
+
+    def left():
+        return max(deadline - time.monotonic(), 0.1)
+
+    whole, failed = {}, False
+    for (revs, rev), names in by_revs.items():
+        secret = came_from_secret(repo_root, rev, names, left())
+        names = [n for n in names if secret is not None and n not in secret]
+        shown = git_diff_unpaired(repo_root, revs, names, left()) if names else {}
+        failed = failed or secret is None or shown is None or len(shown) < len(names)
+        whole.update((name, hunks) for name, hunks in (shown or {}).items() if hunks)
+
+    def size(hunks):
+        # With room for the marker a cut file ends in.
+        return min(len(hunks), DIFF_PER_FILE_BYTES) + 100
+
+    budget = min(RENAMED_IN_BYTES,
+                 DIFF_TOTAL_BYTES - sum(size(hunks) for _, hunks in diff_files))
+    taken = {}
+    for name, hunks in whole.items():
+        if name in there:
+            removed = [ln for ln in there[name].split("\n") if ln.startswith(("@@", "-"))]
+            hunks = "\n".join([hunks, *removed])
+            if len(hunks) > DIFF_PER_FILE_BYTES:
+                continue
+        if size(hunks) <= budget:
+            budget -= size(hunks)
+            taken[name] = hunks
+    if taken:
+        debug_log(f"{len(taken)} file(s) renamed from a text name")
+        _TAIL_METRICS["renamed_in"] = len(taken)
+    files = [(name, taken.pop(name, hunks)) for name, hunks in diff_files]
+    return files + list(taken.items()), failed
+
+
 def _push_section(bash_output):
     """Return the slice of `bash_output` that contains the push's range lines.
 
@@ -2020,6 +2093,7 @@ def handle_commit_review_posttooluse(input_data):
     # can contain non-UTF8 source (latin-1, cp1252) and text=True would raise
     # UnicodeDecodeError outside the except clause.
     diff_files = []
+    renamed = []
     resolved = 0
     for sha in shas:
         try:
@@ -2051,8 +2125,18 @@ def handle_commit_review_posttooluse(input_data):
             debug_log(f"Commit review: {_cmd} {sha} rc={result.returncode}")
             continue
         resolved += 1
-        diff_files.extend(parse_diff_into_files(
-            result.stdout.decode("utf-8", errors="replace")))
+        diff_text = result.stdout.decode("utf-8", errors="replace")
+        diff_files.extend(parse_diff_into_files(diff_text))
+        names = renamed_into_review(diff_text)
+        if names:
+            revs, rev = ("show", "--format=", sha), sha
+            if pre_amend_sha:
+                revs = ("diff", pre_amend_sha, sha)
+            elif sha != shas[0] and _is_ancestor(repo_root, sha, shas[0]):
+                # A later commit of the same call can have changed the file
+                # again: show it as the last one left it.
+                revs, rev = ("diff", f"{sha}^", shas[0]), shas[0]
+            renamed += [(name, revs, rev) for name in names]
 
     # Dedup by path. The widened reflog scan can return >1 SHA (e.g.
     # `git commit && git commit --amend` within 120s); a path that appears in
@@ -2071,6 +2155,8 @@ def handle_commit_review_posttooluse(input_data):
         emit_metrics({"skipped": True, "skip_reason": 28, **_base,
                       "shas_found": len(shas)})
         sys.exit(0)
+
+    diff_files, _ = _with_renamed_in(repo_root, diff_files, renamed, MAX_DIFF_FILES)
 
     # Empty amend delta = message-only amend (or whitespace-only that the
     # diff already collapses). No code to review; skip cleanly. skip_reason=35.
@@ -2572,7 +2658,16 @@ def handle_push_sweep_posttooluse(input_data):
     diff_files = parse_diff_into_files(diff_text)
     for _path, _hunks in diff_files:
         _resolved[_path] = _resolved[_path] + "\n" + _hunks if _path in _resolved else _hunks
-    diff_files = list(_resolved.items())
+    diff_files, _unread = _with_renamed_in(
+        repo_root, list(_resolved.items()),
+        [(name, ("diff", base, head or "HEAD"), head or "HEAD")
+         for name in renamed_into_review(diff_text)],
+        MAX_PUSH_SWEEP_FILES)
+    if not diff_files and _unread:
+        # As for a failed diff above: there was something to review.
+        emit_metrics({**_base, "pushed": len(push_range),
+                      "unreviewed": len(tail), "skip_reason": 45})
+        sys.exit(0)
     if not diff_files:
         emit_metrics({**_base, "pushed": len(push_range),
                       "unreviewed": len(tail), "skip_reason": 30})
