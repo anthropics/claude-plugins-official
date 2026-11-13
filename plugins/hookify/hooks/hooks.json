@@ -40,7 +40,7 @@
           {
             "type": "command",
             "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/userpromptsubmit.py\"",
-            "timeout": 10
+            "timeout": 30
           }
         ]
       }
