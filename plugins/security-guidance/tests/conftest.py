@@ -96,7 +96,11 @@ class _Stub(http.server.BaseHTTPRequestHandler):
         self.server.calls.append(self.path)
         if self.server.delay:
             time.sleep(self.server.delay)
-        if self.server.status == 200:
+        status = self.server.status
+        reviews = [c for c in self.server.calls if c.endswith("/v1/messages")]
+        if self.path.endswith("/v1/messages") and len(reviews) <= getattr(self.server, "fail_first", 0):
+            status = 400
+        if status == 200:
             vulns = list(self.server.vulns)
             body = json.dumps({
                 "id": "msg_stub", "type": "message", "role": "assistant",
@@ -107,7 +111,7 @@ class _Stub(http.server.BaseHTTPRequestHandler):
             }).encode()
         else:
             body = b'{"type":"error","error":{"type":"invalid_request_error","message":"stub"}}'
-        self.send_response(self.server.status)
+        self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
@@ -126,6 +130,7 @@ def stub_api():
     srv.bodies = []
     srv.status = 200
     srv.delay = 0
+    srv.fail_first = 0  # the first N review requests are answered with 400
     srv.vulns = []
     t = threading.Thread(target=srv.serve_forever, daemon=True)
     t.start()
