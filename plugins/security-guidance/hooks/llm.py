@@ -1959,7 +1959,9 @@ def _investigate_system() -> str:
                     or any(os.environ.get(v, "").strip().lower() in ("1", "true", "yes", "on")
                            for v in ("CLAUDE_CODE_DISABLE_THINKING",
                                      "CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING")))
-    if thinking_off or os.environ.get("SG_AGENTIC_MODEL", "").strip():
+    picked = any(os.environ.get(v, "").strip()
+                 for v in ("SG_AGENTIC_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL"))
+    if thinking_off or picked:
         return _AGENTIC_INVESTIGATE_SYSTEM
     return _AGENTIC_INVESTIGATE_SYSTEM + _REVIEWER_OUTPUT_RULE
 
