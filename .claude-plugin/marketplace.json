@@ -1734,7 +1734,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/GovTribe/claude-plugin.git",
-        "sha": "41cb943db7f96e33f0255f46c882742cb92cb909"
+        "sha": "34f2ba5d6f9366d585322909899cece2c64804d7"
       },
       "homepage": "https://govtribe.com"
     },
