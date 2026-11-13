@@ -4,7 +4,9 @@ A Telegram bot is publicly addressable. Anyone who finds its username can DM it,
 
 By default, a DM from an unknown sender triggers **pairing**: the bot replies with a 6-character code and drops the message. You run `/telegram:access pair <code>` from your assistant session to approve them. Once approved, their messages pass through.
 
-All state lives in `~/.claude/channels/telegram/access.json`. The `/telegram:access` skill commands edit this file; the server re-reads it on every inbound message, so changes take effect without a restart. Set `TELEGRAM_ACCESS_MODE=static` to pin config to what was on disk at boot (pairing is unavailable in static mode since it requires runtime writes).
+Access configuration lives in `~/.claude/channels/telegram/access.json`. The `/telegram:access` skill commands edit this file; the server re-reads it on every inbound message, so changes take effect without a restart. Set `TELEGRAM_ACCESS_MODE=static` to pin config to what was on disk at boot (pairing is unavailable in static mode since it requires runtime writes; the inbound journal below is written either way).
+
+Alongside it the server keeps `inbound.jsonl`, a journal of received messages — see **What is kept on disk** — and `bot.pid`, `inbox/` and `.env`.
 
 ## At a glance
 
@@ -15,6 +17,7 @@ All state lives in `~/.claude/channels/telegram/access.json`. The `/telegram:acc
 | Group key | Supergroup ID (negative, `-100…` prefix) |
 | `ackReaction` quirk | Fixed whitelist only; non-whitelisted emoji silently do nothing |
 | Config file | `~/.claude/channels/telegram/access.json` |
+| Message journal | `~/.claude/channels/telegram/inbound.jsonl`, last 500 or 7 days |
 
 ## DM policies
 
@@ -92,9 +95,22 @@ Configure outbound behavior with `/telegram:access set <key> <value>`.
 
 **`chunkMode`** chooses the split strategy: `length` cuts exactly at the limit; `newline` prefers paragraph boundaries.
 
+## What is kept on disk
+
+Handing a message to the session can fail without the plugin being told — a session running without `--channels` accepts the push and drops it. So every inbound message is written to `inbound.jsonl` *before* delivery is attempted, and the `recent_inbound` tool reads it back. Without it, a message lost that way leaves no trace anywhere.
+
+What that means for you:
+
+- **Message text is on disk**, including group messages and forwarded third-party content, in a file mode `600` inside a directory mode `700`. The plugin never sends it to Telegram: `reply` refuses any file inside the state directory.
+- **It is capped** at the most recent 500 entries or 7 days, whichever comes first. Entries past the cap are never replayed, even before the file is next rewritten.
+- **It is shared between sessions.** Every Claude Code session on the machine reads the same file, which is what makes recovery work — the session that lost the message is usually not the one you ask about it. A session in an unrelated project can therefore replay messages that arrived for another.
+- Inbound photos are already stored in `inbox/`; this adds the text beside them.
+
+Delete `inbound.jsonl` at any time; it is recreated on the next message.
+
 ## Several sessions, one bot token
 
-Telegram allows exactly one long-polling consumer per bot token, so when more than one Claude Code session has the plugin loaded, only one of them polls. The others serve the tools (`reply`, `react`, `edit_message`) normally and wait; whichever is polling records itself in `bot.pid`.
+Telegram allows exactly one long-polling consumer per bot token, so when more than one Claude Code session has the plugin loaded, only one of them polls. The others serve the tools (`reply`, `react`, `edit_message`, `recent_inbound`) normally and wait; whichever is polling records itself in `bot.pid`.
 
 A session that starts while another is already polling waits **`pollerTakeoverSeconds`** (default 120) and then takes the slot, so the session you just started does end up receiving your messages. The session that had it notices on its next check and steps down to serving tools only — nothing signals it and it keeps running. The wait is what keeps short-lived instances, such as the throwaway servers `claude mcp list` spawns to health-check, from disturbing a working session at all.
 

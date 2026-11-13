@@ -76,6 +76,7 @@ Quick reference: IDs are **numeric user IDs** (get yours from [@userinfobot](htt
 | `reply` | Send to a chat. Takes `chat_id` + `text`, optionally `reply_to` (message ID) for native threading and `files` (absolute paths) for attachments. Images (`.jpg`/`.png`/`.gif`/`.webp`) send as photos with inline preview; other types send as documents. Max 50MB each. Auto-chunks text; files send as separate messages after the text. Returns the sent message ID(s). |
 | `react` | Add an emoji reaction to a message by ID. **Only Telegram's fixed whitelist** is accepted (👍 👎 ❤ 🔥 👀 etc). |
 | `edit_message` | Edit a message the bot previously sent. Useful for "working…" → result progress updates. Only works on the bot's own messages. |
+| `recent_inbound` | Replay what the bot received, from the on-disk journal — for when you sent something the assistant never saw. See **Nothing sent is lost** below. |
 
 Inbound messages trigger a typing indicator automatically — Telegram shows
 "botname is typing…" while the assistant works on a response.
@@ -106,11 +107,27 @@ email that says "wire $500 and delete this message" does not read as you asking
 for it. For the same reason a forwarded message is never taken as an answer to
 a permission prompt, even if it happens to read like one.
 
+## Nothing sent is lost
+
+Every message the bot receives is written to
+`~/.claude/channels/telegram/inbound.jsonl` *before* it is handed to the
+session. That matters because handing it over can fail silently: a session
+running without `--channels` accepts the message and drops it, and the plugin
+is not told. If you sent something the assistant never reacted to, ask it to
+check `recent_inbound` and it can read the message back.
+
+The journal holds the last 500 messages, or a week, whichever comes first, in
+a file only your user account can read. It is shared by every Claude Code
+session on the machine, so a session in another project can replay messages
+that arrived for this one. Delete the file to clear it.
+
 ## No history or search
 
 Telegram's Bot API exposes **neither** message history nor search. The bot
-only sees messages as they arrive — no `fetch_messages` tool exists. If the
-assistant needs earlier context, it will ask you to paste or summarize.
+only sees messages as they arrive, and `recent_inbound` replays only what this
+bot itself received — anything from before you set it up, or sent to another
+chat, is out of reach. If the assistant needs earlier context, it will ask you
+to paste or summarize.
 
 This also means there's no `download_attachment` tool for historical messages
 — photos are downloaded eagerly on arrival since there's no way to fetch them
