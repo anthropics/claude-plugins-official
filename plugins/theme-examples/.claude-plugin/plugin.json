@@ -1,0 +1,11 @@
+{
+  "name": "theme-examples",
+  "version": "0.4.3",
+  "description": "An example plugin to read, copy and change: twenty animated backdrops behind the chat in the desktop app, with frosted-glass panels: one per project or per session. /custom-theme list names them. Fireworks go off over the theme when Claude says \"merged\"; /fireworks sets them off by hand.",
+  "author": {
+    "name": "Anthropic",
+    "email": "support@anthropic.com"
+  },
+  "license": "Apache-2.0",
+  "types": "./types/index.d.ts"
+}
