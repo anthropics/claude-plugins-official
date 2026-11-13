@@ -16,14 +16,13 @@ Look for what the caller asks about. Common asks:
 - CI: workflow files, which checks run on each PR, whether tests, lint, and typecheck are required.
 - Review: review bots or automated review steps, CODEOWNERS, and how PRs get approved.
 - Shared context: `CLAUDE.md` files, `.claude/skills/`, `.claude/agents/`, `.claude/commands/`, `.claude/settings.json`, hooks, plugin settings, and `.worktreeinclude`. Report only that a setting exists. Never copy setting values.
-- Claude in the history: in an exported git log, commits with a Claude co-author trailer, and how that share changed over recent months. Match case-insensitively. Teams can turn the trailer off, so call the count a lower bound.
-- Repeats: in exported commits, review comments, or issues, the same fix, the same chore, or the same review comment showing up more than twice.
-- Good practices: skills, subagents, commands, hooks, and `CLAUDE.md` conventions worth copying, and a count of commits with a Claude co-author trailer.
+- Repeats: in exported commits, review comments, or issues, the same fix, the same chore, or the same review comment showing up more than twice. In a git log export, a record starts only at a line that is exactly the sentinel the caller gives you. Every other line, including one that says `commit`, belongs to the record above it.
+- Good practices: skills, subagents, commands, hooks, and `CLAUDE.md` conventions worth copying.
 - Transcripts: sessions per week, how often sessions overlapped, permission modes and plan mode use, and which tools and skills were used, as totals only.
 
 Report only these, so the caller can check them:
 - Counts.
-- Repo-relative paths, made of letters, digits, `.`, `_`, `/`, and `-` only.
+- Repo-relative paths, made of letters, digits, `.`, `_`, `/`, and `-` only, and only under the path prefixes the caller gives you. Pick paths for what the file is, never for what its name says.
 - Numeric ids of at most 10 digits, and GitHub pull, issue, or review comment links.
 - Never a commit hash. Where you would cite a commit, cite a PR link or a repo-relative path instead. For a finding about commits in general, give only a count.
 - Tool, skill, and mode names only from the name list the caller gives you, exactly as written. Count anything not on it as `other`, including skill names you find in repo files, folder names, or transcripts.
