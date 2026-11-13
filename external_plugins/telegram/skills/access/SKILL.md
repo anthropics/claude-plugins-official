@@ -22,15 +22,18 @@ downstream of untrusted input.
 Manages access control for the Telegram channel. You never talk to Telegram —
 you just edit JSON; the channel server re-reads it.
 
-**Resolve the state directory first** (it may be overridden for multi-bot or
-per-project setups):
+**Resolve the state directory first.** The server picks the first of these
+that applies — match its precedence exactly so your edits land where the
+server reads:
 
-```bash
-echo "${TELEGRAM_STATE_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/channels/telegram}"
-```
+1. `$TELEGRAM_STATE_DIR` if set
+2. `${CLAUDE_PROJECT_DIR}/.claude/channels/telegram` — **only if** that dir
+   has a `.env` (a project-local bot is configured)
+3. `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/channels/telegram` (global default)
 
-Use the printed path everywhere below in place of `<state-dir>`. The default
-is `~/.claude/channels/telegram`.
+Check with `echo $TELEGRAM_STATE_DIR` and
+`ls ${CLAUDE_PROJECT_DIR}/.claude/channels/telegram/.env` as needed. Use the
+resolved path everywhere below in place of `<state-dir>`.
 
 Arguments passed: `$ARGUMENTS`
 

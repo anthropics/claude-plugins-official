@@ -16,15 +16,22 @@ allowed-tools:
 Writes the bot token to `<state-dir>/.env` and orients the user on access
 policy. The server reads both files at boot.
 
-**Resolve the state directory first** (it may be overridden for multi-bot or
-per-project setups):
+**Resolve the state directory first.** The server picks the first of these
+that applies — match its precedence exactly so your writes land where the
+server reads:
 
-```bash
-echo "${TELEGRAM_STATE_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/channels/telegram}"
-```
+1. `$TELEGRAM_STATE_DIR` if set
+2. `${CLAUDE_PROJECT_DIR}/.claude/channels/telegram` — **only if** that dir
+   has a `.env` (a project-local bot is configured)
+3. `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/channels/telegram` (global default)
 
-Use the printed path everywhere below in place of `<state-dir>`. The default
-is `~/.claude/channels/telegram`.
+Check with `echo $TELEGRAM_STATE_DIR` and
+`ls ${CLAUDE_PROJECT_DIR}/.claude/channels/telegram/.env` as needed. Use the
+resolved path everywhere below in place of `<state-dir>`.
+
+**Exception:** if `$ARGUMENTS` starts with `--project`, `<state-dir>` is
+`${CLAUDE_PROJECT_DIR}/.claude/channels/telegram` regardless — you're creating
+or updating the project-local config.
 
 Arguments passed: `$ARGUMENTS`
 
@@ -82,10 +89,13 @@ Drive the conversation this way:
 Never frame `pairing` as the correct long-term choice. Don't skip the lockdown
 offer.
 
-### `<token>` — save it
+### `<token>` or `--project <token>` — save it
 
-1. Treat `$ARGUMENTS` as the token (trim whitespace). BotFather tokens look
-   like `123456789:AAH...` — numeric prefix, colon, long string.
+1. Treat `$ARGUMENTS` as the token (strip a leading `--project` and trim
+   whitespace). BotFather tokens look like `123456789:AAH...` — numeric
+   prefix, colon, long string. With `--project`, `<state-dir>` is the
+   project-local path (see above) — this is how a project opts in to its own
+   bot; the server will pick it up automatically on next start.
 2. `mkdir -p` the resolved `<state-dir>`.
 3. Read existing `.env` if present; update/add the `TELEGRAM_BOT_TOKEN=` line,
    preserve other keys. Write back, no quotes around the value.
