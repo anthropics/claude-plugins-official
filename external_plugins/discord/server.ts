@@ -100,6 +100,13 @@ type PendingEntry = {
 type GroupPolicy = {
   requireMention: boolean
   allowFrom: string[]
+  /**
+   * Sticky mention window, in minutes. 0 or absent = off (every message needs a
+   * mention, the default). When > 0: a mention or a reply to the bot opens a window
+   * of this many minutes in the channel, and messages in the window are delivered
+   * without a mention. Each mention or reply restarts the window.
+   */
+  stickyMinutes?: number
 }
 
 type Access = {
@@ -213,7 +220,8 @@ function pruneExpired(a: Access): boolean {
 }
 
 type GateResult =
-  | { action: 'deliver'; access: Access }
+  /** sticky: delivered only because a sticky window was open (no mention). */
+  | { action: 'deliver'; access: Access; sticky?: boolean }
   | { action: 'drop' }
   | { action: 'pair'; code: string; isResend: boolean }
 
@@ -231,6 +239,28 @@ function noteSent(id: string): void {
     const first = recentSentIds.values().next().value
     if (first) recentSentIds.delete(first)
   }
+}
+
+// Sticky mention windows: channel or thread ID -> when the window closes, and the
+// window length to restart it with. Keyed on where the conversation happens
+// (msg.channelId), not the parent channel used for the policy lookup, so a mention
+// in one thread doesn't open the parent channel or sibling threads. In-memory only:
+// a restart closes all windows (fails safe: a mention is required again).
+const stickyWindows = new Map<string, { until: number; minutes: number }>()
+const STICKY_MAX_MINUTES = 24 * 60
+
+// The bot replying in a channel keeps an already-open window alive, so an active
+// conversation doesn't close mid-thread. Never opens a window: only a mention does.
+// Bot messages are never delivered back to the model, so this costs nothing itself.
+function extendStickyWindow(chatId: string): void {
+  const w = stickyWindows.get(chatId)
+  if (w && Date.now() < w.until) w.until = Date.now() + w.minutes * 60_000
+}
+
+// access.json is hand-editable, so don't trust the type or range.
+function stickyMinutesOf(policy: GroupPolicy): number {
+  const n = Math.floor(Number(policy.stickyMinutes ?? 0))
+  return Number.isFinite(n) ? Math.min(Math.max(n, 0), STICKY_MAX_MINUTES) : 0
 }
 
 async function gate(msg: Message): Promise<GateResult> {
@@ -287,10 +317,23 @@ async function gate(msg: Message): Promise<GateResult> {
   if (groupAllowFrom.length > 0 && !groupAllowFrom.includes(senderId)) {
     return { action: 'drop' }
   }
-  if (requireMention && !(await isMentioned(msg, access.mentionPatterns))) {
-    return { action: 'drop' }
+  if (!requireMention) return { action: 'deliver', access }
+
+  const sticky = stickyMinutesOf(policy)
+  if (await isMentioned(msg, access.mentionPatterns)) {
+    // A mention or a reply to the bot (re)opens the sticky window.
+    if (sticky > 0) {
+      stickyWindows.set(msg.channelId, { until: Date.now() + sticky * 60_000, minutes: sticky })
+    }
+    return { action: 'deliver', access }
   }
-  return { action: 'deliver', access }
+  // No mention: deliver only while a sticky window is open here.
+  const w = stickyWindows.get(msg.channelId)
+  if (w) {
+    if (sticky > 0 && Date.now() < w.until) return { action: 'deliver', access, sticky: true }
+    stickyWindows.delete(msg.channelId) // expired, or sticky was turned off
+  }
+  return { action: 'drop' }
 }
 
 async function isMentioned(msg: Message, extraPatterns?: string[]): Promise<boolean> {
@@ -456,6 +499,8 @@ const mcp = new Server(
       'The sender reads Discord, not this session. Anything you want them to see must go through the reply tool — your transcript output never reaches their chat.',
       '',
       'Messages from Discord arrive as <channel source="discord" chat_id="..." message_id="..." user="..." ts="...">. If the tag has attachment_count, the attachments attribute lists name/type/size — call download_attachment(chat_id, message_id) to fetch them. Reply with the reply tool — pass chat_id back. Use reply_to (set to a message_id) only when replying to an earlier message; the latest message doesn\'t need a quote-reply, omit reply_to for normal responses.',
+      '',
+      'If the tag has sticky="true", the message did not mention you: it arrived because a recent mention opened a sticky window in that channel. People may be talking to each other, not to you. Reply only when the message is meant for you or clearly continues your conversation; otherwise stay silent.',
       '',
       'reply accepts file paths (files: ["/abs/path.png"]) for attachments. Use react to add emoji reactions, and edit_message for interim progress updates. Edits don\'t trigger push notifications — when a long task completes, send a new reply so the user\'s device pings.',
       '',
@@ -647,6 +692,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
           const msg = err instanceof Error ? err.message : String(err)
           throw new Error(`reply failed after ${sentIds.length} of ${chunks.length} chunk(s) sent: ${msg}`)
         }
+        extendStickyWindow(chat_id)
 
         const result =
           sentIds.length === 1
@@ -882,6 +928,7 @@ async function handleInbound(msg: Message): Promise<void> {
         user: msg.author.username,
         user_id: msg.author.id,
         ts: msg.createdAt.toISOString(),
+        ...(result.sticky ? { sticky: 'true' } : {}),
         ...(atts.length > 0 ? { attachment_count: String(atts.length), attachments: atts.join('; ') } : {}),
       },
     },

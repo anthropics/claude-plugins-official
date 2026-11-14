@@ -58,6 +58,21 @@ With the default `requireMention: true`, the bot responds only when @mentioned o
 /discord:access group rm 846209781206941736
 ```
 
+### Sticky mention window
+
+`--sticky <minutes>` (0 to 1440, default 0 = off) keeps the bot listening in a channel for a while after someone talks to it. A mention or a reply to the bot opens a window of that many minutes. Messages during the window reach the assistant without a mention, marked `sticky="true"` so it can stay quiet when people are talking to each other. Each new mention or reply restarts the window, and so does the bot replying in that channel, so an active conversation doesn't close mid-thread (a bot reply never opens a window by itself). `--allow` still applies, so only listed members can open or use the window.
+
+The window is tracked where the mention happened: a mention inside a thread opens the window for that thread only, not the parent channel or other threads.
+
+```
+/discord:access group add 846209781206941736 --sticky 30
+```
+
+Notes:
+- The window is kept in memory. Restarting the session closes all windows, so the next message needs a mention again.
+- Every message in an open window starts an assistant turn, so a busy channel uses more tokens. Keep the minutes low, or use `--allow` to limit who can trigger it.
+- `--sticky` does nothing with `--no-mention`, since every message already passes.
+
 ## Mention detection
 
 In channels with `requireMention: true`, any of the following triggers the bot:
@@ -99,7 +114,7 @@ Configure outbound behavior with `/discord:access set <key> <value>`.
 | `/discord:access allow 184695080709324800` | Add a user snowflake directly. |
 | `/discord:access remove 184695080709324800` | Remove from the allowlist. |
 | `/discord:access policy allowlist` | Set `dmPolicy`. Values: `pairing`, `allowlist`, `disabled`. |
-| `/discord:access group add 846209781206941736` | Enable a guild channel. Flags: `--no-mention`, `--allow id1,id2`. |
+| `/discord:access group add 846209781206941736` | Enable a guild channel. Flags: `--no-mention`, `--allow id1,id2`, `--sticky <minutes>`. |
 | `/discord:access group rm 846209781206941736` | Disable a guild channel. |
 | `/discord:access set ackReaction 🔨` | Set a config key: `ackReaction`, `replyToMode`, `textChunkLimit`, `chunkMode`, `mentionPatterns`. |
 

@@ -95,11 +95,13 @@ Parse `$ARGUMENTS` (space-separated). If empty or unrecognized, show status.
 1. Validate `<mode>` is one of `pairing`, `allowlist`, `disabled`.
 2. Read (create default if missing), set `dmPolicy`, write.
 
-### `group add <channelId>` (optional: `--no-mention`, `--allow id1,id2`)
+### `group add <channelId>` (optional: `--no-mention`, `--allow id1,id2`, `--sticky <minutes>`)
 
 1. Read (create default if missing).
 2. Set `groups[<channelId>] = { requireMention: !hasFlag("--no-mention"),
-   allowFrom: parsedAllowList }`.
+   allowFrom: parsedAllowList, stickyMinutes: parsedSticky }`. `parsedSticky` is the
+   `--sticky` value as an integer from 0 to 1440 (default 0 = off). Reject other values.
+   `--sticky` has no effect with `--no-mention`, since every message already passes.
 3. Write.
 
 ### `group rm <channelId>`
