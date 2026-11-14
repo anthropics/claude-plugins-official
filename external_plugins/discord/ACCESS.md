@@ -126,6 +126,12 @@ In channels with `requireMention: true`, any of the following triggers the bot:
 - A structured `@botname` mention (typed via Discord's autocomplete)
 - A reply to one of the bot's recent messages
 - A match against any regex in `mentionPatterns`
+- A mention of a role the bot has
+- `@everyone` or `@here`, unless the channel or server entry sets `--no-everyone`
+
+```
+/discord:access guild set 1120375923481059328 --no-everyone
+```
 
 Example regex setup for a nickname trigger:
 
@@ -161,7 +167,7 @@ Configure outbound behavior with `/discord:access set <key> <value>`.
 | `/discord:access remove 184695080709324800` | Remove from the allowlist. |
 | `/discord:access policy allowlist` | Set `dmPolicy`. Values: `pairing`, `allowlist`, `disabled`. |
 | `/discord:access group add 846209781206941736` | Enable a guild channel. Flags: `--no-mention`, `--allow id1,id2`, `--sticky <minutes>`. |
-| `/discord:access group set 846209781206941736 --sticky 15` | Change only the given settings of an enabled channel. Flags: `--mention`, `--no-mention`, `--allow id1,id2` (`""` clears), `--sticky <minutes>`, `--catch-up-max-messages <n>`, `--catch-up-max-minutes <m>`, `--edits`, `--no-edits`. |
+| `/discord:access group set 846209781206941736 --sticky 15` | Change only the given settings of an enabled channel. Flags: `--mention`, `--no-mention`, `--allow id1,id2` (`""` clears), `--sticky <minutes>`, `--catch-up-max-messages <n>`, `--catch-up-max-minutes <m>`, `--edits`, `--no-edits`, `--everyone`, `--no-everyone`. |
 | `/discord:access group rm 846209781206941736` | Disable a guild channel. |
 | `/discord:access guild add 1120375923481059328` | Enable every channel in a server. Same flags as `group add`; `guild set` / `guild rm` also exist. Per-channel entries win. |
 | `/discord:access set ackReaction 🔨` | Set a config key: `ackReaction`, `replyToMode`, `textChunkLimit`, `chunkMode`, `mentionPatterns`. |
@@ -191,7 +197,9 @@ Configure outbound behavior with `/discord:access set <key> <value>`.
       "edits": false,
       // Earlier messages delivered as context before a mention. 0 = off.
       "catchUpMaxMessages": 0,
-      "catchUpMaxMinutes": 15
+      "catchUpMaxMinutes": 15,
+      // Whether @everyone / @here wake the bot. Default true.
+      "everyoneMentions": true
     }
   },
 

@@ -117,6 +117,8 @@ type GroupPolicy = {
   catchUpMaxMessages?: number
   /** How far back catch-up looks, in minutes. Default 15. */
   catchUpMaxMinutes?: number
+  /** Whether @everyone / @here count as a mention of the bot. Default true. */
+  everyoneMentions?: boolean
 }
 
 type Access = {
@@ -366,7 +368,7 @@ async function gate(msg: Message): Promise<GateResult> {
   if (!requireMention) return { action: 'deliver', access }
 
   const sticky = stickyMinutesOf(policy)
-  if (await isMentioned(msg, access.mentionPatterns)) {
+  if (await isMentioned(msg, access.mentionPatterns, policy.everyoneMentions === false)) {
     // A mention or a reply to the bot (re)opens the sticky window.
     if (sticky > 0) {
       stickyWindows.set(msg.channelId, { until: Date.now() + sticky * 60_000, minutes: sticky })
@@ -382,8 +384,9 @@ async function gate(msg: Message): Promise<GateResult> {
   return { action: 'drop' }
 }
 
-async function isMentioned(msg: Message, extraPatterns?: string[]): Promise<boolean> {
-  if (client.user && msg.mentions.has(client.user)) return true
+// ignoreEveryone: don't count @everyone / @here as a mention of the bot.
+async function isMentioned(msg: Message, extraPatterns?: string[], ignoreEveryone = false): Promise<boolean> {
+  if (client.user && msg.mentions.has(client.user, { ignoreEveryone })) return true
 
   // Reply to one of our messages counts as an implicit mention.
   const refId = msg.reference?.messageId
@@ -948,9 +951,11 @@ async function handleEdit(oldMsg: Message | null, msg: Message): Promise<void> {
   const channelKey = msg.channel.isThread() ? msg.channel.parentId ?? msg.channelId : msg.channelId
   // Skip channels that aren't enabled before doing any mention checks (which
   // can cost a REST call for replies).
-  if (msg.channel.type !== ChannelType.DM && policyFor(access, channelKey, msg.guildId)) {
-    const wasMentioned = oldMsg ? await isMentioned(oldMsg, access.mentionPatterns) : false
-    if (!wasMentioned && (await isMentioned(msg, access.mentionPatterns))) {
+  const policy = msg.channel.type === ChannelType.DM ? undefined : policyFor(access, channelKey, msg.guildId)
+  if (policy) {
+    const ignoreEveryone = policy.everyoneMentions === false
+    const wasMentioned = oldMsg ? await isMentioned(oldMsg, access.mentionPatterns, ignoreEveryone) : false
+    if (!wasMentioned && (await isMentioned(msg, access.mentionPatterns, ignoreEveryone))) {
       pendingEdits.get(msg.channelId)?.delete(msg.id)
       await handleInbound(msg, { edited: 'true' })
       return
