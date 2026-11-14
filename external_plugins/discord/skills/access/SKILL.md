@@ -105,6 +105,7 @@ Parse `$ARGUMENTS` (space-separated). If empty or unrecognized, show status.
    allowFrom: parsedAllowList, stickyMinutes: parsedSticky }`. `parsedSticky` is the
    `--sticky` value as an integer from 0 to 1440 (default 0 = off). Reject other values.
    `--sticky` has no effect with `--no-mention`, since every message already passes.
+   Optional `--edits` sets `edits: true` (deliver message edits; default off).
    Optional `--catch-up-max-messages <n>` sets `catchUpMaxMessages` (integer 0–50, 0 = off) and
    `--catch-up-max-minutes <m>` sets `catchUpMaxMinutes` (integer 1–1440, default 15).
    Omit both keys when not given.
@@ -113,7 +114,7 @@ Parse `$ARGUMENTS` (space-separated). If empty or unrecognized, show status.
 ### `group set <channelId>` (flags: `--mention`, `--no-mention`, `--allow id1,id2`, `--allow ""`, `--sticky <minutes>`, `--catch-up-max-messages <n>`, `--catch-up-max-minutes <m>`)
 
 Partial update of an existing entry. Only the given flags change; everything
-else is kept.
+else is kept. `--edits` / `--no-edits` set `edits` to `true` / `false`.
 
 1. Read. If `groups[<channelId>]` doesn't exist, tell the user to run
    `group add` first and stop.

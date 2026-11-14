@@ -107,6 +107,8 @@ type GroupPolicy = {
    * without a mention. Each mention or reply restarts the window.
    */
   stickyMinutes?: number
+  /** Deliver message edits (see handleEdit). Default false. */
+  edits?: boolean
   /**
    * Catch-up context, in messages. 0 or absent = off. When > 0: a message delivered
    * because of a mention is preceded by up to this many earlier messages from the
@@ -547,6 +549,8 @@ const mcp = new Server(
       '',
       'If the tag has sticky="true", the message did not mention you: it arrived because a recent mention opened a sticky window in that channel. People may be talking to each other, not to you. Reply only when the message is meant for you or clearly continues your conversation; otherwise stay silent.',
       '',
+      'If the tag has an edits attribute, it lists edits made since your last message from that channel to messages you had already received (one per line: who, which message_id, the new text). Take the new text into account; the person may have corrected or changed what they asked. If the tag has edited="true", this message was edited to mention you after it was sent; you may have seen the earlier version.',
+      '',
       'If the tag has a catch_up attribute, it lists earlier messages from that channel (one per line, oldest first) that you had not seen, sent just before this mention. Use them to understand what the mention refers to (e.g. "see above"); they were not addressed to you.',
       '',
       'reply accepts file paths (files: ["/abs/path.png"]) for attachments. Use react to add emoji reactions, and edit_message for interim progress updates. Edits don\'t trigger push notifications — when a long task completes, send a new reply so the user\'s device pings.',
@@ -900,7 +904,84 @@ client.on('messageCreate', msg => {
   handleInbound(msg).catch(e => process.stderr.write(`discord: handleInbound failed: ${e}\n`))
 })
 
-async function handleInbound(msg: Message): Promise<void> {
+// Edits. Discord pushes them; discord.js has the old text for recently seen
+// (cached) messages. Edits of messages the assistant already received are
+// queued and delivered with the next message in that channel (one turn, not
+// one per edit). An edit that adds a mention to an unseen message counts as a
+// new mention. Everything else is ignored.
+type PendingEdit = { user: string; user_id: string; text: string; ts: string }
+const pendingEdits = new Map<string, Map<string, PendingEdit>>()
+const PENDING_EDITS_CAP = 20
+
+// IDs of messages the assistant received (directly or as catch-up).
+const deliveredIds = new Set<string>()
+const DELIVERED_IDS_CAP = 1000
+function noteDelivered(id: string): void {
+  deliveredIds.add(id)
+  if (deliveredIds.size > DELIVERED_IDS_CAP) {
+    const first = deliveredIds.values().next().value
+    if (first) deliveredIds.delete(first)
+  }
+}
+
+client.on('messageUpdate', (oldMsg, newMsg) => {
+  if (newMsg.partial || newMsg.author.bot) return
+  const oldText = oldMsg.partial ? null : oldMsg.content
+  if (oldText === newMsg.content) return // e.g. a link preview loaded
+  void handleEdit(oldMsg.partial ? null : (oldMsg as Message), newMsg as Message).catch(e =>
+    process.stderr.write(`discord: handleEdit failed: ${e}\n`),
+  )
+})
+
+// Edits are opt-in per channel or server entry (edits: true). DMs aren't covered.
+function editsEnabled(msg: Message): boolean {
+  if (msg.channel.type === ChannelType.DM) return false
+  const key = msg.channel.isThread() ? msg.channel.parentId ?? msg.channelId : msg.channelId
+  return policyFor(loadAccess(), key, msg.guildId)?.edits === true
+}
+
+async function handleEdit(oldMsg: Message | null, msg: Message): Promise<void> {
+  if (!editsEnabled(msg)) return
+  // An edit that adds a mention or wake word is someone calling the bot now,
+  // whether or not the message was seen before. Deliver it immediately.
+  const access = loadAccess()
+  const channelKey = msg.channel.isThread() ? msg.channel.parentId ?? msg.channelId : msg.channelId
+  // Skip channels that aren't enabled before doing any mention checks (which
+  // can cost a REST call for replies).
+  if (msg.channel.type !== ChannelType.DM && policyFor(access, channelKey, msg.guildId)) {
+    const wasMentioned = oldMsg ? await isMentioned(oldMsg, access.mentionPatterns) : false
+    if (!wasMentioned && (await isMentioned(msg, access.mentionPatterns))) {
+      pendingEdits.get(msg.channelId)?.delete(msg.id)
+      await handleInbound(msg, { edited: 'true' })
+      return
+    }
+  }
+  if (deliveredIds.has(msg.id)) {
+    const q = pendingEdits.get(msg.channelId) ?? new Map<string, PendingEdit>()
+    q.delete(msg.id) // re-insert so the most recently edited ends up last
+    q.set(msg.id, {
+      user: msg.author.username,
+      user_id: msg.author.id,
+      text: msg.content,
+      ts: (msg.editedAt ?? new Date()).toISOString(),
+    })
+    while (q.size > PENDING_EDITS_CAP) q.delete(q.keys().next().value!)
+    pendingEdits.set(msg.channelId, q)
+  }
+}
+
+function takePendingEdits(chatId: string): Record<string, string> {
+  const q = pendingEdits.get(chatId)
+  if (!q || q.size === 0) return {}
+  pendingEdits.delete(chatId)
+  // Only the new text: the assistant already received the original.
+  const lines = [...q.entries()].map(([id, e]) =>
+    `[${e.ts}] ${e.user} (user_id ${e.user_id}) edited message_id ${id} to: ${e.text.replace(/\s*\n\s*/g, ' ⏎ ')}`,
+  )
+  return { edits_count: String(lines.length), edits: lines.join('\n') }
+}
+
+async function handleInbound(msg: Message, flags: Record<string, string> = {}): Promise<void> {
   const result = await gate(msg)
 
   if (result.action === 'drop') return
@@ -954,9 +1035,10 @@ async function handleInbound(msg: Message): Promise<void> {
 
   // Catch-up rides along in this message's meta, not its content (which any
   // sender could forge), so the assistant gets one event and one turn.
-  const extra: Record<string, string> = result.sticky ? { sticky: 'true' } : {}
+  const extra: Record<string, string> = { ...flags, ...(result.sticky ? { sticky: 'true' } : {}) }
   if (result.catchUp) {
     const prev = await fetchCatchUp(msg, result.catchUp)
+    for (const p of prev) noteDelivered(p.id)
     if (prev.length > 0) {
       extra.catch_up_count = String(prev.length)
       extra.catch_up = prev.map(formatCatchUp).join('\n')
@@ -986,13 +1068,18 @@ function attachmentsOf(msg: Message): string[] {
   return atts
 }
 
-async function deliverToClaude(msg: Message, extra: Record<string, string>): Promise<void> {
+async function deliverToClaude(msg: Message, extraIn: Record<string, string>): Promise<void> {
+  let extra = extraIn
   // Attachment listing goes in meta only — an in-content annotation is
   // forgeable by any allowlisted sender typing that string.
   const atts = attachmentsOf(msg)
   const content = msg.content || (atts.length > 0 ? '(attachment)' : '')
   const prev = lastDeliveredAt.get(msg.channelId) ?? 0
   if (msg.createdTimestamp > prev) lastDeliveredAt.set(msg.channelId, msg.createdTimestamp)
+  noteDelivered(msg.id)
+  // An edit of this very message is already reflected in its content.
+  pendingEdits.get(msg.channelId)?.delete(msg.id)
+  extra = { ...extra, ...takePendingEdits(msg.channelId) }
 
   await mcp.notification({
     method: 'notifications/claude/channel',

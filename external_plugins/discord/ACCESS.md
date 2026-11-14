@@ -106,6 +106,19 @@ People often write something first and call the bot afterwards ("@bot see above"
 - It runs only for mentions, not for sticky-window messages. It also stops at the bot's own last message in that channel, so a restart (which clears the in-memory record of what was delivered) doesn't replay an old conversation.
 - Each catch-up message costs tokens on every mention. Keep `n` small.
 
+### Edits
+
+Off by default. `--edits` turns it on for a channel or server entry (`--no-edits` turns it off again); DMs aren't covered.
+
+```
+/discord:access group set 846209781206941736 --edits
+```
+
+- Editing a message so that it mentions the bot (or matches `mentionPatterns`) counts as a new mention, marked `edited="true"`.
+- Edits of messages the assistant already received are queued and delivered with the next message in that channel, in an `edits` attribute (who, which message, the new text). No extra turn per edit.
+- Other edits are ignored, as are updates that don't change the text (like a link preview loading).
+- Edits are only seen for messages the bot has in memory, roughly the latest 200 per channel since it connected. Edits of older messages are ignored.
+
 ## Mention detection
 
 In channels with `requireMention: true`, any of the following triggers the bot:
@@ -148,7 +161,7 @@ Configure outbound behavior with `/discord:access set <key> <value>`.
 | `/discord:access remove 184695080709324800` | Remove from the allowlist. |
 | `/discord:access policy allowlist` | Set `dmPolicy`. Values: `pairing`, `allowlist`, `disabled`. |
 | `/discord:access group add 846209781206941736` | Enable a guild channel. Flags: `--no-mention`, `--allow id1,id2`, `--sticky <minutes>`. |
-| `/discord:access group set 846209781206941736 --sticky 15` | Change only the given settings of an enabled channel. Flags: `--mention`, `--no-mention`, `--allow id1,id2` (`""` clears), `--sticky <minutes>`, `--catch-up-max-messages <n>`, `--catch-up-max-minutes <m>`. |
+| `/discord:access group set 846209781206941736 --sticky 15` | Change only the given settings of an enabled channel. Flags: `--mention`, `--no-mention`, `--allow id1,id2` (`""` clears), `--sticky <minutes>`, `--catch-up-max-messages <n>`, `--catch-up-max-minutes <m>`, `--edits`, `--no-edits`. |
 | `/discord:access group rm 846209781206941736` | Disable a guild channel. |
 | `/discord:access guild add 1120375923481059328` | Enable every channel in a server. Same flags as `group add`; `guild set` / `guild rm` also exist. Per-channel entries win. |
 | `/discord:access set ackReaction 🔨` | Set a config key: `ackReaction`, `replyToMode`, `textChunkLimit`, `chunkMode`, `mentionPatterns`. |
@@ -174,6 +187,8 @@ Configure outbound behavior with `/discord:access set <key> <value>`.
       "allowFrom": [],
       // Minutes the bot keeps listening after a mention. 0 = off.
       "stickyMinutes": 0,
+      // Deliver message edits (see "Edits"). Default false.
+      "edits": false,
       // Earlier messages delivered as context before a mention. 0 = off.
       "catchUpMaxMessages": 0,
       "catchUpMaxMinutes": 15
