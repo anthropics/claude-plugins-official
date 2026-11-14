@@ -107,6 +107,14 @@ type GroupPolicy = {
    * without a mention. Each mention or reply restarts the window.
    */
   stickyMinutes?: number
+  /**
+   * Catch-up context, in messages. 0 or absent = off. When > 0: a message delivered
+   * because of a mention is preceded by up to this many earlier messages from the
+   * same channel or thread, so the assistant sees what the mention refers to.
+   */
+  catchUpMaxMessages?: number
+  /** How far back catch-up looks, in minutes. Default 15. */
+  catchUpMaxMinutes?: number
 }
 
 type Access = {
@@ -227,7 +235,7 @@ function pruneExpired(a: Access): boolean {
 
 type GateResult =
   /** sticky: delivered only because a sticky window was open (no mention). */
-  | { action: 'deliver'; access: Access; sticky?: boolean }
+  | { action: 'deliver'; access: Access; sticky?: boolean; catchUp?: CatchUp }
   | { action: 'drop' }
   | { action: 'pair'; code: string; isResend: boolean }
 
@@ -267,6 +275,28 @@ function extendStickyWindow(chatId: string): void {
 function stickyMinutesOf(policy: GroupPolicy): number {
   const n = Math.floor(Number(policy.stickyMinutes ?? 0))
   return Number.isFinite(n) ? Math.min(Math.max(n, 0), STICKY_MAX_MINUTES) : 0
+}
+
+// Catch-up context: earlier messages delivered ahead of a mention. Only the
+// gate's own sender filter applies (allowFrom), so catch-up can't surface
+// anyone the gate would have dropped.
+type CatchUp = { messages: number; minutes: number; allowFrom: string[] }
+const CATCH_UP_MAX_MESSAGES = 50
+const CATCH_UP_DEFAULT_MINUTES = 15
+
+// Newest delivered message per channel or thread, so catch-up skips what the
+// assistant already saw. In-memory: after a restart, catch-up may repeat a few.
+const lastDeliveredAt = new Map<string, number>()
+
+function catchUpOf(policy: GroupPolicy): CatchUp | undefined {
+  const n = Math.floor(Number(policy.catchUpMaxMessages ?? 0))
+  if (!Number.isFinite(n) || n <= 0) return undefined
+  const m = Math.floor(Number(policy.catchUpMaxMinutes ?? CATCH_UP_DEFAULT_MINUTES))
+  return {
+    messages: Math.min(n, CATCH_UP_MAX_MESSAGES),
+    minutes: Number.isFinite(m) ? Math.min(Math.max(m, 1), STICKY_MAX_MINUTES) : CATCH_UP_DEFAULT_MINUTES,
+    allowFrom: policy.allowFrom ?? [],
+  }
 }
 
 // channelId is the parent channel for threads. Own-property checks, since the
@@ -339,7 +369,7 @@ async function gate(msg: Message): Promise<GateResult> {
     if (sticky > 0) {
       stickyWindows.set(msg.channelId, { until: Date.now() + sticky * 60_000, minutes: sticky })
     }
-    return { action: 'deliver', access }
+    return { action: 'deliver', access, catchUp: catchUpOf(policy) }
   }
   // No mention: deliver only while a sticky window is open here.
   const w = stickyWindows.get(msg.channelId)
@@ -516,6 +546,8 @@ const mcp = new Server(
       'Messages from Discord arrive as <channel source="discord" chat_id="..." message_id="..." user="..." ts="...">. If the tag has attachment_count, the attachments attribute lists name/type/size — call download_attachment(chat_id, message_id) to fetch them. Reply with the reply tool — pass chat_id back. Use reply_to (set to a message_id) only when replying to an earlier message; the latest message doesn\'t need a quote-reply, omit reply_to for normal responses.',
       '',
       'If the tag has sticky="true", the message did not mention you: it arrived because a recent mention opened a sticky window in that channel. People may be talking to each other, not to you. Reply only when the message is meant for you or clearly continues your conversation; otherwise stay silent.',
+      '',
+      'If the tag has a catch_up attribute, it lists earlier messages from that channel (one per line, oldest first) that you had not seen, sent just before this mention. Use them to understand what the mention refers to (e.g. "see above"); they were not addressed to you.',
       '',
       'reply accepts file paths (files: ["/abs/path.png"]) for attachments. Use react to add emoji reactions, and edit_message for interim progress updates. Edits don\'t trigger push notifications — when a long task completes, send a new reply so the user\'s device pings.',
       '',
@@ -920,36 +952,90 @@ async function handleInbound(msg: Message): Promise<void> {
     void msg.react(access.ackReaction).catch(() => {})
   }
 
-  // Attachments are listed (name/type/size) but not downloaded — the model
-  // calls download_attachment when it wants them. Keeps the notification
-  // fast and avoids filling inbox/ with images nobody looked at.
+  // Catch-up rides along in this message's meta, not its content (which any
+  // sender could forge), so the assistant gets one event and one turn.
+  const extra: Record<string, string> = result.sticky ? { sticky: 'true' } : {}
+  if (result.catchUp) {
+    const prev = await fetchCatchUp(msg, result.catchUp)
+    if (prev.length > 0) {
+      extra.catch_up_count = String(prev.length)
+      extra.catch_up = prev.map(formatCatchUp).join('\n')
+    }
+  }
+  await deliverToClaude(msg, extra)
+}
+
+// One line per earlier message: time, sender, id, text. The id lets the
+// assistant call download_attachment or quote-reply.
+function formatCatchUp(m: Message): string {
+  const atts = attachmentsOf(m)
+  const text = (m.content || '').replace(/\s*\n\s*/g, ' ⏎ ')
+  const files = atts.length > 0 ? ` [attachments: ${atts.join('; ')}]` : ''
+  return `[${m.createdAt.toISOString()}] ${m.author.username} (user_id ${m.author.id}, message_id ${m.id}): ${text}${files}`
+}
+
+// Attachments are listed (name/type/size) but not downloaded — the model
+// calls download_attachment when it wants them. Keeps the notification
+// fast and avoids filling inbox/ with images nobody looked at.
+function attachmentsOf(msg: Message): string[] {
   const atts: string[] = []
   for (const att of msg.attachments.values()) {
     const kb = (att.size / 1024).toFixed(0)
     atts.push(`${safeAttName(att)} (${att.contentType ?? 'unknown'}, ${kb}KB)`)
   }
+  return atts
+}
 
+async function deliverToClaude(msg: Message, extra: Record<string, string>): Promise<void> {
   // Attachment listing goes in meta only — an in-content annotation is
   // forgeable by any allowlisted sender typing that string.
+  const atts = attachmentsOf(msg)
   const content = msg.content || (atts.length > 0 ? '(attachment)' : '')
+  const prev = lastDeliveredAt.get(msg.channelId) ?? 0
+  if (msg.createdTimestamp > prev) lastDeliveredAt.set(msg.channelId, msg.createdTimestamp)
 
-  mcp.notification({
+  await mcp.notification({
     method: 'notifications/claude/channel',
     params: {
       content,
       meta: {
-        chat_id,
+        chat_id: msg.channelId,
         message_id: msg.id,
         user: msg.author.username,
         user_id: msg.author.id,
         ts: msg.createdAt.toISOString(),
-        ...(result.sticky ? { sticky: 'true' } : {}),
+        ...extra,
         ...(atts.length > 0 ? { attachment_count: String(atts.length), attachments: atts.join('; ') } : {}),
       },
     },
   }).catch(err => {
     process.stderr.write(`discord channel: failed to deliver inbound to Claude: ${err}\n`)
   })
+}
+
+// Messages just before `msg` in the same channel or thread, oldest first:
+// within the time limit, newer than anything already delivered there, from
+// people (not bots), and from allowed senders when the channel restricts them.
+async function fetchCatchUp(msg: Message, c: CatchUp): Promise<Message[]> {
+  const since = Math.max(Date.now() - c.minutes * 60_000, lastDeliveredAt.get(msg.channelId) ?? 0)
+  try {
+    const fetched = await msg.channel.messages.fetch({ before: msg.id, limit: c.messages })
+    // Stop at our own last message: what came before it was part of a
+    // conversation we were in. Keeps catch-up sane after a restart, when
+    // lastDeliveredAt is empty.
+    const ownLast = [...fetched.values()]
+      .filter(m => m.author.id === client.user?.id)
+      .reduce((t, m) => Math.max(t, m.createdTimestamp), 0)
+    return [...fetched.values()]
+      .filter(m => m.createdTimestamp > since && m.createdTimestamp > ownLast)
+      .filter(m => !m.author.bot && !m.system)
+      .filter(m => c.allowFrom.length === 0 || c.allowFrom.includes(m.author.id))
+      .filter(m => !PERMISSION_REPLY_RE.test(m.content))
+      .sort((a, b) => a.createdTimestamp - b.createdTimestamp)
+  } catch (err) {
+    process.stderr.write(`discord channel: catch-up fetch failed: ${err}\n`)
+    return []
+  }
 }
 
 client.once('ready', c => {

@@ -98,16 +98,19 @@ Parse `$ARGUMENTS` (space-separated). If empty or unrecognized, show status.
 1. Validate `<mode>` is one of `pairing`, `allowlist`, `disabled`.
 2. Read (create default if missing), set `dmPolicy`, write.
 
-### `group add <channelId>` (optional: `--no-mention`, `--allow id1,id2`, `--sticky <minutes>`)
+### `group add <channelId>` (optional: `--no-mention`, `--allow id1,id2`, `--sticky <minutes>`, `--catch-up-max-messages <n>`, `--catch-up-max-minutes <m>`)
 
 1. Read (create default if missing).
 2. Set `groups[<channelId>] = { requireMention: !hasFlag("--no-mention"),
    allowFrom: parsedAllowList, stickyMinutes: parsedSticky }`. `parsedSticky` is the
    `--sticky` value as an integer from 0 to 1440 (default 0 = off). Reject other values.
    `--sticky` has no effect with `--no-mention`, since every message already passes.
+   Optional `--catch-up-max-messages <n>` sets `catchUpMaxMessages` (integer 0–50, 0 = off) and
+   `--catch-up-max-minutes <m>` sets `catchUpMaxMinutes` (integer 1–1440, default 15).
+   Omit both keys when not given.
 3. Write.
 
-### `group set <channelId>` (flags: `--mention`, `--no-mention`, `--allow id1,id2`, `--allow ""`, `--sticky <minutes>`)
+### `group set <channelId>` (flags: `--mention`, `--no-mention`, `--allow id1,id2`, `--allow ""`, `--sticky <minutes>`, `--catch-up-max-messages <n>`, `--catch-up-max-minutes <m>`)
 
 Partial update of an existing entry. Only the given flags change; everything
 else is kept.
@@ -116,8 +119,8 @@ else is kept.
    `group add` first and stop.
 2. `--mention` sets `requireMention: true`, `--no-mention` sets it to `false`
    (reject both together). `--allow id1,id2` replaces `allowFrom`; `--allow ""`
-   clears it (any member). `--sticky <minutes>` sets `stickyMinutes`, same
-   validation as `group add`.
+   clears it (any member). `--sticky`, `--catch-up-max-messages` and `--catch-up-max-minutes`
+   set their keys with the same validation as `group add`.
 3. If no flags were given, show the entry and stop. Otherwise write and show
    the new entry.
 

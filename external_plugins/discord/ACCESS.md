@@ -93,6 +93,19 @@ Notes:
 - Every message in an open window starts an assistant turn, so a busy channel uses more tokens. Keep the minutes low, or use `--allow` to limit who can trigger it.
 - `--sticky` does nothing with `--no-mention`, since every message already passes.
 
+### Catch-up context
+
+People often write something first and call the bot afterwards ("@bot see above"). `--catch-up-max-messages <n>` (0 to 50, default 0 = off) delivers up to `n` earlier messages from the same channel or thread just before a message that mentions the bot, so the assistant sees what the mention refers to. `--catch-up-max-minutes <m>` (default 15) limits how far back it looks.
+
+```
+/discord:access group set 846209781206941736 --catch-up-max-messages 10 --catch-up-max-minutes 15
+```
+
+- Catch-up messages ride along with the mention in one event, in its `catch_up` attribute (one line per message with time, sender and message ID), so the assistant handles them in a single turn. The attribute is set by the plugin, so nobody can fake catch-up context by typing it into a message.
+- Only messages from people the channel allows (`--allow`) are included; bots and system messages are skipped. Messages the assistant already received (mentions, sticky window) aren't repeated.
+- It runs only for mentions, not for sticky-window messages. It also stops at the bot's own last message in that channel, so a restart (which clears the in-memory record of what was delivered) doesn't replay an old conversation.
+- Each catch-up message costs tokens on every mention. Keep `n` small.
+
 ## Mention detection
 
 In channels with `requireMention: true`, any of the following triggers the bot:
@@ -135,7 +148,7 @@ Configure outbound behavior with `/discord:access set <key> <value>`.
 | `/discord:access remove 184695080709324800` | Remove from the allowlist. |
 | `/discord:access policy allowlist` | Set `dmPolicy`. Values: `pairing`, `allowlist`, `disabled`. |
 | `/discord:access group add 846209781206941736` | Enable a guild channel. Flags: `--no-mention`, `--allow id1,id2`, `--sticky <minutes>`. |
-| `/discord:access group set 846209781206941736 --sticky 15` | Change only the given settings of an enabled channel. Flags: `--mention`, `--no-mention`, `--allow id1,id2` (`""` clears), `--sticky <minutes>`. |
+| `/discord:access group set 846209781206941736 --sticky 15` | Change only the given settings of an enabled channel. Flags: `--mention`, `--no-mention`, `--allow id1,id2` (`""` clears), `--sticky <minutes>`, `--catch-up-max-messages <n>`, `--catch-up-max-minutes <m>`. |
 | `/discord:access group rm 846209781206941736` | Disable a guild channel. |
 | `/discord:access guild add 1120375923481059328` | Enable every channel in a server. Same flags as `group add`; `guild set` / `guild rm` also exist. Per-channel entries win. |
 | `/discord:access set ackReaction 🔨` | Set a config key: `ackReaction`, `replyToMode`, `textChunkLimit`, `chunkMode`, `mentionPatterns`. |
@@ -160,7 +173,10 @@ Configure outbound behavior with `/discord:access set <key> <value>`.
       // Restrict triggers to these senders. Empty = any member (subject to requireMention).
       "allowFrom": [],
       // Minutes the bot keeps listening after a mention. 0 = off.
-      "stickyMinutes": 0
+      "stickyMinutes": 0,
+      // Earlier messages delivered as context before a mention. 0 = off.
+      "catchUpMaxMessages": 0,
+      "catchUpMaxMinutes": 15
     }
   },
 
