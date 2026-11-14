@@ -35,7 +35,10 @@ Arguments passed: `$ARGUMENTS`
   "dmPolicy": "pairing",
   "allowFrom": ["<senderId>", ...],
   "groups": {
-    "<channelId>": { "requireMention": true, "allowFrom": [] }
+    "<channelId>": { "requireMention": true, "allowFrom": [], "stickyMinutes": 0 }
+  },
+  "guilds": {
+    "<guildId>": { "requireMention": true, "allowFrom": [], "stickyMinutes": 0 }
   },
   "pending": {
     "<6-char-code>": {
@@ -59,7 +62,7 @@ Parse `$ARGUMENTS` (space-separated). If empty or unrecognized, show status.
 
 1. Read `~/.claude/channels/discord/access.json` (handle missing file).
 2. Show: dmPolicy, allowFrom count and list, pending count with codes +
-   sender IDs + age, groups count.
+   sender IDs + age, groups count, guilds count.
 
 ### `pair <code>`
 
@@ -104,9 +107,39 @@ Parse `$ARGUMENTS` (space-separated). If empty or unrecognized, show status.
    `--sticky` has no effect with `--no-mention`, since every message already passes.
 3. Write.
 
+### `group set <channelId>` (flags: `--mention`, `--no-mention`, `--allow id1,id2`, `--allow ""`, `--sticky <minutes>`)
+
+Partial update of an existing entry. Only the given flags change; everything
+else is kept.
+
+1. Read. If `groups[<channelId>]` doesn't exist, tell the user to run
+   `group add` first and stop.
+2. `--mention` sets `requireMention: true`, `--no-mention` sets it to `false`
+   (reject both together). `--allow id1,id2` replaces `allowFrom`; `--allow ""`
+   clears it (any member). `--sticky <minutes>` sets `stickyMinutes`, same
+   validation as `group add`.
+3. If no flags were given, show the entry and stop. Otherwise write and show
+   the new entry.
+
 ### `group rm <channelId>`
 
 1. Read, `delete groups[<channelId>]`, write.
+
+### `guild add <guildId>` / `guild set <guildId>` / `guild rm <guildId>`
+
+Server-wide opt-in: the policy applies to every channel and thread in that
+server that has no `groups` entry. A `groups` entry always takes precedence,
+so per-channel overrides still work.
+
+- `guild add` takes the same flags as `group add` and writes
+  `guilds[<guildId>]` (create `guilds` if missing).
+- `guild set` takes the same flags as `group set` and updates `guilds[<guildId>]`.
+- `guild rm` deletes `guilds[<guildId>]`.
+
+The ID is the **server** (guild) snowflake, not a channel ID. A server-wide
+opt-in also covers channels created later, so warn the user when adding one
+without `--allow`: any member of the server can then reach the assistant in
+any channel the bot can see.
 
 ### `set <key> <value>`
 

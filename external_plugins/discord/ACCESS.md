@@ -14,7 +14,7 @@ All state lives in `~/.claude/channels/discord/access.json`. The `/discord:acces
 | --- | --- |
 | Default policy | `pairing` |
 | Sender ID | User snowflake (numeric, e.g. `184695080709324800`) |
-| Group key | Channel snowflake — not guild ID |
+| Group key | Channel snowflake — not guild ID (server-wide entries go in `guilds`) |
 | Config file | `~/.claude/channels/discord/access.json` |
 
 ## DM policies
@@ -44,7 +44,7 @@ Pairing captures the ID automatically. To add someone manually, enable **User Se
 
 ## Guild channels
 
-Guild channels are off by default. Opt each one in individually, keyed on the **channel** snowflake (not the guild). Threads inherit their parent channel's opt-in; no separate entry needed. Find channel IDs the same way as user IDs: Developer Mode, right-click the channel, Copy Channel ID.
+Guild channels are off by default. Opt each one in individually, keyed on the **channel** snowflake (not the guild), or a whole server at once (see [Whole server](#whole-server)). Threads inherit their parent channel's opt-in; no separate entry needed. Find channel IDs the same way as user IDs: Developer Mode, right-click the channel, Copy Channel ID.
 
 ```
 /discord:access group add 846209781206941736
@@ -57,6 +57,26 @@ With the default `requireMention: true`, the bot responds only when @mentioned o
 /discord:access group add 846209781206941736 --allow 184695080709324800,221773638772129792
 /discord:access group rm 846209781206941736
 ```
+
+To change an existing channel without retyping its settings, use `group set`. Only the flags you pass change. `--allow ""` clears the list, `--mention` turns mention-only back on.
+
+```
+/discord:access group set 846209781206941736 --sticky 15
+/discord:access group set 846209781206941736 --allow ""
+```
+
+### Whole server
+
+`guild add <guildId>` opts in every channel and thread of a server at once, including channels created later. It takes the same flags as `group add` (`--no-mention`, `--allow`, `--sticky`), and `guild set` / `guild rm` work like their `group` versions. Copy the **server** ID with Developer Mode by right-clicking the server icon.
+
+A `groups` entry always wins over the server-wide one, so you can give one channel different settings. The bot still only sees channels its Discord role can read, so Discord permissions are the way to keep it out of a channel entirely.
+
+```
+/discord:access guild add 1120375923481059328 --allow 184695080709324800 --sticky 30
+/discord:access guild rm 1120375923481059328
+```
+
+Without `--allow`, every member of the server can reach the assistant in every channel the bot can read. Prefer `--allow` on servers you don't fully control.
 
 ### Sticky mention window
 
@@ -115,7 +135,9 @@ Configure outbound behavior with `/discord:access set <key> <value>`.
 | `/discord:access remove 184695080709324800` | Remove from the allowlist. |
 | `/discord:access policy allowlist` | Set `dmPolicy`. Values: `pairing`, `allowlist`, `disabled`. |
 | `/discord:access group add 846209781206941736` | Enable a guild channel. Flags: `--no-mention`, `--allow id1,id2`, `--sticky <minutes>`. |
+| `/discord:access group set 846209781206941736 --sticky 15` | Change only the given settings of an enabled channel. Flags: `--mention`, `--no-mention`, `--allow id1,id2` (`""` clears), `--sticky <minutes>`. |
 | `/discord:access group rm 846209781206941736` | Disable a guild channel. |
+| `/discord:access guild add 1120375923481059328` | Enable every channel in a server. Same flags as `group add`; `guild set` / `guild rm` also exist. Per-channel entries win. |
 | `/discord:access set ackReaction 🔨` | Set a config key: `ackReaction`, `replyToMode`, `textChunkLimit`, `chunkMode`, `mentionPatterns`. |
 
 ## Config file
@@ -136,9 +158,15 @@ Configure outbound behavior with `/discord:access set <key> <value>`.
       // true: respond only to @mentions and replies.
       "requireMention": true,
       // Restrict triggers to these senders. Empty = any member (subject to requireMention).
-      "allowFrom": []
+      "allowFrom": [],
+      // Minutes the bot keeps listening after a mention. 0 = off.
+      "stickyMinutes": 0
     }
   },
+
+  // Server-wide opt-in, keyed on guild ID. Same fields as a groups entry.
+  // Covers every channel without its own groups entry.
+  "guilds": {},
 
   // Case-insensitive regexes that count as a mention.
   "mentionPatterns": ["^hey claude\\b"],

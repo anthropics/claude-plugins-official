@@ -85,7 +85,7 @@ Pairing is for capturing IDs. Once you're in, switch to `allowlist` so strangers
 
 See **[ACCESS.md](./ACCESS.md)** for DM policies, guild channels, mention detection, delivery config, skill commands, and the `access.json` schema.
 
-Quick reference: IDs are Discord **snowflakes** (numeric — enable Developer Mode, right-click → Copy ID). Default policy is `pairing`. Guild channels are opt-in per channel ID.
+Quick reference: IDs are Discord **snowflakes** (numeric — enable Developer Mode, right-click → Copy ID). Default policy is `pairing`. Guild channels are opt-in per channel ID, or per server with `guild add`.
 
 ## Tools exposed to the assistant
 

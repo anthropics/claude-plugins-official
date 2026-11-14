@@ -114,6 +114,11 @@ type Access = {
   allowFrom: string[]
   /** Keyed on channel ID (snowflake), not guild ID. One entry per guild channel. */
   groups: Record<string, GroupPolicy>
+  /**
+   * Server-wide opt-in, keyed on guild ID. Applies to every channel (and thread)
+   * in that server that has no entry in `groups`. A `groups` entry always wins.
+   */
+  guilds?: Record<string, GroupPolicy>
   pending: Record<string, PendingEntry>
   mentionPatterns?: string[]
   // delivery/UX config — optional, defaults live in the reply handler
@@ -163,6 +168,7 @@ function readAccessFile(): Access {
       dmPolicy: parsed.dmPolicy ?? 'pairing',
       allowFrom: parsed.allowFrom ?? [],
       groups: parsed.groups ?? {},
+      guilds: parsed.guilds,
       pending: parsed.pending ?? {},
       mentionPatterns: parsed.mentionPatterns,
       ackReaction: parsed.ackReaction,
@@ -263,6 +269,14 @@ function stickyMinutesOf(policy: GroupPolicy): number {
   return Number.isFinite(n) ? Math.min(Math.max(n, 0), STICKY_MAX_MINUTES) : 0
 }
 
+// channelId is the parent channel for threads. Own-property checks, since the
+// IDs come from Discord and the maps from a hand-editable file.
+function policyFor(access: Access, channelId: string, guildId: string | null): GroupPolicy | undefined {
+  if (Object.hasOwn(access.groups, channelId)) return access.groups[channelId]
+  if (guildId && access.guilds && Object.hasOwn(access.guilds, guildId)) return access.guilds[guildId]
+  return undefined
+}
+
 async function gate(msg: Message): Promise<GateResult> {
   const access = loadAccess()
   const pruned = pruneExpired(access)
@@ -303,14 +317,14 @@ async function gate(msg: Message): Promise<GateResult> {
     return { action: 'pair', code, isResend: false }
   }
 
-  // We key on channel ID (not guild ID) — simpler, and lets the user
-  // opt in per-channel rather than per-server. Threads inherit their
-  // parent channel's opt-in; the reply still goes to msg.channelId
-  // (the thread), this is only the gate lookup.
+  // Per-channel entries (groups) win; a server-wide entry (guilds) covers
+  // every other channel in that server. Threads inherit their parent
+  // channel's opt-in; the reply still goes to msg.channelId (the thread),
+  // this is only the gate lookup.
   const channelId = msg.channel.isThread()
     ? msg.channel.parentId ?? msg.channelId
     : msg.channelId
-  const policy = access.groups[channelId]
+  const policy = policyFor(access, channelId, msg.guildId)
   if (!policy) return { action: 'drop' }
   const groupAllowFrom = policy.allowFrom ?? []
   const requireMention = policy.requireMention ?? true
@@ -453,7 +467,8 @@ async function fetchAllowedChannel(id: string) {
     if (userId && access.allowFrom.includes(userId)) return ch
   } else {
     const key = ch.isThread() ? ch.parentId ?? ch.id : ch.id
-    if (key in access.groups) return ch
+    const guildId = 'guildId' in ch ? ch.guildId : null
+    if (policyFor(access, key, guildId)) return ch
   }
   throw new Error(`channel ${id} is not allowlisted — add via /discord:access`)
 }
