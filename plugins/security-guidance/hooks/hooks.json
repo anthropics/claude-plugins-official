@@ -7,6 +7,7 @@
           {
             "type": "command",
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/sg-python.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/ensure_agent_sdk.py\"",
+            "commandWindows": "$git = (Get-Command git.exe -ErrorAction Stop).Source; $root = Split-Path (Split-Path (Split-Path (& $git --exec-path))); & (Join-Path $root \"bin/bash.exe\") \"$env:CLAUDE_PLUGIN_ROOT/hooks/sg-python.sh\" \"$env:CLAUDE_PLUGIN_ROOT/hooks/ensure_agent_sdk.py\"",
             "timeout": 180
           }
         ]
@@ -17,7 +18,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/sg-python.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/security_reminder_hook.py\""
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/sg-python.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/security_reminder_hook.py\"",
+            "commandWindows": "$git = (Get-Command git.exe -ErrorAction Stop).Source; $root = Split-Path (Split-Path (Split-Path (& $git --exec-path))); & (Join-Path $root \"bin/bash.exe\") \"$env:CLAUDE_PLUGIN_ROOT/hooks/sg-python.sh\" \"$env:CLAUDE_PLUGIN_ROOT/hooks/security_reminder_hook.py\""
           }
         ]
       }
@@ -27,7 +29,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/sg-python.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/security_reminder_hook.py\""
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/sg-python.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/security_reminder_hook.py\"",
+            "commandWindows": "$git = (Get-Command git.exe -ErrorAction Stop).Source; $root = Split-Path (Split-Path (Split-Path (& $git --exec-path))); & (Join-Path $root \"bin/bash.exe\") \"$env:CLAUDE_PLUGIN_ROOT/hooks/sg-python.sh\" \"$env:CLAUDE_PLUGIN_ROOT/hooks/security_reminder_hook.py\""
           }
         ],
         "matcher": "Edit|Write|MultiEdit|NotebookEdit"
@@ -37,6 +40,7 @@
           {
             "type": "command",
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/sg-python.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/security_reminder_hook.py\"",
+            "commandWindows": "$git = (Get-Command git.exe -ErrorAction Stop).Source; $root = Split-Path (Split-Path (Split-Path (& $git --exec-path))); & (Join-Path $root \"bin/bash.exe\") \"$env:CLAUDE_PLUGIN_ROOT/hooks/sg-python.sh\" \"$env:CLAUDE_PLUGIN_ROOT/hooks/security_reminder_hook.py\"",
             "if": "Bash(git*commit*)",
             "asyncRewake": true,
             "rewakeMessage": "Background security review of committed or pushed changes — address or acknowledge the findings below, then continue with the user's original request or continue waiting for their reply:",
@@ -45,6 +49,7 @@
           {
             "type": "command",
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/sg-python.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/security_reminder_hook.py\"",
+            "commandWindows": "$git = (Get-Command git.exe -ErrorAction Stop).Source; $root = Split-Path (Split-Path (Split-Path (& $git --exec-path))); & (Join-Path $root \"bin/bash.exe\") \"$env:CLAUDE_PLUGIN_ROOT/hooks/sg-python.sh\" \"$env:CLAUDE_PLUGIN_ROOT/hooks/security_reminder_hook.py\"",
             "if": "Bash(git*push*)",
             "asyncRewake": true,
             "rewakeMessage": "Background security review of committed or pushed changes — address or acknowledge the findings below, then continue with the user's original request or continue waiting for their reply:",
@@ -53,6 +58,7 @@
           {
             "type": "command",
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/sg-python.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/security_reminder_hook.py\"",
+            "commandWindows": "$git = (Get-Command git.exe -ErrorAction Stop).Source; $root = Split-Path (Split-Path (Split-Path (& $git --exec-path))); & (Join-Path $root \"bin/bash.exe\") \"$env:CLAUDE_PLUGIN_ROOT/hooks/sg-python.sh\" \"$env:CLAUDE_PLUGIN_ROOT/hooks/security_reminder_hook.py\"",
             "if": "Bash(gt *)",
             "asyncRewake": true,
             "rewakeMessage": "Background security review of committed or pushed changes — address or acknowledge the findings below, then continue with the user's original request or continue waiting for their reply:",
@@ -66,6 +72,7 @@
           {
             "type": "command",
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/sg-python.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/security_reminder_hook.py\"",
+            "commandWindows": "$git = (Get-Command git.exe -ErrorAction Stop).Source; $root = Split-Path (Split-Path (Split-Path (& $git --exec-path))); & (Join-Path $root \"bin/bash.exe\") \"$env:CLAUDE_PLUGIN_ROOT/hooks/sg-python.sh\" \"$env:CLAUDE_PLUGIN_ROOT/hooks/security_reminder_hook.py\"",
             "if": "PowerShell(git*commit*)",
             "asyncRewake": true,
             "rewakeMessage": "Background security review of committed or pushed changes — address or acknowledge the findings below, then continue with the user's original request or continue waiting for their reply:",
@@ -74,6 +81,7 @@
           {
             "type": "command",
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/sg-python.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/security_reminder_hook.py\"",
+            "commandWindows": "$git = (Get-Command git.exe -ErrorAction Stop).Source; $root = Split-Path (Split-Path (Split-Path (& $git --exec-path))); & (Join-Path $root \"bin/bash.exe\") \"$env:CLAUDE_PLUGIN_ROOT/hooks/sg-python.sh\" \"$env:CLAUDE_PLUGIN_ROOT/hooks/security_reminder_hook.py\"",
             "if": "PowerShell(git*push*)",
             "asyncRewake": true,
             "rewakeMessage": "Background security review of committed or pushed changes — address or acknowledge the findings below, then continue with the user's original request or continue waiting for their reply:",
@@ -89,6 +97,7 @@
           {
             "type": "command",
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/sg-python.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/security_reminder_hook.py\"",
+            "commandWindows": "$git = (Get-Command git.exe -ErrorAction Stop).Source; $root = Split-Path (Split-Path (Split-Path (& $git --exec-path))); & (Join-Path $root \"bin/bash.exe\") \"$env:CLAUDE_PLUGIN_ROOT/hooks/sg-python.sh\" \"$env:CLAUDE_PLUGIN_ROOT/hooks/security_reminder_hook.py\"",
             "asyncRewake": true,
             "rewakeMessage": "Background security review feedback — address or acknowledge the findings below, then continue with the user's original request or continue waiting for their reply. This is supplementary, not a replacement for your previous response:",
             "rewakeSummary": "Background security review found issues"
