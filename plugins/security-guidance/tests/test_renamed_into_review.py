@@ -137,7 +137,7 @@ def test_rename_added_by_an_amend(tmp_path, hook_env, stub_api):
     ("a.py", "pkg/b.py"), ("a.py", "notes.txt"), ("notes.txt", "other.txt"),
     ("a.py", "vendor/a.py"), ("vendor/a.py", "a.py"), ("server.pem", "server"),
     ("prod.env", "prod.sh"), (".htpasswd", "htpasswd"), ("dump.csv", "dump.sql"),
-    ("credentials.txt", "credentials.sh"), ("deploy_rsa.txt", "deploy.sh"),
+    ("credentials.txt", "credentials.sh"), ("notes.txt", "credentials.sh"), ("deploy_rsa.txt", "deploy.sh"),
     ("passwords.md", "list.py"), ("notes.txt", "notes"), ("data.txt", "data.json"), ("notes.txt", "vendor/a.py"),
 ])
 def test_other_renames_are_not_sent(tmp_path, hook_env, stub_api, old, new):
@@ -146,6 +146,81 @@ def test_other_renames_are_not_sent(tmp_path, hook_env, stub_api, old, new):
     m = _commit(repo, hook_env)
     assert m["skip_reason"] == 30 and "renamed_in" not in m
     assert _sent(stub_api) == ""
+
+
+@pytest.mark.parametrize("name", """
+    api_keys.txt tokens.txt apiKeysProd.md KEYS.md AWSkeys.txt GCPkey.md DBpass.txt stripekey.txt
+    API_TOKEN.rst github-token-old.txt db_password.txt db_passwd.md my.creds.txt db-cred.txt
+    root_pwd.txt site_logins.txt prod.env.txt env.production.txt server.pem.txt id_ed25519.md
+    passphrase.md github-recovery-codes.txt gcp-service-account.txt service_account.md pgpass.txt
+    npmrc.txt netrc.txt my-secret.txt app_credential.md
+    secrets/prod.txt Credentials/prod.md prod-creds/a.txt api-keys/s.txt tokens/a/b.md .secrets/a.txt
+    vault/a.txt passwd/a.txt .ssh/prod.txt a/.aws/prod.txt a/.gnupg/n.md .kube/n.txt a/Passwords/b.txt
+    api_keys passwords secrets.yaml .env .env.py server.pem server.key deploy_rsa
+""".split())
+def test_name_of_a_secret(name):
+    assert gitutil._is_secret_text(name)
+
+
+@pytest.mark.parametrize("name", """
+    notes.txt compassion.md environment.md keyboard.rst login.md tokenizer.md jwt.md author.md
+    aws/setup.md ssh/setup.md password-manager/notes.txt secret-service/notes.txt keyboards/a.txt
+    tokenizer/notes.txt
+""".split())
+def test_name_of_ordinary_text(name):
+    assert not gitutil._is_secret_text(name)
+    assert gitutil._is_text_turned_code(name, "config.py")
+
+
+@pytest.mark.parametrize("name", [
+    "tokens.py", "api_keys.py", "token_store.js", "vendor/tokens.go", "secrets/load.py",
+    "vault/Dockerfile", "secrets/Makefile"])
+def test_code_is_not_a_list_of_secrets(name):
+    assert not gitutil._is_secret_text(name)
+
+
+@pytest.mark.parametrize("old,new", [
+    ("api_keys.txt", "api_keys.py"), ("tokens.txt", "config.py"), ("keys/prod.md", "config.sh")])
+def test_list_of_secrets_is_not_sent(tmp_path, hook_env, stub_api, old, new):
+    repo = make_repo(tmp_path / "repo", {old: SECRET, "app.py": "x = 1\n"})
+    _move(repo, old, new)
+    m = _commit(repo, hook_env)
+    assert m["skip_reason"] == 30 and "renamed_in" not in m, m
+    assert _sent(stub_api) == ""
+
+
+@pytest.mark.parametrize("old", ["api_keys.txt", "passwords", "secrets.yaml", "server.pem"])
+def test_list_of_secrets_renamed_in_two_steps_is_not_sent(tmp_path, hook_env, stub_api, old):
+    repo = make_repo(tmp_path / "repo", {old: SECRET})
+    _move(repo, old, "settings.txt")
+    git(repo, "commit", "-qm", "one")
+    _move(repo, "settings.txt", "settings.py")
+    assert _commit(repo, hook_env)["skip_reason"] == 30
+    assert _sent(stub_api) == ""
+
+
+def test_other_renames_of_the_commit_are_still_read(tmp_path, hook_env, stub_api):
+    repo = make_repo(tmp_path / "repo", {
+        "api_keys.txt": SECRET, "docs/hotkeys.md": "press a\n" * 9, "notes.txt": BODY})
+    _move(repo, "api_keys.txt", "settings.py")
+    _move(repo, "docs/hotkeys.md", "hotkeys.py")
+    _move(repo, "notes.txt", "payload.py")
+    assert _commit(repo, hook_env)["renamed_in"] == 1
+    assert MARK in _sent(stub_api) and "SECRET_VALUE" not in _sent(stub_api)
+
+
+def test_list_of_secrets_is_not_listed():
+    assert not gitutil._is_text_turned_code("api_keys.txt", "config.py")
+
+
+def test_code_with_a_secret_word_in_its_name_is_not_a_secret_origin(
+        tmp_path, hook_env, stub_api):
+    repo = make_repo(tmp_path / "repo", {"token_store.py": BODY, "app.py": "x = 1\n"})
+    _move(repo, "token_store.py", "notes.txt")
+    git(repo, "commit", "-qm", "one")
+    _move(repo, "notes.txt", "payload.py")
+    assert _commit(repo, hook_env)["renamed_in"] == 1
+    assert MARK in _sent(stub_api)
 
 
 def test_rename_away_from_a_secret_shaped_name_stays_out(tmp_path, hook_env, stub_api):

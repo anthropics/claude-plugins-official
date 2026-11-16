@@ -2254,6 +2254,17 @@ _DATA_EXTENSIONS = frozenset((
 _CODE_EXTENSIONS = SOURCE_CODE_EXTENSIONS - _DATA_EXTENSIONS
 
 
+# Text that holds secrets by its name or its folder's (`api_keys.txt`,
+# `keys/prod.md`, `.ssh/notes.txt`). It stays unread when it becomes code; so
+# does a document that only has such a word in its name (`hotkeys.md`).
+_SECRET_TEXT_RE = re.compile(
+    r"(?:secrets?|credentials?|creds?|passwords?|passwd|keys?|tokens?|vault"
+    r"|/\.(?:ssh|aws|gnupg|kube))/"
+    r"|(?:secret|credential|passw|passphrase|api.?key|recovery.?code|service.?account)[^/]*$"
+    r"|(?:keys?|tokens?|creds?|pass|pwd|env|logins|pem|ed25519|netrc|npmrc)"
+    r"(?![a-z])[^/]*$")
+
+
 def _is_secret_stem(file_path):
     """`credentials.txt`, `id_rsa.md`: a secret's name with an extension."""
     stem = os.path.splitext(os.path.basename(file_path))[0].lower()
@@ -2261,10 +2272,19 @@ def _is_secret_stem(file_path):
             or stem.startswith('password'))
 
 
+def _is_secret_text(file_path):
+    """Whether a name says the file holds secrets, if it is not a code name."""
+    path = "/" + file_path.replace("\\", "/").lower()
+    return (_is_secret_shaped(file_path)
+            or os.path.splitext(path)[1] not in _CODE_EXTENSIONS
+            and os.path.basename(path) not in SOURCE_CODE_BASENAMES
+            and (_is_secret_stem(path) or bool(_SECRET_TEXT_RE.search(path))))
+
+
 def _is_text_turned_code(old_path, new_path):
     ext = os.path.splitext(new_path)[1].lower()
     return (os.path.splitext(old_path)[1].lower() in _TEXT_EXTENSIONS
-            and not _is_secret_stem(old_path) and not _is_secret_stem(new_path)
+            and not _is_secret_text(old_path) and not _is_secret_stem(new_path)
             and (ext in _CODE_EXTENSIONS
                  or os.path.basename(new_path).lower() in SOURCE_CODE_BASENAMES)
             and _section_is_reviewable(new_path, old_path)
@@ -2300,7 +2320,7 @@ _SECRET_ORIGIN_COMMITS = 50
 
 def came_from_secret(repo_root, rev, paths, timeout):
     """Those of `paths` at `rev` that one of the last commits renamed from a
-    secret-shaped name, whatever they were called in between. None on error."""
+    secret's name, whatever they were called in between. None on error."""
     try:
         result = subprocess.run(
             [*GIT_CMD, "-c", "log.diffMerges=separate", "log", "-m",
@@ -2320,7 +2340,7 @@ def came_from_secret(repo_root, rev, paths, timeout):
         for names in had.values():
             if old and new in names:
                 names.add(old)
-    return {path for path, names in had.items() if any(map(_is_secret_shaped, names))}
+    return {path for path, names in had.items() if any(map(_is_secret_text, names))}
 
 
 def git_diff_unpaired(repo_root, revs, paths, timeout):
