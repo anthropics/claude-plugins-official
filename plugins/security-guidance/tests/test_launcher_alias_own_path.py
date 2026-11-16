@@ -314,7 +314,8 @@ def test_regular_install_is_left_alone(box):
     regular.mkdir()
     box.write(regular / "python", ALIAS)
     out, starts = box.run(path=str(regular))
-    assert starts == ["python probe", "python run"] and out["direct"] == "" and not box.memo.exists()
+    assert starts == ["python probe", "python run"] and out["direct"] == ""
+    assert box.memo.read_text().splitlines()[3:6:2] == ["", "search"]
 
 
 @pytest.mark.parametrize("ostype", ["linux-gnu", "darwin23", ""])
@@ -341,15 +342,18 @@ def test_versioned_alias_is_remembered_too(box):
     assert box.run()[1] == ["own run"]
 
 
-def test_newer_python_answering_with_two_lines_is_still_chosen(box):
-    # Pass 2b reads the probe without `ask`.
+def test_newer_python_is_remembered_too(box):
+    # Pass 2b: a release above the pass 1 list.
     (box.apps / "py").unlink()
     box.alias("python3.14", version="3.14")
+    box.write(box.own, ALIAS.replace("SG_NAME=alias", "SG_NAME=own").replace("${{0##*/}}", "own"),
+              version="3.14")
     out, starts = box.run()
-    assert starts == ["python3.14 probe", "python3.14 run"] and out["exe"] == "alias"
+    assert starts == ["python3.14 probe", "own probe", "own run"] and out["direct"] == "2"
+    assert box.run()[1] == ["own run"]
 
 
-@pytest.mark.parametrize("value,expected", [("1", 1), ("2", 2), ("", None), ("3", None), ("yes", None)])
+@pytest.mark.parametrize("value,expected", [("1", 1), ("2", 2), ("3", 3), ("4", 4), ("", None), ("5", None), ("yes", None)])
 def test_stop_hook_reports_the_direct_route(hook_env, workspace, value, expected):
     _, repo = workspace
     rc, out, err = run_hook(stop_payload(repo), {**hook_env, "SG_LAUNCHER_DIRECT": value})
