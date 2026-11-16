@@ -271,7 +271,8 @@ _METRIC_KEY_CAP = 20
 # of 10.
 _LEAD_METRIC_KEYS = ("review_failed", "api_error", "vulns_found",
                      "commit_review", "push_sweep", "review_ms",
-                     "files_reviewed", "agentic", "deduped")
+                     "files_reviewed", "agentic", "deduped",
+                     "critical_count", "high_count")
 # How long a Stop row waits for its commit count.
 _TURN_COMMITS_WAIT_S = 2.0
 # Set by the Stop hook: queues the commit count for the row being emitted.
@@ -444,6 +445,11 @@ def emit_metrics(
     lead = {} if metrics.get("skipped") else {
         k: metrics[k] for k in _LEAD_METRIC_KEYS if k in metrics}
     metrics = {**head, **lead, **metrics}
+    if not metrics.get("skipped"):
+        # Always true on a row that is not a skip, so cut before the rest.
+        for k in ("commit_review_on", "push_sweep_on"):
+            if k in metrics:
+                metrics[k] = metrics.pop(k)
     # Diagnostic keys go last, so they are the first dropped when a row is
     # over CC's key cap and never displace an existing key.
     tail = {}

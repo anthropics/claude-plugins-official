@@ -75,7 +75,7 @@ def test_result_and_time_are_kept(capsys, monkeypatch, name, http_err):
     assert len(row) > hook._METRIC_KEY_CAP
     kept = _kept(row)
     must = ("vulns_found", "review_ms", "files_reviewed", "commit_review",
-            "push_sweep", "agentic", "deduped")
+            "push_sweep", "agentic", "deduped", "critical_count", "high_count")
     assert {k: kept.get(k) for k in must} == {k: metrics.get(k) for k in must}
     assert {"pv", *_USAGE, *http_err} <= set(kept)
 
@@ -83,7 +83,7 @@ def test_result_and_time_are_kept(capsys, monkeypatch, name, http_err):
 def test_quiet_commit_loses_one_descriptive_key(capsys):
     hook.emit_metrics(_QUIET_COMMIT)
     row = _row(capsys)
-    assert set(_QUIET_COMMIT) - set(_kept(row)) == {"high_count"}
+    assert set(_QUIET_COMMIT) - set(_kept(row)) == {"commit_review_on"}
 
 
 @pytest.mark.parametrize("kind, metrics, split", [
@@ -117,7 +117,8 @@ def test_only_the_order_changes(capsys):
     row = _row(capsys)
     added = {"pv", *_USAGE, "gateway_cfg", "diff_seen", "child_stderr", "rv_effort"}
     assert {k: v for k, v in row.items() if k not in added} == _COMMIT_FINDINGS
-    rest = [k for k in _COMMIT_FINDINGS if k not in hook._LEAD_METRIC_KEYS]
+    rest = [k for k in _COMMIT_FINDINGS
+            if k not in hook._LEAD_METRIC_KEYS and k != "commit_review_on"]
     assert [k for k in row if k in rest] == rest
 
 
