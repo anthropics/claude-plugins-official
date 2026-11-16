@@ -1508,6 +1508,9 @@ _RACE_MAX_WAIT_S = 480
 # Claude Code kills the hook. The inner CLI exits with the hook. The same limit
 # holds for a commit or push review's single-shot review outside a race.
 _RACE_END_S = 570
+# Seconds after which a failed commit review stops waiting for the push review
+# of its own command, which may run to the limit above on a later clock.
+_HOOK_LAST_WAIT_S = 580
 # api_error for a race that hit that deadline with no verdict.
 _RACE_TIMED_OUT = -2
 
@@ -1738,25 +1741,37 @@ def _left_out_files_notice(session_id, repo_root, untracked, diff_output):
             f"in {DEBUG_LOG_FILE}.")
 
 
-def _push_review_takes_over(input_data, rate_n):
+def _push_review_takes_over(input_data):
     """True when the push spawn of this commit-and-push call waits to review
-    what this commit review, the `rate_n`th within the cap, has no verdict on."""
+    what this commit review has no verdict on."""
     command = input_data["tool_input"]["command"]
     sentinel = _bash_hook_sentinel(input_data, "push")
     return bool(
         PUSH_SWEEP_ENABLED and sentinel and _GIT_PUSH_RE.search(command)
-        and rate_n < MAX_COMMIT_REVIEWS_PER_HOUR
         # It may still be on its way to the wait when a review fails at once.
         and diffstate.becomes_held(sentinel, 3))
 
 
-def _exit_review_failed(kind, session_id, metrics, status, pushed="no"):
+def _push_review_settled_it(input_data):
+    """Let the push review that waits for this commit review go on, and wait
+    for its end. False when it ended without a verdict and told nobody (a cap,
+    no network, killed): that is for the commit review to report."""
+    debug_log("Commit review: got no verdict; waiting for the push review of the same command")
+    diffstate._release_inflight()
+    diffstate.release_hold(_bash_hook_sentinel(input_data))
+    diffstate.wait_for_holder(_bash_hook_sentinel(input_data, "push"),
+                              max(0.0, _HOOK_LAST_WAIT_S - _hook_spent_s()))
+    return os.path.exists(_bash_hook_sentinel(input_data, "settled"))
+
+
+def _exit_review_failed(kind, session_id, metrics, status, pushed="no", told=None):
     """End a commit ("Commit") or push ("Push") review that got no verdict.
 
     Never reports the code as clean. Tells Claude once per session for each
     kind of review and failure; repeats are only logged. `pushed` ("yes",
     "maybe" or "no"): whether the commit's own command also pushed it;
-    "taken_over" when that command's push review takes it from here. Exits.
+    "taken_over" when that command's push review dealt with it. `told` is
+    called when Claude is told. Exits.
     """
     failure, reason, cause = _review_failure_reason(status)
     debug_log(f"{kind} review: got no verdict ({reason}); not marked reviewed")
@@ -1766,7 +1781,6 @@ def _exit_review_failed(kind, session_id, metrics, status, pushed="no"):
     # A commit its own command pushed gets its own notice: no later push
     # re-checks it.
     told_key = f"review_failed:{kind}:{failure}" + (":pushed" if pushed == "yes" else "")
-    # With a push review waiting to take over, that one reports.
     if pushed == "taken_over" or not atomic_check_and_mark_warning(session_id, told_key):
         emit_metrics(metrics)
         sys.exit(0)
@@ -1794,6 +1808,8 @@ def _exit_review_failed(kind, session_id, metrics, status, pushed="no"):
     emit_metrics(metrics,
                  rewake_summary=(f"{kind} security review did not complete: {reason}. "
                                  f"Log: {DEBUG_LOG_FILE}"))
+    if told:
+        told()
     sys.exit(2)
 
 def _commit_in_output(bash_output):
@@ -2128,13 +2144,19 @@ def handle_commit_review_posttooluse(input_data):
     # skip_reason=28 correctly.
     if pre_amend_sha and not diff_files:
         debug_log("Commit review: --amend produced empty delta (message-only?), skipping")
-        # Same content under a new sha: as reviewed as the original is or,
-        # with its review still running, will be.
-        if (pre_amend_sha in _load_inflight_shas(repo_root, [pre_amend_sha])
-                or pre_amend_sha in _load_reviewed_shas(repo_root)):
-            _append_reviewed_shas(repo_root, _full_shas(repo_root, shas))
+        # Same content under a new sha: as reviewed as the original is. With
+        # its review still running, see that end first. A push review of the
+        # new sha waits for this process meanwhile: wait less than it does, so
+        # that it can still review what has no verdict by then.
+        _new = _full_shas(repo_root, shas)
+        _mark_inflight(repo_root, _new)
+        reviewed, _waited = _reviewed_after_inflight(
+            repo_root, [pre_amend_sha], max(0.0, INFLIGHT_WAIT_S * 0.9 - _hook_spent_s()))
+        if pre_amend_sha in reviewed:
+            _append_reviewed_shas(repo_root, _new)
         emit_metrics({"skipped": True, "skip_reason": 35, **_base,
-                      "files_reviewed": 0})
+                      "files_reviewed": 0,
+                      **({"inflight_wait_s": max(1, int(round(_waited)))} if _waited else {})})
         sys.exit(0)
 
     debug_log(f"Commit review: {resolved}/{len(shas)} sha(s) resolved, "
@@ -2273,7 +2295,8 @@ def handle_commit_review_posttooluse(input_data):
             **_base, **_agentic_m,
             "files_reviewed": len(diff_files), "review_ms": review_ms,
         }, api_status, pushed=(
-            "taken_over" if _push_review_takes_over(input_data, _rate_n)
+            "taken_over" if _push_review_takes_over(input_data)
+            and _push_review_settled_it(input_data)
             else "yes" if _push_in_output(bash_output)
             else "maybe" if _GIT_PUSH_RE.search(command) or _MAY_PUSH_VIA_GH_RE.search(command)
             else "no"))
@@ -2573,6 +2596,13 @@ def handle_push_sweep_posttooluse(input_data):
                       "pushed": len(push_range)})
         sys.exit(0)
 
+    def _note_settled():
+        # Tells the commit spawn of this call that it has nothing to report.
+        if (_GIT_COMMIT_RE.search(command) and any(
+                s.startswith(c) for s in push_range
+                for c in _commit_review_candidates(bash_output, repo_root)[0])):
+            _claim_bash_hook_once(input_data, "settled")
+
     _spawn_wait, _take_over = 0.0, False
     if _GIT_COMMIT_RE.search(command) and not _pushed_beyond_commit_review(
             repo_root, push_range, bash_output):
@@ -2585,6 +2615,10 @@ def handle_push_sweep_posttooluse(input_data):
             _ended, _spawn_wait = diffstate.wait_for_holder(
                 _bash_hook_sentinel(input_data), INFLIGHT_WAIT_S)
             _take_over = _ended and _without_review(repo_root, push_range)
+            if _ended and not _take_over:
+                reviewed = _load_reviewed_shas(repo_root)
+                if all(s in reviewed for s in push_range):
+                    _note_settled()
         # A commit the hourly cap kept out stays out.
         _skip = (47 if not _take_over
                  else 23 if atomic_check_rate_limit(
@@ -2625,6 +2659,7 @@ def handle_push_sweep_posttooluse(input_data):
         prefix_advanced = 0
     if base is None:
         debug_log("Push sweep: every pushed commit already reviewed")
+        _note_settled()
         emit_metrics({**_base, "pushed": len(push_range), "unreviewed": 0,
                       "prefix_advanced": prefix_advanced, **_wait_m})
         sys.exit(0)
@@ -2662,6 +2697,7 @@ def handle_push_sweep_posttooluse(input_data):
                       "unreviewed": len(tail), "skip_reason": 30})
         # Still mark tail reviewed — there's nothing to review.
         _append_reviewed_shas(repo_root, tail, vulns_found=0)
+        _note_settled()
         sys.exit(0)
     # Same prioritize-don't-bail logic as commit-review (see comment there).
     # push-sweep ranges are net diffs over many commits so they hit the cap
@@ -2733,10 +2769,11 @@ def handle_push_sweep_posttooluse(input_data):
         _exit_review_failed("Push", session_id, {
             **_base, **_wait_m, "pushed": len(push_range), "unreviewed": len(tail),
             "files_reviewed": len(diff_files), "review_ms": review_ms,
-        }, api_status)
+        }, api_status, told=_note_settled)
 
     # The tail is now covered by this net-diff review.
     _append_reviewed_shas(repo_root, tail, vulns_found=len(vulns or []))
+    _note_settled()
     _diff_review_done(_diff_token)
 
     new_vulns, n_deduped = _dedup_against_state(

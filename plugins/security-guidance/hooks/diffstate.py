@@ -1228,9 +1228,13 @@ def _mark_inflight(repo_root, shas):
         pass
 
 
+_holds = {}
+
+
 def hold_until_exit(path):
-    """Lock the file at `path` until this process ends, so that others can
-    see it `is_held`. Best-effort; never raises."""
+    """Lock the file at `path` until this process ends or calls
+    `release_hold`, so that others can see it `is_held`. Best-effort; never
+    raises."""
     import time as _time
     try:
         fd = _open_own_file(path, os.O_RDWR)
@@ -1239,11 +1243,19 @@ def hold_until_exit(path):
     try:
         for _ in range(10):  # another process may be looking at this moment
             if _flock_nb(fd, exclusive=True):
-                return  # left open: the lock goes when the process does
+                _holds[path] = fd  # left open: the lock goes when the process does
+                return
             _time.sleep(0.01)
     except OSError:
         pass
     os.close(fd)
+
+
+def release_hold(path):
+    """Give up the lock `hold_until_exit` took. Never raises."""
+    fd = _holds.pop(path, None)
+    if fd is not None:
+        _drop_marker(path, fd, unlink=False)
 
 
 def is_held(path):

@@ -381,3 +381,133 @@ def test_older_commit_under_another_review_is_left_to_it(repo, hook_env, stub_ap
         older.communicate(timeout=60)
     assert push[1]["skip_reason"] == 47
     assert _reviews(stub_api) == 2
+
+
+@pytest.mark.parametrize("chained", [False, True])
+def test_message_only_amend_of_a_commit_whose_review_fails(repo, hook_env, stub_api, chained):
+    """The amended commit is not recorded on the word of a review that then
+    gives no verdict: the push review covers it."""
+    _, made = commit_file(repo, "a.py", "print('a')\n", "a")
+    stub_api.delay, stub_api.fail_first = 5, 2
+    amend = "git commit --amend -m better"
+    with _spawn(bash_payload(str(repo), "git commit -m a", made), hook_env) as orig:
+        _until(lambda: _reviews(stub_api) == 1, "the original's review")
+        out, err = _run(repo, "commit", "--amend", "-m", "better")
+        if chained:
+            pout, perr = _run(repo, "push")
+            _, (_, push, _) = _both_spawns(repo, hook_env, out + pout, err + perr,
+                                           command=amend + " && git push")
+        else:
+            run_hook(bash_payload(str(repo), amend, out, stderr=err, tool_use_id="t2"), hook_env)
+            pout, perr = _run(repo, "push")
+            push = metrics_of(run_hook(bash_payload(
+                str(repo), "git push", pout, stderr=perr, tool_use_id="t3"), hook_env)[1])
+        orig.communicate(timeout=60)
+    assert "skip_reason" not in push and push["unreviewed"] == 1
+    assert _reviews(stub_api) == 3  # the review, its retry, the push review
+    assert _head(repo) in _load_reviewed_shas(str(repo))
+
+
+def _push_only(repo, env, tool_use_id, name):
+    commit_file(repo, name, "print('outside')\n", name)
+    out, err = _run(repo, "push")
+    return run_hook(bash_payload(str(repo), "git push", out, stderr=err,
+                                 tool_use_id=tool_use_id), env)
+
+
+def test_failure_is_told_when_the_push_review_is_at_its_cap(repo, hook_env, stub_api):
+    hook_env["MAX_COMMIT_REVIEWS_PER_HOUR"] = "2"
+    for n in ("p1", "p2"):
+        assert "skip_reason" not in metrics_of(_push_only(repo, hook_env, n, n + ".py")[1])
+    out, err = _commit_and_push(repo)
+    stub_api.status, stub_api.delay = 400, 1
+    commit, push = _both_spawns(repo, hook_env, out, err)
+    assert push[1]["skip_reason"] == 23 and not push[2]
+    assert commit[0] == 2 and "a later push will not re-check it" in commit[2]
+
+
+def test_failure_is_told_when_the_push_review_told_of_one_before(repo, hook_env, stub_api):
+    stub_api.status = 400
+    assert "did not complete" in _push_only(repo, hook_env, "p1", "p1.py")[2]
+    out, err = _commit_and_push(repo)
+    commit, push = _both_spawns(repo, hook_env, out, err)
+    assert push[0] == 0 and push[1]["review_failed"] is True
+    assert commit[0] == 2 and "a later push will not re-check it" in commit[2]
+
+
+def test_failure_is_told_when_the_push_review_is_killed(repo, hook_env, stub_api):
+    out, err = _commit_and_push(repo)
+    payload = bash_payload(str(repo), CMD, stdout=out, stderr=err, tool_use_id="t1")
+    stub_api.fail_first, stub_api.delay = 2, 4
+    with _spawn(payload, hook_env) as commit:
+        _until(lambda: (repo / ".git" / "sg-hook-once-t1").exists(), "the commit spawn's claim")
+        with _spawn(payload, hook_env) as push:
+            _until(lambda: _reviews(stub_api) == 3, "the push review's request")
+            push.kill()
+            _, told = commit.communicate(timeout=60)
+    assert commit.returncode == 2 and "a later push will not re-check it" in told
+
+
+def test_other_commits_of_the_command_do_not_bring_a_failure_notice(repo, hook_env, stub_api):
+    """Only what was pushed is for the push review: the commit that was then
+    amended is not, and the review of the rest succeeded."""
+    (repo / "new.py").write_text("print('new')\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "wip")
+    git(repo, "commit", "-q", "--amend", "-m", "done")
+    out, err = _run(repo, "push")
+    stub_api.fail_first, stub_api.delay = 2, 1
+    commit, push = _both_spawns(
+        repo, hook_env, out, err,
+        command="git commit -q -m wip && git commit -q --amend -m done && git push")
+    assert push[1]["commit_no_verdict"] is True and "skip_reason" not in push[1]
+    assert commit[0] == 0 and not commit[2]
+
+
+def test_separate_push_waits_for_a_message_only_amend(repo, hook_env, stub_api):
+    _, made = commit_file(repo, "a.py", "print('a')\n", "a")
+    stub_api.delay = 6
+    amend = "git commit --amend -m better"
+    with _spawn(bash_payload(str(repo), "git commit -m a", made), hook_env):
+        _until(lambda: _reviews(stub_api) == 1, "the original's review")
+        out, err = _run(repo, "commit", "--amend", "-m", "better")
+        with _spawn(bash_payload(str(repo), amend, out, stderr=err, tool_use_id="t2"), hook_env) as p:
+            marker = repo / ".git" / ("sg-inflight-" + _head(repo))
+            _until(lambda: diffstate.is_held(str(marker)), "the amend's claim")
+            pout, perr = _run(repo, "push")
+            push = metrics_of(run_hook(bash_payload(
+                str(repo), "git push", pout, stderr=perr, tool_use_id="t3"), hook_env)[1])
+            p.communicate(timeout=60)
+    assert push["unreviewed"] == 0 and push["inflight_wait_s"] >= 1
+    assert _reviews(stub_api) == 1
+
+
+def test_amend_waits_less_than_its_push_review(repo, hook_env, stub_api):
+    """The original outlasts both waits: the push review still gets its turn."""
+    _, made = commit_file(repo, "a.py", "print('a')\n", "a")
+    stub_api.delay = 25
+    env = {**hook_env, "SG_INFLIGHT_WAIT_S": "15"}
+    with _spawn(bash_payload(str(repo), "git commit -m a", made), hook_env):
+        _until(lambda: _reviews(stub_api) == 1, "the original's review")
+        out, err = _run(repo, "commit", "--amend", "-m", "better")
+        pout, perr = _run(repo, "push")
+        commit, push = _both_spawns(repo, env, out + pout, err + perr,
+                                    command="git commit --amend -m better && git push")
+    assert commit[1]["skip_reason"] == 35 and commit[1]["inflight_wait_s"] >= 1
+    assert push[1]["commit_no_verdict"] is True and "skip_reason" not in push[1]
+
+
+def test_failure_of_a_commit_elsewhere_is_told(repo, hook_env, stub_api, tmp_path):
+    """The push is of another repository, whose commits are all reviewed."""
+    _, made = commit_file(repo, "a.py", "print('a')\n", "a")
+    run_hook(bash_payload(str(repo), "git commit -m a", made), hook_env)
+    lib = make_repo(tmp_path / "lib")
+    (lib / "x.py").write_text("print('x')\n")
+    git(lib, "add", "-A")
+    out, err = _run(lib, "commit", "-m", "x")
+    pout, perr = _run(repo, "push")
+    stub_api.status, stub_api.delay = 400, 1
+    commit, _ = _both_spawns(
+        repo, hook_env, out + pout, err + perr,
+        command=f"git -C {lib} commit -m x && git push")
+    assert commit[0] == 2 and "did not complete" in commit[2]
