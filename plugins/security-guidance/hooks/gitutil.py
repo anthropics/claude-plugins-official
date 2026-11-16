@@ -1161,8 +1161,9 @@ def _git_merge_resolved_files(repo_root, merge_sha):
     return files
 
 
-def _git_diff_range(repo_root, base, head="HEAD"):
-    """`git diff -p base head` as text on success, None on error.
+def _git_diff_range(repo_root, base, head="HEAD", keeper=None):
+    """`git diff -p base head`, as `keeper` leaves it, as text on success, None
+    on error.
 
     Distinguishing failure from success-with-empty-diff matters: the push-sweep
     caller marks the tail reviewed when the diff is empty (nothing to review),
@@ -1174,9 +1175,9 @@ def _git_diff_range(repo_root, base, head="HEAD"):
         # non-ASCII paths in `diff --git a/... b/...` headers come through as
         # raw UTF-8, not C-quoted. Required by the downstream
         # parse_diff_into_files / extract_file_paths_from_diff regex.
-        r = subprocess.run(
+        r = _run_diff_bounded(
             [*GIT_CMD, "diff", "-p", "--no-color", "--no-ext-diff", "--no-textconv", base, head],
-            cwd=repo_root, capture_output=True, timeout=30,
+            30, keeper, cwd=repo_root,
         )
         if r.returncode != 0:
             return None
@@ -1506,7 +1507,8 @@ _CUT_MARK = b"\\ [cut by security-guidance: the rest of this file's diff was not
 
 # What the last get_git_diff read, for the Stop hook's metrics: bytes of git
 # output, reviewable files whose diff was cut and the bytes cut from them,
-# and diffs that hit the timeout during this hook run.
+# and diffs that hit the timeout during this hook run. The commit and push
+# reviews report the first and the last.
 _diff_read = {"bytes": 0, "cut_files": 0, "cut_bytes": 0, "timeouts": 0}
 
 
@@ -1656,11 +1658,110 @@ class _DiffKeeper:
         return b"".join(self.parts)
 
 
-def _run_diff_bounded(cmd, timeout, **kwargs):
+# The bytes of a UTF-8 character after its first.
+_UTF8_CONTINUATION = bytes(range(0x80, 0xc0))
+# Added lines past what a file keeps that are still counted.
+_MAX_COUNTED_LINES = 50_000
+# The least read at once of what a file keeps, so bytes that count for little
+# do not make many steps.
+_MIN_PIECE = 1024
+
+
+class _ReviewDiffKeeper(_DiffKeeper):
+    """_DiffKeeper for the commit and push reviews, which send the first
+    `file_chars` characters of a file's diff at most and give up on a diff of
+    more than `max_files` files. A file keeps that many characters, and an
+    empty `+` line for each added line after them: _prioritize_diff_files
+    counts those. A file parse_diff_into_files drops keeps the lines before
+    its content, which say where it came from. Past `max_files` only what the
+    parser needs to list each file is kept, for the ones already read too.
+    What comes before the first file (`git show` prints the commit there) is
+    not kept."""
+
+    def __init__(self, max_files, file_chars):
+        super().__init__()
+        self._max_files = max_files
+        self._file_chars = file_chars
+        self._files = set()   # with a hunk, so far
+        self._heads = []      # each section, cut down to list its file
+        self._section = []
+        self._path = None
+        # What the section still takes, and the added lines after that.
+        self._chars_left = self._bytes_left = 0
+        self._more_added = 0
+        self._after_nl = False
+        # A section's first hunk starts within this many bytes: the lines
+        # before it name each path two more times at most, as `rename from`
+        # and `rename to`, and as `---` and `+++`.
+        self._head_bytes = 0
+
+    def _over(self):
+        return len(self._files) > self._max_files
+
+    def _begin(self, header):
+        self._end_section()
+        text = header[len(_SECTION_MARK) - 1:].decode("utf-8", errors="replace")
+        paths = _parse_diff_header(text)
+        path = paths and (paths[1] or paths[0])
+        self._path = path if path and _section_is_reviewable(path, paths[0]) else None
+        self._head_bytes = self._chars_left = 3 * len(header) + 512
+        if self._path and not self._over():
+            # More than the review takes, so it still says the file was cut.
+            self._chars_left += self._file_chars + 1
+        # Text that is not UTF-8 can be all continuation bytes.
+        self._bytes_left = 4 * self._chars_left
+
+    def _keep(self, buf, start, end):
+        if self._at_start and end > start:
+            self._at_start = False
+            start += 1
+        self.seen += max(end - start, 0)
+        while start < end and self._chars_left > 0 and self._bytes_left > 0:
+            piece = buf[start:min(end, start + max(self._chars_left, _MIN_PIECE),
+                                  start + self._bytes_left)]
+            self._section.append(piece)
+            self._bytes_left -= len(piece)
+            self._chars_left -= len(piece.translate(None, _UTF8_CONTINUATION))
+            self._after_nl = piece.endswith(b"\n")
+            start += len(piece)
+        if start < end and self._path and not self._over():
+            self._more_added += (buf.count(b"\n+", start, end)
+                                 + (self._after_nl and buf.startswith(b"+", start)))
+            self._after_nl = buf.endswith(b"\n", start, end)
+
+    def _end_section(self):
+        data = b"".join(self._section)
+        more_added = min(self._more_added, _MAX_COUNTED_LINES)
+        self._section = []
+        self._chars_left = self._bytes_left = self._more_added = 0
+        if not data:
+            return
+        if not data.endswith(b"\n"):
+            data += b"\n"
+        head = data[:self._head_bytes]
+        if self._path:
+            at = head.find(b"\n@@")
+            if at >= 0:
+                head = head[:head.index(b"\n")] + b"\n@@\n"
+                self._files.add(self._path)
+        else:
+            at = head.find(b"\n--- ")
+            head = head[:at + 1] if at >= 0 else head
+        if not head.endswith(b"\n"):
+            # The next file's header has to start a line.
+            head += b"\n"
+        self._heads.append(head)
+        if self._over():
+            self.parts = self._heads
+        else:
+            self.parts.append(data + b"+\n" * more_added if self._path else head)
+
+
+def _run_diff_bounded(cmd, timeout, keeper=None, **kwargs):
     """subprocess.run(cmd, capture_output=True, timeout=timeout) for a
-    `git diff`, except that stdout goes through _DiffKeeper instead of being
+    `git diff`, except that stdout goes through a _DiffKeeper instead of being
     held whole."""
-    keeper = _DiffKeeper()
+    keeper = keeper or _DiffKeeper()
     deadline = time.monotonic() + timeout
     try:
         err = tempfile.TemporaryFile()

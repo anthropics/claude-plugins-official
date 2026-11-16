@@ -2021,6 +2021,7 @@ def handle_commit_review_posttooluse(input_data):
     # UnicodeDecodeError outside the except clause.
     diff_files = []
     resolved = 0
+    max_files = 10 * MAX_DIFF_FILES
     for sha in shas:
         try:
             # core.quotePath=false: emit raw UTF-8 in `diff --git a/... b/...`
@@ -2030,16 +2031,12 @@ def handle_commit_review_posttooluse(input_data):
             if pre_amend_sha:
                 # Delta review: pre-amend → post-amend. `git diff` (not show)
                 # so the output is a pure unified diff with no commit header.
-                result = subprocess.run(
-                    [*GIT_CMD, "diff", "--no-color", "--no-ext-diff", "--no-textconv",
-                     pre_amend_sha, sha, "--"],
-                    cwd=repo_root, capture_output=True, timeout=15
-                )
+                cmd = [*GIT_CMD, "diff", "--no-color", "--no-ext-diff", "--no-textconv",
+                       pre_amend_sha, sha, "--"]
             else:
-                result = subprocess.run(
-                    [*GIT_CMD, "show", "-p", "--no-color", "--no-ext-diff", "--no-textconv", sha, "--"],
-                    cwd=repo_root, capture_output=True, timeout=15
-                )
+                cmd = [*GIT_CMD, "show", "-p", "--no-color", "--no-ext-diff", "--no-textconv", sha, "--"]
+            result = gitutil._run_diff_bounded(
+                cmd, 15, _review_diff_keeper(max_files), cwd=repo_root)
         except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
             _cmd = "git diff" if pre_amend_sha else "git show"
             debug_log(f"Commit review: {_cmd} {sha} error: {e}")
@@ -2069,7 +2066,7 @@ def handle_commit_review_posttooluse(input_data):
     if resolved == 0:
         debug_log("Commit review: no parsed SHA resolved in cwd repo")
         emit_metrics({"skipped": True, "skip_reason": 28, **_base,
-                      "shas_found": len(shas)})
+                      "shas_found": len(shas), **_diff_read_metrics()})
         sys.exit(0)
 
     # Empty amend delta = message-only amend (or whitespace-only that the
@@ -2080,14 +2077,15 @@ def handle_commit_review_posttooluse(input_data):
     if pre_amend_sha and not diff_files:
         debug_log("Commit review: --amend produced empty delta (message-only?), skipping")
         emit_metrics({"skipped": True, "skip_reason": 35, **_base,
-                      "files_reviewed": 0})
+                      "files_reviewed": 0, **_diff_read_metrics()})
         sys.exit(0)
 
     debug_log(f"Commit review: {resolved}/{len(shas)} sha(s) resolved, "
               f"{len(diff_files)} files")
     if not diff_files:
         debug_log("Commit review: no reviewable source files in commit")
-        emit_metrics({"skipped": True, "skip_reason": 30, **_base})
+        emit_metrics({"skipped": True, "skip_reason": 30, **_base,
+                      **_diff_read_metrics()})
         sys.exit(0)
 
     # Large commits (initial scaffolds, big refactors) used to bail here with
@@ -2099,10 +2097,10 @@ def handle_commit_review_posttooluse(input_data):
     # and how much it drops; skip_reason=31 is now reserved for the truly
     # pathological case (e.g. >300 source files — almost certainly a bad
     # baseline, not a real commit).
-    if len(diff_files) > 10 * MAX_DIFF_FILES:
+    if len(diff_files) > max_files:
         debug_log(f"Commit review: pathological diff ({len(diff_files)} files), skipping")
         emit_metrics({"skipped": True, "skip_reason": 31, **_base,
-                      "diff_files_count": len(diff_files)})
+                      "diff_files_count": len(diff_files), **_diff_read_metrics()})
         sys.exit(0)
     diff_files, _dropped = _prioritize_diff_files(diff_files, MAX_DIFF_FILES)
     if _dropped:
@@ -2556,7 +2554,9 @@ def handle_push_sweep_posttooluse(input_data):
     debug_log(f"Push sweep: range={len(push_range)} prefix_advanced="
               f"{prefix_advanced} base={base[:12]} tail={len(tail)}")
 
-    diff_text = _git_diff_range(repo_root, base, "HEAD")
+    max_files = 10 * MAX_PUSH_SWEEP_FILES
+    diff_text = _git_diff_range(repo_root, base, "HEAD",
+                                keeper=_review_diff_keeper(max_files))
     if diff_text is None:
         # Diff failed (non-zero exit / 30s timeout / git missing). Do NOT
         # mark `tail` reviewed — we did not actually review it. Marking
@@ -2567,7 +2567,8 @@ def handle_push_sweep_posttooluse(input_data):
         # push still cover them, mirroring how skip_reason=31 handles
         # too-many-files without recording the tail.
         emit_metrics({**_base, "pushed": len(push_range),
-                      "unreviewed": len(tail), "skip_reason": 45})
+                      "unreviewed": len(tail), "skip_reason": 45,
+                      **_diff_read_metrics()})
         sys.exit(0)
     diff_files = parse_diff_into_files(diff_text)
     for _path, _hunks in diff_files:
@@ -2575,7 +2576,8 @@ def handle_push_sweep_posttooluse(input_data):
     diff_files = list(_resolved.items())
     if not diff_files:
         emit_metrics({**_base, "pushed": len(push_range),
-                      "unreviewed": len(tail), "skip_reason": 30})
+                      "unreviewed": len(tail), "skip_reason": 30,
+                      **_diff_read_metrics()})
         # Still mark tail reviewed — there's nothing to review.
         _append_reviewed_shas(repo_root, tail, vulns_found=0)
         sys.exit(0)
@@ -2589,10 +2591,10 @@ def handle_push_sweep_posttooluse(input_data):
     # review remains the primary surface for those files. The 10×
     # pathological guard stays so a 500-file vendored-dir push doesn't burn
     # a counter slot.
-    if len(diff_files) > 10 * MAX_PUSH_SWEEP_FILES:
+    if len(diff_files) > max_files:
         emit_metrics({**_base, "pushed": len(push_range),
                       "unreviewed": len(tail), "skip_reason": 31,
-                      "diff_files_count": len(diff_files)})
+                      "diff_files_count": len(diff_files), **_diff_read_metrics()})
         sys.exit(0)
     diff_files, _dropped = _prioritize_diff_files(diff_files, MAX_PUSH_SWEEP_FILES)
     if _dropped:
@@ -2739,6 +2741,21 @@ def handle_push_sweep_posttooluse(input_data):
                                      + guidance + CONTINUATION_SUFFIX + "\n"),
                  hook_event_name="PostToolUse")
     sys.exit(2)
+
+def _review_diff_keeper(max_files):
+    """Reads a commit or push diff (see gitutil._ReviewDiffKeeper). No review
+    sends more of a file than either cap; a negative per-file cap is none."""
+    chars = DIFF_PER_FILE_BYTES if DIFF_PER_FILE_BYTES >= 0 else DIFF_TOTAL_BYTES
+    return gitutil._ReviewDiffKeeper(max_files, max(0, min(chars, DIFF_TOTAL_BYTES)))
+
+
+def _diff_read_metrics():
+    """For a commit or push diff that ends without a review: MiB of git
+    output read and diffs that hit the timeout, when not zero."""
+    read = gitutil._diff_read
+    return {key: value for key, value in (("diff_mb", read["bytes"] >> 20),
+                                          ("diff_timeout", read["timeouts"])) if value}
+
 
 def _stop_diff_truncated():
     """Bytes of reviewable diff the Stop review did not send: cut while
