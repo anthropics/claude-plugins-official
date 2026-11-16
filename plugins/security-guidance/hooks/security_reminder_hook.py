@@ -1097,14 +1097,17 @@ _COMMIT_SHA_RE = re.compile(r'^\[[^\]]*?\b([0-9a-f]{7,40})\]', re.MULTILINE)
 # _GIT_COMMIT_RE and _GIT_PUSH_RE: `-C <path>`, `-c key=val`, `--opt=val`,
 # the long options that take a separate value, and flags that take none
 # (`--no-pager`, `-p`). A value may be quoted in part (`-c user.name="A B"`).
-_GIT_OPT_VALUE = r'''(?:[^\s"']|"[^"]*"|'[^']*')+'''
+# Between the words: whitespace, or a line continued with a backslash (Bash) or
+# a backtick (PowerShell).
+_WORD_GAP = r'(?:\s|[\\`]\r?\n)+'
+_GIT_OPT_VALUE = r'''(?:(?![\\`]\r?\n)[^\s"']|"[^"]*"|'[^']*')+'''
 _GIT_VALUE_OPTS = r'git-dir|work-tree|namespace|config-env|attr-source'
 _GIT_GLOBAL_OPTS = (
-    r'(?:\s+-[Cc]\s+' + _GIT_OPT_VALUE
-    + r'|\s+--[^\s=]+=' + _GIT_OPT_VALUE
-    + r'|\s+--(?:' + _GIT_VALUE_OPTS + r')\s+' + _GIT_OPT_VALUE
+    r'(?:' + _WORD_GAP + r'-[Cc]' + _WORD_GAP + _GIT_OPT_VALUE
+    + r'|' + _WORD_GAP + r'--[^\s=]+=' + _GIT_OPT_VALUE
+    + r'|' + _WORD_GAP + r'--(?:' + _GIT_VALUE_OPTS + r')' + _WORD_GAP + _GIT_OPT_VALUE
     # `--help` / `--version` run no subcommand.
-    + r'|\s+(?:--(?!(?:' + _GIT_VALUE_OPTS + r'|help|version)\s)[^\s=]+|-[pP])(?=\s))*'
+    + r'|' + _WORD_GAP + r'(?:--(?!(?:' + _GIT_VALUE_OPTS + r'|help|version)\s)[^\s=]+|-[pP])(?=\s))*'
 )
 # PowerShell runs programs by any case and with their extension, and a quoted
 # full path ends in a quote.
@@ -1114,15 +1117,15 @@ _GIT_COMMIT_RE = re.compile(
     # dropped by the handler — see #2089's secondary finding. The gt branch
     # has no global-option layer to worry about.
     # `(?!-)`: not the plumbing commands `git commit-graph` / `git commit-tree`.
-    r'\b' + _GIT_PROGRAM + _GIT_GLOBAL_OPTS + r'\s+commit\b(?!-)'
-    r'|\bgt\s+(?:create|modify)\b'
+    r'\b' + _GIT_PROGRAM + _GIT_GLOBAL_OPTS + _WORD_GAP + r'commit\b(?!-)'
+    r'|\bgt' + _WORD_GAP + r'(?:create|modify)\b'
 )
 # Match either the `--amend` flag (with the leading whitespace boundary
 # preserved from the original) OR `gt modify` which is semantically an
 # amend. The handler treats matches as "find the pre-amend SHA via reflog
 # and diff against THAT, not against the post-amend HEAD's parent" — same
 # code path for both git --amend and gt modify.
-_GIT_AMEND_RE = re.compile(r'(?:\s--amend\b|\bgt\s+modify\b)')
+_GIT_AMEND_RE = re.compile(r'(?:\s--amend\b|\bgt' + _WORD_GAP + r'modify\b)')
 
 # Rolling-window cap on LLM commit-review calls. See atomic_check_rate_limit
 # docstring for the rationale that motivated the switch from a lifetime cap.
@@ -1155,7 +1158,7 @@ COMMIT_REVIEW_RATE_WINDOW_S = int(
 # but the bash hook fires on Claude's top-level command so we need to
 # recognize gt submit at the matcher level. See #2048.
 _GIT_PUSH_RE = re.compile(
-    r'(?:\b' + _GIT_PROGRAM + _GIT_GLOBAL_OPTS + r'\s+push\b|\bgt\s+submit\b)'
+    r'(?:\b' + _GIT_PROGRAM + _GIT_GLOBAL_OPTS + _WORD_GAP + r'push\b|\bgt' + _WORD_GAP + r'submit\b)'
 )
 
 # `git push` stdout: "abc1234..def5678  branch -> branch" (or `+abc..def` on
