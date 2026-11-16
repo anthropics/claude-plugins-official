@@ -6,7 +6,7 @@ By default, a DM from an unknown sender triggers **pairing**: the bot replies wi
 
 Access configuration lives in `~/.claude/channels/telegram/access.json`. The `/telegram:access` skill commands edit this file; the server re-reads it on every inbound message, so changes take effect without a restart. Set `TELEGRAM_ACCESS_MODE=static` to pin config to what was on disk at boot (pairing is unavailable in static mode since it requires runtime writes; the inbound journal below is written either way).
 
-Alongside it the server keeps `inbound.jsonl`, a journal of received messages — see **What is kept on disk** — and `bot.pid`, `inbox/` and `.env`.
+Alongside it the server keeps `inbound.jsonl`, a journal of received messages — see **What is kept on disk** — plus `server.log`, `bot.pid`, `inbox/` and `.env`.
 
 ## At a glance
 
@@ -18,6 +18,7 @@ Alongside it the server keeps `inbound.jsonl`, a journal of received messages �
 | `ackReaction` quirk | Fixed whitelist only; non-whitelisted emoji silently do nothing |
 | Config file | `~/.claude/channels/telegram/access.json` |
 | Message journal | `~/.claude/channels/telegram/inbound.jsonl`, last 500 or 7 days |
+| Server log | `~/.claude/channels/telegram/server.log`, newest 256 KB |
 
 ## DM policies
 
@@ -62,15 +63,19 @@ With the default `requireMention: true`, the bot responds only when @mentioned o
 /telegram:access group rm -1001654782309
 ```
 
-**Privacy mode.** Telegram bots default to a server-side privacy mode that filters group messages before they reach your code: only @mentions and replies are delivered. This matches the default `requireMention: true`, so it's normally invisible. Using `--no-mention` requires disabling privacy mode as well: message [@BotFather](https://t.me/BotFather), send `/setprivacy`, pick your bot, choose **Disable**. Without that step, Telegram never delivers the messages regardless of local config.
+**Privacy mode.** Telegram bots default to a server-side privacy mode that filters group messages before they reach your code. [Telegram's list](https://core.telegram.org/bots/features#privacy-mode) of what still gets through is: commands aimed at the bot (`/command@your_bot`), general commands if your bot sent the last message, inline messages sent via the bot, and **replies to the bot's own messages** — plus service messages, and everything in private chats.
+
+**@mentions are not on that list.** So with privacy mode on, replying to one of the bot's messages is the trigger to rely on; a plain `@your_bot hello` may never reach the plugin at all, and `requireMention: true` is the default. If a group looks silent, that is the first thing to check — run with `TELEGRAM_DEBUG=1` (see **When nothing arrives**) to tell "Telegram never delivered it" from "the gate dropped it".
+
+Using `--no-mention`, or relying on @mentions, requires disabling privacy mode: message [@BotFather](https://t.me/BotFather), send `/setprivacy`, pick your bot, choose **Disable**. **The bot must then be removed from the group and re-added** for the change to take effect — Telegram applies it at join time.
 
 ## Mention detection
 
 In groups with `requireMention: true`, any of the following triggers the bot:
 
-- A structured `@botusername` mention
-- A reply to one of the bot's messages
-- A match against any regex in `mentionPatterns`
+- **A reply to one of the bot's messages** — the only one Telegram guarantees while privacy mode is on, so prefer it
+- A structured `@botusername` mention — needs privacy mode disabled to be reliable
+- A match against any regex in `mentionPatterns` — the message has to reach the plugin first, so the same caveat applies
 
 ```
 /telegram:access set mentionPatterns '["^hey claude\\b", "\\bassistant\\b"]'
@@ -94,6 +99,27 @@ Configure outbound behavior with `/telegram:access set <key> <value>`.
 **`textChunkLimit`** sets the split threshold. Telegram rejects messages over 4096 characters.
 
 **`chunkMode`** chooses the split strategy: `length` cuts exactly at the limit; `newline` prefers paragraph boundaries.
+
+## When nothing arrives
+
+A message the gate turns away is dropped in silence, which looks the same as a bot that is broken.
+
+**The plugin keeps a log at `<state-dir>/server.log`.** Start there. It holds what the server reports — poller handovers, delivery failures, Telegram API errors — oldest entries trimmed once it passes 256 KB. The log is a file because Claude Code stops reading a plugin's stderr once the MCP connection is up, so nothing printed after startup reaches the MCP logs; only startup lines land there.
+
+Set `TELEGRAM_DEBUG=1` in `<state-dir>/.env` and restart the session to add a line for each message the gate drops, with the chat, the sender and the reason — a group that was never enabled, a sender not on the allowlist, a missing mention. Message text is never logged, only ids and the reason.
+
+Resolve `<state-dir>` first; it is not always `~/.claude/channels/telegram`:
+
+```bash
+echo "${TELEGRAM_STATE_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/channels/telegram}"
+```
+
+Two things the log will not show:
+
+- **Bot commands.** `/start`, `/help` and `/status` are answered only in private chats and are discarded in groups before the gate runs, so they produce no line.
+- **Messages Telegram never delivered.** If a group message leaves no trace even with the flag on, Telegram filtered it server-side — see **Privacy mode** above, which is the usual reason.
+
+When several sessions have the plugin loaded they share this file, and only the one holding the polling slot writes the inbound lines. That is the log to read, whichever session you are in.
 
 ## What is kept on disk
 

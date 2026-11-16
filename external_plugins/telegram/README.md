@@ -121,6 +121,20 @@ a file only your user account can read. It is shared by every Claude Code
 session on the machine, so a session in another project can replay messages
 that arrived for this one. Delete the file to clear it.
 
+## Message types
+
+Text, photos, documents, voice notes, audio, video, video notes and stickers
+each arrive in a shape the assistant understands. Anything else — a location,
+a poll, a contact, a rich formatted post, or a kind Telegram adds after this
+was written — still arrives, labelled with what it was and carrying whatever
+text it holds: a poll's question and options, a venue's name and address, the
+paragraphs of a rich post.
+
+Two things still do not come through. Chat events (joins, pins, title changes)
+are ignored on purpose. And in a group with the default `requireMention`, the
+bot is only triggered by a mention or a reply, which a poll or a location
+cannot carry — so send those in a DM, or reply to the bot with them.
+
 ## No history or search
 
 Telegram's Bot API exposes **neither** message history nor search. The bot

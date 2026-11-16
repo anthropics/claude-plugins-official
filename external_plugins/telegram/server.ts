@@ -43,6 +43,11 @@ try {
 
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN
 const STATIC = process.env.TELEGRAM_ACCESS_MODE === 'static'
+// Any value but the ones that plainly mean "off" — someone writing
+// TELEGRAM_DEBUG=0 to turn it back off should not turn it on.
+const DEBUG = !['', '0', 'false', 'no', 'off'].includes(
+  (process.env.TELEGRAM_DEBUG ?? '').trim().toLowerCase(),
+)
 
 if (!TOKEN) {
   process.stderr.write(
@@ -55,16 +60,51 @@ if (!TOKEN) {
 const INBOX_DIR = join(STATE_DIR, 'inbox')
 const PID_FILE = join(STATE_DIR, 'bot.pid')
 const JOURNAL_FILE = join(STATE_DIR, 'inbound.jsonl')
+const LOG_FILE = join(STATE_DIR, 'server.log')
 
 mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 })
+
+// Claude Code reads an MCP server's stderr only until the connection is up —
+// it then detaches the handler and drains the pipe (client.ts, "Nothing reads
+// stderrOutput past this point") — so everything this process reports after
+// startup goes nowhere. Keep a copy on disk; it is the only one anybody can
+// read, and the one a bug report can quote.
+const LOG_MAX_BYTES = 256 * 1024
+let logWritesSinceTrim = 0
+
+function logLine(line: string): void {
+  process.stderr.write(line)
+  try {
+    appendFileSync(LOG_FILE, `${new Date().toISOString()} ${line}`, { mode: 0o600 })
+    if (++logWritesSinceTrim >= 100) {
+      logWritesSinceTrim = 0
+      if (statSync(LOG_FILE).size > LOG_MAX_BYTES) {
+        // Keep the newest half. A diagnosis needs what just happened, and an
+        // unbounded log in a state dir is its own bug report one day.
+        const kept = readFileSync(LOG_FILE, 'utf8').slice(-Math.floor(LOG_MAX_BYTES / 2))
+        const tmp = `${LOG_FILE}.${process.pid}.tmp`
+        writeFileSync(tmp, kept.slice(kept.indexOf('\n') + 1), { mode: 0o600 })
+        renameSync(tmp, LOG_FILE)
+      }
+    }
+  } catch {
+    // A log that cannot be written must not take the server with it.
+  }
+}
+
+// Off by default: these lines name every chat and sender the bot sees,
+// including the ones the gate turned away.
+function logDebug(line: string): void {
+  if (DEBUG) logLine(`telegram channel: ${line}\n`)
+}
 
 // Last-resort safety net — without these the process dies silently on any
 // unhandled promise rejection. With them it logs and keeps serving tools.
 process.on('unhandledRejection', err => {
-  process.stderr.write(`telegram channel: unhandled rejection: ${err}\n`)
+  logLine(`telegram channel: unhandled rejection: ${err}\n`)
 })
 process.on('uncaughtException', err => {
-  process.stderr.write(`telegram channel: uncaught exception: ${err}\n`)
+  logLine(`telegram channel: uncaught exception: ${err}\n`)
 })
 
 // Permission-reply spec from anthropics/claude-cli-internal
@@ -172,7 +212,7 @@ function readAccessFile(): Access {
     try {
       renameSync(ACCESS_FILE, `${ACCESS_FILE}.corrupt-${Date.now()}`)
     } catch {}
-    process.stderr.write(`telegram channel: access.json is corrupt, moved aside. Starting fresh.\n`)
+    logLine(`telegram channel: access.json is corrupt, moved aside. Starting fresh.\n`)
     return defaultAccess()
   }
 }
@@ -184,7 +224,7 @@ const BOOT_ACCESS: Access | null = STATIC
   ? (() => {
       const a = readAccessFile()
       if (a.dmPolicy === 'pairing') {
-        process.stderr.write(
+        logLine(
           'telegram channel: static mode — dmPolicy "pairing" downgraded to "allowlist"\n',
         )
         a.dmPolicy = 'allowlist'
@@ -229,37 +269,48 @@ function pruneExpired(a: Access): boolean {
 
 type GateResult =
   | { action: 'deliver'; access: Access }
-  | { action: 'drop' }
+  | { action: 'drop'; reason: string }
   | { action: 'pair'; code: string; isResend: boolean }
+
+// A drop carries why. From the outside a mis-scoped group id, a sender who
+// was never paired and an ordinary non-mention message are all just silence,
+// which is what made this worth reporting as a bug more than once.
+function drop(reason: string): GateResult {
+  return { action: 'drop', reason }
+}
 
 function gate(ctx: Context): GateResult {
   const access = loadAccess()
   const pruned = pruneExpired(access)
   if (pruned) saveAccess(access)
 
-  if (access.dmPolicy === 'disabled') return { action: 'drop' }
+  if (access.dmPolicy === 'disabled') return drop('dmPolicy is "disabled"')
 
   const from = ctx.from
-  if (!from) return { action: 'drop' }
+  if (!from) return drop('no sender on the update')
   const senderId = String(from.id)
   const chatType = ctx.chat?.type
 
   if (chatType === 'private') {
     if (access.allowFrom.includes(senderId)) return { action: 'deliver', access }
-    if (access.dmPolicy === 'allowlist') return { action: 'drop' }
+    if (access.dmPolicy === 'allowlist') {
+      return drop(`sender ${senderId} is not in allowFrom and dmPolicy is "allowlist"`)
+    }
 
     // pairing mode — check for existing non-expired code for this sender
     for (const [code, p] of Object.entries(access.pending)) {
       if (p.senderId === senderId) {
         // Reply twice max (initial + one reminder), then go silent.
-        if ((p.replies ?? 1) >= 2) return { action: 'drop' }
+        if ((p.replies ?? 1) >= 2) return drop(`pairing already offered twice to ${senderId}`)
         p.replies = (p.replies ?? 1) + 1
         saveAccess(access)
         return { action: 'pair', code, isResend: true }
       }
     }
     // Cap pending at 3. Extra attempts are silently dropped.
-    if (Object.keys(access.pending).length >= 3) return { action: 'drop' }
+    if (Object.keys(access.pending).length >= 3) {
+      return drop('three pairings are already pending')
+    }
 
     const code = randomBytes(3).toString('hex') // 6 hex chars
     const now = Date.now()
@@ -277,19 +328,22 @@ function gate(ctx: Context): GateResult {
   if (chatType === 'group' || chatType === 'supergroup') {
     const groupId = String(ctx.chat!.id)
     const policy = access.groups[groupId]
-    if (!policy) return { action: 'drop' }
+    if (!policy) return drop(`group ${groupId} is not enabled — /telegram:access group add ${groupId}`)
     const groupAllowFrom = policy.allowFrom ?? []
     const requireMention = policy.requireMention ?? true
     if (groupAllowFrom.length > 0 && !groupAllowFrom.includes(senderId)) {
-      return { action: 'drop' }
+      return drop(`sender ${senderId} is not in the allowFrom of group ${groupId}`)
     }
     if (requireMention && !isMentioned(ctx, access.mentionPatterns)) {
-      return { action: 'drop' }
+      return drop(
+        `no mention of @${botUsername || '<unknown>'} and requireMention is on for group ${groupId} ` +
+        `(a reply to one of our messages counts; with Telegram privacy mode on, a reply may be the only trigger that reaches us)`,
+      )
     }
     return { action: 'deliver', access }
   }
 
-  return { action: 'drop' }
+  return drop(`chat type ${chatType ?? 'unknown'} is not handled`)
 }
 
 // Like gate() but for bot commands: no pairing side effects, just allow/drop.
@@ -353,7 +407,7 @@ function checkApprovals(): void {
     void bot.api.sendMessage(senderId, "Paired! Say hi to Claude.").then(
       () => rmSync(file, { force: true }),
       err => {
-        process.stderr.write(`telegram channel: failed to send approval confirm: ${err}\n`)
+        logLine(`telegram channel: failed to send approval confirm: ${err}\n`)
         // Remove anyway — don't loop on a broken send.
         rmSync(file, { force: true })
       },
@@ -448,7 +502,7 @@ mcp.setNotificationHandler(
     // buttons would hand the user a prompt whose answer reaches a different
     // session; better to leave the request to the terminal.
     if (pollerState !== 'polling') {
-      process.stderr.write(
+      logLine(
         `telegram channel: another session holds the polling slot — permission request for ${tool_name} not sent to Telegram\n`,
       )
       return
@@ -462,7 +516,7 @@ mcp.setNotificationHandler(
       .text('❌ Deny', `perm:deny:${request_id}`)
     for (const chat_id of access.allowFrom) {
       void bot.api.sendMessage(chat_id, text, { reply_markup: keyboard }).catch(e => {
-        process.stderr.write(`permission_request send to ${chat_id} failed: ${e}\n`)
+        logLine(`permission_request send to ${chat_id} failed: ${e}\n`)
       })
     }
   },
@@ -726,7 +780,7 @@ let shuttingDown = false
 function shutdown(): void {
   if (shuttingDown) return
   shuttingDown = true
-  process.stderr.write('telegram channel: shutting down\n')
+  logLine('telegram channel: shutting down\n')
   releaseLease()
   // bot.stop() signals the poll loop to end; the current getUpdates request
   // may take up to its long-poll timeout to return. Force-exit after 2s.
@@ -851,7 +905,7 @@ bot.on('callback_query:data', async ctx => {
       params: { request_id, behavior },
     })
   } catch (err) {
-    process.stderr.write(`telegram channel: failed to deliver permission reply: ${err}\n`)
+    logLine(`telegram channel: failed to deliver permission reply: ${err}\n`)
     await ctx
       .answerCallbackQuery({ text: 'Could not reach Claude Code — answer in the terminal.' })
       .catch(() => {})
@@ -892,7 +946,7 @@ bot.on('message:photo', async ctx => {
       writeFileSync(path, buf)
       return path
     } catch (err) {
-      process.stderr.write(`telegram channel: photo download failed: ${err}\n`)
+      logLine(`telegram channel: photo download failed: ${err}\n`)
       return undefined
     }
   })
@@ -964,6 +1018,147 @@ bot.on('message:sticker', async ctx => {
     file_id: sticker.file_id,
     size: sticker.file_size,
   })
+})
+
+// Everything on Message that describes the message rather than being its
+// content. What is left over names the kind. An addition to Telegram's
+// envelope that is missing here only puts an extra word in a label; a
+// content type missing from the handlers above is a message nobody sees,
+// so the list errs towards naming too much.
+const ENVELOPE_KEYS = new Set([
+  'message_id', 'message_thread_id', 'direct_messages_topic', 'from', 'sender_chat',
+  'sender_boost_count', 'sender_business_bot', 'sender_tag', 'date', 'guest_query_id',
+  'business_connection_id', 'chat', 'forward_origin', 'is_topic_message',
+  'is_automatic_forward', 'reply_to_message', 'external_reply', 'quote', 'reply_to_story',
+  'reply_to_checklist_task_id', 'reply_to_poll_option_id', 'via_bot', 'guest_bot_caller_user',
+  'guest_bot_caller_chat', 'edit_date', 'has_protected_content', 'is_from_offline',
+  'is_paid_post', 'media_group_id', 'author_signature', 'paid_star_count', 'entities',
+  'caption_entities', 'link_preview_options', 'show_caption_above_media', 'has_media_spoiler',
+  'suggested_post_info', 'effect_id', 'reply_markup',
+])
+
+// Chat events rather than anything a person wrote: joins, pins, title
+// changes, payments. These were never delivered and must not start being,
+// or every join wakes a session for a turn — and in a DM under the pairing
+// policy, a service message from a stranger would mint a pairing code.
+const SERVICE_KEYS = new Set([
+  'new_chat_members', 'left_chat_member', 'chat_owner_left', 'chat_owner_changed',
+  'new_chat_title', 'new_chat_photo', 'delete_chat_photo', 'group_chat_created',
+  'supergroup_chat_created', 'channel_chat_created', 'message_auto_delete_timer_changed',
+  'migrate_to_chat_id', 'migrate_from_chat_id', 'pinned_message', 'invoice',
+  'successful_payment', 'refunded_payment', 'users_shared', 'chat_shared', 'gift',
+  'unique_gift', 'gift_upgrade_sent', 'connected_website', 'write_access_allowed',
+  'passport_data', 'proximity_alert_triggered', 'boost_added', 'chat_background_set',
+  'checklist_tasks_done', 'checklist_tasks_added', 'direct_message_price_changed',
+  'forum_topic_created', 'forum_topic_edited', 'forum_topic_closed', 'forum_topic_reopened',
+  'general_forum_topic_hidden', 'general_forum_topic_unhidden', 'giveaway_created',
+  'giveaway', 'giveaway_winners', 'giveaway_completed', 'managed_bot_created',
+  'paid_message_price_changed', 'poll_option_added', 'poll_option_deleted',
+  'suggested_post_approved', 'suggested_post_approval_failed', 'suggested_post_declined',
+  'suggested_post_paid',
+])
+
+const RICH_MAX_DEPTH = 12
+const RICH_MAX_CHARS = 8000
+
+// RichText is "String, or Array of RichText, or an object with a text field"
+// (Bot API 10.1), and a RichBlock nests blocks, list items, table cells and
+// captions the same way, so one reader covers every variant there is and the
+// ones added after this was written. Pointed at one content value, never at
+// the whole Message, which would also sweep up button labels and other
+// things the sender never typed.
+function readText(
+  node: unknown,
+  keys: readonly string[],
+  out: string[],
+  state: { chars: number },
+  depth: number,
+): void {
+  if (depth > RICH_MAX_DEPTH || state.chars >= RICH_MAX_CHARS || node == null) return
+  if (typeof node === 'string') {
+    out.push(node)
+    state.chars += node.length
+    return
+  }
+  if (Array.isArray(node)) {
+    for (const item of node) readText(item, keys, out, state, depth + 1)
+    return
+  }
+  if (typeof node !== 'object') return
+  const record = node as Record<string, unknown>
+  for (const key of keys) {
+    if (key in record) readText(record[key], keys, out, state, depth + 1)
+  }
+}
+
+const RICH_KEYS = ['label', 'text', 'caption', 'credit', 'blocks', 'items', 'cells'] as const
+// What a poll, contact, venue, game or dice carries that a person would read.
+const CONTENT_KEYS = [
+  'question', 'title', 'description', 'address', 'first_name', 'last_name',
+  'phone_number', 'emoji', 'text', 'caption', 'options',
+] as const
+
+function richMessageText(rich: unknown): string {
+  const blocks = (rich as { blocks?: unknown } | undefined)?.blocks
+  if (!Array.isArray(blocks)) return ''
+  const state = { chars: 0 }
+  const lines: string[] = []
+  for (const [index, block] of blocks.entries()) {
+    const parts: string[] = []
+    readText(block, RICH_KEYS, parts, state, 0)
+    const line = parts.join('').trim()
+    if (line) lines.push(line)
+    // Only say something was cut when something was.
+    if (state.chars >= RICH_MAX_CHARS && index < blocks.length - 1) {
+      lines.push('…')
+      break
+    }
+  }
+  return lines.join('\n\n')
+}
+
+// Last, so it runs only for a message none of the handlers above claimed —
+// grammy stops at the first match. Telegram adds message kinds faster than a
+// plugin grows handlers for them (rich_message arrived in Bot API 10.1), and
+// without this one those are dropped with no trace anywhere: delivered on the
+// sender's screen, absent from the session, nothing logged.
+bot.on('message', async ctx => {
+  const message = ctx.message as unknown as Record<string, unknown>
+  const kinds = Object.keys(message).filter(k => !ENVELOPE_KEYS.has(k) && !SERVICE_KEYS.has(k))
+  if (kinds.length === 0) {
+    logDebug(`ignored a service message in chat ${ctx.chat?.id ?? '?'}`)
+    return
+  }
+  const state = { chars: 0 }
+  const parts: string[] = []
+  for (const kind of kinds) {
+    if (kind === 'rich_message') {
+      const rich = richMessageText(message[kind])
+      if (rich) parts.push(rich)
+      continue
+    }
+    readText(message[kind], CONTENT_KEYS, parts, state, 0)
+  }
+  // A caption sits beside the content, not inside it.
+  if (typeof message.caption === 'string') parts.push(message.caption)
+  const text = parts.join('\n').trim()
+  const label = `(${kinds.join(', ')})`
+  // A kind this build has no handler for may still be a file. Pass a
+  // top-level file_id through so download_attachment can fetch it.
+  const payload = message[kinds[0]!] as { file_id?: unknown; file_size?: unknown } | undefined
+  const fileId = typeof payload?.file_id === 'string' ? payload.file_id : undefined
+  await handleInbound(
+    ctx,
+    text ? `${label}\n${text}` : label,
+    undefined,
+    fileId
+      ? {
+          kind: kinds[0]!,
+          file_id: fileId,
+          size: typeof payload?.file_size === 'number' ? payload.file_size : undefined,
+        }
+      : undefined,
+  )
 })
 
 type AttachmentMeta = {
@@ -1050,7 +1245,7 @@ function compactJournal(): void {
     })
     renameSync(tmp, JOURNAL_FILE)
   } catch (err) {
-    process.stderr.write(`telegram channel: could not compact ${JOURNAL_FILE}: ${err}\n`)
+    logLine(`telegram channel: could not compact ${JOURNAL_FILE}: ${err}\n`)
   }
 }
 
@@ -1072,7 +1267,7 @@ function journalInbound(entry: JournalEntry): void {
   } catch (err) {
     // Journalling must never cost the message it protects, and must never
     // throw into a grammy handler: the default error handler stops polling.
-    process.stderr.write(`telegram channel: could not journal inbound message: ${err}\n`)
+    logLine(`telegram channel: could not journal inbound message: ${err}\n`)
   }
 }
 
@@ -1141,7 +1336,15 @@ async function handleInbound(
 ): Promise<void> {
   const result = gate(ctx)
 
-  if (result.action === 'drop') return
+  if (result.action === 'drop') {
+    // Ids and the reason only — never the message, which the sender did not
+    // get through the gate to have written into a log.
+    logDebug(
+      `dropped a ${ctx.chat?.type ?? 'unknown'} message from ${ctx.from?.id ?? '?'} ` +
+      `in chat ${ctx.chat?.id ?? '?'}: ${result.reason}`,
+    )
+    return
+  }
 
   if (result.action === 'pair') {
     const lead = result.isResend ? 'Still pending' : 'Pairing required'
@@ -1182,7 +1385,7 @@ async function handleInbound(
       // they denied went through, or that one they allowed is running. This
       // catches a broken transport, not a session that is not listening:
       // see journalInbound on why the latter cannot be detected here.
-      process.stderr.write(`telegram channel: failed to deliver permission reply: ${err}\n`)
+      logLine(`telegram channel: failed to deliver permission reply: ${err}\n`)
       await ctx.reply('Could not pass that answer to Claude Code — answer in the terminal.').catch(() => {})
       return
     }
@@ -1273,7 +1476,7 @@ async function handleInbound(
     // The ack below is deliberately not sent. A reaction on a message that
     // never reached the session reads as "received and ignored"; no reaction
     // at least reads as something going wrong. The journal holds the text.
-    process.stderr.write(`telegram channel: failed to deliver inbound to Claude: ${err}\n`)
+    logLine(`telegram channel: failed to deliver inbound to Claude: ${err}\n`)
     return
   }
 
@@ -1292,7 +1495,7 @@ async function handleInbound(
 // Without this, any throw in a message handler stops polling permanently
 // (grammy's default error handler calls bot.stop() and rethrows).
 bot.catch(err => {
-  process.stderr.write(`telegram channel: handler error (polling continues): ${err.error}\n`)
+  logLine(`telegram channel: handler error (polling continues): ${err.error}\n`)
 })
 
 // ---------------------------------------------------------------------------
@@ -1347,7 +1550,7 @@ function writeLease(): void {
     writeFileSync(tmp, JSON.stringify({ pid: process.pid, heartbeat: Date.now() }))
     renameSync(tmp, PID_FILE)
   } catch (err) {
-    process.stderr.write(`telegram channel: could not update ${PID_FILE}: ${err}\n`)
+    logLine(`telegram channel: could not update ${PID_FILE}: ${err}\n`)
   }
 }
 
@@ -1404,7 +1607,7 @@ function tryAcquireLease(force: boolean): boolean {
     if (!force) return false
     // The holder finds out by reading the lease on its own next tick and
     // steps down then — nothing is signalled.
-    process.stderr.write(`telegram channel: taking the polling slot from pid=${lease.pid}\n`)
+    logLine(`telegram channel: taking the polling slot from pid=${lease.pid}\n`)
     writeLease()
     return true
   }
@@ -1424,7 +1627,7 @@ function tryAcquireLease(force: boolean): boolean {
   // otherwise delete the record it still believes is its own.
   writeLease()
   if (pidIsPoller(lease.pid)) {
-    process.stderr.write(`telegram channel: replacing unresponsive poller pid=${lease.pid}\n`)
+    logLine(`telegram channel: replacing unresponsive poller pid=${lease.pid}\n`)
     try {
       process.kill(lease.pid, 'SIGTERM')
     } catch {}
@@ -1443,7 +1646,7 @@ function stepDown(reason: string): void {
   // Don't reach for the slot again. Two long-lived sessions trading the lease
   // every takeover interval would drop inbound messages on every flip.
   mayTakeOver = false
-  process.stderr.write(`telegram channel: ${reason} — standing by, tools still work\n`)
+  logLine(`telegram channel: ${reason} — standing by, tools still work\n`)
   void Promise.resolve(bot.stop())
     .catch(() => {})
     .then(() => {
@@ -1478,7 +1681,7 @@ function electionTick(): void {
   if (!tryAcquireLease(force)) {
     if (standbySince === 0) {
       standbySince = now
-      process.stderr.write(
+      logLine(
         'telegram channel: another instance is polling this bot token — standing by, tools still work\n',
       )
     }
@@ -1511,7 +1714,7 @@ async function runPoller(): Promise<void> {
       await bot.start({
         onStart: info => {
           botUsername = info.username
-          process.stderr.write(`telegram channel: polling as @${info.username}\n`)
+          logLine(`telegram channel: polling as @${info.username}\n`)
           void bot.api.setMyCommands(
             [
               { command: 'start', description: 'Welcome and setup guide' },
@@ -1531,7 +1734,7 @@ async function runPoller(): Promise<void> {
         // A revoked or mistyped token. No amount of retrying fixes it, and a
         // loop that never gives up is what kept these servers busy for days
         // in sessions nobody was watching.
-        process.stderr.write(
+        logLine(
           `telegram channel: Telegram rejected the bot token (401 ${err.description}) — ` +
           `polling disabled. Fix TELEGRAM_BOT_TOKEN in ${ENV_FILE} and restart the session.\n`,
         )
@@ -1548,7 +1751,7 @@ async function runPoller(): Promise<void> {
       failures = Date.now() - startedAt >= HEALTHY_RUN_MS ? 1 : failures + 1
       const is409 = err instanceof GrammyError && err.error_code === 409
       if (is409 && failures >= CONFLICT_ATTEMPTS) {
-        process.stderr.write(
+        logLine(
           `telegram channel: 409 Conflict persists after ${failures} attempts — another poller holds ` +
           `this token. Releasing the slot, retrying in ${CONFLICT_BACKOFF_MS / 1000}s.\n`,
         )
@@ -1562,7 +1765,7 @@ async function runPoller(): Promise<void> {
       const detail = is409
         ? `409 Conflict${failures === 1 ? ' — another instance is polling (zombie session, or a second Claude Code running?)' : ''}`
         : `polling error: ${err}`
-      process.stderr.write(`telegram channel: ${detail}, retrying in ${delay / 1000}s\n`)
+      logLine(`telegram channel: ${detail}, retrying in ${delay / 1000}s\n`)
       await new Promise(r => setTimeout(r, delay))
       // The slot can be claimed while we sleep; resuming then would make us
       // the real getUpdates consumer again without holding the lease.
