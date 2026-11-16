@@ -85,6 +85,8 @@ def store(monkeypatch):
     # The store is checked once per process.
     monkeypatch.setattr(llm, "_store_tls_context", llm._STORE_TLS_UNSET)
     monkeypatch.setattr(llm, "_store_certs_skipped", 0)
+    # Not this machine's: a Mac whose Python has no certificates.
+    monkeypatch.setattr(llm, "_ON_MACOS", False)
     for var in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy",
                 "ALL_PROXY", "all_proxy", "SSL_CERT_FILE", "SSL_CERT_DIR"):
         monkeypatch.delenv(var, raising=False)
