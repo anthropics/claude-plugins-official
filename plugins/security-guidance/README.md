@@ -72,6 +72,7 @@ On the default API host, a claude.ai token (`sk-ant-oat`) that arrives as `ANTHR
 | `ENABLE_CODE_SECURITY_REVIEW=0` | on | Disable all LLM reviews (Stop hook + commit/push) |
 | `ENABLE_STOP_REVIEW=0` | on | Disable only the Stop-hook diff review, keeping commit/push reviews. Useful for multi-agent / shared-worktree setups where another agent can move HEAD between a worker's turns |
 | `ENABLE_COMMIT_REVIEW=0` | on | Disable layer 3 (agentic commit review) |
+| `MAX_COMMIT_REVIEWS_PER_HOUR=<n>` | `20` | The most commit reviews, and separately the most push reviews, that one session runs in a rolling hour. A commit or push past the limit still goes through, without a review and without a message; a later push can still review the commit. Must be a whole number; `0` runs none. It counts reviews, not tokens or cost, and does not limit the Stop-hook diff review |
 | `SECURITY_GUIDANCE_PERSIST_SESSIONS=1` | unset | Keep the reviewer's own Claude Code runs as session transcripts (see [Privacy and data handling](#privacy-and-data-handling)) |
 
 ### Hook output for other hosts
