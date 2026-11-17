@@ -2,7 +2,10 @@
   "mcpServers": {
     "discord": {
       "command": "bun",
-      "args": ["run", "--cwd", "${CLAUDE_PLUGIN_ROOT}", "--shell=bun", "--silent", "start"]
+      "args": ["run", "--cwd", "${CLAUDE_PLUGIN_ROOT}", "--shell=bun", "--silent", "start"],
+      "env": {
+        "DISCORD_BOT_TOKEN": "${user_config.DISCORD_BOT_TOKEN}"
+      }
     }
   }
 }

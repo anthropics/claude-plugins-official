@@ -1,11 +1,20 @@
 {
   "name": "discord",
   "description": "Discord channel for Claude Code \u2014 messaging bridge with built-in access control. Manage pairing, allowlists, and policy via /discord:access.",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "keywords": [
     "discord",
     "messaging",
     "channel",
     "mcp"
-  ]
+  ],
+  "userConfig": {
+    "DISCORD_BOT_TOKEN": {
+      "type": "string",
+      "title": "Bot Token",
+      "description": "Bot token from the Discord Developer Portal. Stored in keychain (macOS) or ~/.claude/.credentials.json with 0600 permissions elsewhere. Never written to settings.json.",
+      "required": true,
+      "sensitive": true
+    }
+  }
 }
