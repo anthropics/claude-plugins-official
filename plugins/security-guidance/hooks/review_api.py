@@ -15,17 +15,17 @@ side effects.
 from __future__ import annotations
 
 import json
-import os
 from typing import Any
 
 import extensibility
+from _base import env_number
 
 # ---------------------------------------------------------------------------
 # Diff capping
 # ---------------------------------------------------------------------------
 
-DIFF_PER_FILE_BYTES = int(os.environ.get("DIFF_PER_FILE_BYTES", "80000"))
-DIFF_TOTAL_BYTES = int(os.environ.get("DIFF_TOTAL_BYTES", "400000"))
+DIFF_PER_FILE_BYTES = env_number("DIFF_PER_FILE_BYTES", 80000, log=False)
+DIFF_TOTAL_BYTES = env_number("DIFF_TOTAL_BYTES", 400000, log=False)
 
 
 def cap_diff_for_prompt(

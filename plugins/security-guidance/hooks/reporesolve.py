@@ -4,6 +4,7 @@ import shlex
 import subprocess
 import time
 
+from _base import env_number
 from gitutil import GIT_CMD, _git_toplevel
 from session_state import with_locked_state
 
@@ -22,9 +23,9 @@ SCAN_SKIP_DIRS = {
     "node_modules", ".venv", "venv", "__pycache__", ".tox", "dist",
     "build", "target", ".cache", ".git", "vendor", "site-packages",
 }
-SCAN_MAX_DEPTH = int(os.environ.get("SG_REPO_SCAN_MAX_DEPTH", "3"))
-SCAN_MAX_REPOS = int(os.environ.get("SG_REPO_SCAN_MAX_REPOS", "64"))
-SCAN_BUDGET_S = float(os.environ.get("SG_REPO_SCAN_BUDGET_S", "4"))
+SCAN_MAX_DEPTH = env_number("SG_REPO_SCAN_MAX_DEPTH", 3)
+SCAN_MAX_REPOS = env_number("SG_REPO_SCAN_MAX_REPOS", 64)
+SCAN_BUDGET_S = env_number("SG_REPO_SCAN_BUDGET_S", 4.0, float)
 
 _SEPARATORS = frozenset(";&|(){}\n")
 _SHA_RE = re.compile(r"^[0-9a-f]{7,40}$")

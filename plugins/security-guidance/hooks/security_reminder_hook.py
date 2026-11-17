@@ -89,7 +89,7 @@ from _base import (  # noqa: E402,F401
     _USAGE_CONTEXT, _log_usage,
     launcher_direct_metric, launcher_probe_metrics, state_dir as _resolve_state_dir,
     write_hook_output as _write_hook_output, portable_output,
-    llm_reviews_switched_off, agent_sdk_installed, make_state_dir,
+    llm_reviews_switched_off, agent_sdk_installed, make_state_dir, env_number,
 )
 import extensibility  # noqa: E402
 from patterns import (  # noqa: E402,F401
@@ -199,19 +199,19 @@ SECURITY_GUIDANCE_DISABLED = (
 # Maximum number of times the stop hook can fire per user turn.
 # Allows iterative fixing: Claude stops → review → fix → stop → review again.
 # Set to 0 for unlimited (like the old plugin). Default 3 for iterative fixing.
-MAX_STOP_HOOK_FIRINGS = int(os.environ.get("MAX_STOP_HOOK_FIRINGS", "3"))
+MAX_STOP_HOOK_FIRINGS = env_number("MAX_STOP_HOOK_FIRINGS", 3)
 
 # Cap on source files sent to the LLM reviewer per Stop fire. A stale baseline
 # meeting an ungitignored build directory can produce an enormous spurious
 # diff; unbounded diffs burn tokens and risk 400 on context length.
-MAX_DIFF_FILES = int(os.environ.get("MAX_DIFF_FILES", "30"))
+MAX_DIFF_FILES = env_number("MAX_DIFF_FILES", 30)
 
 # Changed source paths past which the Stop review is skipped before any diff.
 # A set this large is a repo at $HOME or an unignored cache, not edits; no
 # platform takes that many paths in one git command, and only resolving them
 # takes seconds. Paths the review never reads (an unignored node_modules) do
 # not count: they must not hide the one edited source file beside them.
-MAX_REVIEW_SET_PATHS = int(os.environ.get("MAX_REVIEW_SET_PATHS", "100000"))
+MAX_REVIEW_SET_PATHS = env_number("MAX_REVIEW_SET_PATHS", 100000)
 
 # Appended to all exit(2) guidance so the asyncRewake auto-turn doesn't
 # cause the model to abandon the user's original request.
@@ -1131,13 +1131,10 @@ _GIT_AMEND_RE = re.compile(r'(?:\s--amend\b|\bgt' + _WORD_GAP + r'modify\b)')
 # docstring for the rationale that motivated the switch from a lifetime cap.
 # `MAX_COMMIT_REVIEWS_PER_SESSION` is read for backward-compat with users who
 # tuned it; the value is reinterpreted as per-hour.
-MAX_COMMIT_REVIEWS_PER_HOUR = int(
-    os.environ.get("MAX_COMMIT_REVIEWS_PER_HOUR")
-    or os.environ.get("MAX_COMMIT_REVIEWS_PER_SESSION", "20")
-)
-COMMIT_REVIEW_RATE_WINDOW_S = int(
-    os.environ.get("COMMIT_REVIEW_RATE_WINDOW_S", "3600")
-)
+MAX_COMMIT_REVIEWS_PER_HOUR = env_number("MAX_COMMIT_REVIEWS_PER_HOUR", None)
+if MAX_COMMIT_REVIEWS_PER_HOUR is None:
+    MAX_COMMIT_REVIEWS_PER_HOUR = env_number("MAX_COMMIT_REVIEWS_PER_SESSION", 20)
+COMMIT_REVIEW_RATE_WINDOW_S = env_number("COMMIT_REVIEW_RATE_WINDOW_S", 3600)
 
 # ─── push-sweep ─────────────────────────────────────────────────────────────
 #
@@ -1172,16 +1169,13 @@ _PUSH_RANGE_RE = re.compile(
     re.MULTILINE,
 )
 
-MAX_PUSH_SWEEP_FILES = int(os.environ.get("SG_PUSH_SWEEP_MAX_FILES", "30"))
-MAX_PUSH_SWEEP_RANGE = int(os.environ.get("SG_PUSH_SWEEP_MAX_RANGE", "50"))
-PUSH_SWEEP_REPORT_CAP = int(os.environ.get("SG_PUSH_SWEEP_REPORT_CAP", "3"))
+MAX_PUSH_SWEEP_FILES = env_number("SG_PUSH_SWEEP_MAX_FILES", 30)
+MAX_PUSH_SWEEP_RANGE = env_number("SG_PUSH_SWEEP_MAX_RANGE", 50)
+PUSH_SWEEP_REPORT_CAP = env_number("SG_PUSH_SWEEP_REPORT_CAP", 3)
 # How long a push review waits for a commit review that is still running on
 # the pushed commits, before reviewing them itself. Longer than the agentic
 # race delay, so a commit review that fell back to single-shot can finish.
-try:
-    INFLIGHT_WAIT_S = int(os.environ.get("SG_INFLIGHT_WAIT_S", "") or 240)
-except ValueError:
-    INFLIGHT_WAIT_S = 240
+INFLIGHT_WAIT_S = env_number("SG_INFLIGHT_WAIT_S", 240)
 
 # Word pairs a shell `case` pattern (`*git*commit*|*git*push*|...`) would look
 # for in the raw hook input: wider than _GIT_COMMIT_RE / _GIT_PUSH_RE, so a
@@ -1573,7 +1567,7 @@ def _agentic_review_with_race(
     if os.environ.get("SG_AGENTIC_NO_RACE") == "1":
         return agentic_review(repo_root, diff_files, rel_touched)
 
-    delay_s = max(0, int(os.environ.get("SG_AGENTIC_RACE_DELAY_S", "180")) - int(spent_s))
+    delay_s = max(0, env_number("SG_AGENTIC_RACE_DELAY_S", 180) - int(spent_s))
     if spent_s >= 1:
         debug_log(f"Review race: {spent_s:.0f}s already spent, fallback starts after {delay_s}s")
     q: "_queue.Queue[Tuple[str, Any]]" = _queue.Queue(maxsize=1)
