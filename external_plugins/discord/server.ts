@@ -22,6 +22,7 @@ import {
   GatewayIntentBits,
   Partials,
   ChannelType,
+  MessageType,
   ButtonBuilder,
   ButtonStyle,
   ActionRowBuilder,
@@ -595,6 +596,23 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
         required: ['channel'],
       },
     },
+    {
+      name: 'create_thread',
+      description:
+        "Start a public thread in a server text or announcement channel. Use when someone asks for a thread, or to move a long side topic out of the channel. Returns the thread ID — post in it with reply, passing that ID as chat_id. @mention someone in the thread (<@user_id>) to add them to it. The parent channel's access rules, including its mention requirement, apply inside the thread.",
+      inputSchema: {
+        type: 'object',
+        properties: {
+          chat_id: { type: 'string', description: 'The parent channel.' },
+          name: { type: 'string', description: 'Thread title, 1-100 characters.' },
+          message_id: {
+            type: 'string',
+            description: 'Message in the parent channel to start the thread from, usually the one you are answering. Prefer this; omit it only for a standalone thread.',
+          },
+        },
+        required: ['chat_id', 'name'],
+      },
+    },
   ],
 }))
 
@@ -705,6 +723,37 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
           content: [{ type: 'text', text: `downloaded ${lines.length} attachment(s):\n${lines.join('\n')}` }],
         }
       }
+      case 'create_thread': {
+        const ch = await fetchAllowedChannel(args.chat_id as string)
+        if (ch.isThread()) {
+          throw new Error(`chat_id is already a thread — reply in it, or pass its parent channel ${ch.parentId} to start a new one`)
+        }
+        if (ch.type !== ChannelType.GuildText && ch.type !== ChannelType.GuildAnnouncement) {
+          throw new Error('threads need a server text or announcement channel, not a DM or voice chat')
+        }
+        const message_id = args.message_id as string | undefined
+        let text: string
+        try {
+          const thread = await ch.threads.create({ name: args.name as string, startMessage: message_id })
+          text = `thread created (id: ${thread.id})`
+        } catch (err) {
+          const code = (err as { code?: unknown }).code
+          // Discord API errors: 50001 Missing Access, 50013 Missing Permissions.
+          if (code === 50001 || code === 50013) {
+            throw new Error(`${(err as Error).message} — check that the bot has Create Public Threads, View Channel and Read Message History in this channel`)
+          }
+          // 10008 Unknown Message.
+          if (code === 10008) throw new Error(`no message ${message_id} in channel ${ch.id} — it may be deleted or in another channel`)
+          // 160004: the message already has a thread, which shares the message's ID.
+          if (code !== 160004) throw err
+          text = `message already has a thread, which keeps its current name (id: ${message_id})`
+        }
+        text += ' — use it as chat_id to reply there.'
+        if (loadAccess().groups[ch.id]?.requireMention ?? true) {
+          text += ' As in the parent channel, people must @mention you or reply to one of your messages to reach you there.'
+        }
+        return { content: [{ type: 'text', text }] }
+      }
       default:
         return {
           content: [{ type: 'text', text: `unknown tool: ${req.params.name}` }],
@@ -804,6 +853,9 @@ client.on('interactionCreate', async (interaction: Interaction) => {
 
 client.on('messageCreate', msg => {
   if (msg.author.bot) return
+  // First message of a thread started from a message: a system pointer back
+  // to that message, with no text of its own.
+  if (msg.type === MessageType.ThreadStarterMessage) return
   handleInbound(msg).catch(e => process.stderr.write(`discord: handleInbound failed: ${e}\n`))
 })
 
