@@ -17,8 +17,8 @@ permissions:
 env:
   # A push whose commit message contains [report] skips the suite and prints
   # the results of this earlier run instead.
-  REPORT_RUN_ID: '42718802533'
-  REPORT_SDK_RUN_ID: '42718802533'
+  REPORT_RUN_ID: '44383741398'
+  REPORT_SDK_RUN_ID: '44393619744'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -250,14 +250,14 @@ jobs:
         if: ${{ contains(github.event.head_commit.message, '[report]') }}
         with:
           path: results
-          pattern: results-*
+          pattern: results-windows-11-arm-main
           run-id: ${{ env.REPORT_RUN_ID }}
           github-token: ${{ github.token }}
       - uses: actions/download-artifact@v4
         if: ${{ contains(github.event.head_commit.message, '[report]') }}
         with:
           path: results
-          pattern: sdk-*
+          pattern: results-*
           run-id: ${{ env.REPORT_SDK_RUN_ID }}
           github-token: ${{ github.token }}
       - name: Table
