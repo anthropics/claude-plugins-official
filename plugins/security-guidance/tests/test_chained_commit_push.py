@@ -262,10 +262,16 @@ def test_wait_for_holder_stops_at_the_limit(tmp_path):
         assert diffstate.is_held(str(path)) is True
         p.kill()
         p.wait()
-        assert diffstate.wait_for_holder(str(path), 20) == (True, 0.0)
+        # Windows can release a killed process's lock a moment after it ended.
+        ended, waited = diffstate.wait_for_holder(str(path), 20)
+        assert ended is True and waited < 5
     finally:
         p.kill()
         p.communicate()
+    # A file nobody holds is no wait at all.
+    free = tmp_path / "free"
+    free.write_text("")
+    assert diffstate.wait_for_holder(str(free), 20) == (True, 0.0)
 
 
 def test_both_reviews_pick_the_same_commits(repo):
