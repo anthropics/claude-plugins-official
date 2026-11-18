@@ -977,6 +977,7 @@ def handle_user_prompt_submit(input_data):
             return
         if sha:
             state["baseline_sha"] = sha
+            state["baseline_at"] = captured_at
             state["head_at_capture"] = head
             state.pop("turn_touched", None)
             state.pop("turn_touched_lost", None)
@@ -2996,6 +2997,17 @@ def _diff_read_metrics():
                                           ("diff_timeout", read["timeouts"])) if value}
 
 
+def _capture_with_untracked(cwd):
+    """(capture_git_baseline, _list_untracked) of `cwd`, run together as both
+    walk the worktree. The listing is None without a baseline."""
+    import concurrent.futures as _cf
+    with _cf.ThreadPoolExecutor(max_workers=2) as _ex:
+        _f_sha = _ex.submit(capture_git_baseline, cwd)
+        _f_ut = _ex.submit(_list_untracked, cwd)
+        sha, listing = _f_sha.result(), _f_ut.result()
+    return sha, (listing if sha else None)
+
+
 def _stop_diff_truncated():
     """Bytes of reviewable diff the Stop review did not send: cut while
     reading git's output, plus what the prompt caps dropped after that.
@@ -3222,12 +3234,53 @@ def handle_stop_hook(input_data):
         debug_log("Stop hook: empty review set")
         _skip(9, touched_paths_count=len(touched_paths))
     debug_log(f"Stop hook: review_set={len(review_paths)} base={diff_base[:12]} dirty_now={v2_metrics['dirty_now_count']} changed_since={v2_metrics['changed_since_count']}")
-    if (len(review_paths) > MAX_REVIEW_SET_PATHS
-            and sum(_is_reviewable_source(os.path.relpath(p, repo_root))
-                    for p in review_paths) > MAX_REVIEW_SET_PATHS):
-        debug_log(f"Stop hook: pathological review set (more than "
-                  f"{MAX_REVIEW_SET_PATHS} paths), skipping")
-        _skip(8)
+    def _skip_if_too_many(paths):
+        if (len(paths) > MAX_REVIEW_SET_PATHS
+                and sum(_is_reviewable_source(os.path.relpath(p, repo_root))
+                        for p in paths) > MAX_REVIEW_SET_PATHS):
+            debug_log(f"Stop hook: pathological review set (more than "
+                      f"{MAX_REVIEW_SET_PATHS} paths), skipping")
+            _skip(8)
+    _skip_if_too_many(review_paths)
+
+    # The baseline a finding leaves for the next Stop. Taken before the changes
+    # are read: an edit before it is in this review, one after it in the next.
+    import time as _time
+    new_sha = new_base_fail = new_untracked_baseline = new_head = new_at = None
+    if not is_subagent and any(
+            _is_reviewable_source(os.path.relpath(p, repo_root).replace(os.sep, "/"))
+            for p in review_paths):
+        try:
+            if foreign_baseline and not head_at_capture:
+                # After a baseline from another checkout, the rest of it is
+                # replaced too, when this one is stored.
+                new_head = _git_rev_parse_head(cwd)
+            new_at = _time.time()
+            new_sha, new_untracked_baseline = _capture_with_untracked(cwd)
+            new_base_fail = diffstate.last_baseline_fail
+            # The listing that goes with the snapshot: all that is in it has to
+            # be in the review. Added to the first one, which may hold files
+            # that went again meanwhile, or that git could not list this time.
+            again = compute_v2_review_set(
+                cwd, baseline_sha, head_at_capture, untracked_at_baseline, since_ns=since_ns
+            ) if new_sha else None
+            if again and again[4]["dirty_now_count"] >= 0:
+                if set(again[0]) - set(review_paths):
+                    review_paths = sorted({*review_paths, *again[0]})
+                    v2_metrics = {**res_metrics, **again[4],
+                                  "review_set_count": len(review_paths)}
+                    _note_scope(review_paths)
+                untracked = again[3]
+                if diff_base == "HEAD":
+                    diff_base = again[1]
+                diffstate.note_listed(new_untracked_baseline, repo_root, untracked)
+            else:
+                new_sha = None
+        except Exception as e:
+            debug_log(f"Stop hook: no baseline for the next Stop: {e}")
+            new_sha = None
+        _skip_if_too_many(review_paths)
+
     # Run from repo_root so the toplevel-relative review_paths resolve.
     # Diff CONTENT against the turn-start snapshot (baseline_sha) so the LLM
     # sees only this-turn edits — diffing against HEAD includes the user's
@@ -3315,7 +3368,6 @@ def handle_stop_hook(input_data):
     if secret_named:
         _TAIL_METRICS["secret_named_reviewed"] = secret_named
 
-    import time as _time
     stop_review_start = _time.time()
 
     # Stop hook is single-shot only. Agentic review is wired into
@@ -3356,14 +3408,6 @@ def handle_stop_hook(input_data):
             }
             for v in vulns
         ]
-        # Update baseline so next stop hook iteration only sees new changes
-        new_sha = None if is_subagent else capture_git_baseline(cwd)
-        new_base_fail = diffstate.last_baseline_fail
-        new_untracked_baseline = _list_untracked(cwd) if new_sha else None
-        # After a baseline from another checkout, the rest of it is replaced
-        # too, below.
-        new_head = (_git_rev_parse_head(cwd)
-                    if new_sha and foreign_baseline and not head_at_capture else None)
 
         def _record_fire(state):
             if is_subagent:
@@ -3385,20 +3429,27 @@ def handle_stop_hook(input_data):
                     existing.append(f)
             state["previous_findings"] = existing
             state["previous_findings_ts"] = _time.time()
-            if new_sha:
-                state["baseline_sha"] = new_sha
-                state["untracked_at_baseline"] = new_untracked_baseline
-                _store_baseline_fail(state, new_base_fail)
-                state["baseline_root"] = repo_root
-                state.pop("baseline_kept", None)
-                if foreign_baseline:
-                    # The stored HEAD is the other checkout's. Keep the one
-                    # this review used, so a later Stop this turn still sees
-                    # commits made (or amended) here since the prompt.
-                    state["head_at_capture"] = head_at_capture or new_head
-        with_locked_state(session_id, _record_fire)
+            # The newest baseline stays: a prompt or another Stop may have
+            # stored one while the review ran.
+            stored_at = state.get("baseline_at")
+            if (not new_sha
+                    or isinstance(stored_at, (int, float)) and stored_at > new_at
+                    or state.get("baseline_root") != snap["baseline_root"]):
+                return False
+            state["baseline_sha"] = new_sha
+            state["baseline_at"] = new_at
+            state["untracked_at_baseline"] = new_untracked_baseline
+            _store_baseline_fail(state, new_base_fail)
+            state["baseline_root"] = repo_root
+            state.pop("baseline_kept", None)
+            if foreign_baseline:
+                # The stored HEAD is the other checkout's. Keep the one
+                # this review used, so a later Stop this turn still sees
+                # commits made (or amended) here since the prompt.
+                state["head_at_capture"] = head_at_capture or new_head
+            return True
 
-        if new_sha:
+        if with_locked_state(session_id, _record_fire):
             debug_log(f"Updated git baseline after stop hook: {new_sha[:12]}")
 
         # Say so when a finding is in a file with no record of the session's
