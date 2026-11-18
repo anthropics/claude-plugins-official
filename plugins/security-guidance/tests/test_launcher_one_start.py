@@ -361,6 +361,43 @@ def test_entry_written_while_the_hook_ran_survives_its_failure(box):
     assert box.memo.read_text() == other and box.run(b)[0] == "3"
 
 
+def fails_after(code):
+    return "import os, resource, sys\n" + code + "\nsys.stderr.write('findings')\nsys.exit(2)\n"
+
+
+@posix_only
+@pytest.mark.parametrize("route", ["regular", "alias"])
+@pytest.mark.parametrize("code", [
+    "os.chmod(memo, 0o400)",
+    "os.chmod(memo, 0)",
+    "os.chmod(os.path.dirname(memo), 0o500)",
+    "os.unlink(memo)",
+    "os.unlink(memo); os.mkdir(memo)",
+    "os.unlink(memo); os.mkfifo(memo)",
+    "open(memo, 'w').close()",
+    # The launcher, waiting for this hook, can open no file any more.
+    pytest.param("resource.prlimit(os.getppid(), resource.RLIMIT_NOFILE, (3, 3))",
+                 marks=pytest.mark.skipif(sys.platform != "linux", reason="prlimit")),
+])
+def test_hook_keeps_its_exit_code_whatever_happens_to_the_file(box, route, code):
+    if route == "regular":
+        path = [box.install().parent]
+    else:
+        apps = box.root / "Microsoft" / "WindowsApps"
+        box.python(apps / "python", says=box.install())
+        path = [apps]
+    box.run(*path)
+    assert box.memo.exists()
+    failing = box.hooks / "fails.py"
+    failing.write_text(fails_after(f"memo = {str(box.memo)!r}\n{code}"))
+    try:
+        r = box.launch(path, script=failing)
+    finally:
+        box.state.chmod(0o700)
+    # Without a free descriptor bash cannot even silence its own messages.
+    assert r.returncode == 2 and r.stderr.startswith("findings")
+
+
 @posix_only
 @pytest.mark.parametrize("rc,version", [(0, "3.8"), (1, VERSION)])
 def test_earlier_name_that_was_started_and_not_used(box, rc, version):
@@ -473,18 +510,21 @@ def win(tmp_path):
     hook.write_text("import os, sys\nsys.stdin.read()\n"
                     "print(os.environ.get('SG_LAUNCHER_DIRECT', '-'), sys.executable, sys.base_prefix, sep='|')\n")
 
-    def run(folder, **extra):
+    def launch(folder, script, **extra):
         env = {k: v for k, v in os.environ.items() if k.upper() not in ("VIRTUAL_ENV", "PATH")}
         # Only Git's tools and the folder under test.
         usr = Path(bash).parents[1] / "usr" / "bin"
         env.update(PATH=f"{folder};{usr}", SECURITY_WARNINGS_STATE_DIR=str(state), **extra)
-        r = subprocess.run([bash, "--noprofile", "--norc", str(SHIM), str(hook)], input="payload",
-                           capture_output=True, text=True, timeout=120, env=env)
+        return subprocess.run([bash, "--noprofile", "--norc", str(SHIM), str(script)], input="payload",
+                              capture_output=True, text=True, timeout=120, env=env)
+
+    def run(folder, **extra):
+        r = launch(folder, hook, **extra)
         assert r.returncode == 0, r.stderr
         direct, exe, base = r.stdout.strip().split("|")
         return direct, Path(exe), Path(base)
 
-    run.root = tmp_path
+    run.root, run.launch = tmp_path, launch
     return run
 
 
@@ -529,3 +569,32 @@ def test_windows_virtual_environment_is_left_alone(win):
     for _ in range(2):
         direct, exe, _ = win(venv / "Scripts")
         assert direct == "-" and os.path.samefile(exe, venv / "Scripts" / "python.exe")
+
+
+@windows_only
+def test_windows_locked_entry_does_not_change_the_exit_code(win):
+    folder = base_python()
+    if folder is None:
+        pytest.skip("no python.exe in the base install")
+    assert win(folder)[0] == "4"
+    memo = win.root / "state" / "launcher-python"
+    # Another program opens the entry for itself alone while the hook runs.
+    holder = win.root / "hold.py"
+    holder.write_text(
+        "import ctypes, sys, time\n"
+        "k = ctypes.WinDLL('kernel32', use_last_error=True)\n"
+        "k.CreateFileW.restype = ctypes.c_void_p\n"
+        "h = k.CreateFileW(sys.argv[1], 0x80000000, 0, None, 3, 0, None)\n"
+        "open(sys.argv[2], 'w').write('%s' % (h not in (None, ctypes.c_void_p(-1).value)))\n"
+        "time.sleep(20)\n")
+    held = win.root / "held"
+    hook = win.root / "fails.py"
+    hook.write_text(
+        "import os, subprocess, sys, time\n"
+        f"p = subprocess.Popen([sys.executable, {str(holder)!r}, {str(memo)!r}, {str(held)!r}],\n"
+        "    stdin=-3, stdout=-3, stderr=-3, creationflags=0x8)\n"
+        f"while not (os.path.exists({str(held)!r}) and os.path.getsize({str(held)!r})): time.sleep(0.1)\n"
+        "sys.stderr.write('findings')\nsys.exit(2)\n")
+    r = win.launch(folder, hook)
+    assert held.read_text() == "True"
+    assert (r.returncode, r.stderr) == (2, "findings")

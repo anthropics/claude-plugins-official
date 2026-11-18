@@ -371,7 +371,7 @@ sg_read_memo() {
             kept=$((kept + 1))
             sg_keep+="$tag"$'\n'"$saved"$'\n'"$path"$'\n'"$exe"$'\n'"$dir"$'\n'"$how"$'\n'"$end"$'\n'
         fi
-    done 2>/dev/null < "$sg_memo"
+    done 2>/dev/null < "$sg_memo" || true  # it may be locked, or gone by now
     return 0
 }
 
@@ -380,7 +380,8 @@ sg_read_memo() {
 # an entry or leave a broken one, which costs a search.
 sg_write_memo() {
     local how="$sg_how"
-    [ -d "${sg_memo%/*}" ] && [ ! -d "$sg_memo" ] || return 0
+    [ -d "${sg_memo%/*}" ] || return 0
+    [ ! -e "$sg_memo" ] || [ -f "$sg_memo" ] || return 0
     sg_read_memo
     sg_how="$how"
     printf '%s' "$1$sg_keep" 2>/dev/null > "$sg_memo" || true
@@ -490,7 +491,9 @@ if sg_recall; then
     # Python that cannot open the script (see probe).
     sg_rc=0
     "$sg_own" "$@" || sg_rc=$?
-    [ "$sg_rc" -eq 0 ] || sg_write_memo ""
+    # `|| true`: under `set -e` nothing here may end the launcher, because the
+    # exit code of the hook is what wakes the model.
+    [ "$sg_rc" -eq 0 ] || sg_write_memo "" || true
     exit "$sg_rc"
 fi
 
