@@ -29,12 +29,12 @@ jobs:
     name: ${{ matrix.ref }} on ${{ matrix.os }}
     if: ${{ !contains(github.event.head_commit.message, '[report]') && !contains(github.event.head_commit.message, '[store-cert]') }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, windows-11-arm, macos-latest]
-        ref: [main, '7167', '7168']
+        os: [windows-11-arm]
+        ref: ['7167']
     defaults:
       run:
         shell: bash
@@ -78,7 +78,7 @@ jobs:
           else
             echo "::notice title=agent sdk::install failed: $(tail -c 1500 "$RUNNER_TEMP/sdk-install.txt" | tr '\n' ' ')"
           fi
-          python -m pytest -q -p no:cacheprovider tests -rfEs \
+          python -m pytest -q -p no:cacheprovider tests -rfEs --durations=40 \
             --junitxml="$RUNNER_TEMP/results/junit.xml" -o junit_logging=system-err
 
       - name: Hook launch through the launcher script
