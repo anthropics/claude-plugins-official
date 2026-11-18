@@ -138,7 +138,7 @@ from diffstate import (  # noqa: E402,F401
 from reporesolve import (  # noqa: E402,F401
     RES_NONE, RES_CWD, RES_COMMAND, RES_SHA_SCAN, RES_TOUCHED_PATHS, RES_HINT,
     COMMIT_SUBCOMMANDS, PUSH_SUBCOMMANDS,
-    toplevel_from_command, repo_containing_commit, scan_roots,
+    toplevel_from_command, repo_containing_commit, scan_roots, _same_path,
     resolve_repo_root, save_repo_hint, load_repo_hint,
 )
 import diffstate  # noqa: E402  module ref for last_baseline_fail
@@ -1245,6 +1245,10 @@ def _unmatched_bash_sampled(input_data):
 _bash_hook_git_dir = {}
 
 
+def _from_bash(input_data):
+    return input_data.get("tool_name") != "PowerShell"
+
+
 def _bash_hook_sentinel(input_data, route="once"):
     """The file one spawn of this Bash call's hook creates to claim `route`,
     or None when there is nothing to tell the spawns apart by."""
@@ -1257,7 +1261,8 @@ def _bash_hook_sentinel(input_data, route="once"):
     if call not in _bash_hook_git_dir:
         _bash_hook_git_dir[call] = _git_dir(
             _git_toplevel(cwd)
-            or toplevel_from_command(command, cwd, COMMIT_SUBCOMMANDS | PUSH_SUBCOMMANDS)
+            or toplevel_from_command(command, cwd, COMMIT_SUBCOMMANDS | PUSH_SUBCOMMANDS,
+                                     bash=_from_bash(input_data))
             or cwd
         )
     gd = _bash_hook_git_dir[call]
@@ -1985,8 +1990,9 @@ def handle_commit_review_posttooluse(input_data):
     repo_root = cwd_root
     repo_res = RES_CWD if cwd_root else RES_NONE
     if cwd:
-        _cmd_root = toplevel_from_command(command, cwd, COMMIT_SUBCOMMANDS, cwd_root)
-        if _cmd_root and _cmd_root != cwd_root:
+        _cmd_root = toplevel_from_command(command, cwd, COMMIT_SUBCOMMANDS, cwd_root,
+                                          bash=_from_bash(input_data))
+        if _cmd_root and not _same_path(_cmd_root, cwd_root):
             repo_root, repo_res = _cmd_root, RES_COMMAND
     if not cwd_root:
         _base["cwd_is_repo"] = False
@@ -2580,6 +2586,7 @@ def handle_push_sweep_posttooluse(input_data):
         cwd, command, PUSH_SUBCOMMANDS,
         sha=_tip_m.group(2) if _tip_m else None,
         session_id=session_id, cwd_root=cwd_root,
+        bash=_from_bash(input_data),
     )
     if not cwd_root:
         _base["cwd_is_repo"] = False

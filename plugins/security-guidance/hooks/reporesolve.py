@@ -35,6 +35,15 @@ _PUSH_DIR_WORDS = frozenset(("pushd", "push-location"))
 _POP_DIR_WORDS = frozenset(("popd", "pop-location"))
 
 
+# Git Bash writes `C:\x` as `/c/x`, which Windows reads as a folder `c` at
+# the root of the current drive, as PowerShell does too.
+_BASH_DRIVE_RE = re.compile(r"/([A-Za-z])(?=/)")
+
+
+def _drive_path(p):
+    return _BASH_DRIVE_RE.sub(r"\1:", p, count=1) if _BASH_DRIVE_RE.match(p) else p
+
+
 def _abs(base, p):
     try:
         p = os.path.expanduser(p)
@@ -43,6 +52,10 @@ def _abs(base, p):
         return os.path.normpath(p)
     except (TypeError, ValueError, OSError):
         return None
+
+
+def _same_path(a, b):
+    return bool(a and b) and os.path.normcase(a) == os.path.normcase(b)
 
 
 def _is_sep(tok):
@@ -67,10 +80,14 @@ def _tokenize(command):
             return []
 
 
-def dirs_from_command(command, cwd, subcommands=None):
+def dirs_from_command(command, cwd, subcommands=None, bash=True):
     if not isinstance(command, str) or not command.strip():
         return []
     tokens = _tokenize(command)
+
+    def resolve(base, p):
+        return _abs(base, _drive_path(p) if bash and os.name == "nt" else p)
+
     out = []
     cur = cwd or ""
     pushed = []
@@ -100,7 +117,7 @@ def dirs_from_command(command, cwd, subcommands=None):
                 i += 1
             if i + 1 < n and not _is_sep(tokens[i + 1]) and tokens[i + 1] not in ("-",) \
                     and not tokens[i + 1].startswith("-"):
-                nxt = _abs(cur, tokens[i + 1])
+                nxt = resolve(cur, tokens[i + 1])
                 if nxt:
                     cur = nxt
                 i += 2
@@ -120,26 +137,26 @@ def dirs_from_command(command, cwd, subcommands=None):
                 while j < n and not _is_sep(tokens[j]):
                     a = tokens[j]
                     if a == "-C" and j + 1 < n:
-                        cdir = _abs(cdir, tokens[j + 1]) or cdir
+                        cdir = resolve(cdir, tokens[j + 1]) or cdir
                         j += 2
                         continue
                     if a == "-c" and j + 1 < n:
                         j += 2
                         continue
                     if a.startswith("--git-dir="):
-                        gdir = _abs(cdir, a.split("=", 1)[1])
+                        gdir = resolve(cdir, a.split("=", 1)[1])
                         j += 1
                         continue
                     if a == "--git-dir" and j + 1 < n:
-                        gdir = _abs(cdir, tokens[j + 1])
+                        gdir = resolve(cdir, tokens[j + 1])
                         j += 2
                         continue
                     if a.startswith("--work-tree="):
-                        wtree = _abs(cdir, a.split("=", 1)[1])
+                        wtree = resolve(cdir, a.split("=", 1)[1])
                         j += 1
                         continue
                     if a == "--work-tree" and j + 1 < n:
-                        wtree = _abs(cdir, tokens[j + 1])
+                        wtree = resolve(cdir, tokens[j + 1])
                         j += 2
                         continue
                     if a.startswith("-"):
@@ -163,10 +180,10 @@ def dirs_from_command(command, cwd, subcommands=None):
     return list(dict.fromkeys(d for d in out if d))
 
 
-def toplevel_from_command(command, cwd, subcommands=None, cwd_root=None):
+def toplevel_from_command(command, cwd, subcommands=None, cwd_root=None, bash=True):
     cwd_abs = _abs(None, cwd) if cwd else None
-    for d in dirs_from_command(command, cwd, subcommands):
-        if cwd_root and d == cwd_abs:
+    for d in dirs_from_command(command, cwd, subcommands, bash):
+        if cwd_root and _same_path(d, cwd_abs):
             return cwd_root
         try:
             if os.path.isdir(d):
@@ -304,12 +321,12 @@ _UNSET = object()
 
 
 def resolve_repo_root(cwd, command=None, subcommands=None, sha=None,
-                      touched_paths=None, session_id=None, cwd_root=_UNSET):
+                      touched_paths=None, session_id=None, cwd_root=_UNSET, bash=True):
     if cwd_root is _UNSET:
         cwd_root = _git_toplevel(cwd) if cwd else None
     if command:
-        top = toplevel_from_command(command, cwd, subcommands, cwd_root)
-        if top and top != cwd_root:
+        top = toplevel_from_command(command, cwd, subcommands, cwd_root, bash)
+        if top and not _same_path(top, cwd_root):
             return top, RES_COMMAND
     if cwd_root:
         return cwd_root, RES_CWD
