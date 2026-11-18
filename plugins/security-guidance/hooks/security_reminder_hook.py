@@ -261,7 +261,7 @@ _TAIL_METRICS: Dict[str, Any] = {}
 # Of those, the ones that go after the others whenever they were set: a row
 # over CC's key cap loses them before any older review key. Only the launcher
 # keys below come later; those are also on every smaller row of the session.
-_LAST_METRIC_KEYS = ("diff_seen", "cr_pack", "renamed_in")
+_LAST_METRIC_KEYS = ("diff_seen", "cr_pack", "renamed_in", "changed_files")
 
 # CC keeps this many keys of a row.
 _METRIC_KEY_CAP = 20
@@ -953,6 +953,15 @@ def handle_user_prompt_submit(input_data):
     # diffs the aborted turn's edits plus the new turn's edits together.
     preserved = {"value": False}
 
+    dropped, seen = 0, {}
+    if snapshot_untracked and not portable_output():
+        try:
+            seen = load_state(session_id)
+            dropped = diffstate.dropped_changes(
+                seen, sha, baseline_fail, root, head, untracked_now)
+        except Exception as e:
+            debug_log(f"dropped change count skipped: {e}")
+
     def _save(state):
         # Where this turn's own commits start, also when the baseline below
         # stays an earlier turn's. Telemetry only.
@@ -976,6 +985,13 @@ def handle_user_prompt_submit(input_data):
                 else KEPT_UNREVIEWED)
             return
         if sha:
+            # Not when a Stop read the state, or another prompt replaced
+            # the baseline, during the count.
+            if dropped and all(state.get(k) == seen.get(k)
+                               for k in ("baseline_sha", "no_stop", "stop_at")):
+                state["dropped"] = diffstate.add_dropped(state.get("dropped"), dropped)
+            state["no_stop"] = True
+            state.pop("stop_left", None)
             state["baseline_sha"] = sha
             state["head_at_capture"] = head
             state.pop("turn_touched", None)
@@ -3004,6 +3020,14 @@ def _stop_diff_truncated():
     return {"diff_truncated": n} if n else {}
 
 
+def _agents_running(tasks):
+    """Whether a Stop hook's background_tasks hold an agent. Shell tasks do
+    not count: a dev server can run for the whole session."""
+    return isinstance(tasks, list) and any(
+        isinstance(t, dict) and t.get("type") in ("subagent", "teammate", "workflow")
+        for t in tasks)
+
+
 def handle_stop_hook(input_data):
     """
     Handle the Stop hook — final security check using git diff.
@@ -3035,7 +3059,9 @@ def handle_stop_hook(input_data):
     # UPS/PostToolUse can fire while we're still here. The snapshot is immune
     # to those writes — they affect the NEXT Stop fire's snapshot.
     snap = (consume_stop_state(session_id, clear=False) if is_subagent
-            else consume_stop_state(session_id))
+            else consume_stop_state(session_id, stop_left=(
+                diffstate.DROPPED_AGENT
+                if _agents_running(input_data.get("background_tasks")) else 0)))
     fire_count = snap["fire_count"]
     touched_paths = snap["touched_paths"]
     baseline_sha = snap["baseline_sha"]
@@ -3045,6 +3071,8 @@ def handle_stop_hook(input_data):
     previous_findings = snap["previous_findings"]
     if not is_subagent and not portable_output():
         _request_turn_commits(session_id, cwd, snap["turn_started"])
+        if isinstance(snap["dropped"], int) and snap["dropped"]:
+            _TAIL_METRICS["changed_files"] = snap["dropped"]
     # Only when it happened: state lost to an unreadable file, and saves that
     # overwrote another hook's (possible only without locking). SubagentStop
     # does not clear them, so it does not report them either.
@@ -3371,6 +3399,7 @@ def handle_stop_hook(input_data):
             else:
                 state["stop_hook_fire_count"] = fire_index
                 state["stop_hook_fire_count_ts"] = _time.time()
+                state["stop_left"] = diffstate.DROPPED_FINDING
             # Re-read under lock — the commit-review PostToolUse hook may have
             # appended findings since consume_stop_state snapshotted.
             # Dedupe on (filePath, category) — vulnerableCode includes diff
@@ -3464,6 +3493,10 @@ def handle_stop_hook(input_data):
         debug_log(f"Stop hook: review got no verdict "
                   f"({_review_failure_reason(llm.last_review_status())[1]})")
         restore_unreviewed_stop_state(session_id, restore_paths, snap_baseline)
+        if not restore_paths and not is_subagent and not portable_output():
+            _TAIL_METRICS["changed_files"] = diffstate.add_dropped(
+                snap["dropped"], diffstate.dropped_code(
+                    diffstate.DROPPED_FAILED, len(diff_files) + _stop_dropped))
     else:
         debug_log("Stop hook: no security issues found")
         if is_subagent:

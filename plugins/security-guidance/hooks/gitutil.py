@@ -1053,7 +1053,7 @@ def _git_toplevel_and_head(cwd):
     return top, (head.strip() or None)
 
 
-def _git_head_at(cwd, epoch):
+def _git_head_at(cwd, epoch, timeout=5):
     """The SHA this checkout's HEAD pointed at just before `epoch` (seconds),
     read from its own reflog. A checkout created after `epoch` answers with
     the commit it was created at. None when git cannot say (no reflog)."""
@@ -1062,7 +1062,7 @@ def _git_head_at(cwd, epoch):
         # commit made in the same second as `epoch` counts as after it.
         r = subprocess.run(
             [*GIT_CMD, "rev-parse", "--verify", "-q", f"HEAD@{{@{int(epoch) - 1}}}"],
-            cwd=cwd, capture_output=True, timeout=5,
+            cwd=cwd, capture_output=True, timeout=timeout,
         )
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError,
             TypeError, ValueError, OverflowError):
