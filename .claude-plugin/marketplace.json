@@ -210,9 +210,8 @@
         "url": "https://github.com/amd/skills.git",
         "path": "skills",
         "ref": "main",
-        "sha": "6916fb371d1cba40757b223cf16b4cd4912b202f"
+        "sha": "d4417422312c82d4761d3255b69bfcd411147cf3"
       },
-      "strict": false,
       "skills": [
         "./local-ai-use",
         "./local-ai-app-integration",
@@ -1003,7 +1002,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/cloudflare/skills.git",
-        "sha": "b052c32bab7dd493513260228a36c88294f343f1"
+        "sha": "cbf893b954222276bf1af57e5f23379231e0efb9"
       },
       "description": "Skills for the Cloudflare developer platform: Workers, Durable Objects, Agents SDK, MCP servers, Wrangler CLI, and web performance.",
       "category": "deployment",

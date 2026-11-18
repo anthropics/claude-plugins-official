@@ -83,10 +83,13 @@ def load_for_session(cwd: Optional[str]) -> None:
     a malformed config file produces a debug_log entry, never a crash.
     """
     global _guidance_block, _user_patterns, _refused_regexes, _match_roots
+    global _brace_forms_left
     _refused_regexes = 0
     env_project = os.environ.get("CLAUDE_PROJECT_DIR") or None
     _match_roots = tuple(_project_dirs(cwd)[:1]) or ((env_project,) if env_project else ())
     _rels_cache.clear()
+    _forms_cache.clear()
+    _brace_forms_left = _BRACE_BUDGET
     try:
         _guidance_block = _wrap_guidance(_load_guidance(cwd))
     except Exception as e:
@@ -420,6 +423,9 @@ def _validate_pattern(entry: Any, source: str) -> Optional[Dict[str, Any]]:
         if not isinstance(paths, list) or not isinstance(exclude, list):
             debug_log(f"extensibility: skipping {name}: paths/exclude_paths must be lists")
             return None
+        for glob in (*paths, *exclude):
+            if isinstance(glob, str):
+                _glob_forms(glob, name)  # now, so the log can name the rule
         rule["_globs"] = (tuple(paths), tuple(exclude))  # read by edit_stats
         # Capture as defaults so the lambda doesn't share state across rules.
         rule["path_filter"] = (
@@ -431,7 +437,8 @@ def _validate_pattern(entry: Any, source: str) -> Optional[Dict[str, Any]]:
 def _rule_covers(path: str, include: Tuple[str, ...], exclude: Tuple[str, ...]) -> bool:
     """Whether a rule's globs let it apply to `path`, as check_patterns hands it
     over (POSIX absolute paths without their leading `/`). Globs are read against
-    the full path and the path inside the project, and `**/` can match no folder."""
+    the full path and the path inside the project, `**/` can match no folder, and
+    `{a,b}` is either."""
     full = path if os.path.isabs(path) else "/" + path
     rels = _rels_cache.get(full)
     if rels is None:
@@ -444,7 +451,7 @@ def _rule_covers(path: str, include: Tuple[str, ...], exclude: Tuple[str, ...]) 
 
 def _glob_match(path: str, include: Tuple[str, ...], exclude: Tuple[str, ...]) -> bool:
     """The reading of globs before _rule_covers, kept for edit_stats: full path
-    or file name only, and `**/` needs a folder."""
+    or file name only, `**/` needs a folder, and braces are literal."""
     norm = path.replace(os.sep, "/")
     base = os.path.basename(norm)
     def _hit(globs: Tuple[str, ...]) -> bool:
@@ -496,7 +503,7 @@ def _has_redos_structure(regex: str) -> bool:
 _SHAPE_PLAIN_PATHS = 1      # a `paths` glob with a folder and no leading `*`
 _SHAPE_PLAIN_EXCLUDE = 2    # the same in `exclude_paths`
 _SHAPE_MID_STARS = 4        # `/**/` inside a glob
-_SHAPE_BRACES = 8           # `{a,b}`, which fnmatch takes literally
+_SHAPE_BRACES = 8           # `{`, as in `{a,b}`
 _SHAPE_LEADING = 16         # starts with `/` or `./`
 _SHAPE_REGEX_REFUSED = 32   # a rule dropped by the slow-regex check
 _SHAPE_REGEX_COUNTED = 64   # a loaded regex repeats a repeated group by count
@@ -533,20 +540,112 @@ def _zero_depth_forms(glob: str) -> Tuple[str, ...]:
     return tuple(forms)
 
 
+# Globs that braces may stand for: in one glob, and in all the rules loaded,
+# counted with their `**/` forms. Real rules list a few file types and folders;
+# this bounds what a project's file can cost. A glob beyond either is read as it
+# is written. User files load first, so a project's cannot use up their share.
+_MAX_BRACE_FORMS = 256
+_MAX_BRACE_GLOB_LEN = 1000
+_BRACE_BUDGET = 4096
+_brace_forms_left = _BRACE_BUDGET
+# glob -> its _glob_forms.
+_forms_cache: Dict[str, Tuple[Tuple[str, str, bool], ...]] = {}
+
+
+def _brace_group(glob: str) -> Optional[Tuple[int, Tuple[int, ...], int]]:
+    """The first `{...}` with a comma of its own: where it opens, its commas,
+    where it closes. Braces inside `[...]` are members of that set."""
+    stack: List[Tuple[int, List[int]]] = []
+    found = None
+    i, last_set_end = 0, glob.rfind("]")
+    while i < len(glob):
+        c = glob[i]
+        if c == "[" and i < last_set_end:
+            # As fnmatch reads a set: `]` right after `[` or `[!` is a member.
+            start = i + 2 if glob.startswith("!", i + 1) else i + 1
+            end = glob.find("]", start + 1)
+            if end > 0:
+                i = end
+        elif c == "{":
+            stack.append((i, []))
+        elif c == "," and stack:
+            stack[-1][1].append(i)
+        elif c == "}" and stack:
+            opened, commas = stack.pop()
+            if commas and (found is None or opened < found[0]):
+                found = (opened, tuple(commas), i)
+        i += 1
+    return found
+
+
+def _brace_forms(glob: str) -> Optional[Tuple[str, ...]]:
+    """`glob`, and the globs its braces stand for: `*.{ts,tsx}` is also `*.ts`
+    and `*.tsx`. None when there are too many. Braces with no comma are literal."""
+    todo, done = [glob], []
+    while todo:
+        form = todo.pop()
+        group = _brace_group(form)
+        if group is None:
+            done.append(form)
+            continue
+        opened, commas, closed = group
+        if len(todo) + len(done) + len(commas) + 1 > _MAX_BRACE_FORMS:
+            return None
+        edges = (opened,) + commas + (closed,)
+        rest = form[closed + 1:]
+        for a, b in zip(edges, edges[1:]):
+            option = form[a + 1:b].strip()
+            # `{src,}/**` would leave `/**`, which takes in every file.
+            if option or opened or not rest.startswith("/"):
+                todo.append(form[:opened] + option + rest)
+    # The glob as written stays, for a name that has braces in it.
+    return tuple(dict.fromkeys([glob] + [f for f in done if f]))
+
+
+def _glob_forms(glob: str, rule_name: str = "") -> Tuple[Tuple[str, str, bool], ...]:
+    """The globs `glob` stands for, each as (glob, its literal end, whether it
+    has a folder in it), in the filesystem's case."""
+    global _brace_forms_left
+    if glob in _forms_cache:
+        return _forms_cache[glob]
+    braces = (glob,)
+    if "{" in glob and "," in glob:
+        fits = _brace_forms_left > 0 and len(glob) <= _MAX_BRACE_GLOB_LEN
+        braces = (_brace_forms(glob) if fits else None) or ()
+    forms = tuple((b, f) for b in braces for f in _zero_depth_forms(b))
+    if not braces or (len(braces) > 1 and len(forms) > _brace_forms_left):
+        debug_log(f"extensibility: {rule_name}: too many combinations in braces, "
+                  f"read as written: {glob!r:.80}")
+        # Finding out that it does not fit has a cost too.
+        _brace_forms_left -= _MAX_BRACE_FORMS
+        forms = tuple((glob, f) for f in _zero_depth_forms(glob))
+    elif len(braces) > 1:
+        _brace_forms_left -= len(forms)
+    out = []
+    for b, f in forms:
+        # A glob with no folder in it is about the file name: `*` crosses `/`,
+        # so against the path inside the project `test*` would take in a tree.
+        folder = "/" in b.replace("\\", "/")
+        f = os.path.normcase(f)
+        out.append((f, f[max(f.rfind(c) for c in "*?[]") + 1:], folder))
+    _forms_cache[glob] = tuple(out)
+    return _forms_cache[glob]
+
+
 def _wider_glob_match(path: str, rels: Tuple[str, ...],
                       include: Tuple[str, ...], exclude: Tuple[str, ...]) -> bool:
     """_glob_match, with globs also read against the path inside the project
-    (`rels`), and `**/` able to match no folder."""
-    norm = path.replace(os.sep, "/")
-    names = [norm, norm.lstrip("/"), os.path.basename(norm)]
-    inside = [n for rel in rels for n in (rel, "/" + rel, "./" + rel)]
+    (`rels`), `**/` able to match no folder, and braces as alternatives."""
+    full = path.replace(os.sep, "/")
+    names = [os.path.normcase(n) for n in (full, full.lstrip("/"), os.path.basename(full))]
+    inside = names + [os.path.normcase(n) for rel in rels for n in (rel, "/" + rel, "./" + rel)]
 
     def _hit(globs: Tuple[str, ...]) -> bool:
-        # A glob with no folder in it is about the file name: `*` crosses `/`,
-        # so against the path inside the project `test*` would take in a tree.
-        return any(fnmatch.fnmatch(n, f) for g in globs
-                   for f in _zero_depth_forms(g)
-                   for n in (names + inside if "/" in g.replace("\\", "/") else names))
+        # The literal end first: compiling a glob is the slow part, and most of
+        # the options in braces end differently.
+        return any(n.endswith(tail) and fnmatch.fnmatchcase(n, form) for g in globs
+                   for form, tail, folder in _glob_forms(g)
+                   for n in (inside if folder else names))
     if include and not _hit(include):
         return False
     if exclude and _hit(exclude):
