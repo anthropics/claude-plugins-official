@@ -2950,7 +2950,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/PostHog/ai-plugin.git",
-        "sha": "e0fbf5e742fb4242c4ea509b395b2e343642f0b7"
+        "sha": "dcec83c6fc9cf987b277f6345db5cbeef9b99e41"
       },
       "homepage": "https://posthog.com/docs/model-context-protocol"
     },
