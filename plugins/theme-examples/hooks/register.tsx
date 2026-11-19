@@ -10,6 +10,7 @@ import {
   sceneWithFireworks,
   themeIdOfShow,
 } from './fireworks'
+import { overShader } from './interactive'
 import { keyToWrite, keysToClear, keysToRead, projectKeyFor } from './project-key'
 import type { KeptKey, KeyEngine } from './project-key'
 import { THEMES, sceneFault, sceneOf } from './themes'
@@ -779,13 +780,13 @@ async function pick($: EngineInterface, theme: Theme | undefined, forProject: bo
 }
 
 /**
- * The card. Close and No theme stand at its head, so that it can be put away without scrolling past twenty rows.
+ * The card. Close and No theme stand at its head, so that it can be put away without scrolling past thirty-eight rows.
  * The themes stand under the list's two heads, by the kind of window each is made for: a mod cannot learn which kind
  * the window is, and not every window follows its theme, so the card is where a person is steered. A theme made in
  * both kinds names its twin on a line of its own: its twin stands under the other head, and a row must not grow wider.
  * Each theme is its title, its blurb beneath, and its three buttons kept together. The desktop draws a button's
  * `label` and never its children, and a row there does not wrap; other surfaces draw the children. So both are one
- * short word that carries the state, and the theme's title on the row above says whose the three are: twenty
+ * short word that carries the state, and the theme's title on the row above says whose the three are: thirty-eight
  * buttons share each word, and the keys alone tell them apart.
  * Applied is said only of the project's choice; a session's own choice is marked on This session.
  */
@@ -1020,7 +1021,7 @@ export const register: Register = on => {
       return next(e)
     }
 
-    const { Svg } = $.ui.resolve(e)
+    const { Svg, Shader } = $.ui.resolve(e)
 
     if (name === NIGHT_ID) {
       return <Svg isInteractive alt="Fireworks bursting over a night sky" source={nightScene()} />
@@ -1044,7 +1045,11 @@ export const register: Register = on => {
       return next(e)
     }
 
-    return <Svg isInteractive alt={`${theme.title}: ${theme.blurb}`} source={sceneOf(theme)} />
+    return overShader(
+      Shader,
+      theme.shader,
+      <Svg isInteractive alt={`${theme.title}: ${theme.blurb}`} source={sceneOf(theme)} />,
+    )
   })
 
   on('ui.render', { component: 'Placed' }, async ($, e, next) => {
