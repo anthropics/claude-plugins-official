@@ -51,6 +51,8 @@ In a new session and after /clear, no theme shows until you send a message. In a
 
 Whether a theme shows is asked of the session, not of each window on it, and at the moment the theme is set. A window that connects afterwards can draw the theme all the same, and so can a window that has not told Claude Code that it draws themes.
 
+A fireworks show over one of the scenes that answer the pointer lasts nine and a half seconds, two and a half more than over the other scenes. The scene does not move or answer the pointer during the show and for two or three seconds after it. Where the app holds scenes still, a show over one of them has no bursts.
+
 With another backdrop mod installed, a fireworks show or a preview ends on a bare window until that mod sets its backdrop again. A session has one theme at a time, so on newer versions of Claude Code clearing a theme clears whichever one stands, another plugin's too.
 
 A session that runs elsewhere, such as over SSH or in WSL, shares no saved theme with the sessions on this machine.

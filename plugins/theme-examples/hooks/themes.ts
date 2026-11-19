@@ -51,16 +51,18 @@ export type Theme = {
   scene: () => string
   /** The shader that plays over the scene, where there is one: the scene is then its still, and follows the window. */
   shader?: ShaderScene
+  /** Set where the picture is dark, or pale, whatever the window: a show's bursts are then bright, or deep, in both. */
+  ground?: Theme['window']
 }
 
 /** What a scene's two entries share: both of its rows below spread one of these, so they cannot differ. */
-type Picture = Required<Pick<Theme, 'scene' | 'shader'>>
+type Picture = Required<Pick<Theme, 'scene' | 'shader'>> & Pick<Theme, 'ground'>
 
 const DUCK_POND: Picture = { scene: duckPondSvg, shader: 'duck-pond' }
 const FALLING_SAND: Picture = { scene: fallingSandSvg, shader: 'falling-sand' }
 const FIELD_LINES: Picture = { scene: fieldLinesSvg, shader: 'field-lines' }
 const GARDEN_BEETLES: Picture = { scene: gardenBeetlesSvg, shader: 'garden-beetles' }
-const KOI_POND: Picture = { scene: koiPondSvg, shader: 'koi-pond' }
+const KOI_POND: Picture = { scene: koiPondSvg, shader: 'koi-pond', ground: 'dark' }
 const RIPPLE_TANK: Picture = { scene: rippleTankSvg, shader: 'ripple-tank' }
 const SEA_SPARKLE: Picture = { scene: seaSparkleSvg, shader: 'sea-sparkle' }
 const SEMICOLONY: Picture = { scene: semicolonySvg, shader: 'semicolony' }

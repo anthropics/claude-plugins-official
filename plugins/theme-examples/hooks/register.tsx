@@ -24,6 +24,10 @@ const COMMAND = 'custom-theme'
 const PREVIEW_MS = 20_000
 const FIREWORKS_COMMAND = 'fireworks'
 const SHOW_MS = 7000
+// The desktop app starts a moving picture about two and a half seconds after a shader leaves the window, so a show over
+// a theme with a shader runs that much longer, or its last bursts are cut. Where its shader was not playing, the show
+// only ends on the theme's own still for that long.
+const SHADER_PARTING_MS = 2500
 // Holds 'off' where the person turned the show on the word off; absent, it is on. One key for every session and project.
 const AUTO_KEY = 'fireworks:auto'
 const SESSION_PREFIX = 'session:'
@@ -668,7 +672,7 @@ async function endFireworks($: EngineInterface): Promise<void> {
 }
 
 /**
- * Seven seconds of fireworks: over the session's theme where it has one, else over a night sky of their own.
+ * Seven seconds of fireworks over the session's theme where it has one, else over a night sky of their own; SHADER_PARTING_MS longer over a theme with a shader.
  * ONE SHOW AT A TIME: a word or a command that comes while a show runs starts nothing and lengthens nothing, so
  * however often the word is said the window changes twice in a show's seconds and no oftener.
  * The flag is TAKEN IN THE SAME TICK AS IT IS TESTED, ahead of the first await: a command and a reply's block come on
@@ -691,10 +695,13 @@ async function fireworks($: EngineInterface): Promise<string> {
   const suffix = SHOW_SUFFIXES[showCount % SHOW_SUFFIXES.length] ?? SHOW_SUFFIXES[0]
   // The one setter beside showThenKeep: a show's backdrop is no theme of the table, its answer is told, and nothing is kept, so nothing is to put back.
   let set: BackdropAnswer
+  let afterShader = false
 
   try {
     const now = await read($, choice)
     const theme = themeOf(now.preview ?? now.applied)
+
+    afterShader = theme?.shader !== undefined
 
     set = await setBackdrop(
       $,
@@ -709,7 +716,7 @@ async function fireworks($: EngineInterface): Promise<string> {
     return `Fireworks could not be shown: ${reasonOf(error)}`
   }
 
-  showEnding = $.clock.after(SHOW_MS, () => void quietly($, () => endFireworks($)))
+  showEnding = $.clock.after(afterShader ? SHOW_MS + SHADER_PARTING_MS : SHOW_MS, () => void quietly($, () => endFireworks($)))
 
   return set?.isDrawn === false ? `Fireworks. ${SHOW_UNSHOWN}` : 'Fireworks.'
 }
