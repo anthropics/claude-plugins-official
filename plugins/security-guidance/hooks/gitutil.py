@@ -16,9 +16,11 @@ Functions that DO compose patched leaves (``compute_v2_review_set``,
 """
 import contextlib
 import errno
+import hashlib
 import os
 import re
 import stat
+import struct
 import subprocess
 import sys
 import tempfile
@@ -26,6 +28,7 @@ import threading
 import time
 
 from _base import debug_log
+from extensibility import _same_dir
 
 
 def _git_program(windows=os.name == "nt"):
@@ -98,6 +101,9 @@ GIT_CMD = [
     # With log.showSignature set they would also verify each signed commit,
     # adding lines to the output and starting the program gpg.program names.
     "-c", "log.showSignature=false",
+    # A `git show` without a format takes format.pretty, whose %G? verifies
+    # the signature too.
+    "-c", "format.pretty=medium",
 ]
 
 # diff.ignoreSubmodules is a default that the repository's own settings for
@@ -111,6 +117,7 @@ SAFE_GIT_CONFIG = (
     ("diff.ignoreSubmodules", "all"),
     ("diff.submodule", "short"),
     ("log.showSignature", "false"),
+    ("format.pretty", "medium"),
     ("safe.bareRepository", "explicit"),
 )
 
@@ -335,8 +342,8 @@ _path_list_too_long = set()
 # metrics: kind * 100000 + the paths the add was given. One number because a
 # review row is near CC's key cap. kind: 1 git could not write the empty blob
 # to the object store and the retry failed too, 2 any other git error, 3
-# timeout, 4 the retry with a private object directory worked. A git that
-# speaks another language reports a failed retry as 2. With 1 to 3 the new
+# timeout, 4 the retry with a private object directory worked, 5 there was no
+# index copy without nested repositories to add them to. A git that speaks another language reports a failed retry as 2. But for 4 the new
 # files are not in the diff, so a turn that only added files looks like a turn
 # with no changes. `left_out` says so for the last get_git_diff alone: the code
 # stays set through a fallback diff that worked.
@@ -712,7 +719,7 @@ def _add_new_files(cwd, paths, env, tmp_index):
 
     def add(add_env):
         results = _run_git_on_review_paths(
-            ["add", "--intent-to-add"], paths, timeout=10, cwd=cwd, env=add_env)
+            [*(SPARSE_AS_IT_IS if may_be_sparse(tmp_index) else []), "add", "--intent-to-add"], paths, timeout=10, cwd=cwd, env=add_env)
         return next((r for r in results if r.returncode != 0), None)
 
     try:
@@ -806,11 +813,17 @@ def _copied_index(cwd, top, real_index, tmpdir, untracked_paths):
         env = {**os.environ, "GIT_INDEX_FILE": tmp_index}
         # Before `git add` runs, since add reads the gitlinks its paths cover.
         if not _drop_gitlinks(top, env, tmp_index):
-            debug_log("could not remove gitlinks from the index copy; going on "
-                      "without the copy")
+            debug_log("no index copy that is known to hold no gitlinks; going on "
+                      "without one")
+            if untracked_paths:
+                _note_add_failure(5, untracked_paths)
             yield None
             return
         if untracked_paths is None:
+            if may_be_sparse(tmp_index):
+                debug_log("no whole-tree add on a sparse index: it would take it apart")
+                yield None
+                return
             add_args = ["."]
         elif untracked_paths:
             # `git add -N -- a b nonexistent` is atomic — one missing path
@@ -845,6 +858,22 @@ _GITLINK_MODE = b"\x00\x00\xe0\x00"
 _SPLIT_INDEX_EXT = b"link"
 
 
+# And of the one, always empty, that says a directory's entries can be stored
+# as one (a sparse index).
+_SPARSE_INDEX_EXT = b"sdir\0\0\0\0"
+
+
+def may_be_sparse(index_path):
+    """False only when the index file holds no directory stored as one entry.
+    git takes it apart when the directory is there on disk, at a time of its
+    own choosing, and a gitlink can come out of it."""
+    return _index_holds(index_path, _SPARSE_INDEX_EXT)
+
+
+# Keeps git from taking a sparse index apart for files that are there on disk.
+SPARSE_AS_IT_IS = ["-c", "sparse.expectFilesOutsideOfPatterns=true"]
+
+
 def _may_have_gitlinks(index_path):
     """False only when the index file at `index_path` cannot hold a gitlink
     entry: neither a gitlink's mode bytes nor the split-index signature occur
@@ -852,20 +881,161 @@ def _may_have_gitlinks(index_path):
     size, a path), so True means "list the entries and see". Most
     repositories have no gitlink, and for them this saves a git process on
     every index copy."""
-    keep = max(len(_GITLINK_MODE), len(_SPLIT_INDEX_EXT)) - 1
+    return _index_holds(index_path, _GITLINK_MODE, _SPLIT_INDEX_EXT)
+
+
+def _open_file(path):
+    """open(path, "rb"). OSError for anything but a file: opening a named pipe
+    would wait for someone to write to it, and a device may have no end."""
+    fd = os.open(path, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0))
+    if not stat.S_ISREG(os.fstat(fd).st_mode):
+        os.close(fd)
+        raise OSError(errno.EINVAL, "not a file", path)
+    return open(fd, "rb")
+
+
+def _index_holds(index_path, *marks):
+    keep = max(map(len, marks)) - 1
     try:
-        with open(index_path, "rb") as f:
+        with _open_file(index_path) as f:
             tail = b""
             while True:
                 chunk = f.read(1 << 20)
                 if not chunk:
                     return False
                 data = tail + chunk
-                if _GITLINK_MODE in data or _SPLIT_INDEX_EXT in data:
+                if any(mark in data for mark in marks):
                     return True
                 tail = data[-keep:]
     except OSError:
         return True
+
+
+# A larger index belongs to a repository that is big enough to ask git whether
+# it is the session's own, before reading all of it here.
+_BIG_INDEX_BYTES = 1 << 20
+# And this is more than is read here at all.
+_MAX_INDEX_BYTES = 64 << 20
+_FILE_MODES = (0o100644, 0o100755, 0o120000)
+
+
+def _file_entries(data, id_len=20):
+    """(index file with only the entries for files in the index file `data`,
+    number of gitlinks left out). ValueError when it has anything else that
+    changes how git reads it. Git reads an index by more than its entries: the
+    extensions say where to find them, and a mode or a name that git would not
+    write is taken for something else by one command and not by the next. So
+    an index that came with the files is not searched, it is written anew.
+    `id_len` is the length of an object id, and of the checksum."""
+    if data[:4] != b"DIRC":
+        raise ValueError("not an index file")
+    version, count = struct.unpack_from(">II", data, 4)
+    fixed_len = 42 + id_len
+    if version not in (2, 3, 4) or len(data) < 12 + fixed_len * count + id_len:
+        raise ValueError(f"index version {version}")
+    end = len(data) - id_len
+    out, kept, left_out, extended, name, at = [], 0, 0, False, b"", 12
+    size = 0
+    for _ in range(count):
+        start = at
+        mode, flags = struct.unpack_from(">I", data, at + 24)[0], struct.unpack_from(">H", data, at + 40 + id_len)[0]
+        at += fixed_len + (2 if flags & 0x4000 else 0)
+        fixed = data[start:at]
+        if version == 4:
+            # How much to take off the previous name, then the rest.
+            cut = data[at] & 127
+            while data[at] & 128 and cut <= len(name):  # it only grows
+                at += 1
+                cut = ((cut + 1) << 7) | (data[at] & 127)
+            at += 1
+            if cut > len(name):
+                raise ValueError("name")
+            stop = data.index(b"\0", at, end)
+            name, at = name[:len(name) - cut] + data[at:stop], stop + 1
+        else:
+            stop = data.index(b"\0", at, end)
+            name = data[at:stop]
+            at = start + ((stop - start + 8) & ~7)
+        if min(len(name), 0xFFF) != flags & 0xFFF:
+            raise ValueError("name length")
+        size += len(name) + 72  # gitlinks too: a name can repeat the one before it
+        if size > _MAX_INDEX_BYTES:
+            raise ValueError("size")
+        if mode & 0o170000 == 0o160000:
+            left_out += 1
+            continue
+        if mode not in _FILE_MODES:
+            raise ValueError(f"mode {mode:o}")
+        extended = extended or bool(flags & 0x4000)
+        out.append(fixed + name + b"\0" * (8 - (len(fixed) + len(name)) % 8))
+        kept += 1
+    while at < end:  # extensions: none of those git may not skip
+        if not 65 <= data[at] <= 90:
+            raise ValueError("extension")
+        at += 8 + struct.unpack_from(">I", data, at + 4)[0]
+    if at != end:
+        raise ValueError("length")
+    new = b"".join([b"DIRC", struct.pack(">II", 3 if extended else 2, kept), *out])
+    return new + _ID_HASHES[id_len](new).digest(), left_out
+
+
+_ID_HASHES = {20: hashlib.sha1, 32: hashlib.sha256}
+_OBJECT_FORMATS = {b"sha1": 20, b"--show-object-format": 20, b"sha256": 32}
+
+
+def _write_file_entries(top, tmp_index):
+    """Replace the index copy with one of only the entries for files. Returns
+    how many gitlinks that left out, or None when it was not replaced."""
+    try:
+        was = os.stat(tmp_index)
+        if was.st_size > _MAX_INDEX_BYTES:
+            raise ValueError("size")
+        # Object ids of another length put every entry somewhere else. git
+        # before 2.25 has only the usual ones and prints the option.
+        r = subprocess.run([*GIT_CMD, "rev-parse", "--show-object-format"],
+                           cwd=top, capture_output=True, timeout=5)
+        id_len = _OBJECT_FORMATS.get(r.stdout.strip()) if r.returncode == 0 else None
+        if not id_len:
+            raise ValueError(f"object format {r.stdout[:20]!r}")
+        with _open_file(tmp_index) as f:
+            data = f.read(_MAX_INDEX_BYTES + 1)
+        if len(data) > _MAX_INDEX_BYTES:
+            raise ValueError("size")
+        new, left_out = _file_entries(data, id_len)
+        # Not in place: the copy can be a hard link to the real index.
+        new_file = tmp_index + ".files"
+        with open(os.open(new_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0), 0o600), "wb") as f:
+            f.write(new)
+        # Keep the mtime the copy came with; see _copied_index.
+        os.utime(new_file, ns=(was.st_mtime_ns, was.st_mtime_ns))
+        os.replace(new_file, tmp_index)
+        return left_out
+    except (subprocess.TimeoutExpired, OSError, ValueError, IndexError, struct.error, MemoryError) as e:
+        debug_log(f"not an index that can be written anew: {type(e).__name__}: {e}")
+        return None
+
+
+def _is_session_checkout(top, project):
+    """True for the checkout the session was started in."""
+    home = _folder_with_git_entry(project)
+    return bool(home and _same_dir(top, home))
+
+
+def _is_kept_for_session(top, index, ask=False):
+    """True for a checkout whose index git itself writes: the one the session
+    was started in, and the linked worktrees and submodules of its repository.
+    Those are asked about only for a big index, or with `ask`: it takes git
+    longer than it takes to write a small index anew."""
+    project = _project_folder()
+    # An absolute GIT_DIR is one repository for every folder, the user's choice.
+    if not project or os.path.isabs(os.environ.get("GIT_DIR") or "") or _is_session_checkout(top, project):
+        return True
+    if not ask and os.path.getsize(index) <= _BIG_INDEX_BYTES:
+        return False
+    try:
+        return _is_session_repo(top, project)
+    except (subprocess.TimeoutExpired, OSError, ValueError):
+        return False
 
 
 _GITLINK_LIST_TIMEOUT = 10
@@ -940,6 +1110,15 @@ def _drop_gitlinks(top, env, tmp_index):
     global last_dropped_gitlinks
     last_dropped_gitlinks = False
     try:
+        if not _is_kept_for_session(top, tmp_index):
+            left_out = _write_file_entries(top, tmp_index)
+            if left_out is not None:
+                last_dropped_gitlinks = left_out > 0
+                if left_out:
+                    debug_log(f"nested repositories left out of the index copy: {left_out}")
+                return True
+            if not _is_kept_for_session(top, tmp_index, ask=True):
+                return False
         if not _may_have_gitlinks(tmp_index):
             return True
         gitlinks = _gitlink_paths(top, env)
@@ -959,6 +1138,11 @@ def _drop_gitlinks(top, env, tmp_index):
             debug_log(f"git update-index on the index copy failed (rc={rm.returncode}): "
                       f"{rm.stderr[:200].decode('utf-8', errors='replace')}")
             return False
+        # git says nothing about an entry it does not find, as when the index
+        # is not in order (a commit's trees can be in any).
+        if _may_have_gitlinks(tmp_index) and _gitlink_paths(top, env) != set():
+            debug_log("gitlink entries are still in the index copy")
+            return False
         # Keep the mtime the copy came with; see _copied_index.
         os.utime(tmp_index, ns=(mtime_ns, mtime_ns))
         last_dropped_gitlinks = True
@@ -971,30 +1155,6 @@ def _drop_gitlinks(top, env, tmp_index):
         return False
 
 
-def _looks_like_git_dir(path):
-    """git's own test for a repository directory, near enough: objects and refs
-    it can enter, and a HEAD that is a link into refs/ or a file holding a ref
-    or a SHA. Anything else named HEAD stays unopened: a named pipe would block."""
-    # With a commondir file, objects and refs are in the folder that it names.
-    if not (os.path.lexists(os.path.join(path, "commondir"))
-            or ((os.access(os.path.join(path, "objects"), os.X_OK)
-                 or os.environ.get("GIT_OBJECT_DIRECTORY"))
-                and os.access(os.path.join(path, "refs"), os.X_OK))):
-        return False
-    head_path = os.path.join(path, "HEAD")
-    try:
-        mode = os.lstat(head_path).st_mode
-        if stat.S_ISLNK(mode):
-            return os.readlink(head_path).startswith("refs/")  # git does not follow it
-        if not stat.S_ISREG(mode):
-            return False
-        with open(head_path, "rb") as f:
-            head = f.read(64)
-    except OSError:
-        return False
-    return bool(re.match(rb"ref:\s*refs/|[0-9a-fA-F]{40}", head))
-
-
 def _found_through_bare_folder(cwd):
     """True when git, searching up from `cwd`, would take a folder with no
     `.git` entry for the repository. Git versions before 2.38 have no
@@ -1002,17 +1162,408 @@ def _found_through_bare_folder(cwd):
     A repository the caller named through the environment is not searched for."""
     if os.environ.get("GIT_DIR"):
         return False
-    d = os.path.realpath(cwd or os.curdir)
-    while True:
+    folders = [os.path.realpath(cwd or os.curdir)]
+    while os.path.dirname(folders[-1]) != folders[-1]:
+        folders.append(os.path.dirname(folders[-1]))
+    # Such a folder holds a HEAD. Without one below the first `.git` file,
+    # which git goes no further than, git need not be asked.
+    ask = checkout = False
+    for d in folders:
+        if not ask and os.path.isfile(os.path.join(d, ".git")):
+            return False
+        checkout = checkout or os.path.lexists(os.path.join(d, ".git"))
+        try:
+            mode = os.lstat(os.path.join(d, "HEAD")).st_mode
+        except (OSError, ValueError):
+            continue
+        if not (stat.S_ISREG(mode) or stat.S_ISLNK(mode) or stat.S_ISDIR(mode)):
+            if checkout:
+                continue
+            return True  # a named pipe: git would open it and wait
+        ask = ask or not stat.S_ISDIR(mode)
+    if not ask:
+        return False
+    found, when = _bare_folders.get(folders[0], (False, None))
+    if when is None or time.monotonic() - when > _OTHER_REPO_FINE_S:
+        found = _git_takes_a_folder_without_git_entry(folders)
+        _bare_folders[folders[0]] = (found, time.monotonic())
+    return found
+
+
+_bare_folders = {}  # folder -> (the answer above, when)
+
+
+def _git_takes_a_folder_without_git_entry(folders):
+    try:
+        # Newer versions of git refuse such a folder, unless told to name it.
+        named = _git_paths(folders[0], "-c", "safe.bareRepository=all", "rev-parse", "--absolute-git-dir")
+    except (subprocess.TimeoutExpired, OSError, ValueError):
+        return True
+    if not named:
+        return False  # git finds no repository
+    # git looks for a `.git` in a folder first, then at the folder itself. A
+    # `.git` file names the repository or stops git.
+    for d in folders:
         entry = os.path.join(d, ".git")
-        if os.path.isfile(entry) or _looks_like_git_dir(entry):
-            return False  # git passes over an empty `.git` folder or a broken link
-        if _looks_like_git_dir(d):
+        if os.path.isfile(entry) or (os.path.lexists(entry) and _same_dir(entry, named[0])):
+            return False
+        if _same_dir(d, named[0]):
             return os.path.basename(d) != ".git"
+    return True
+
+
+def _folder_with_git_entry(path):
+    d = os.path.realpath(path)
+    while not os.path.lexists(os.path.join(d, ".git")):
         parent = os.path.dirname(d)
         if parent == d:
-            return False
+            return None
         d = parent
+    return d
+
+
+def _git_paths(path, *args):
+    """The paths a `git rev-parse` prints, one per option, or None when it
+    fails. ValueError when a newline in one leaves them unreadable."""
+    r = subprocess.run([*GIT_CMD, *args], cwd=path, capture_output=True, timeout=5)
+    out = r.stdout[:-1] if r.stdout.endswith(b"\n") else r.stdout
+    lines = out.split(b"\n")
+    if r.returncode != 0:
+        return None
+    if len(lines) != len(args) - args.index("rev-parse") - 1:
+        raise ValueError("a newline in a path")
+    return [os.path.realpath(os.path.join(path, os.fsdecode(line))) for line in lines]
+
+
+def _is_session_repo(top, project):
+    """True when the checkout `top` belongs to the repository the session was
+    started in: its work tree, a linked worktree or a submodule that the
+    repository keeps and that is where the repository says it is. A folder
+    whose `.git` only points at that repository is not."""
+    if not os.path.isdir(project):
+        return False
+    which = ("rev-parse", "--absolute-git-dir", "--git-common-dir")
+    # Without a `.git` around it, the folder can be a bare repository that
+    # holds the session's worktrees.
+    if _folder_with_git_entry(project):
+        if _found_through_bare_folder(project):
+            return False
+        bare = ()
+    else:
+        bare = ("-c", "safe.bareRepository=all")
+    here, ours = _git_paths(top, *which), _git_paths(project, *bare, *which)
+    named = _git_paths(top, "rev-parse", "--show-toplevel")
+    if not here or not ours or not named:
+        return False
+    if os.path.islink(os.path.join(top, ".git")) or not _same_dir(named[0], top):
+        return False
+    # The same repository, a submodule of it, or the one it is a submodule of.
+    if not (_same_dir(here[1], ours[1]) or _is_kept_by(here[1], ours[1]) or _is_kept_by(ours[1], here[1])):
+        return False
+    if not _same_dir(here[0], here[1]):  # a linked worktree
+        if not _same_dir(os.path.dirname(here[0]), os.path.join(here[1], "worktrees")):
+            return False
+        with _open_file(os.path.join(here[0], "gitdir")) as f:
+            back = f.read(4096)
+        back = os.path.join(here[0], os.fsdecode(back.rstrip(b"\r\n")))
+        return _same_dir(os.path.dirname(back), top)
+    if _same_dir(os.path.dirname(here[1]), top):  # a main checkout
+        return True
+    # Its config says where the work tree is, and git has named `top`.
+    return any(key == b"core.worktree" for key, _ in _own_settings(top))
+
+
+def _is_kept_by(inner, outer):
+    """True when the git directory `inner` is where git puts those of the
+    submodules of `outer`, or of its linked worktrees."""
+    parent = os.path.dirname(inner)
+    while parent != inner:
+        if os.path.basename(parent) == "modules":
+            owner = os.path.dirname(parent)
+            if _same_dir(owner, outer):
+                return True
+            trees = os.path.dirname(owner)
+            if os.path.basename(trees) == "worktrees" and _same_dir(os.path.dirname(trees), outer):
+                return True
+        inner, parent = parent, os.path.dirname(parent)
+    return False
+
+
+def _is_below(path, folders):
+    parent = os.path.dirname(path)
+    while parent != path:
+        if any(_same_dir(parent, f) for f in folders):
+            return True
+        path, parent = parent, os.path.dirname(parent)
+    return False
+
+
+# Settings in a repository's own config that make the git commands here, or a
+# filter the user has set up for all repositories, start a command. GIT_CMD
+# takes care of core.fsmonitor, core.hooksPath and format.pretty, and the diffs
+# of textconv and external diff. Hooks in the config are git 2.54 and later. core.virtualFilesystem is a fork's.
+_COMMAND_SETTING = re.compile(
+    rb"(?:filter\..*\.(?:clean|process)|hook\..*\.(?:command|event)|lfs\.extension\..*"
+    rb"|core\.(?:virtualfilesystem|usegvfshelper))\Z",
+    re.DOTALL | re.IGNORECASE)
+# What `git lfs install --local` writes, now and in older versions.
+_LFS_VALUE = re.compile(rb"git-lfs (?:clean (?:-- )?%f|filter-process(?: --skip)?)\Z")
+# git-lfs reads `git config --list` by line, so a value can hold a setting.
+_LFS_IN_VALUE = re.compile(rb"[\r\n][^\S\r\n]*lfs\.", re.IGNORECASE)
+# A partial clone: git downloads an object it left out when a command needs it ...
+_PARTIAL_CLONE = re.compile(
+    rb"(?:extensions\.partialclone|remote\..*\.(?:promisor|partialclonefilter))\Z", re.DOTALL)
+# ... by the remote's URL, unless one of these changes how.
+_TRANSPORT_SETTING = re.compile(
+    rb"(?:core\.(?:sshcommand|gitproxy|askpass|alternaterefscommand|gvfs|unsetenvvars)|gvfs\..*|gc\.recentobjectshook"
+    rb"|remote\..*\.(?:uploadpack|vcs|proxy|proxyauthmethod|serveroption)|fetch\.bundle.*|bundle\..*"
+    rb"|alias\.(?:remote|credential)-.*|(?:http|url|protocol|transfer|ssh)\..*"
+    rb"|credential\.(?!(?:.*\.)?(?:usehttppath|validate)\Z).*)\Z", re.DOTALL | re.IGNORECASE)
+# https, ssh, git, or host:path; no helper::, other scheme or Windows drive.
+_PLAIN_URL = re.compile(
+    rb"(?:(?:https?|ssh|git)://|(?:[\w.+-]+@)?\w[\w.-]+:(?!:|//))[^\0-\x20]*\Z")
+
+
+def no_download_env():
+    """Environment for a git command that must not download an object a
+    partial clone left out. Git before 2.45 does not know the first variable;
+    the second then allows only a protocol that does not exist."""
+    return {**os.environ, "GIT_NO_LAZY_FETCH": "1", "GIT_ALLOW_PROTOCOL": "x" + os.urandom(16).hex()}
+
+
+# A config that lists more than this is not looked through.
+_MAX_CONFIG_BYTES = 4 << 20
+
+
+def _list_config(cmd, **kwargs):
+    """subprocess.run(cmd, capture_output=True, timeout=5) for a `git config`
+    that lists settings. ValueError when it lists more than is held here."""
+    try:
+        err = tempfile.TemporaryFile()
+    except OSError:  # no folder to write in
+        err = open(os.devnull, "w+b")
+    with err:
+        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=err, **kwargs)
+        held = []
+        # On a thread, as in _run_diff_bounded: what git started can hold the
+        # pipe open after git itself is gone.
+        reader = threading.Thread(
+            target=lambda: held.append(p.stdout.read(_MAX_CONFIG_BYTES + 1)), daemon=True)
+        try:
+            reader.start()
+            reader.join(5)
+            if not held:
+                raise subprocess.TimeoutExpired(cmd, 5)
+            if len(held[0]) > _MAX_CONFIG_BYTES:
+                raise ValueError("more settings than are read")
+            p.wait(5)
+        except RuntimeError as e:  # no thread to be had
+            raise OSError(str(e)) from e
+        finally:
+            if p.poll() is None:
+                p.kill()
+                p.wait()
+            if not reader.is_alive():
+                p.stdout.close()
+        err.seek(0)
+        return subprocess.CompletedProcess(cmd, p.returncode, held[0], err.read(4096))
+
+
+def _own_settings(path):
+    """[(key, value)] from the repository's own config, with the files it
+    includes and a worktree's own config, without the user's or the machine's."""
+    # GIT_CONFIG is read by `git config` and by no other git command.
+    env = {k: v for k, v in os.environ.items() if k.upper() != "GIT_CONFIG"}
+    env["LC_ALL"] = "C"
+
+    def run(*args):
+        return _list_config([*GIT_CMD, "config", "-z", *args], cwd=path, env=env)
+
+    def pairs(items):
+        return [(k, v) for k, _, v in (i.partition(b"\n") for i in items if i)]
+
+    r = run("--show-scope", "--list")
+    if r.returncode == 0:
+        fields = r.stdout.split(b"\0")
+        return pairs(item for scope, item in zip(fields[::2], fields[1::2])
+                     if scope in (b"local", b"worktree"))
+    # git before 2.26 has no --show-scope.
+    out = []
+    for where in ("--local", "--worktree"):
+        if where == "--worktree" and not any(k == b"extensions.worktreeconfig" for k, _ in out):
+            continue
+        r = run(where, "--includes", "--list")
+        if r.returncode != 0 and b"No such file" not in r.stderr:
+            raise ValueError(f"git config exited {r.returncode}")
+        out += pairs(r.stdout.split(b"\0"))
+    return out
+
+
+def _names_commands(settings):
+    for key, value in settings:
+        if _COMMAND_SETTING.match(key) and value and not (
+                key.startswith(b"filter.lfs.") and _LFS_VALUE.match(value)):
+            return True
+        if _LFS_IN_VALUE.search(value):
+            return True
+    promisors = {value if key.startswith(b"extensions.") else key[len(b"remote."):].rpartition(b".")[0]
+                 for key, value in settings if _PARTIAL_CLONE.match(key)}
+    if not promisors:
+        return False
+    # git passes the name on to `git fetch`, which would read an option there.
+    if not all(re.match(rb"\w[\w./-]*\Z", name) for name in promisors):
+        return True
+    if any(_TRANSPORT_SETTING.match(key) for key, _ in settings):
+        return True
+    # A remote without a URL here can be a path or a URL itself, or come from
+    # a file outside the config.
+    urls = {}
+    for key, value in settings:
+        if key.startswith(b"remote.") and key.endswith(b".url"):
+            urls.setdefault(key[len(b"remote."):-len(b".url")], []).append(value)
+    return not all(urls.get(name) and all(_PLAIN_URL.match(u) for u in urls[name])
+                   for name in promisors)
+
+
+def _reads_as_text(path):
+    """True when a path that git printed is the same after decoding it."""
+    try:
+        path.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return path == path.strip() and "\n" not in path and "\r" not in path
+
+
+_other_repos = {}  # folder with the `.git` -> (True to stay out of it, when that was found)
+# A repository that was fine is looked at again after this: a hook can wait
+# minutes for a review while the session goes on.
+_OTHER_REPO_FINE_S = 5
+_other_repos_lock = threading.Lock()
+
+
+def _project_folder():
+    """The folder the session was started in, or None."""
+    project = (os.environ.get("CLAUDE_PROJECT_DIR") or "").strip()
+    return project if os.path.isabs(project) else None
+
+
+def _other_repo_with_commands(cwd):
+    """True when `cwd` is in a repository other than the one the session was
+    started in, and that repository's own config names commands for git to
+    run. The session's repository is the user's choice; one that came with
+    the files is not. It is left out of the review like one nested in the
+    session's work tree (see IGNORE_SUBMODULES)."""
+    project = _project_folder()
+    git_dir = os.environ.get("GIT_DIR") or ""
+    # An absolute GIT_DIR is one repository for every folder, the user's choice.
+    if not cwd or not project or os.path.isabs(git_dir):
+        return False
+    if git_dir and os.path.normpath(git_dir) != ".git":
+        return not _same_dir(cwd, project)
+    try:
+        top = _folder_with_git_entry(cwd)
+    except (OSError, ValueError):
+        return True
+    if top is None:
+        return False
+    with _other_repos_lock:
+        out, found = _other_repos.get(top, (False, None))
+        if not out and (found is None or time.monotonic() - found > _OTHER_REPO_FINE_S):
+            try:
+                out = _is_other_repo_with_commands(top, project)
+                why = "settings of its own that start commands or lead elsewhere"
+            except (subprocess.TimeoutExpired, OSError, ValueError) as e:
+                out, why = True, f"{type(e).__name__}: {e}"
+            _other_repos[top] = (out, time.monotonic())
+            if out:
+                debug_log(f"Staying out of {top!r}: {why}")
+        return out
+
+
+def _is_other_repo_with_commands(top, project):
+    if _is_session_checkout(top, project):
+        return False
+    try:
+        settings = _own_settings(top)
+    except ValueError:
+        if not _git_paths(top, "rev-parse", "--absolute-git-dir"):
+            return False  # as below
+        raise
+    out = _names_commands(settings) or not _reads_as_text(top)
+    named = _git_paths(top, "rev-parse", "--show-toplevel")
+    if not named:
+        if not _git_paths(top, "rev-parse", "--absolute-git-dir"):
+            return False  # git finds no repository and runs nothing
+        out = True
+    elif not _same_dir(named[0], top):
+        # A `.git` here that is no repository does not stop git: the folder
+        # belongs to the repository around it. A core.worktree that leads
+        # somewhere else (a submodule's leads back) is another matter.
+        if any(key == b"core.worktree" for key, _ in settings) or not _is_below(top, [named[0]]):
+            out = True
+        else:
+            return not _reads_as_text(top) or _is_other_repo_with_commands(named[0], project)
+    return out and not _is_session_repo(top, project)
+
+
+def repos_left_alone():
+    return sum(out for out, _ in list(_other_repos.values()))
+
+
+# What session_repo_commands() found, added up. 256: the settings could not be read.
+_FILTER_BITS = ((b"nbstripout", 1), (b"git-crypt", 2), (b"annex", 4), (b"lfs", 8))
+
+
+def session_repo_commands():
+    """Which kinds of command the own config of the session's repository
+    names, as bits. Only counted: the hooks use that repository all the same."""
+    project = _project_folder()
+    if not project or os.environ.get("GIT_DIR"):
+        return 0
+    try:
+        top = _folder_with_git_entry(project)
+        if top is None or _found_through_bare_folder(project):
+            return 0
+        settings = _own_settings(top)
+    except (subprocess.TimeoutExpired, OSError, ValueError):
+        return 256
+    bits = 0
+    others = []
+    for key, value in settings:
+        if _PARTIAL_CLONE.match(key) or not _names_commands([(key, value)]):
+            others.append((key, value))
+        elif key.startswith(b"filter."):
+            name = key[len(b"filter."):].rpartition(b".")[0].lower()
+            bits |= next((bit for known, bit in _FILTER_BITS if name.startswith(known)), 16)
+        elif key.startswith(b"hook."):
+            bits |= 32
+        elif key.startswith(b"core."):
+            bits |= 64
+        else:
+            bits |= 8  # lfs.extension, or a value git-lfs reads as one
+    # What is left: a partial clone that says how to download.
+    return bits | (128 if _names_commands(others) else 0)
+
+
+def session_repo_instead_of(cwd):
+    """The session's own repository when `cwd` is in one the hooks stay out
+    of, so a turn spent there does not lose the edits made in it."""
+    project = _project_folder()
+    return _git_toplevel(project) if project and in_left_out_repo(cwd) else None
+
+
+def in_left_out_repo(cwd):
+    """True in a repository the hooks stay out of, other than the folder the
+    session was started in (a bare repository that holds its worktrees)."""
+    if not cwd or not _stay_out(cwd):
+        return False
+    project = _project_folder()
+    return not (project and _same_dir(cwd, project))
+
+
+def _stay_out(cwd):
+    """True when the hooks should not run git on the files in `cwd`."""
+    return _found_through_bare_folder(cwd) or _other_repo_with_commands(cwd)
 
 
 def _git_toplevel(cwd):
@@ -1027,8 +1578,8 @@ def _git_toplevel(cwd):
         )
         if r.returncode != 0:
             return None
-        path = r.stdout.decode("utf-8", errors="replace").strip()
-        return path if path and not _found_through_bare_folder(cwd) else None
+        path = r.stdout.decode("utf-8", errors="replace").rstrip("\r\n")
+        return path if path and not _stay_out(cwd) and not _stay_out(path) else None
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
         return None
 
@@ -1046,9 +1597,9 @@ def _git_toplevel_and_head(cwd):
     if r.returncode != 0:
         return None, None
     # See #2099: the first line is a PATH, so decode the bytes manually.
-    top, _, head = r.stdout.decode("utf-8", errors="replace").strip().rpartition("\n")
-    top = top.strip()
-    if not top or _found_through_bare_folder(cwd):
+    top, _, head = r.stdout.decode("utf-8", errors="replace").rstrip("\r\n").rpartition("\n")
+    top = top.rstrip("\r")
+    if not top or _stay_out(cwd) or _stay_out(top):
         return None, None
     return top, (head.strip() or None)
 
@@ -1081,7 +1632,7 @@ def _git_dir(repo_root):
     if a different worktree later pushes it. Returns None on failure so
     callers can degrade (push-sweep state is best-effort).
     """
-    if _found_through_bare_folder(repo_root):
+    if _stay_out(repo_root):
         return None
     try:
         # See #2099: stdout is a PATH (shared gitdir), may be non-ASCII.

@@ -19,7 +19,7 @@ from _base import debug_log, make_state_dir, portable_output, _PV
 import gitutil
 from gitutil import (
     GIT_CMD,
-    _git_dir, _git_toplevel, _found_through_bare_folder, _git_status_porcelain,
+    _git_dir, _git_toplevel, _stay_out, _git_status_porcelain,
     _git_rev_parse_head, _is_ancestor, _git_name_only, _temp_index,
     _secret_rename_origins, index_entry_count,
 )
@@ -450,6 +450,8 @@ def get_baseline_file_content(session_id, file_path, cwd):
             # Windows for any file that is not directly in the session
             # directory.
             rel_path = rel_path.replace(os.sep, "/")
+            if _stay_out(git_cwd or cwd_abs):
+                return None
             result = subprocess.run(
                 [*GIT_CMD, "show", f"{baseline_sha}:./{rel_path}"],
                 cwd=git_cwd, capture_output=True, timeout=5
@@ -511,7 +513,9 @@ def _snapshot_commit(cwd, env, head_tree):
     # No pathspec: `add -u` has staged the whole work tree, whatever directory
     # of it `cwd` is, since git 2.0. `-- :/` would say the same but fails
     # outright under a user's GIT_LITERAL_PATHSPECS.
-    add = run(["add", "-u"])
+    # Not for files in a directory that a sparse index stores as one entry.
+    sparse = gitutil.may_be_sparse(env["GIT_INDEX_FILE"])
+    add = run([*(gitutil.SPARSE_AS_IT_IS if sparse else []), "add", "-u"])
     if add.returncode != 0:
         debug_log(f"Snapshot: add -u failed: {_stderr_of(add)}")
         return None
@@ -581,8 +585,8 @@ def capture_git_baseline(cwd):
     global last_baseline_fail, last_index_entries
     last_baseline_fail = 0
     last_index_entries = None
-    if _found_through_bare_folder(cwd):
-        debug_log("Not an ordinary checkout, skipping baseline capture")
+    if _stay_out(cwd):
+        debug_log("Not a checkout to run git in, skipping baseline capture")
         return None
     try:
         # HEAD's commit and its tree in one call: the commit is the answer
@@ -1383,7 +1387,7 @@ def _list_untracked(cwd):
     gitutil.py already follow the lenient pattern; this function and
     capture_git_baseline / _git_name_only / _git_status_porcelain were
     the holdouts."""
-    if _found_through_bare_folder(cwd):
+    if _stay_out(cwd):
         return {}
     try:
         repo = _git_toplevel(cwd) or cwd
@@ -1458,7 +1462,7 @@ def compute_v2_review_set(cwd, baseline_sha, head_at_capture, untracked_at_basel
     if not isinstance(untracked_at_baseline, dict):
         untracked_at_baseline = {}
 
-    tracked_dirty, untracked = (None, None) if _found_through_bare_folder(cwd) else _git_status_porcelain(repo)
+    tracked_dirty, untracked = (None, None) if _stay_out(cwd) else _git_status_porcelain(repo)
     if tracked_dirty is None:
         return [], "HEAD", repo, [], {"dirty_now_count": -1, "changed_since_count": -1, "review_set_count": 0}
 

@@ -138,7 +138,7 @@ from diffstate import (  # noqa: E402,F401
 from reporesolve import (  # noqa: E402,F401
     RES_NONE, RES_CWD, RES_COMMAND, RES_SHA_SCAN, RES_TOUCHED_PATHS, RES_HINT,
     COMMIT_SUBCOMMANDS, PUSH_SUBCOMMANDS,
-    toplevel_from_command, repo_containing_commit, scan_roots,
+    toplevel_from_command, command_in_left_out_repo, repo_containing_commit, scan_roots,
     resolve_repo_root, save_repo_hint, load_repo_hint,
 )
 import diffstate  # noqa: E402  module ref for last_baseline_fail
@@ -261,7 +261,7 @@ _TAIL_METRICS: Dict[str, Any] = {}
 # Of those, the ones that go after the others whenever they were set: a row
 # over CC's key cap loses them before any older review key. Only the launcher
 # keys below come later; those are also on every smaller row of the session.
-_LAST_METRIC_KEYS = ("diff_seen", "cr_pack", "renamed_in")
+_LAST_METRIC_KEYS = ("diff_seen", "cr_pack", "renamed_in", "mode", "repos_left_alone")
 
 # CC keeps this many keys of a row.
 _METRIC_KEY_CAP = 20
@@ -469,6 +469,9 @@ def emit_metrics(
         # managed-mcp.json) and the review was started again without it.
         tail["strict_mcp_off"] = 1
     tail.update(_TAIL_METRICS)
+    left_alone = gitutil.repos_left_alone()
+    if left_alone:
+        tail["repos_left_alone"] = left_alone
     for k in _LAST_METRIC_KEYS:
         if k in tail:
             tail[k] = tail.pop(k)
@@ -931,7 +934,7 @@ def handle_user_prompt_submit(input_data):
     # come back empty.
     no_repo = False
     if not sha and not _git_toplevel(cwd):
-        hint = load_repo_hint(session_id)
+        hint = gitutil.session_repo_instead_of(cwd) or load_repo_hint(session_id)
         if hint:
             debug_log(f"UPS: cwd is not a git repo; using repo hint {hint!r}")
             cwd = hint
@@ -1258,6 +1261,7 @@ def _bash_hook_sentinel(input_data, route="once"):
         _bash_hook_git_dir[call] = _git_dir(
             _git_toplevel(cwd)
             or toplevel_from_command(command, cwd, COMMIT_SUBCOMMANDS | PUSH_SUBCOMMANDS)
+            or gitutil.session_repo_instead_of(cwd)
             or cwd
         )
     gd = _bash_hook_git_dir[call]
@@ -1802,8 +1806,9 @@ def _left_out_files_notice(session_id, repo_root, untracked, diff_output):
 
     Each set of files gets one notice a session: the wake ends in another Stop
     that fails the same way, and a notice there would wake Claude for ever. So
-    no notice unless the mark is saved. Paths are JSON quoted in ASCII: a file
-    name can hold a line break.
+    no notice unless the mark is saved. A repository whose index cannot be
+    copied without its nested repositories fails at every Stop and gets one.
+    Paths are JSON quoted in ASCII: a file name can hold a line break.
     """
     in_diff = set(extract_file_paths_from_diff(diff_output or ""))
 
@@ -1817,8 +1822,9 @@ def _left_out_files_notice(session_id, repo_root, untracked, diff_output):
                    if p not in in_diff and _is_reviewable_source(p) and has_content(p))
     if not names:
         return None
+    which = [repo_root] if gitutil._add_failed["code"] // 100000 == 5 else names
     key = "new_files_left_out:" + hashlib.sha256(
-        "\0".join(names).encode("utf-8", "replace")).hexdigest()[:16]
+        "\0".join(which).encode("utf-8", "replace")).hexdigest()[:16]
     if not atomic_check_and_mark_warning(session_id, key):
         return None
     if key not in load_state(session_id).get("shown_warnings", ()):
@@ -1988,6 +1994,11 @@ def handle_commit_review_posttooluse(input_data):
         _cmd_root = toplevel_from_command(command, cwd, COMMIT_SUBCOMMANDS, cwd_root)
         if _cmd_root and _cmd_root != cwd_root:
             repo_root, repo_res = _cmd_root, RES_COMMAND
+    # A commit made where the hooks stay out is not one of this repository, or
+    # of the one an earlier turn worked in.
+    _hint = not gitutil.in_left_out_repo(cwd)
+    if cwd and not _cmd_root and command_in_left_out_repo(command, cwd, COMMIT_SUBCOMMANDS):
+        repo_root, repo_res, _hint = None, RES_NONE, False
     if not cwd_root:
         _base["cwd_is_repo"] = False
     if repo_res != RES_CWD:
@@ -2011,7 +2022,7 @@ def handle_commit_review_posttooluse(input_data):
     _skip_21_sub = 0
     if not commit_succeeded and not interrupted and cwd:
         if not repo_root:
-            repo_root = load_repo_hint(session_id)
+            repo_root = load_repo_hint(session_id) if _hint else None
             if repo_root:
                 repo_res = RES_HINT
                 _base["repo_resolution"] = repo_res
@@ -2075,11 +2086,12 @@ def handle_commit_review_posttooluse(input_data):
         sys.exit(0)
 
     if not repo_root and named:
-        repo_root = repo_containing_commit(named, scan_roots(cwd))
+        # cwd is in a repository here only when the command named a left-out one.
+        repo_root = repo_containing_commit(named, scan_roots(cwd_root or cwd))
         if repo_root:
             repo_res = RES_SHA_SCAN
     if not repo_root:
-        repo_root = load_repo_hint(session_id)
+        repo_root = load_repo_hint(session_id) if _hint else None
         if repo_root:
             repo_res = RES_HINT
     if repo_res != RES_CWD:
@@ -2581,6 +2593,9 @@ def handle_push_sweep_posttooluse(input_data):
         sha=_tip_m.group(2) if _tip_m else None,
         session_id=session_id, cwd_root=cwd_root,
     )
+    if repo_res == RES_HINT and gitutil.in_left_out_repo(cwd):
+        # Not a push of the repository an earlier turn worked in.
+        repo_root, repo_res = None, RES_NONE
     if not cwd_root:
         _base["cwd_is_repo"] = False
     if repo_res != RES_CWD:
@@ -3149,8 +3164,18 @@ def handle_stop_hook(input_data):
         debug_log("Stop hook: no cwd")
         _skip(4)
 
+    _own_cmds = gitutil.session_repo_commands() if not is_subagent else 0
+    if _own_cmds:
+        # Bits, see session_repo_commands(). No other row sends this key.
+        _TAIL_METRICS["mode"] = _own_cmds
+
     repo_cwd, repo_res = resolve_repo_root(
         cwd, touched_paths=touched_paths, session_id=session_id)
+    if repo_res in (RES_NONE, RES_HINT):
+        # The prompt hook took its baseline there.
+        _session_repo = gitutil.session_repo_instead_of(cwd)
+        if _session_repo:
+            repo_cwd, repo_res = _session_repo, RES_HINT
     res_metrics = ({} if repo_res == RES_CWD
                    else {"cwd_is_repo": False, "repo_resolution": repo_res})
     if is_subagent and repo_cwd:
