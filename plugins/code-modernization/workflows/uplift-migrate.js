@@ -25,7 +25,7 @@ const target = ARGS && ARGS.target
 const units = ARGS && ARGS.units
 if (!system || !source || !target || !Array.isArray(units) || units.length === 0) {
   throw new Error(
-    'modernize-uplift-migrate requires args: {system, source, target, units: [{name, path, deps?}], batchSize?} — e.g. {system:"billing", source:".NET Framework 4.8", target:".NET 8", units:[{name:"Billing.Core", path:"src/Billing.Core"}, {name:"Billing.Api", path:"src/Billing.Api", deps:["Billing.Core"]}]}. Run it only AFTER the pilot unit is migrated in-session and analysis/<system>/PLAYBOOK.md exists.',
+    'modernize-uplift-migrate requires args: {system, source, target, units: [{name, path, deps?}], batchSize?} — e.g. {system:"billing", source:".NET Framework 4.8", target:"<target version>", units:[{name:"Billing.Core", path:"src/Billing.Core"}, {name:"Billing.Api", path:"src/Billing.Api", deps:["Billing.Core"]}]}. Run it only AFTER the pilot unit is migrated in-session and analysis/<system>/PLAYBOOK.md exists.',
   )
 }
 

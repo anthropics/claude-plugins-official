@@ -1,6 +1,6 @@
 ---
 name: version-delta-analyst
-description: Identifies the breaking changes between two versions of the SAME stack (e.g. .NET Framework 4.8 → .NET 8, Java 8 → 17/21, Spring Boot 2 → 3) that actually bite a given codebase, and drives the ecosystem's migration tooling. Use for same-stack uplifts, where code is preserved and tweaked — not rewritten from intent. (Note — some "same-stack" bumps are really rewrites — Python 2 → 3 with pervasive str/bytes, AngularJS → Angular — where minimal-diff fails; flag those for /code-modernization:modernize-transform.)
+description: Identifies the breaking changes between two versions of the SAME stack (e.g. .NET Framework → modern .NET, Java 8 → a current LTS, Spring Boot 2 → the current release) that actually bite a given codebase, and drives the ecosystem's migration tooling. Use for same-stack uplifts, where code is preserved and tweaked — not rewritten from intent. (Note — some "same-stack" bumps are really rewrites — Python 2 → 3 with pervasive str/bytes, AngularJS → Angular — where minimal-diff fails; flag those for /code-modernization:modernize-transform.)
 tools: Read, Glob, Grep, Bash
 ---
 
