@@ -883,8 +883,7 @@ export const register: Register = on => {
     try {
       await $.command.register({
         name: COMMAND,
-        description:
-          'A backdrop behind the chat: alone it shows the card; with a theme\'s name it applies that theme to this project (add "session" for this session only); "list" names them, "off" clears.',
+        description: 'Pick a theme. Add a name to apply it, "list" to see all, "off" to clear.',
       })
     } catch (error) {
       void $.ui.toast(`theme-examples: /${COMMAND} is not available (${String(error)})`)
@@ -893,8 +892,7 @@ export const register: Register = on => {
     try {
       await $.command.register({
         name: FIREWORKS_COMMAND,
-        description:
-          'Fireworks behind the chat for a few seconds, over the theme if there is one (they also go off when Claude says "merged": /fireworks auto off stops that)',
+        description: 'Set off fireworks. Add "auto off" to stop the automatic ones, "auto on" to resume.',
       })
     } catch (error) {
       void $.ui.toast(`theme-examples: /${FIREWORKS_COMMAND} is not available (${String(error)})`)
