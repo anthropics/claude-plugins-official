@@ -174,6 +174,8 @@ function defaultAccess(): Access {
 
 const MAX_CHUNK_LIMIT = 4096
 const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024
+/** sendPhoto's own cap. sendDocument takes the 50MB above. */
+const PHOTO_MAX_BYTES = 10 * 1024 * 1024
 
 // reply's files param takes any path. .env is ~60 bytes and ships as a
 // document. Claude can already Read+paste file contents, so this isn't a new
@@ -240,8 +242,7 @@ function loadAccess(): Access {
 
 // Outbound gate — reply/react/edit can only target chats the inbound gate
 // would deliver from. Telegram DM chat_id == user_id, so allowFrom covers DMs.
-function assertAllowedChat(chat_id: string): void {
-  const access = loadAccess()
+function assertAllowedChat(chat_id: string, access: Access = loadAccess()): void {
   if (access.allowFrom.includes(chat_id)) return
   if (chat_id in access.groups) return
   throw new Error(`chat ${chat_id} is not allowlisted — add via /telegram:access`)
@@ -445,6 +446,17 @@ function chunk(text: string, limit: number, mode: 'length' | 'newline'): string[
 // everything else goes as documents (raw file, no compression).
 const PHOTO_EXTS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp'])
 
+// Under 'first', the quote goes on the first message of the reply and no
+// other, whether that is a text chunk or a file.
+function shouldThread(
+  reply_to: number | undefined,
+  replyMode: 'off' | 'first' | 'all',
+  alreadySent: number,
+): boolean {
+  if (reply_to == null || replyMode === 'off') return false
+  return replyMode === 'all' || alreadySent === 0
+}
+
 const mcp = new Server(
   { name: 'telegram', version: '1.0.0' },
   {
@@ -532,7 +544,10 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
         type: 'object',
         properties: {
           chat_id: { type: 'string' },
-          text: { type: 'string' },
+          text: {
+            type: 'string',
+            description: 'What to say. Omit it, or pass an empty string, to send files on their own.',
+          },
           reply_to: {
             type: 'string',
             description: 'Message ID to thread under. Use message_id from the inbound <channel> block.',
@@ -540,7 +555,7 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
           files: {
             type: 'array',
             items: { type: 'string' },
-            description: 'Absolute file paths to attach. Images send as photos (inline preview); other types as documents. Max 50MB each.',
+            description: 'Absolute file paths to attach, max 50MB each. Images send as photos with an inline preview, except over 10MB — Telegram caps photos there, so those send as documents, like every other type. Pass an empty text to send files on their own.',
           },
           format: {
             type: 'string',
@@ -548,7 +563,7 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
             description: "Rendering mode. 'markdownv2' enables Telegram formatting (bold, italic, code, links). Caller must escape special chars per MarkdownV2 rules. Default: 'text' (plain, no escaping needed).",
           },
         },
-        required: ['chat_id', 'text'],
+        required: ['chat_id'],
       },
     },
     {
@@ -616,63 +631,114 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
     switch (req.params.name) {
       case 'reply': {
         const chat_id = args.chat_id as string
-        const text = args.text as string
-        const reply_to = args.reply_to != null ? Number(args.reply_to) : undefined
+        // Absent means "no text of my own"; a wrong type is a mistake worth
+        // naming rather than a message body to drop on the floor. Reading it
+        // as a string outright threw a TypeError out of chunk() instead.
+        if (args.text != null && typeof args.text !== 'string') {
+          throw new Error(`text must be a string, got ${typeof args.text}`)
+        }
+        if (args.files != null && !Array.isArray(args.files)) {
+          throw new Error('files must be an array of absolute paths')
+        }
+        // Telegram trims a message before deciding whether it is empty, and
+        // refuses one with nothing left. Decide it the same way, or a text of
+        // only newlines takes the whole call down with it.
+        const text = typeof args.text === 'string' && args.text.trim() ? args.text : ''
         const files = (args.files as string[] | undefined) ?? []
         const format = (args.format as string | undefined) ?? 'text'
         const parseMode = format === 'markdownv2' ? 'MarkdownV2' as const : undefined
 
-        assertAllowedChat(chat_id)
-
-        for (const f of files) {
-          assertSendable(f)
-          const st = statSync(f)
-          if (st.size > MAX_ATTACHMENT_BYTES) {
-            throw new Error(`file too large: ${f} (${(st.size / 1024 / 1024).toFixed(1)}MB, max 50MB)`)
+        let reply_to: number | undefined
+        if (args.reply_to != null) {
+          reply_to = Number(args.reply_to)
+          if (!Number.isFinite(reply_to)) {
+            // NaN survives `!= null` and serializes as JSON null, so every
+            // message in the call comes back 400 instead.
+            throw new Error(`reply_to must be a message id, got ${JSON.stringify(args.reply_to)}`)
           }
         }
 
         const access = loadAccess()
+        assertAllowedChat(chat_id, access)
+        if (!text && files.length === 0) {
+          throw new Error('nothing to send: pass text, files, or both')
+        }
+
+        const attachments: { path: string; size: number }[] = []
+        for (const f of files) {
+          assertSendable(f)
+          const st = statSync(f)
+          // Checked here so an unusable path fails before any of the reply
+          // has been delivered, which is what this loop is for.
+          if (!st.isFile()) {
+            throw new Error(`not a file: ${f}`)
+          }
+          if (st.size === 0) {
+            throw new Error(`file is empty: ${f}`)
+          }
+          if (st.size > MAX_ATTACHMENT_BYTES) {
+            throw new Error(`file too large: ${f} (${(st.size / 1024 / 1024).toFixed(1)}MB, max 50MB)`)
+          }
+          attachments.push({ path: f, size: st.size })
+        }
+
         const limit = Math.max(1, Math.min(access.textChunkLimit ?? MAX_CHUNK_LIMIT, MAX_CHUNK_LIMIT))
         const mode = access.chunkMode ?? 'length'
         const replyMode = access.replyToMode ?? 'first'
-        const chunks = chunk(text, limit, mode)
+        // No chunks for an empty text: Telegram's sendMessage takes 1-4096
+        // characters and rejects a zero-length one, which used to abort the
+        // call before the files below were ever sent.
+        const chunks = text ? chunk(text, limit, mode) : []
         const sentIds: number[] = []
 
+        // Files go as separate messages: Telegram doesn't mix text and a file
+        // in one call. Under replyToMode 'first' only the first message of
+        // the whole reply quotes the inbound one, so a reply carrying three
+        // screenshots doesn't quote the user four times.
+        const total = chunks.length + attachments.length
         try {
-          for (let i = 0; i < chunks.length; i++) {
-            const shouldReplyTo =
-              reply_to != null &&
-              replyMode !== 'off' &&
-              (replyMode === 'all' || i === 0)
-            const sent = await bot.api.sendMessage(chat_id, chunks[i], {
-              ...(shouldReplyTo ? { reply_parameters: { message_id: reply_to } } : {}),
+          for (const chunkText of chunks) {
+            const sent = await bot.api.sendMessage(chat_id, chunkText, {
+              ...(shouldThread(reply_to, replyMode, sentIds.length)
+                ? { reply_parameters: { message_id: reply_to! } }
+                : {}),
               ...(parseMode ? { parse_mode: parseMode } : {}),
             })
             sentIds.push(sent.message_id)
           }
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err)
-          throw new Error(
-            `reply failed after ${sentIds.length} of ${chunks.length} chunk(s) sent: ${msg}`,
-          )
-        }
-
-        // Files go as separate messages (Telegram doesn't mix text+file in one
-        // sendMessage call). Thread under reply_to if present.
-        for (const f of files) {
-          const ext = extname(f).toLowerCase()
-          const input = new InputFile(f)
-          const opts = reply_to != null && replyMode !== 'off'
-            ? { reply_parameters: { message_id: reply_to } }
-            : undefined
-          if (PHOTO_EXTS.has(ext)) {
-            const sent = await bot.api.sendPhoto(chat_id, input, opts)
-            sentIds.push(sent.message_id)
-          } else {
-            const sent = await bot.api.sendDocument(chat_id, input, opts)
+          for (const file of attachments) {
+            const opts = shouldThread(reply_to, replyMode, sentIds.length)
+              ? { reply_parameters: { message_id: reply_to! } }
+              : undefined
+            // sendPhoto takes 10MB, sendDocument 50MB, so a larger image sent
+            // as a photo is refused with the text already delivered and no
+            // way for the caller to get it through at all. Telegram also
+            // refuses a photo for its dimensions or its side ratio, which no
+            // local check predicts — so fall back on a refusal too. A
+            // document shows no inline preview, but it arrives.
+            const asPhoto =
+              PHOTO_EXTS.has(extname(file.path).toLowerCase()) && file.size <= PHOTO_MAX_BYTES
+            let sent
+            if (asPhoto) {
+              try {
+                sent = await bot.api.sendPhoto(chat_id, new InputFile(file.path), opts)
+              } catch (err) {
+                if (!(err instanceof GrammyError)) throw err
+                sent = await bot.api.sendDocument(chat_id, new InputFile(file.path), opts)
+              }
+            } else {
+              sent = await bot.api.sendDocument(chat_id, new InputFile(file.path), opts)
+            }
             sentIds.push(sent.message_id)
           }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err)
+          // The ids of what did land, so the caller can carry on from there
+          // instead of sending the whole reply again.
+          throw new Error(
+            `sent ${sentIds.length} of ${total} message(s)` +
+            `${sentIds.length > 0 ? ` (ids: ${sentIds.join(', ')})` : ''} before failing: ${msg}`,
+          )
         }
 
         const result =
