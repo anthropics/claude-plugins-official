@@ -20,7 +20,7 @@ import gitutil
 from gitutil import (
     GIT_CMD,
     _git_dir, _git_toplevel, _stay_out, _git_status_porcelain,
-    _git_rev_parse_head, _is_ancestor, _git_name_only, _temp_index,
+    _git_head_at, _git_rev_parse_head, _is_ancestor, _git_name_only, _temp_index,
     _secret_rename_origins, index_entry_count,
 )
 from session_state import load_state, with_locked_state
@@ -137,7 +137,7 @@ def record_custom_rule_stats(session_id, stats):
     with_locked_state(session_id, lambda state: _fold_custom_rule_stats(state, stats))
 
 
-def consume_stop_state(session_id, clear=True):
+def consume_stop_state(session_id, clear=True, stop_left=0):
     """Atomically snapshot all state the Stop hook needs and clear touched_paths.
 
     The Stop hook is asyncRewake — it runs in the background after Claude's
@@ -148,6 +148,8 @@ def consume_stop_state(session_id, clear=True):
     Single locked read-then-clear closes that window: PostToolUse appends
     after this clear go into the next snapshot; UPS overwrites of baseline_sha
     after this snapshot are invisible to this Stop fire.
+
+    `stop_left`: DROPPED_AGENT or 0.
     """
     import time as _time
     now = _time.time()
@@ -182,6 +184,7 @@ def consume_stop_state(session_id, clear=True):
                 dict(state["custom_rules"])
                 if isinstance(state.get("custom_rules"), dict) else {}
             ),
+            "dropped": state.get("dropped"),
         }
         # touched_paths is cleared per Stop, but one baseline can be
         # reviewed by several Stops (rewakes). turn_touched keeps every path
@@ -201,6 +204,10 @@ def consume_stop_state(session_id, clear=True):
             state.pop("state_resets", None)
             state.pop("state_overwrites", None)
             state.pop("custom_rules", None)
+            state.pop("dropped", None)
+            state.pop("no_stop", None)
+            state["stop_at"] = now
+            state["stop_left"] = stop_left
         return snap
 
     return with_locked_state(session_id, _snap) or {
@@ -210,6 +217,7 @@ def consume_stop_state(session_id, clear=True):
         "fire_count": 0, "fire_count_expired": False, "previous_findings": [],
         "reviewed_diff_hash": None, "state_resets": 0, "state_overwrites": 0,
         "baseline_fail": 0, "turn_touched": [], "custom_rules": {},
+        "dropped": None,
     }
 
 
@@ -369,6 +377,116 @@ def restore_unreviewed_stop_state(session_id, paths, baseline_sha):
         if baseline_sha and not state.get("baseline_sha"):
             state["baseline_sha"] = baseline_sha
     with_locked_state(session_id, _restore)
+
+
+# ─── changes no Stop review saw ─────────────────────────────────────────────
+#
+# Count only. A prompt replaces the baseline unless an edit tool recorded a
+# path, so files changed in other ways (shell commands, the user, a pull) since
+# the last Stop review are in no Stop review. `changed_files` on a Stop row
+# says how often, as one number:
+#
+#     1000 * kind + files    (reviewable files, capped at 999)
+#
+# with 10 added to the kind when HEAD moved as well; -1 when git could not say.
+# Several prompts before one Stop are added up, under the kind of the first.
+# Not told apart: what Claude's commands changed and what changed otherwise.
+# The kinds:
+DROPPED_NO_STOP = 1   # no Stop since the last prompt (interrupt, error, a message mid-turn)
+DROPPED_FINDING = 2   # a turn that a finding started: its Stop reviews nothing
+DROPPED_AGENT = 3     # the last Stop ran with an agent at work in the background
+DROPPED_FAILED = 4    # this row's own review failed, with no recorded path to keep it for
+                      # (a Stop before the next prompt still reviews it)
+# A prompt this soon after a finding was stored is the turn that finding starts.
+_FINDING_PROMPT_S = 60
+_DROPPED_FILES_CAP = 999
+# The prompt waits for the count.
+_DROPPED_WAIT_S = 1.0
+
+
+def dropped_code(kind, files):
+    return 1000 * kind + min(files, _DROPPED_FILES_CAP) if files else 0
+
+
+def add_dropped(earlier, code):
+    """Both counts as one, under the earlier kind."""
+    if not isinstance(earlier, int) or earlier <= 0:
+        return code or earlier or 0
+    return earlier if code <= 0 else dropped_code(
+        earlier // 1000, earlier % 1000 + code % 1000)
+
+
+def dropped_changes(state, sha, baseline_fail, root, head, untracked):
+    """The code for what a prompt that stores `sha` drops, or 0. Runs git only
+    when the last turn left its baseline open, and changes nothing."""
+    old = state.get("baseline_sha")
+    if (not old or not sha or not root or root != state.get("baseline_root")
+            or state.get("touched_paths")):
+        return 0
+    if state.get("no_stop"):
+        # All since the baseline is unreviewed.
+        since, kind = 0, DROPPED_NO_STOP
+        finding_at = state.get("stop_hook_fire_count_ts", 0)
+        if 0 <= state.get("prompt_at", 0) - finding_at < _FINDING_PROMPT_S:
+            kind = DROPPED_FINDING
+    elif state.get("stop_left"):
+        # What the Stop reviewed is in the baseline's diff too, so only files
+        # written after it count (a deleted one does not say when).
+        since, kind = state.get("stop_at", 0), state["stop_left"]
+    else:
+        return 0
+    if old != sha and (baseline_fail or state.get("baseline_fail")):
+        return -1  # HEAD in place of one of the snapshots
+    deadline = time.monotonic() + _DROPPED_WAIT_S
+
+    paths = []
+    if old != sha:
+        try:
+            r = subprocess.run(
+                [*GIT_CMD, "diff", gitutil.IGNORE_SUBMODULES, "--name-only", "--no-renames", "-z",
+                 old, sha, "--"],
+                cwd=root, capture_output=True, timeout=_DROPPED_WAIT_S,
+                env=gitutil.no_download_env())
+        except (OSError, subprocess.SubprocessError):
+            return -1
+        if r.returncode != 0:
+            return -1
+        paths = r.stdout.decode("utf-8", errors="replace").split("\0")
+    before = state.get("untracked_at_baseline")
+    if isinstance(before, dict):
+        capped_at = before.get(UNTRACKED_CAPPED_AT_KEY)
+        # An empty listing may be one that failed.
+        new_from = capped_at or (0 if before else int(state.get("prompt_at", 0) * 1e9))
+        paths += [p for p, at in (untracked or {}).items()
+                  if p != UNTRACKED_CAPPED_AT_KEY
+                  and (before[p] != at if p in before else at >= new_from)]
+    else:
+        before = {}
+
+    files = 0
+    for p in dict.fromkeys(paths):
+        if time.monotonic() > deadline:
+            return -1
+        # A listed folder is a nested checkout.
+        if not p or p.endswith("/") or not gitutil._is_reviewable_source(p):
+            continue
+        if since or p in before:
+            try:
+                st = os.stat(os.path.join(root, p))
+            except (OSError, ValueError):
+                if since:
+                    continue
+            else:
+                if max(st.st_mtime, st.st_ctime) < since or before.get(p) == st.st_mtime_ns:
+                    continue
+        files += 1
+        if files >= _DROPPED_FILES_CAP:
+            break
+    if files and head != state.get("head_at_capture") and (
+            not since or head != _git_head_at(
+                root, since + 1, timeout=max(0.1, deadline - time.monotonic()))):
+        kind += 10
+    return dropped_code(kind, files)
 
 
 # state["baseline_kept"]: why a prompt left an earlier turn's baseline in
