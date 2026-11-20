@@ -1,5 +1,5 @@
 ---
-description: Same-stack version uplift (e.g. .NET Framework 4.8 to .NET 8, Java 8 to 17) — keep the code, fix the version deltas, prove nothing changed
+description: Same-stack version uplift (e.g. .NET Framework to modern .NET, Java 8 to the current LTS) — keep the code, fix the version deltas, prove nothing changed
 argument-hint: <system> [source-version] [target-version] [project-pattern]
 arguments: system source_version target_version project_pattern
 ---
@@ -15,7 +15,7 @@ work to matching projects.
 
 **The strong case is a real dual run.** If both runtimes execute here, one test suite runs on both and
 the equivalence proof is a differential test. It is not always available: .NET can multi-target one
-test project (`net48;net8.0`) but `net48` runs only on Windows or Mono; Java 8 to 17 is the whole build
+test project (`net48` and the target) but `net48` runs only on Windows or Mono; for Java it is the whole build
 run under two JDK toolchains; Python 2 cannot import an un-rewritten module under Python 3. When both
 cannot run here, equivalence falls back, as in `transform`, to characterization tests pinned to
 recorded outputs on the target only. That is fine, but label it honestly (Step 0.3, Step 7).
@@ -23,10 +23,12 @@ recorded outputs on the target only. That is fine, but label it honestly (Step 0
 ## Step 0 — Toolchain and version pinning (fail fast)
 
 1. **Pin the version pair exactly.** If the versions were not given, take them from `analysis/$system/INTENT.md` or the
-   brief. If either version is missing or vague (".NET" with no number), stop and ask. When the move spans several
-   major versions or two things at once (a JDK and a framework: Java 8 with Spring 4 to Java 21 with Spring Boot 3),
-   split it into hops that each build and pass their tests before the next starts (for example Java 8, 11, 17, 21),
-   name the order in the plan, and treat each hop as its own pilot.
+   brief. If either version is missing or vague (".NET" with no number), stop and ask. **Check that the target is
+   supported** as `${CLAUDE_PLUGIN_ROOT}/references/target-versions.md` says: looked up, never remembered, and the
+   versions you offer when you ask are looked up too. When the move spans several major versions or two things at once
+   (a JDK and a framework: Java 8 with Spring 4 to a newer JDK with Spring Boot), split it into hops that each build and
+   pass their tests before the next starts (for example Java 8, 11, 17, then the target), name the order in the plan,
+   and treat each hop as its own pilot.
 2. **Target runtime, required.** Verify it builds and tests (`dotnet --version` and a `dotnet test`
    smoke; `mvn` or `gradle`; `python3 -V` and `pytest`).
 3. **Source runtime, the baseline oracle.** Verify the *old* version also runs here. If it does not
@@ -82,8 +84,8 @@ cut. Default order is **leaf-first**, with these overrides, called out in the pl
   whole graph; stand them up or multi-target them before migrating anything.
 - **A dependency delta every consumer shares forces a coordinated cut** (EF6 to EF Core, `javax` to
   `jakarta`): its own cross-cutting step, not leaf-first.
-- **Multi-target shared libraries during the transition** (`<TargetFrameworks>net48;net8.0</TargetFrameworks>`
-  on shared leaf libraries) so old and new consumers can both reference them.
+- **Multi-target shared libraries during the transition** (`net48` plus the target in
+  `<TargetFrameworks>` on shared leaf libraries) so old and new consumers can both reference them.
 - **A shared node with consumers outside this scope needs a recorded decision before an in-place
   edit.** `PREFLIGHT.md` Check 6 lists them; the brief's §3 owns the decision (keep it buildable for
   both old and new consumers, widen the scope, or schedule the break). Without one, getting it from the
@@ -92,9 +94,10 @@ cut. Default order is **leaf-first**, with these overrides, called out in the pl
 ## Step 2 — Plan (human gate)
 
 Present, and **change nothing until the user approves** (plan mode if available): the exact version
-pair; the working-copy plan; which ecosystem tool you will drive and whether it can run here; the
-project order with the overrides above; the harness plan and **whether a true dual run is possible or
-it is target-only** (.NET: one test project multi-targeted, the `net48` leg needs Windows; Java: a
+pair, with the **Target versions** table (kept at the top of `DELTA_CATALOG.md` unless the brief has it; anything
+not `supported` and not yet decided is a question here); the working-copy plan; which ecosystem tool you will drive
+and whether it can run here; the project order with the overrides above; the harness plan and **whether a true dual
+run is possible or it is target-only** (.NET: one test project multi-targeted, the `net48` leg needs Windows; Java: a
 double JDK build; Python: separate interpreter environments); how equivalence is proven (**the baseline
 on $source_version is the oracle and $target_version must reproduce it**, or characterization tests
 against recorded outputs); anything ambiguous.
@@ -130,7 +133,7 @@ findings and the known breaking changes with what this code uses, cover all four
 file:line, flag silent-behavioral deltas as test-before-touch, never under-report dependency deltas."
 
 Either way rank by blast radius and mark each delta **Mechanical** (a codemod can do it) or **Judgment**
-(a human decides).
+(a human decides). Check any dependency version a fix names in the package registry before you write it down.
 
 ## Step 4 — Dual-target harness (before touching code)
 
