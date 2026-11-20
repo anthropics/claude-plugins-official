@@ -90,7 +90,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/AikidoSec/aikido-claude-plugin.git",
-        "sha": "75e45f337568bf3e0f5d99bc1b41d8844492df19"
+        "sha": "e72df7749ff54736bc1a6b57acff0c7799c9bda7"
       },
       "homepage": "https://github.com/AikidoSec/aikido-claude-plugin"
     },
@@ -210,9 +210,8 @@
         "url": "https://github.com/amd/skills.git",
         "path": "skills",
         "ref": "main",
-        "sha": "6916fb371d1cba40757b223cf16b4cd4912b202f"
+        "sha": "d4417422312c82d4761d3255b69bfcd411147cf3"
       },
-      "strict": false,
       "skills": [
         "./local-ai-use",
         "./local-ai-app-integration",
@@ -1003,7 +1002,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/cloudflare/skills.git",
-        "sha": "b052c32bab7dd493513260228a36c88294f343f1"
+        "sha": "cbf893b954222276bf1af57e5f23379231e0efb9"
       },
       "description": "Skills for the Cloudflare developer platform: Workers, Durable Objects, Agents SDK, MCP servers, Wrangler CLI, and web performance.",
       "category": "deployment",
@@ -1073,7 +1072,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/coderabbitai/skills.git",
-        "sha": "3e8763d24d543b48615b82535d02288de3ddae40"
+        "sha": "45bd1ae2c471cd861b8b6903f7dcab7c57aa0e59"
       },
       "homepage": "https://github.com/coderabbitai/skills"
     },
@@ -1324,7 +1323,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/datadog-labs/claude-code-plugin.git",
-        "sha": "195f570c002beab3d7bd342739034d0019aa4863"
+        "sha": "a1603119c813f528b2d925a0ccadd73bf930550b"
       },
       "homepage": "https://www.datadoghq.com/"
     },
@@ -1573,7 +1572,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/figma/mcp-server-guide.git",
-        "sha": "f2789420e7e8b4e2465dfeb1e12e1fc6a31397e5"
+        "sha": "43a06ff1738935ad5c3d9b0437b5373aaf45cdc3"
       },
       "homepage": "https://github.com/figma/mcp-server-guide"
     },
@@ -2972,7 +2971,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/postmanlabs/postman-plugin.git",
-        "sha": "1fdd3f1e2736c7cb83780a221cb9f83641215ab7"
+        "sha": "d1f1cb9d0fba1c7442469fa68e14846ec966daf0"
       },
       "homepage": "https://github.com/postmanlabs/postman-plugin"
     },
@@ -3484,7 +3483,7 @@
     {
       "name": "security-guidance",
       "description": "Security review for Claude-generated code. Pattern-based warnings on edits, LLM-powered diff review on Stop, and an agentic commit reviewer that catches injection, XSS, SSRF, hardcoded secrets, and 25+ other vulnerability classes.",
-      "version": "2.0.20",
+      "version": "2.0.21",
       "author": {
         "name": "Anthropic",
         "email": "support@anthropic.com"
@@ -3919,7 +3918,7 @@
     },
     {
       "name": "theme-examples",
-      "description": "An example plugin to read, copy and change: twenty animated backdrops behind the chat in the Claude desktop app, with frosted-glass panels, one per project or per session. Needs a version of Claude Desktop that draws a plugin's backdrop.",
+      "description": "An example plugin to read, copy and change: thirty-eight animated backdrops behind the chat in the Claude desktop app, with frosted-glass panels, one per project or per session. Needs a version of Claude Desktop that draws a plugin's backdrop.",
       "author": {
         "name": "Anthropic",
         "email": "support@anthropic.com"

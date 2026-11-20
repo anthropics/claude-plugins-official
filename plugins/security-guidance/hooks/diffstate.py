@@ -19,7 +19,7 @@ from _base import debug_log, make_state_dir, portable_output, _PV
 import gitutil
 from gitutil import (
     GIT_CMD,
-    _git_dir, _git_toplevel, _found_through_bare_folder, _git_status_porcelain,
+    _git_dir, _git_toplevel, _stay_out, _git_status_porcelain,
     _git_rev_parse_head, _is_ancestor, _git_name_only, _temp_index,
     _secret_rename_origins, index_entry_count,
 )
@@ -450,6 +450,8 @@ def get_baseline_file_content(session_id, file_path, cwd):
             # Windows for any file that is not directly in the session
             # directory.
             rel_path = rel_path.replace(os.sep, "/")
+            if _stay_out(git_cwd or cwd_abs):
+                return None
             result = subprocess.run(
                 [*GIT_CMD, "show", f"{baseline_sha}:./{rel_path}"],
                 cwd=git_cwd, capture_output=True, timeout=5
@@ -511,7 +513,9 @@ def _snapshot_commit(cwd, env, head_tree):
     # No pathspec: `add -u` has staged the whole work tree, whatever directory
     # of it `cwd` is, since git 2.0. `-- :/` would say the same but fails
     # outright under a user's GIT_LITERAL_PATHSPECS.
-    add = run(["add", "-u"])
+    # Not for files in a directory that a sparse index stores as one entry.
+    sparse = gitutil.may_be_sparse(env["GIT_INDEX_FILE"])
+    add = run([*(gitutil.SPARSE_AS_IT_IS if sparse else []), "add", "-u"])
     if add.returncode != 0:
         debug_log(f"Snapshot: add -u failed: {_stderr_of(add)}")
         return None
@@ -581,8 +585,8 @@ def capture_git_baseline(cwd):
     global last_baseline_fail, last_index_entries
     last_baseline_fail = 0
     last_index_entries = None
-    if _found_through_bare_folder(cwd):
-        debug_log("Not an ordinary checkout, skipping baseline capture")
+    if _stay_out(cwd):
+        debug_log("Not a checkout to run git in, skipping baseline capture")
         return None
     try:
         # HEAD's commit and its tree in one call: the commit is the answer
@@ -1228,6 +1232,83 @@ def _mark_inflight(repo_root, shas):
         pass
 
 
+_holds = {}
+
+
+def hold_until_exit(path):
+    """Lock the file at `path` until this process ends or calls
+    `release_hold`, so that others can see it `is_held`. Best-effort; never
+    raises."""
+    import time as _time
+    try:
+        fd = _open_own_file(path, os.O_RDWR)
+    except (OSError, TypeError):
+        return
+    try:
+        for _ in range(10):  # another process may be looking at this moment
+            if _flock_nb(fd, exclusive=True):
+                _holds[path] = fd  # left open: the lock goes when the process does
+                return
+            _time.sleep(0.01)
+    except OSError:
+        pass
+    os.close(fd)
+
+
+def release_hold(path):
+    """Give up the lock `hold_until_exit` took. Never raises."""
+    fd = _holds.pop(path, None)
+    if fd is not None:
+        _drop_marker(path, fd, unlink=False)
+
+
+def is_held(path):
+    """Whether a live process holds the file at `path`; None when that cannot
+    be told (no such file, or no locks here)."""
+    try:
+        fd = _open_own_file(path, os.O_RDONLY)
+    except (OSError, TypeError):
+        return None
+    try:
+        # Shared, so two processes looking at once do not look like a holder
+        # to each other.
+        return not _flock_nb(fd, exclusive=False)
+    except OSError:
+        return None
+    finally:
+        os.close(fd)
+
+
+def becomes_held(path, max_wait_s, poll_s=0.1):
+    """Whether a live process holds the file at `path` or does so soon."""
+    import time as _time
+    end = _time.monotonic() + max_wait_s
+    while not is_held(path):
+        if _time.monotonic() >= end:
+            return False
+        _time.sleep(poll_s)
+    return True
+
+
+def wait_for_holder(path, max_wait_s, poll_s=0.5):
+    """Wait for the process holding the file at `path` to end. Returns
+    (ended, waited_s); `ended` is False when it still runs after `max_wait_s`,
+    or when that cannot be told."""
+    import time as _time
+    start = _time.monotonic()
+    waited, looks_free = False, 0
+    while True:
+        held = is_held(path)
+        # Free twice in a row: a holder creates the file a moment before it
+        # locks it.
+        looks_free = 0 if held else looks_free + 1
+        spent = _time.monotonic() - start
+        if held is None or looks_free == 2 or (held and spent >= max_wait_s):
+            return looks_free == 2 and held is False, spent if waited else 0.0
+        waited = waited or held
+        _time.sleep(poll_s)
+
+
 def _load_inflight_shas(repo_root, shas, _gd=None):
     """Which of `shas` another live review in this clone holds right now."""
     out = set()
@@ -1238,18 +1319,8 @@ def _load_inflight_shas(repo_root, shas, _gd=None):
         p = os.path.join(gd, _INFLIGHT_PREFIX + sha)
         if not _is_full_sha(sha) or p in _inflight_held:
             continue
-        try:
-            fd = _open_own_file(p, os.O_RDONLY)
-        except OSError:
-            continue
-        try:
-            # Shared, so two reviews asking at once do not look like a
-            # holder to each other.
-            if not _flock_nb(fd, exclusive=False):
-                out.add(sha)
-        except OSError:
-            pass
-        os.close(fd)
+        if is_held(p):
+            out.add(sha)
     return out
 
 
@@ -1316,7 +1387,7 @@ def _list_untracked(cwd):
     gitutil.py already follow the lenient pattern; this function and
     capture_git_baseline / _git_name_only / _git_status_porcelain were
     the holdouts."""
-    if _found_through_bare_folder(cwd):
+    if _stay_out(cwd):
         return {}
     try:
         repo = _git_toplevel(cwd) or cwd
@@ -1391,7 +1462,7 @@ def compute_v2_review_set(cwd, baseline_sha, head_at_capture, untracked_at_basel
     if not isinstance(untracked_at_baseline, dict):
         untracked_at_baseline = {}
 
-    tracked_dirty, untracked = (None, None) if _found_through_bare_folder(cwd) else _git_status_porcelain(repo)
+    tracked_dirty, untracked = (None, None) if _stay_out(cwd) else _git_status_porcelain(repo)
     if tracked_dirty is None:
         return [], "HEAD", repo, [], {"dirty_now_count": -1, "changed_since_count": -1, "review_set_count": 0}
 

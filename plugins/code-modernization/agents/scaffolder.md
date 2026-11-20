@@ -11,7 +11,11 @@ service boundaries, interface contracts, behavior-contract rules — exactly.
 
 ## What you produce
 
-- Project skeleton for the stack named in the architecture
+- Project skeleton for the stack named in the architecture, on exactly the
+  versions in its Target versions table. For a dependency not in the table,
+  use the newest stable release the package registry reports that is
+  compatible, never a version from memory. A version that cannot be resolved
+  is a blocker: report it, do not substitute another
 - Domain model
 - API stubs matching the interface contracts in the spec
 - **Executable acceptance tests** for every behavior-contract rule assigned

@@ -265,10 +265,19 @@ def _anthropic_base_url() -> str:
 # the ones that fail; _urlopen does the same on the releases that do not.
 
 _STORE_TLS_UNSET = object()
-_store_tls_context = _STORE_TLS_UNSET  # None once Python's default context is known to build
+# The context the API calls use; None once Python's default one is known to do.
+_store_tls_context = _STORE_TLS_UNSET
 _store_tls_lock = threading.Lock()
 # Store entries left out of that context; emit_metrics reports it.
 _store_certs_skipped = 0
+
+
+def _as_http_client_would(context):
+    """Sets what http.client sets on the context it makes itself."""
+    context.set_alpn_protocols(["http/1.1"])
+    if context.post_handshake_auth is not None:
+        context.post_handshake_auth = True
+    return context
 
 
 def _context_without_unreadable_store_certs():
@@ -307,31 +316,82 @@ def _context_without_unreadable_store_certs():
     if context is None:
         return None, skipped
     context.set_default_verify_paths()
-    # What http.client sets on the context it would have made.
-    context.set_alpn_protocols(["http/1.1"])
-    if context.post_handshake_auth is not None:
-        context.post_handshake_auth = True
-    return context, skipped
+    return _as_http_client_would(context), skipped
+
+
+# ── macOS Python with no certificates ────────────────────────────────────
+# A Python from the python.org installer has no CA certificates until its
+# "Install Certificates" command is run, and every HTTPS call from it fails
+# to verify. macOS ships a CA file, the one Apple's /usr/bin/python3 uses;
+# with it the calls verify as they do there.
+
+_ON_MACOS = sys.platform == "darwin"
+_MACOS_CA_FILE = "/etc/ssl/cert.pem"
+
+
+def _context_with_os_ca_file():
+    """Python's default TLS context plus the CA file macOS ships, or None.
+    Only where the default one has no certificate at all, so a Python that
+    can verify anything keeps exactly what it trusts. SSL_CERT_FILE and
+    SSL_CERT_DIR are the user's own choice of what to trust and win, also
+    when they point at nothing."""
+    if not _ON_MACOS or ssl is None:
+        return None
+    if "SSL_CERT_FILE" in os.environ or "SSL_CERT_DIR" in os.environ:
+        return None
+    if not _anthropic_base_url().lower().startswith("https:"):
+        return None
+    paths = ssl.get_default_verify_paths()
+    if paths.cafile or not os.path.isfile(_MACOS_CA_FILE):
+        return None
+    # The factory urllib uses, so a site that replaced it keeps its choice.
+    context = ssl._create_default_https_context()
+    if context.verify_mode != ssl.CERT_REQUIRED or context.cert_store_stats()["x509"]:
+        return None
+    # A CA directory is read during the handshake and is not in those counts.
+    # OpenSSL reads only hashed names (1a2b3c4d.0) from it; Homebrew keeps a
+    # placeholder file there.
+    with contextlib.suppress(OSError):
+        if paths.capath and any(re.fullmatch(r"[0-9a-f]{8}\.\d+", name)
+                                for name in os.listdir(paths.capath)):
+            return None
+    context.load_verify_locations(cafile=_MACOS_CA_FILE)
+    return _as_http_client_would(context)
+
+
+def _own_tls_context():
+    """The context for API calls where Python's default one fails every call
+    (see above), else None."""
+    global _store_certs_skipped
+    try:
+        context, skipped = _context_without_unreadable_store_certs()
+    except Exception as e:
+        debug_log(f"TLS: certificate store check failed: {type(e).__name__}")
+        context, skipped = None, 0
+    if context is not None:
+        debug_log(f"TLS: the Windows certificate store has {skipped} certificate(s) "
+                  "OpenSSL cannot read; using the store without them")
+        _store_certs_skipped = skipped
+        return context
+    try:
+        context = _context_with_os_ca_file()
+    except Exception as e:
+        debug_log(f"TLS: check for a Python without CA certificates failed: {type(e).__name__}")
+        return None
+    if context is not None:
+        debug_log(f"TLS: this Python has no CA certificates; using {_MACOS_CA_FILE}")
+    return context
 
 
 def _urlopen(request, timeout):
     """urllib.request.urlopen for the plugin's API calls. Uses Python's
-    default TLS context unless that cannot be built because of the Windows
-    certificate store (see above); checked once per process."""
-    global _store_tls_context, _store_certs_skipped
+    default TLS context unless that one fails every call (see
+    _own_tls_context); checked once per process."""
+    global _store_tls_context
     if _store_tls_context is _STORE_TLS_UNSET:
         with _store_tls_lock:
             if _store_tls_context is _STORE_TLS_UNSET:
-                try:
-                    context, skipped = _context_without_unreadable_store_certs()
-                except Exception as e:
-                    debug_log(f"TLS: certificate store check failed: {type(e).__name__}")
-                    context, skipped = None, 0
-                if context is not None:
-                    debug_log(f"TLS: the Windows certificate store has {skipped} certificate(s) "
-                              "OpenSSL cannot read; using the store without them")
-                    _store_certs_skipped = skipped
-                _store_tls_context = context
+                _store_tls_context = _own_tls_context()
     if _store_tls_context is None:
         return urllib.request.urlopen(request, timeout=timeout)
     return urllib.request.urlopen(request, timeout=timeout, context=_store_tls_context)
@@ -1937,6 +1997,35 @@ def _agentic_commit_review_enabled() -> bool:
 # precedents and an adversarial refute taxonomy to drop low-signal findings.
 
 _AGENTIC_INVESTIGATE_SYSTEM = review_api.AGENTIC_INVESTIGATE_SYSTEM
+
+# The investigate stages return their findings through the StructuredOutput
+# tool and nothing reads what they write beside it. Told so here, not in
+# review_api: a caller of that module may take its answer from the text.
+_REVIEWER_OUTPUT_RULE = (
+    "\n\nOUTPUT: only the `findings` you return are read, not text you write. "
+    "Write no prose before, between or after tool calls, and no verdicts "
+    "for files you clear: think them through instead. Ask for the files "
+    "and searches you can already name in one message, within the budget "
+    "above. `explanation` must still name the source, the sink and the path "
+    "between them. When you are done, return the findings at once."
+)
+
+
+def _investigate_system() -> str:
+    """The investigate stages' system prompt. Text between tool calls is where
+    a model reasons when thinking is off or the user picked the model, so the
+    output rule is left out there."""
+    thinking_off = (os.environ.get("MAX_THINKING_TOKENS", "").strip() == "0"
+                    or any(os.environ.get(v, "").strip().lower() in ("1", "true", "yes", "on")
+                           for v in ("CLAUDE_CODE_DISABLE_THINKING",
+                                     "CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING")))
+    picked = any(os.environ.get(v, "").strip()
+                 for v in ("SG_AGENTIC_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL"))
+    if thinking_off or picked:
+        return _AGENTIC_INVESTIGATE_SYSTEM
+    return _AGENTIC_INVESTIGATE_SYSTEM + _REVIEWER_OUTPUT_RULE
+
+
 _FINDINGS_SCHEMA = review_api.FINDINGS_SCHEMA
 _SURVIVED_SCHEMA = review_api.SURVIVED_SCHEMA
 
@@ -2468,7 +2557,7 @@ def _agentic_review(
     t0 = _t.time()
     try:
         inv, inv_turns, inv_subtype = _run(
-            _AGENTIC_INVESTIGATE_SYSTEM, user_prompt, schema=_FINDINGS_SCHEMA
+            _investigate_system(), user_prompt, schema=_FINDINGS_SCHEMA
         )
         if os.environ.get("SG_AGENTIC_DEBUG_DIR"):
             _dd = os.environ["SG_AGENTIC_DEBUG_DIR"]
@@ -2534,7 +2623,7 @@ def _agentic_review(
         )
         try:
             inv2, _, _ = _run(
-                _AGENTIC_INVESTIGATE_SYSTEM, iter2_prompt, schema=_FINDINGS_SCHEMA
+                _investigate_system(), iter2_prompt, schema=_FINDINGS_SCHEMA
             )
             if inv2:
                 seen = {(c.get("filePath"), c.get("category")) for c in candidates}
