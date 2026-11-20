@@ -76,7 +76,7 @@ Local stdio servers **can** do OAuth (open a browser, catch the redirect on a lo
 - Every user re-does the dance
 - No central token refresh or revocation
 
-If OAuth is required, lean hard toward remote HTTP. If you *must* ship local + OAuth, the `@modelcontextprotocol/sdk` includes a localhost-redirect helper, and MCPB is the right packaging so at least the runtime is predictable.
+If OAuth is required, lean hard toward remote HTTP. If you *must* ship local + OAuth, MCPB is the right packaging so at least the runtime is predictable.
 
 ---
 
@@ -100,9 +100,12 @@ Validating "is this a valid bearer token" isn't enough. The spec requires valida
 
 ## SDK helpers — don't hand-roll
 
-`@modelcontextprotocol/sdk/server/auth` ships:
-- `mcpAuthRouter()` — Express router for the full OAuth AS surface (metadata, authorize, token)
-- `bearerAuth` — middleware that validates bearer tokens against your verifier
-- `proxyProvider` — forward auth to an upstream IdP
+Your MCP server is an OAuth **resource server**: it verifies tokens, it doesn't issue them. `@modelcontextprotocol/express` ships:
+- `requireBearerAuth({ verifier, requiredScopes, expectedResource })` — middleware that validates bearer tokens against your verifier. `expectedResource` is the audience check above. Your verifier must set `expiresAt`; tokens without it are rejected
+- `mcpAuthMetadataRouter({ oauthMetadata, resourceServerUrl })` — serves the RFC 9728 protected-resource metadata that the `401` challenge points at
+
+On fetch-style hosts (Workers, Deno, Bun, Hono), `requireBearerAuth` from `@modelcontextprotocol/server` is the same gate without Express. The verified token reaches tool handlers as `ctx.http?.authInfo`.
+
+The v1 authorization-server helpers (`mcpAuthRouter`, `ProxyOAuthServerProvider`) are frozen in `@modelcontextprotocol/server-legacy/auth`. Use a dedicated identity provider for new servers.
 
 If you're wiring auth from scratch, check these first.
