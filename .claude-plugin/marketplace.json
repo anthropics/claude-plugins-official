@@ -4428,7 +4428,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/wingspanHQ/mcp-claude-plugin.git",
-        "sha": "7f99cb3d1789a91390fa7abf1571328736b5e0a6"
+        "sha": "53914ce84834da05b0b4b0cfcd0c54588847b23e"
       },
       "homepage": "https://github.com/wingspanHQ/mcp-claude-plugin"
     },
