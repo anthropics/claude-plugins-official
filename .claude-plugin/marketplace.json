@@ -2623,7 +2623,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/newrelic/claude-code-plugin.git",
-        "sha": "f8e5f8b62139072a22153ec92de1c0cc1af2f56a"
+        "sha": "2831aeff16649a61f47ce2455ffa86f6414e0191"
       },
       "homepage": "https://newrelic.com"
     },
