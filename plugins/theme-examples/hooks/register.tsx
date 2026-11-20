@@ -53,7 +53,13 @@ const choice = atom({ plugin: 'theme-examples', key: 'choice' } as const, {}, {
 /** What a set comes to on any engine, as far as this mod reads it: drawn or not. */
 type BackdropAnswer = { isDrawn: boolean }
 type BackdropChoice = { id: string; glass: Theme['glass']; colorScheme?: Theme['window'] }
-/** The engines this mod meets, for the type checker alone: the theme noun or the older call may be absent. */
+/**
+ * The engines this mod meets, for the type checker alone: the theme noun or the older call may be absent.
+ * A CALL ON A MEMBER THAT MAY BE ABSENT IS WRITTEN PLAINLY, as $.noun.method(...), under a line of "@ts-expect-error". A "!" or a
+ * "?." on the call would satisfy the type checker too, but a plain call is one that a tool reading a mod's source as written, without
+ * compiling it, such as the plugin directory's validator, can follow. That line covers the call's own line and no other, so what the
+ * call is given stands on lines of its own or in a const above it, where the type checker still reads it.
+ */
 type AnyEngine = {
   theme?: { set(args: unknown): Promise<BackdropAnswer>; clear(): Promise<unknown> }
   // `toast` is named only so that this type shares a member with every engine's ui noun: the checker refuses one that shares none.
@@ -90,7 +96,8 @@ function isNotThisEnginesWay(error: unknown, member?: string): boolean {
 async function setByAWay($: AnyEngine, backdrop: BackdropChoice): Promise<BackdropAnswer | undefined> {
   if (taken === undefined || taken === 'beside') {
     try {
-      const set = await $.theme!.set({
+      // @ts-expect-error An engine may lack this call: see AnyEngine.
+      const set = await $.theme.set({
         backdrop: { scene: backdrop.id, id: backdrop.id, glass: backdrop.glass },
         ...(backdrop.colorScheme !== undefined && { overrideColorScheme: backdrop.colorScheme }),
       })
@@ -109,7 +116,8 @@ async function setByAWay($: AnyEngine, backdrop: BackdropChoice): Promise<Backdr
 
   if (taken === undefined || taken === 'nested') {
     try {
-      const set = await $.theme!.set({
+      // @ts-expect-error An engine may lack this call: see AnyEngine.
+      const set = await $.theme.set({
         backdrop: {
           id: backdrop.id,
           glass: backdrop.glass,
@@ -127,7 +135,9 @@ async function setByAWay($: AnyEngine, backdrop: BackdropChoice): Promise<Backdr
   if (taken === undefined || taken === 'older') {
     try {
       // The older call is given the id and the glass alone.
-      const set = await $.ui.backdrop!({ id: backdrop.id, glass: backdrop.glass })
+      const older: BackdropChoice = { id: backdrop.id, glass: backdrop.glass }
+      // @ts-expect-error An engine may lack this call: see AnyEngine.
+      const set = await $.ui.backdrop(older)
       taken = 'older'
 
       return set
@@ -173,7 +183,8 @@ async function setBackdrop($: AnyEngine, backdrop: BackdropChoice): Promise<Back
 /** Clears the backdrop by whichever call this engine has; an engine with neither is left alone. */
 async function clearBackdrop($: AnyEngine): Promise<void> {
   try {
-    await $.theme!.clear()
+    // @ts-expect-error An engine may lack this call: see AnyEngine.
+    await $.theme.clear()
 
     return
   } catch (error) {
@@ -181,7 +192,8 @@ async function clearBackdrop($: AnyEngine): Promise<void> {
   }
 
   try {
-    await $.ui.backdrop!(undefined)
+    // @ts-expect-error An engine may lack this call: see AnyEngine.
+    await $.ui.backdrop(undefined)
   } catch (error) {
     if (!isNotThisEnginesWay(error)) throw error
   }
@@ -344,7 +356,7 @@ function keyEngineOf($: EngineInterface): KeyEngine {
 }
 
 /** The keys a project's choice is read under, in order; the one it is written under; the ones a clear takes away. */
-type ProjectKeys = { read: string[]; write: string; clear: string[] }
+type ProjectKeys = { toRead: string[]; write: string; clear: string[] }
 
 /**
  * One choice per project: a session in a linked git worktree shares the key of the matching folder in the main tree.
@@ -357,13 +369,13 @@ async function projectKeys($: EngineInterface): Promise<ProjectKeys> {
     keptProjectKey = found.kept
     await tellKeyStep($, found.answer.step)
 
-    return { read: keysToRead(found.answer), write: keyToWrite(found.answer), clear: keysToClear(found.answer) }
+    return { toRead: keysToRead(found.answer), write: keyToWrite(found.answer), clear: keysToClear(found.answer) }
   } catch {
     const today = `${PROJECT_PREFIX}${await $.session.root()}`
 
     await tellKeyStep($, 'fault')
 
-    return { read: [today], write: today, clear: [today] }
+    return { toRead: [today], write: today, clear: [today] }
   }
 }
 
@@ -579,7 +591,7 @@ async function applyOrSay(
 
 /** The project's stored choice: a theme's id, or none. The first key that holds one wins. */
 async function projectChoice($: EngineInterface): Promise<string | undefined> {
-  for (const key of (await projectKeys($)).read) {
+  for (const key of (await projectKeys($)).toRead) {
     const stored = await $.store.get(key)
 
     if (typeof stored === 'string' && themeOf(stored) !== undefined) {
@@ -759,7 +771,7 @@ async function fireworksCommand($: EngineInterface, args: string): Promise<strin
 type CardElements = Pick<
   ReturnType<EngineInterface['ui']['resolve']>,
   'Box' | 'Text' | 'Button'
->
+>;
 
 /** Puts the card away, placed or above the prompt, until the command shows it again. */
 async function putCardAway($: EngineInterface): Promise<void> {
