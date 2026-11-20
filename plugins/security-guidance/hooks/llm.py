@@ -40,7 +40,7 @@ except ImportError:  # a Python built without TLS
 
 import extensibility
 import review_api
-from _base import debug_log, _record_usage, _record_http_error, _record_net_error, _clear_net_error, _PV, PROVENANCE_TAG, state_dir as _resolve_state_dir, agent_sdk_site_dirs, make_state_dir, other_host  # noqa: F401
+from _base import debug_log, _record_usage, _record_http_error, _record_net_error, _clear_net_error, _PV, PROVENANCE_TAG, state_dir as _resolve_state_dir, agent_sdk_site_dirs, make_state_dir, other_host, env_number  # noqa: F401
 from session_state import load_state, with_locked_state
 from gitutil import git_config_env, SAFE_GIT_CONFIG
 
@@ -2347,7 +2347,7 @@ def _agentic_review(
     spawn_env = _agentic_spawn_env()
     if listed and not os.environ.get("CLAUDE_CODE_EFFORT_LEVEL", "").strip():
         spawn_env["CLAUDE_CODE_EFFORT_LEVEL"] = _REVIEWER_EFFORT
-    max_turns = int(os.environ.get("SG_AGENTIC_MAX_TURNS", "18"))
+    max_turns = env_number("SG_AGENTIC_MAX_TURNS", 18)
     # In production repo_dir is the user's working tree (full repo). Under the
     # eval harness it's a temp dir with ONLY touched_paths — the agent can't
     # trace cross-file data flow. The harness sets SG_AGENTIC_CONTEXT_DIR to a
