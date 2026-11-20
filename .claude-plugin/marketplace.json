@@ -1472,7 +1472,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/duckdb/duckdb-skills.git",
-        "sha": "7feda8e01e22bc0886c86123f3884947e36d8c69"
+        "sha": "44dfbbb414e54187964a2212eae28495f6ae21d9"
       },
       "homepage": "https://duckdb.org"
     },
