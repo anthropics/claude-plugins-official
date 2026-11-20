@@ -10,6 +10,7 @@ import {
   sceneWithFireworks,
   themeIdOfShow,
 } from './fireworks'
+import { overShader } from './interactive'
 import { keyToWrite, keysToClear, keysToRead, projectKeyFor } from './project-key'
 import type { KeptKey, KeyEngine } from './project-key'
 import { THEMES, sceneFault, sceneOf } from './themes'
@@ -23,6 +24,10 @@ const COMMAND = 'custom-theme'
 const PREVIEW_MS = 20_000
 const FIREWORKS_COMMAND = 'fireworks'
 const SHOW_MS = 7000
+// The desktop app starts a moving picture about two and a half seconds after a shader leaves the window, so a show over
+// a theme with a shader runs that much longer, or its last bursts are cut. Where its shader was not playing, the show
+// only ends on the theme's own still for that long.
+const SHADER_PARTING_MS = 2500
 // Holds 'off' where the person turned the show on the word off; absent, it is on. One key for every session and project.
 const AUTO_KEY = 'fireworks:auto'
 const SESSION_PREFIX = 'session:'
@@ -48,7 +53,13 @@ const choice = atom({ plugin: 'theme-examples', key: 'choice' } as const, {}, {
 /** What a set comes to on any engine, as far as this mod reads it: drawn or not. */
 type BackdropAnswer = { isDrawn: boolean }
 type BackdropChoice = { id: string; glass: Theme['glass']; colorScheme?: Theme['window'] }
-/** The engines this mod meets, for the type checker alone: the theme noun or the older call may be absent. */
+/**
+ * The engines this mod meets, for the type checker alone: the theme noun or the older call may be absent.
+ * A CALL ON A MEMBER THAT MAY BE ABSENT IS WRITTEN PLAINLY, as $.noun.method(...), under a line of "@ts-expect-error". A "!" or a
+ * "?." on the call would satisfy the type checker too, but a plain call is one that a tool reading a mod's source as written, without
+ * compiling it, such as the plugin directory's validator, can follow. That line covers the call's own line and no other, so what the
+ * call is given stands on lines of its own or in a const above it, where the type checker still reads it.
+ */
 type AnyEngine = {
   theme?: { set(args: unknown): Promise<BackdropAnswer>; clear(): Promise<unknown> }
   // `toast` is named only so that this type shares a member with every engine's ui noun: the checker refuses one that shares none.
@@ -85,7 +96,8 @@ function isNotThisEnginesWay(error: unknown, member?: string): boolean {
 async function setByAWay($: AnyEngine, backdrop: BackdropChoice): Promise<BackdropAnswer | undefined> {
   if (taken === undefined || taken === 'beside') {
     try {
-      const set = await $.theme!.set({
+      // @ts-expect-error An engine may lack this call: see AnyEngine.
+      const set = await $.theme.set({
         backdrop: { scene: backdrop.id, id: backdrop.id, glass: backdrop.glass },
         ...(backdrop.colorScheme !== undefined && { overrideColorScheme: backdrop.colorScheme }),
       })
@@ -104,7 +116,8 @@ async function setByAWay($: AnyEngine, backdrop: BackdropChoice): Promise<Backdr
 
   if (taken === undefined || taken === 'nested') {
     try {
-      const set = await $.theme!.set({
+      // @ts-expect-error An engine may lack this call: see AnyEngine.
+      const set = await $.theme.set({
         backdrop: {
           id: backdrop.id,
           glass: backdrop.glass,
@@ -122,7 +135,9 @@ async function setByAWay($: AnyEngine, backdrop: BackdropChoice): Promise<Backdr
   if (taken === undefined || taken === 'older') {
     try {
       // The older call is given the id and the glass alone.
-      const set = await $.ui.backdrop!({ id: backdrop.id, glass: backdrop.glass })
+      const older: BackdropChoice = { id: backdrop.id, glass: backdrop.glass }
+      // @ts-expect-error An engine may lack this call: see AnyEngine.
+      const set = await $.ui.backdrop(older)
       taken = 'older'
 
       return set
@@ -168,7 +183,8 @@ async function setBackdrop($: AnyEngine, backdrop: BackdropChoice): Promise<Back
 /** Clears the backdrop by whichever call this engine has; an engine with neither is left alone. */
 async function clearBackdrop($: AnyEngine): Promise<void> {
   try {
-    await $.theme!.clear()
+    // @ts-expect-error An engine may lack this call: see AnyEngine.
+    await $.theme.clear()
 
     return
   } catch (error) {
@@ -176,7 +192,8 @@ async function clearBackdrop($: AnyEngine): Promise<void> {
   }
 
   try {
-    await $.ui.backdrop!(undefined)
+    // @ts-expect-error An engine may lack this call: see AnyEngine.
+    await $.ui.backdrop(undefined)
   } catch (error) {
     if (!isNotThisEnginesWay(error)) throw error
   }
@@ -339,7 +356,7 @@ function keyEngineOf($: EngineInterface): KeyEngine {
 }
 
 /** The keys a project's choice is read under, in order; the one it is written under; the ones a clear takes away. */
-type ProjectKeys = { read: string[]; write: string; clear: string[] }
+type ProjectKeys = { toRead: string[]; write: string; clear: string[] }
 
 /**
  * One choice per project: a session in a linked git worktree shares the key of the matching folder in the main tree.
@@ -352,13 +369,13 @@ async function projectKeys($: EngineInterface): Promise<ProjectKeys> {
     keptProjectKey = found.kept
     await tellKeyStep($, found.answer.step)
 
-    return { read: keysToRead(found.answer), write: keyToWrite(found.answer), clear: keysToClear(found.answer) }
+    return { toRead: keysToRead(found.answer), write: keyToWrite(found.answer), clear: keysToClear(found.answer) }
   } catch {
     const today = `${PROJECT_PREFIX}${await $.session.root()}`
 
     await tellKeyStep($, 'fault')
 
-    return { read: [today], write: today, clear: [today] }
+    return { toRead: [today], write: today, clear: [today] }
   }
 }
 
@@ -574,7 +591,7 @@ async function applyOrSay(
 
 /** The project's stored choice: a theme's id, or none. The first key that holds one wins. */
 async function projectChoice($: EngineInterface): Promise<string | undefined> {
-  for (const key of (await projectKeys($)).read) {
+  for (const key of (await projectKeys($)).toRead) {
     const stored = await $.store.get(key)
 
     if (typeof stored === 'string' && themeOf(stored) !== undefined) {
@@ -667,7 +684,7 @@ async function endFireworks($: EngineInterface): Promise<void> {
 }
 
 /**
- * Seven seconds of fireworks: over the session's theme where it has one, else over a night sky of their own.
+ * Seven seconds of fireworks over the session's theme where it has one, else over a night sky of their own; SHADER_PARTING_MS longer over a theme with a shader.
  * ONE SHOW AT A TIME: a word or a command that comes while a show runs starts nothing and lengthens nothing, so
  * however often the word is said the window changes twice in a show's seconds and no oftener.
  * The flag is TAKEN IN THE SAME TICK AS IT IS TESTED, ahead of the first await: a command and a reply's block come on
@@ -690,10 +707,13 @@ async function fireworks($: EngineInterface): Promise<string> {
   const suffix = SHOW_SUFFIXES[showCount % SHOW_SUFFIXES.length] ?? SHOW_SUFFIXES[0]
   // The one setter beside showThenKeep: a show's backdrop is no theme of the table, its answer is told, and nothing is kept, so nothing is to put back.
   let set: BackdropAnswer
+  let afterShader = false
 
   try {
     const now = await read($, choice)
     const theme = themeOf(now.preview ?? now.applied)
+
+    afterShader = theme?.shader !== undefined
 
     set = await setBackdrop(
       $,
@@ -708,7 +728,7 @@ async function fireworks($: EngineInterface): Promise<string> {
     return `Fireworks could not be shown: ${reasonOf(error)}`
   }
 
-  showEnding = $.clock.after(SHOW_MS, () => void quietly($, () => endFireworks($)))
+  showEnding = $.clock.after(afterShader ? SHOW_MS + SHADER_PARTING_MS : SHOW_MS, () => void quietly($, () => endFireworks($)))
 
   return set?.isDrawn === false ? `Fireworks. ${SHOW_UNSHOWN}` : 'Fireworks.'
 }
@@ -751,7 +771,7 @@ async function fireworksCommand($: EngineInterface, args: string): Promise<strin
 type CardElements = Pick<
   ReturnType<EngineInterface['ui']['resolve']>,
   'Box' | 'Text' | 'Button'
->
+>;
 
 /** Puts the card away, placed or above the prompt, until the command shows it again. */
 async function putCardAway($: EngineInterface): Promise<void> {
@@ -779,13 +799,13 @@ async function pick($: EngineInterface, theme: Theme | undefined, forProject: bo
 }
 
 /**
- * The card. Close and No theme stand at its head, so that it can be put away without scrolling past twenty rows.
+ * The card. Close and No theme stand at its head, so that it can be put away without scrolling past thirty-eight rows.
  * The themes stand under the list's two heads, by the kind of window each is made for: a mod cannot learn which kind
  * the window is, and not every window follows its theme, so the card is where a person is steered. A theme made in
  * both kinds names its twin on a line of its own: its twin stands under the other head, and a row must not grow wider.
  * Each theme is its title, its blurb beneath, and its three buttons kept together. The desktop draws a button's
  * `label` and never its children, and a row there does not wrap; other surfaces draw the children. So both are one
- * short word that carries the state, and the theme's title on the row above says whose the three are: twenty
+ * short word that carries the state, and the theme's title on the row above says whose the three are: thirty-eight
  * buttons share each word, and the keys alone tell them apart.
  * Applied is said only of the project's choice; a session's own choice is marked on This session.
  */
@@ -1020,7 +1040,7 @@ export const register: Register = on => {
       return next(e)
     }
 
-    const { Svg } = $.ui.resolve(e)
+    const { Svg, Shader } = $.ui.resolve(e)
 
     if (name === NIGHT_ID) {
       return <Svg isInteractive alt="Fireworks bursting over a night sky" source={nightScene()} />
@@ -1044,7 +1064,11 @@ export const register: Register = on => {
       return next(e)
     }
 
-    return <Svg isInteractive alt={`${theme.title}: ${theme.blurb}`} source={sceneOf(theme)} />
+    return overShader(
+      Shader,
+      theme.shader,
+      <Svg isInteractive alt={`${theme.title}: ${theme.blurb}`} source={sceneOf(theme)} />,
+    )
   })
 
   on('ui.render', { component: 'Placed' }, async ($, e, next) => {

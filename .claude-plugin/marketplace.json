@@ -3918,7 +3918,7 @@
     },
     {
       "name": "theme-examples",
-      "description": "An example plugin to read, copy and change: twenty animated backdrops behind the chat in the Claude desktop app, with frosted-glass panels, one per project or per session. Needs a version of Claude Desktop that draws a plugin's backdrop.",
+      "description": "An example plugin to read, copy and change: thirty-eight animated backdrops behind the chat in the Claude desktop app, with frosted-glass panels, one per project or per session. Needs a version of Claude Desktop that draws a plugin's backdrop.",
       "author": {
         "name": "Anthropic",
         "email": "support@anthropic.com"
