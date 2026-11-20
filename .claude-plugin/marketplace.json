@@ -3867,7 +3867,7 @@
         "url": "https://github.com/SynthFlowAI/AnthropicPlugin.git",
         "path": "plugins/synthflow",
         "ref": "main",
-        "sha": "205871ee83508502d2c982ee1bb7e65a2a29190b"
+        "sha": "e2b375d91cac13dc740e8c965c2f84ced3320516"
       },
       "homepage": "https://synthflow.ai"
     },
