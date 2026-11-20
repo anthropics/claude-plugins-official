@@ -22,11 +22,13 @@ import {
   GatewayIntentBits,
   Partials,
   ChannelType,
+  MessageType,
   ButtonBuilder,
   ButtonStyle,
   ActionRowBuilder,
   type Message,
   type Attachment,
+  type Emoji,
   type Interaction,
 } from 'discord.js'
 import { randomBytes } from 'crypto'
@@ -131,6 +133,7 @@ function defaultAccess(): Access {
 
 const MAX_CHUNK_LIMIT = 2000
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
+const MAX_EMOJIS_LISTED = 200
 
 // reply's files param takes any path. .env is ~60 bytes and ships as an
 // upload. Claude can already Read+paste file contents, so this isn't a new
@@ -543,7 +546,7 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: 'react',
-      description: 'Add an emoji reaction to a Discord message. Unicode emoji work directly; custom emoji need the <:name:id> form.',
+      description: 'Add an emoji reaction to a Discord message. Unicode emoji work directly; custom emoji need the <:name:id> form from list_emojis.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -552,6 +555,19 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
           emoji: { type: 'string' },
         },
         required: ['chat_id', 'message_id', 'emoji'],
+      },
+    },
+    {
+      name: 'list_emojis',
+      description:
+        "List the custom emoji the bot can use in a chat, ready to paste into react or reply (<:name:id>, or <a:name:id> when animated). A server channel lists that server's emoji; a DM lists those of servers with an opted-in channel. The bot application's own emoji are always included. Unicode emoji aren't listed.",
+      inputSchema: {
+        type: 'object',
+        properties: {
+          chat_id: { type: 'string' },
+          query: { type: 'string', description: 'Only emoji whose name contains this text (case-insensitive).' },
+        },
+        required: ['chat_id'],
       },
     },
     {
@@ -593,6 +609,23 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
           },
         },
         required: ['channel'],
+      },
+    },
+    {
+      name: 'create_thread',
+      description:
+        "Start a public thread in a server text or announcement channel. Use when someone asks for a thread, or to move a long side topic out of the channel. Returns the thread ID — post in it with reply, passing that ID as chat_id. @mention someone in the thread (<@user_id>) to add them to it. The parent channel's access rules, including its mention requirement, apply inside the thread.",
+      inputSchema: {
+        type: 'object',
+        properties: {
+          chat_id: { type: 'string', description: 'The parent channel.' },
+          name: { type: 'string', description: 'Thread title, 1-100 characters.' },
+          message_id: {
+            type: 'string',
+            description: 'Message in the parent channel to start the thread from, usually the one you are answering. Prefer this; omit it only for a standalone thread.',
+          },
+        },
+        required: ['chat_id', 'name'],
       },
     },
   ],
@@ -683,6 +716,48 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         await msg.react(args.emoji as string)
         return { content: [{ type: 'text', text: 'reacted' }] }
       }
+      case 'list_emojis': {
+        const ch = await fetchAllowedChannel(args.chat_id as string)
+        // A DM has no server. Use the servers with an opted-in channel, not
+        // every server the bot happens to be in.
+        const channels = ch.type === ChannelType.DM
+          ? await Promise.all(Object.keys(loadAccess().groups).map(id => client.channels.fetch(id).catch(() => null)))
+          : [ch]
+        const guilds = new Set(channels.flatMap(c => (c && 'guild' in c ? [c.guild] : [])))
+
+        const emojis: Emoji[] = []
+        const failed: string[] = []
+        for (const guild of guilds) {
+          try {
+            const myRoles = guild.members.me?.roles.cache
+            for (const e of (await guild.emojis.fetch()).values()) {
+              // Skip emoji the server lost with its boosts, and ones limited to roles the bot lacks.
+              if (e.available === false) continue
+              if (e.roles.cache.size > 0 && !e.roles.cache.some(r => myRoles?.has(r.id) ?? false)) continue
+              emojis.push(e)
+            }
+          } catch (err) {
+            failed.push(`server ${guild.id} (${(err as Error).message})`)
+          }
+        }
+        try {
+          if (!client.application) throw new Error('bot not connected yet')
+          emojis.push(...(await client.application.emojis.fetch()).values())
+        } catch (err) {
+          failed.push(`the application (${(err as Error).message})`)
+        }
+        if (failed.length === guilds.size + 1) throw new Error(`could not fetch emoji of ${failed.join(', ')}`)
+
+        const query = ((args.query as string | undefined) ?? '').replaceAll(':', '').toLowerCase()
+        const matches = emojis.filter(e => e.name?.toLowerCase().includes(query))
+        const lines = matches.slice(0, MAX_EMOJIS_LISTED).map(e => `<${e.animated ? 'a' : ''}:${e.name}:${e.id}>`)
+        if (matches.length === 0) lines.push(query ? `(no custom emoji match "${query}")` : '(no custom emoji found)')
+        if (matches.length > MAX_EMOJIS_LISTED) {
+          lines.push(`(showing ${MAX_EMOJIS_LISTED} of ${matches.length} — pass query to narrow)`)
+        }
+        if (failed.length > 0) lines.push(`(partial list — could not fetch emoji of ${failed.join(', ')})`)
+        return { content: [{ type: 'text', text: lines.join('\n') }] }
+      }
       case 'edit_message': {
         const ch = await fetchAllowedChannel(args.chat_id as string)
         const msg = await ch.messages.fetch(args.message_id as string)
@@ -704,6 +779,37 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         return {
           content: [{ type: 'text', text: `downloaded ${lines.length} attachment(s):\n${lines.join('\n')}` }],
         }
+      }
+      case 'create_thread': {
+        const ch = await fetchAllowedChannel(args.chat_id as string)
+        if (ch.isThread()) {
+          throw new Error(`chat_id is already a thread — reply in it, or pass its parent channel ${ch.parentId} to start a new one`)
+        }
+        if (ch.type !== ChannelType.GuildText && ch.type !== ChannelType.GuildAnnouncement) {
+          throw new Error('threads need a server text or announcement channel, not a DM or voice chat')
+        }
+        const message_id = args.message_id as string | undefined
+        let text: string
+        try {
+          const thread = await ch.threads.create({ name: args.name as string, startMessage: message_id })
+          text = `thread created (id: ${thread.id})`
+        } catch (err) {
+          const code = (err as { code?: unknown }).code
+          // Discord API errors: 50001 Missing Access, 50013 Missing Permissions.
+          if (code === 50001 || code === 50013) {
+            throw new Error(`${(err as Error).message} — check that the bot has Create Public Threads, View Channel and Read Message History in this channel`)
+          }
+          // 10008 Unknown Message.
+          if (code === 10008) throw new Error(`no message ${message_id} in channel ${ch.id} — it may be deleted or in another channel`)
+          // 160004: the message already has a thread, which shares the message's ID.
+          if (code !== 160004) throw err
+          text = `message already has a thread, which keeps its current name (id: ${message_id})`
+        }
+        text += ' — use it as chat_id to reply there.'
+        if (loadAccess().groups[ch.id]?.requireMention ?? true) {
+          text += ' As in the parent channel, people must @mention you or reply to one of your messages to reach you there.'
+        }
+        return { content: [{ type: 'text', text }] }
       }
       default:
         return {
@@ -804,6 +910,9 @@ client.on('interactionCreate', async (interaction: Interaction) => {
 
 client.on('messageCreate', msg => {
   if (msg.author.bot) return
+  // First message of a thread started from a message: a system pointer back
+  // to that message, with no text of its own.
+  if (msg.type === MessageType.ThreadStarterMessage) return
   handleInbound(msg).catch(e => process.stderr.write(`discord: handleInbound failed: ${e}\n`))
 })
 

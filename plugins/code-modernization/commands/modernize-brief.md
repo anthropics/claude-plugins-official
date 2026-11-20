@@ -7,6 +7,8 @@ arguments: system target_stack
 Synthesize everything in `analysis/$system/` into a **Modernization Brief**: the single
 document a steering committee approves and engineering executes. Target stack:
 `$target_stack` (if blank, the one in `analysis/$system/INTENT.md`, else recommend one from the assessment).
+**Its versions are looked up, never remembered:** read `${CLAUDE_PLUGIN_ROOT}/references/target-versions.md`
+first and follow it (nothing out of support unless the person chose it; `unverified` only when every lookup failed).
 
 Read `ASSESSMENT.md`, `topology.json` (and the `.mmd` files beside it; never read
 `TOPOLOGY.html`, it is a viewer with the data minified inside) in `analysis/$system/` first,
@@ -48,7 +50,9 @@ Write `analysis/$system/MODERNIZATION_BRIEF.md` with these sections.
 **1. Objective.** One paragraph: from what, to what, why now.
 
 **2. Target Architecture.** A Mermaid C4 Container diagram of the end state naming every service,
-data store and integration, then a table mapping each legacy component to its target component(s).
+data store and integration, then a table mapping each legacy component to its target component(s), then
+the **Target versions** table (component, version, support end, source and date checked, status). Any row
+that is not `supported` and holds no decision yet is an open question in section 7.
 
 **3. Phased Sequence.** 3–6 phases, ordered by **strangler fig** for a cross-stack rewrite
 (lowest risk and fewest dependencies first) or **build-graph leaf-first** for an uplift
