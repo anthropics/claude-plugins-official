@@ -69,6 +69,12 @@ VULN_PY = (
 
 
 @pytest.fixture(autouse=True)
+def _no_project_folder(monkeypatch):
+    """The suite can itself be run by a session, which says where it started."""
+    monkeypatch.delenv("CLAUDE_PROJECT_DIR", raising=False)
+
+
+@pytest.fixture(autouse=True)
 def _no_net_err_from_an_earlier_test():
     """A hook is one process per event; tests that call it in-process share
     the module's record of the last failed call."""

@@ -14,9 +14,31 @@ import { plotterTideSvg, plotterTideNightSvg } from './scenes/plotter-tide'
 import { snowPinesSvg } from './scenes/snow-pines'
 import { teletextCloudsSvg } from './scenes/teletext-clouds'
 import { vectorRangeSvg } from './scenes/vector-range'
+import { duckPondSvg } from './scenes/duck-pond/still'
+import { fallingSandSvg } from './scenes/falling-sand/still'
+import { fieldLinesSvg } from './scenes/field-lines/still'
+import { gardenBeetlesSvg } from './scenes/garden-beetles/still'
+import { koiPondSvg } from './scenes/koi-pond/still'
+import { rippleTankSvg } from './scenes/ripple-tank/still'
+import { seaSparkleSvg } from './scenes/sea-sparkle/still'
+import { semicolonySvg } from './scenes/semicolony/still'
+import { starChartSvg } from './scenes/star-chart/still'
 
-/** One theme: what the card and the list say, the glass over it, and its scene: a function that builds one SVG whose
- *  own CSS animates it. A scene says whether it is dark or light with its tint, picked from it. */
+/** The scenes a shader plays over. Each name is a folder under ./scenes, which holds the shader and its still. */
+export type ShaderScene =
+  | 'duck-pond'
+  | 'falling-sand'
+  | 'field-lines'
+  | 'garden-beetles'
+  | 'koi-pond'
+  | 'ripple-tank'
+  | 'sea-sparkle'
+  | 'semicolony'
+  | 'star-chart'
+
+/** One theme: what the card and the list say, the glass over it, and its scene: a function that builds one SVG. The SVG's
+ *  own CSS animates it, or it is a still that a shader plays over (see ./interactive). A scene says whether it is dark or
+ *  light with its tint, picked from it. */
 export type Theme = {
   id: string
   title: string
@@ -27,7 +49,24 @@ export type Theme = {
   twin?: string
   glass: ThemeBackdropGlass
   scene: () => string
+  /** The shader that plays over the scene, where there is one: the scene is then its still, and follows the window. */
+  shader?: ShaderScene
+  /** Set where the picture is dark, or pale, whatever the window: a show's bursts are then bright, or deep, in both. */
+  ground?: Theme['window']
 }
+
+/** What a scene's two entries share: both of its rows below spread one of these, so they cannot differ. */
+type Picture = Required<Pick<Theme, 'scene' | 'shader'>> & Pick<Theme, 'ground'>
+
+const DUCK_POND: Picture = { scene: duckPondSvg, shader: 'duck-pond' }
+const FALLING_SAND: Picture = { scene: fallingSandSvg, shader: 'falling-sand' }
+const FIELD_LINES: Picture = { scene: fieldLinesSvg, shader: 'field-lines' }
+const GARDEN_BEETLES: Picture = { scene: gardenBeetlesSvg, shader: 'garden-beetles' }
+const KOI_POND: Picture = { scene: koiPondSvg, shader: 'koi-pond', ground: 'dark' }
+const RIPPLE_TANK: Picture = { scene: rippleTankSvg, shader: 'ripple-tank' }
+const SEA_SPARKLE: Picture = { scene: seaSparkleSvg, shader: 'sea-sparkle' }
+const SEMICOLONY: Picture = { scene: semicolonySvg, shader: 'semicolony' }
+const STAR_CHART: Picture = { scene: starChartSvg, shader: 'star-chart' }
 
 export const THEMES: readonly Theme[] = [
   {
@@ -197,6 +236,168 @@ export const THEMES: readonly Theme[] = [
     window: 'dark',
     glass: { blur: 12, tint: '#2a0d12', opacity: 0.3 },
     scene: emberSvg,
+  },
+  {
+    id: 'duck-pond',
+    title: 'Duck Pond',
+    blurb: 'Rubber ducks on a pixel pond, and a press drops bugs for them to eat.',
+    window: 'light',
+    twin: 'duck-pond-night',
+    glass: { blur: 16, tint: '#e8ecd9', opacity: 0.6 },
+    ...DUCK_POND,
+  },
+  {
+    id: 'duck-pond-night',
+    title: 'Duck Pond, Night',
+    blurb: 'Rubber ducks on a pixel pond, and a press drops bugs for them to eat.',
+    window: 'dark',
+    twin: 'duck-pond',
+    glass: { blur: 16, tint: '#0f2433', opacity: 0.6 },
+    ...DUCK_POND,
+  },
+  {
+    id: 'falling-sand',
+    title: 'Falling Sand',
+    blurb: 'Pixel sand pours down stone shelves, and a press pours more.',
+    window: 'light',
+    twin: 'falling-sand-night',
+    glass: { blur: 16, tint: '#f5ebd6', opacity: 0.6 },
+    ...FALLING_SAND,
+  },
+  {
+    id: 'falling-sand-night',
+    title: 'Falling Sand, Night',
+    blurb: 'Pixel sand pours down stone shelves, and a press pours more.',
+    window: 'dark',
+    twin: 'falling-sand',
+    glass: { blur: 16, tint: '#1c1424', opacity: 0.6 },
+    ...FALLING_SAND,
+  },
+  {
+    id: 'field-lines',
+    title: 'Field Lines',
+    blurb: 'A magnetic field drawn in short dashes that turn toward your pointer.',
+    window: 'light',
+    twin: 'field-lines-night',
+    glass: { blur: 16, tint: '#f3f1e7', opacity: 0.6 },
+    ...FIELD_LINES,
+  },
+  {
+    id: 'field-lines-night',
+    title: 'Field Lines, Night',
+    blurb: 'A magnetic field drawn in short dashes that turn toward your pointer.',
+    window: 'dark',
+    twin: 'field-lines',
+    glass: { blur: 16, tint: '#22282b', opacity: 0.6 },
+    ...FIELD_LINES,
+  },
+  {
+    id: 'garden-beetles',
+    title: 'Garden Beetles',
+    blurb: 'Pixel beetles on a garden path that hide when your pointer comes near.',
+    window: 'light',
+    twin: 'garden-beetles-night',
+    glass: { blur: 16, tint: '#ece5d3', opacity: 0.6 },
+    ...GARDEN_BEETLES,
+  },
+  {
+    id: 'garden-beetles-night',
+    title: 'Garden Beetles, Night',
+    blurb: 'Pixel beetles on a garden path that hide when your pointer comes near.',
+    window: 'dark',
+    twin: 'garden-beetles',
+    glass: { blur: 16, tint: '#27393a', opacity: 0.6 },
+    ...GARDEN_BEETLES,
+  },
+  {
+    id: 'koi-pond',
+    title: 'Koi Pond',
+    blurb: 'A pond from above with ripples at your pointer and koi fed by a press.',
+    window: 'light',
+    twin: 'koi-pond-night',
+    glass: { blur: 16, tint: '#d7e4e0', opacity: 0.6 },
+    ...KOI_POND,
+  },
+  {
+    id: 'koi-pond-night',
+    title: 'Koi Pond, Night',
+    blurb: 'A pond from above with ripples at your pointer and koi fed by a press.',
+    window: 'dark',
+    twin: 'koi-pond',
+    glass: { blur: 16, tint: '#0e1824', opacity: 0.6 },
+    ...KOI_POND,
+  },
+  {
+    id: 'ripple-tank',
+    title: 'Ripple Tank',
+    blurb: 'Water striders on a printed pond, where your pointer sends out rings.',
+    window: 'light',
+    twin: 'ripple-tank-night',
+    glass: { blur: 16, tint: '#d6e7e0', opacity: 0.6 },
+    ...RIPPLE_TANK,
+  },
+  {
+    id: 'ripple-tank-night',
+    title: 'Ripple Tank, Night',
+    blurb: 'Water striders on a printed pond, where your pointer sends out rings.',
+    window: 'dark',
+    twin: 'ripple-tank',
+    glass: { blur: 16, tint: '#112e34', opacity: 0.6 },
+    ...RIPPLE_TANK,
+  },
+  {
+    id: 'sea-sparkle',
+    title: 'Sea Sparkle',
+    blurb: 'A night sea in three inks, where your pointer stirs plankton to glow.',
+    window: 'light',
+    twin: 'sea-sparkle-night',
+    glass: { blur: 16, tint: '#ecf0ee', opacity: 0.6 },
+    ...SEA_SPARKLE,
+  },
+  {
+    id: 'sea-sparkle-night',
+    title: 'Sea Sparkle, Night',
+    blurb: 'A night sea in three inks, where your pointer stirs plankton to glow.',
+    window: 'dark',
+    twin: 'sea-sparkle',
+    glass: { blur: 16, tint: '#090e1c', opacity: 0.6 },
+    ...SEA_SPARKLE,
+  },
+  {
+    id: 'semicolony',
+    title: 'Semicolony',
+    blurb: 'Code punctuation living as small creatures, magnified at your pointer.',
+    window: 'light',
+    twin: 'semicolony-night',
+    glass: { blur: 16, tint: '#f1ece0', opacity: 0.6 },
+    ...SEMICOLONY,
+  },
+  {
+    id: 'semicolony-night',
+    title: 'Semicolony, Night',
+    blurb: 'Code punctuation living as small creatures, magnified at your pointer.',
+    window: 'dark',
+    twin: 'semicolony',
+    glass: { blur: 16, tint: '#13161c', opacity: 0.6 },
+    ...SEMICOLONY,
+  },
+  {
+    id: 'star-chart',
+    title: 'Star Chart',
+    blurb: 'An engraved sky map that links nearby stars to your pointer.',
+    window: 'light',
+    twin: 'star-chart-night',
+    glass: { blur: 16, tint: '#ece2ca', opacity: 0.6 },
+    ...STAR_CHART,
+  },
+  {
+    id: 'star-chart-night',
+    title: 'Star Chart, Night',
+    blurb: 'An engraved sky map that links nearby stars to your pointer.',
+    window: 'dark',
+    twin: 'star-chart',
+    glass: { blur: 16, tint: '#101b30', opacity: 0.6 },
+    ...STAR_CHART,
   },
 ]
 

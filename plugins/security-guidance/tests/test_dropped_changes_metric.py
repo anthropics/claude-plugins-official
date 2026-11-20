@@ -299,6 +299,17 @@ def test_baseline_that_fell_back_to_head_says_nothing(session):
     assert session.stop() == -1
 
 
+def test_baseline_that_is_head_both_times_counts_nothing(session):
+    session.write()
+    session.prompt()
+    set_state(session, baseline_fail=2)
+    state = session.state()
+    import diffstate
+    assert diffstate.dropped_changes(
+        state, state["baseline_sha"], 2, state["baseline_root"], state["head_at_capture"],
+        state["untracked_at_baseline"]) == 0
+
+
 def test_listing_that_failed_does_not_make_old_files_new(session):
     session.write("old.py")
     time.sleep(0.05)
@@ -357,8 +368,9 @@ def test_slow_git_is_given_up(session, monkeypatch):
     session.write()
     state = session.state()
 
-    def slow(*args, timeout, **kwargs):
+    def slow(*args, timeout, env, **kwargs):
         assert timeout <= 1
+        assert env["GIT_NO_LAZY_FETCH"] == "1" and env["GIT_ALLOW_PROTOCOL"]
         raise diffstate.subprocess.TimeoutExpired("git", timeout)
     monkeypatch.setattr(diffstate.subprocess, "run", slow)
     assert diffstate.dropped_changes(

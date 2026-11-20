@@ -2,6 +2,10 @@
 
 Each release gets a new number in `.claude-plugin/plugin.json`; Claude Code only offers an update when that number changes.
 
+## 1.1.0
+
+- **Target versions are looked up, not remembered.** Every command that proposes, confirms or builds for a version checks that it is still supported, writes a **Target versions** table (support end, source, date checked) and proposes nothing out of support. A version you named is kept, with a warning and the supported alternative; one that could not be checked is marked `unverified` for a person to confirm.
+
 ## 1.0.0
 
 - **A front door.** `/code-modernization:modernize` asks what you want done (once), records it in `analysis/<system>/INTENT.md`, shows the road and gives the exact first command. `--source <path>` links the code so nothing has to be copied.

@@ -28,6 +28,7 @@ import {
   ActionRowBuilder,
   type Message,
   type Attachment,
+  type Emoji,
   type Interaction,
 } from 'discord.js'
 import { randomBytes } from 'crypto'
@@ -132,6 +133,7 @@ function defaultAccess(): Access {
 
 const MAX_CHUNK_LIMIT = 2000
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
+const MAX_EMOJIS_LISTED = 200
 
 // reply's files param takes any path. .env is ~60 bytes and ships as an
 // upload. Claude can already Read+paste file contents, so this isn't a new
@@ -544,7 +546,7 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: 'react',
-      description: 'Add an emoji reaction to a Discord message. Unicode emoji work directly; custom emoji need the <:name:id> form.',
+      description: 'Add an emoji reaction to a Discord message. Unicode emoji work directly; custom emoji need the <:name:id> form from list_emojis.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -553,6 +555,19 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
           emoji: { type: 'string' },
         },
         required: ['chat_id', 'message_id', 'emoji'],
+      },
+    },
+    {
+      name: 'list_emojis',
+      description:
+        "List the custom emoji the bot can use in a chat, ready to paste into react or reply (<:name:id>, or <a:name:id> when animated). A server channel lists that server's emoji; a DM lists those of servers with an opted-in channel. The bot application's own emoji are always included. Unicode emoji aren't listed.",
+      inputSchema: {
+        type: 'object',
+        properties: {
+          chat_id: { type: 'string' },
+          query: { type: 'string', description: 'Only emoji whose name contains this text (case-insensitive).' },
+        },
+        required: ['chat_id'],
       },
     },
     {
@@ -700,6 +715,48 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         const msg = await ch.messages.fetch(args.message_id as string)
         await msg.react(args.emoji as string)
         return { content: [{ type: 'text', text: 'reacted' }] }
+      }
+      case 'list_emojis': {
+        const ch = await fetchAllowedChannel(args.chat_id as string)
+        // A DM has no server. Use the servers with an opted-in channel, not
+        // every server the bot happens to be in.
+        const channels = ch.type === ChannelType.DM
+          ? await Promise.all(Object.keys(loadAccess().groups).map(id => client.channels.fetch(id).catch(() => null)))
+          : [ch]
+        const guilds = new Set(channels.flatMap(c => (c && 'guild' in c ? [c.guild] : [])))
+
+        const emojis: Emoji[] = []
+        const failed: string[] = []
+        for (const guild of guilds) {
+          try {
+            const myRoles = guild.members.me?.roles.cache
+            for (const e of (await guild.emojis.fetch()).values()) {
+              // Skip emoji the server lost with its boosts, and ones limited to roles the bot lacks.
+              if (e.available === false) continue
+              if (e.roles.cache.size > 0 && !e.roles.cache.some(r => myRoles?.has(r.id) ?? false)) continue
+              emojis.push(e)
+            }
+          } catch (err) {
+            failed.push(`server ${guild.id} (${(err as Error).message})`)
+          }
+        }
+        try {
+          if (!client.application) throw new Error('bot not connected yet')
+          emojis.push(...(await client.application.emojis.fetch()).values())
+        } catch (err) {
+          failed.push(`the application (${(err as Error).message})`)
+        }
+        if (failed.length === guilds.size + 1) throw new Error(`could not fetch emoji of ${failed.join(', ')}`)
+
+        const query = ((args.query as string | undefined) ?? '').replaceAll(':', '').toLowerCase()
+        const matches = emojis.filter(e => e.name?.toLowerCase().includes(query))
+        const lines = matches.slice(0, MAX_EMOJIS_LISTED).map(e => `<${e.animated ? 'a' : ''}:${e.name}:${e.id}>`)
+        if (matches.length === 0) lines.push(query ? `(no custom emoji match "${query}")` : '(no custom emoji found)')
+        if (matches.length > MAX_EMOJIS_LISTED) {
+          lines.push(`(showing ${MAX_EMOJIS_LISTED} of ${matches.length} — pass query to narrow)`)
+        }
+        if (failed.length > 0) lines.push(`(partial list — could not fetch emoji of ${failed.join(', ')})`)
+        return { content: [{ type: 'text', text: lines.join('\n') }] }
       }
       case 'edit_message': {
         const ch = await fetchAllowedChannel(args.chat_id as string)

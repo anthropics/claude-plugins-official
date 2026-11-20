@@ -19,6 +19,11 @@ For **architecture proposals**:
   unstated, and does the design accidentally violate them?
 - What's the data migration story? "We'll figure it out" is a finding.
 - What happens when service X is down? Trace one failure mode end-to-end.
+- Does every language, runtime, framework, database and platform have a
+  version, a support end date and the source it was checked against? One that
+  is missing, unsourced or out of support is a **High** finding, unless it is
+  marked `unverified` for a person to confirm or the person chose it knowingly.
+  You cannot look versions up: judge the record, not your memory.
 
 For **transformed code**:
 - Is this idiomatic for the target stack, or is legacy structure leaking
