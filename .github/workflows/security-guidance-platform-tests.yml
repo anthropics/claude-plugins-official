@@ -33,8 +33,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-11-arm]
-        ref: ['7167']
+        os: [windows-latest, windows-11-arm, macos-latest]
+        ref: [main, '7167', '7168']
     defaults:
       run:
         shell: bash
@@ -250,7 +250,7 @@ jobs:
         if: ${{ contains(github.event.head_commit.message, '[report]') }}
         with:
           path: results
-          pattern: results-windows-11-arm-main
+          pattern: results-*
           run-id: ${{ env.REPORT_RUN_ID }}
           github-token: ${{ github.token }}
       - uses: actions/download-artifact@v4
