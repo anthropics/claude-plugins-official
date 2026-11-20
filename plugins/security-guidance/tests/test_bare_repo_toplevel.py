@@ -1,6 +1,7 @@
 """The plugin only treats ordinary checkouts as repositories to run git in."""
 import os
 import subprocess
+import time
 
 import pytest
 
@@ -146,11 +147,14 @@ def test_head_that_is_a_named_pipe_is_not_opened(tmp_path):
     (d / "objects").mkdir(parents=True)
     (d / "refs").mkdir()
     os.mkfifo(d / "HEAD")
-    assert not gitutil._looks_like_git_dir(str(d))
+    started = time.monotonic()
+    assert gitutil._found_through_bare_folder(str(d))
+    assert time.monotonic() - started < 2
 
 
 def test_commondir_layout(carried):
-    (carried / "commondir").write_text("../store\n")
+    (carried / "commondir").write_text("..\n")
+    (carried / "config").rename(carried.parent / "config")
     (carried / "objects").rename(carried.parent / "objects")
     (carried / "refs").rename(carried.parent / "refs")
     assert gitutil._found_through_bare_folder(str(carried))
