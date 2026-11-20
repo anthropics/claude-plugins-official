@@ -119,12 +119,16 @@ Parse `$ARGUMENTS` (space-separated). If empty or unrecognized, show status.
 ### `set <key> <value>`
 
 Delivery/UX config. Supported keys: `ackReaction`, `replyToMode`,
-`textChunkLimit`, `chunkMode`, `mentionPatterns`. Validate types:
+`textChunkLimit`, `chunkMode`, `mentionPatterns`, `pollerTakeoverSeconds`.
+Validate types:
 - `ackReaction`: string (emoji) or `""` to disable
 - `replyToMode`: `off` | `first` | `all`
 - `textChunkLimit`: number
 - `chunkMode`: `length` | `newline`
 - `mentionPatterns`: JSON array of regex strings
+- `pollerTakeoverSeconds`: number of seconds a newly started session waits
+  before taking the Telegram polling slot from a session that already has it.
+  `0` means never take it. Default 120.
 
 Read, set the key, write, confirm.
 
