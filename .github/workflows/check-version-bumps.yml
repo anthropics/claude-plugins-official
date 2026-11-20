@@ -1,0 +1,30 @@
+name: Check Version Bumps
+
+on:
+  pull_request:
+    paths:
+      - 'plugins/**'
+      - 'external_plugins/**'
+      - '.claude-plugin/marketplace.json'
+      - '.github/scripts/check_version_bumps.py'
+      - '.github/workflows/check-version-bumps.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  version-bumps:
+    # Fork PRs are auto-closed by close-external-prs.yml.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check that changed plugins have a new version
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 .github/scripts/check_version_bumps.py "$BASE_SHA" "$HEAD_SHA"
