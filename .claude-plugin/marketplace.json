@@ -1072,7 +1072,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/coderabbitai/skills.git",
-        "sha": "45bd1ae2c471cd861b8b6903f7dcab7c57aa0e59"
+        "sha": "bb71cd4c28ce384e2cc078bd6e1137496da56a8d"
       },
       "homepage": "https://github.com/coderabbitai/skills"
     },
