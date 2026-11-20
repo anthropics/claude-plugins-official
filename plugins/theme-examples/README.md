@@ -1,6 +1,6 @@
 # Theme examples
 
-Twenty scenes to paint behind your Claude Code desktop window, light and dark.
+Thirty-eight scenes to paint behind your Claude Code desktop window, light and dark.
 
 Pick a scene for a project or for one session: a lagoon seen from above, a night reef, a koi pond, halftone sunrises, pen-plotter tides, paper gardens, a departure board, a starfield in braille dots and more. Each scene is drawn for a dark or for a light window and is animated. Its motion stops when your system asks for reduced motion; see Motion and comfort below.
 
@@ -9,7 +9,7 @@ This plugin is an example of what a plugin can do with the backdrop of the deskt
 ## Use
 
 - `/custom-theme` shows a card with every theme, under the kind of window each is made for, with a preview button.
-- `/custom-theme list` names all twenty, under the kind of window each is made for.
+- `/custom-theme list` names all thirty-eight, under the kind of window each is made for.
 - `/custom-theme <name>` applies one to this project. Other open sessions of the project that have no choice of their own take it at their next turn. The name can be typed as the list prints it or as its title, in any case.
 - `/custom-theme <name> session` applies it to this session only.
 - `/custom-theme off` clears the project's theme. Other open sessions of the project that have no choice of their own clear at their next turn.
@@ -19,7 +19,15 @@ This plugin is an example of what a plugin can do with the backdrop of the deskt
 
 ## Light and dark windows
 
-Each theme is made for a light or for a dark window; the card, the list and the answer to applying one say which. Eight of the twenty come in both kinds, and each of those names its twin. Whether the window follows a theme's kind is up to the app and depends on its version. Where the window keeps your own setting, pick a theme made for it, or change the setting under Settings, General, Appearance.
+Each theme is made for a light or for a dark window; the card, the list and the answer to applying one say which. Twenty-six of the thirty-eight come in both kinds, and each of those names its twin. Whether the window follows a theme's kind is up to the app and depends on its version. Where the window keeps your own setting, pick a theme made for it, or change the setting under Settings, General, Appearance.
+
+## Scenes that answer the pointer
+
+Eighteen of the thirty-eight answer the pointer. They are nine pictures, each listed once for light windows and once, with ", Night" after its title, for dark ones: Duck Pond, Falling Sand, Field Lines, Garden Beetles, Koi Pond, Ripple Tank, Sea Sparkle, Semicolony, Star Chart. Each is a shader, a small program for the GPU, drawn over a still picture. Move the pointer over the margins beside the text, press, and drag.
+
+Each draws itself light or dark to match the window, whichever entry you picked (Koi Pond's water is deep green in a light window and darker in a dark one): where the window keeps your own setting, its two entries draw the same picture and differ only in the tint of the glass panels. These scenes also need a Claude Code and a desktop app that play shaders. Where a shader does not play (an older Claude Code or desktop app, reduced motion, a GPU too weak for the scene), the still picture shows alone; it is a finished picture by itself. `claude plugin validate` prints what each shader costs. The app itself gives these scenes the pointer's position; the mod never receives it.
+
+If you copy from this mod: a theme's row in `hooks/themes.ts` names its shader. Claude Code finds shader files by reading the source, so `hooks/interactive.tsx` writes each path out as a string. In a scene's SVG, give every `id` a hyphen, as in `k-deep`. The desktop app removes an id that is also the name of something built into a web page, such as `open` or `clear`, and says nothing, so a gradient, a mask or a clip that the picture refers to by that id goes missing. No such built-in name has a hyphen.
 
 ## What it needs
 
@@ -42,6 +50,8 @@ Parts of a scene's artwork lie under the chat text, the sidebar and the session 
 In a new session and after /clear, no theme shows until you send a message. In a reopened archived session, none shows at first.
 
 Whether a theme shows is asked of the session, not of each window on it, and at the moment the theme is set. A window that connects afterwards can draw the theme all the same, and so can a window that has not told Claude Code that it draws themes.
+
+A fireworks show over one of the scenes that answer the pointer lasts nine and a half seconds, two and a half more than over the other scenes. The scene does not move or answer the pointer during the show and for two or three seconds after it. Where the app holds scenes still, a show over one of them has no bursts.
 
 With another backdrop mod installed, a fireworks show or a preview ends on a bare window until that mod sets its backdrop again. A session has one theme at a time, so on newer versions of Claude Code clearing a theme clears whichever one stands, another plugin's too.
 

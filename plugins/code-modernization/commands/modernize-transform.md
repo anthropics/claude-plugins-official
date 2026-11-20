@@ -20,6 +20,12 @@ the earliest phase whose `Command:` is `transform` that has no
 stop and say what to install: a plan gate now would only defer the failure an hour. Point to
 `/code-modernization:modernize-preflight $system $target_stack`.
 
+**Target versions.** Build on the versions in the brief's **Target versions** table. If it has none for this
+module, or they are `unverified` or were checked over 30 days ago, look them up now as
+`${CLAUDE_PLUGIN_ROOT}/references/target-versions.md` says (never from memory), show the table in the plan and
+keep it in `TRANSFORMATION_NOTES.md`. Anything not `supported` and not yet decided is a question at the plan gate.
+A dependency with no row takes the newest compatible stable release the package registry reports.
+
 **Legacy stack (advisory, never a blocker).** Try a syntax-only compile of the module. Legacy code
 often cannot build locally by nature (CICS and IMS programs have no local translator; the real runtime
 is a mainframe you do not have). If it cannot, dual execution is off the table: the tests assert

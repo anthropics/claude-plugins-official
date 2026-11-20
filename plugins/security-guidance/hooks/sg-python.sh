@@ -107,7 +107,12 @@ probe() {
     # PYTHONSAFEPATH (3.11+, ignored before): the probe needs the standard
     # library only, so Python is told not to add its usual first entry to the
     # import path. For this call alone; the hook's environment is unchanged.
-    PYTHONSAFEPATH=1 exec "$@" -c 'import os, sys; t = (sys.argv[1:] or [""])[0]; sys.exit(3) if t and not (os.path.isfile(t) and os.access(t, os.R_OK)) else print(f"{sys.version_info[0]}.{sys.version_info[1]}"); sys.platform == "win32" and sys.version_info >= (3, 10) and print(sys.executable)' "$SG_TARGET" 2>/dev/null
+    #
+    # The code can reach cmd.exe through a .bat shim (pyenv-win), so it is one
+    # line of characters that arrive unchanged: a ">=" was read as a redirect
+    # and left a stray file. See #7172. On Windows a name that loses the
+    # argument also exits 3, so that pass 4 can start its real interpreter.
+    PYTHONSAFEPATH=1 exec "$@" -c 'import os, sys; t = (sys.argv[1:] or [""])[0]; sys.exit(3) if sys.platform == "win32" and not sys.argv[1:] or t and not (os.path.isfile(t) and os.access(t, os.R_OK)) else print(f"{sys.version_info[0]}.{sys.version_info[1]}"); sys.platform == "win32" and sys.version_info.__ge__((3, 10)) and print(sys.executable)' "$SG_TARGET" 2>/dev/null
 }
 
 # Use as `ask ... || { note_unreadable "<name>"; continue; }` (see ask below).
@@ -449,6 +454,7 @@ EOF
 done
 for cmd in "python3" "python" "py -3"; do
     case "$sg_unreadable" in *"|$cmd|"*) ;; *) continue ;; esac
+    # The same limits on the code as in probe.
     # shellcheck disable=SC2086
     c=$(PYTHONSAFEPATH=1 $cmd -c 'import sys; print(sys.executable)' 2>/dev/null) || continue
     c=${c%$'\r'}  # native Windows Python prints CRLF

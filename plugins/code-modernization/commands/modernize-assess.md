@@ -141,7 +141,9 @@ cost or date) · **Recommended Modernization Pattern**: one of Rehost, Replatfor
 Refactor, Rearchitect, Rebuild, Replace, with a one-paragraph rationale and the
 command it routes to: a move to a newer version of the same technology (or its
 supporting platform) → `uplift`; a rewrite in another technology, piece by piece →
-`transform`; a rebuild on a new architecture → `reimagine`. Rehost (move as is) and
+`transform`; a rebuild on a new architecture → `reimagine`. If the assessment names a
+target version, look it up first (`${CLAUDE_PLUGIN_ROOT}/references/target-versions.md`),
+never from memory. Rehost (move as is) and
 Replace (buy or adopt a product) change no code, so no build command applies: say so,
 and say what the analysis is still good for. For Rehost, `map`, `harden` and the `preflight`
 build check show what the move must carry along; for Replace, `extract-rules` turns

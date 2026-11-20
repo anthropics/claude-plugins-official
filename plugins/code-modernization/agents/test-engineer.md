@@ -64,7 +64,7 @@ to do it unless the plan the person approved names that target.
 
 ## Output
 
-Idiomatic tests for the requested target stack (JUnit 5 / pytest / Vitest /
+Idiomatic tests for the requested target stack (JUnit / pytest / Vitest /
 xUnit), one test class/file per legacy module, test method names that read
 as specifications. Include a `README.md` in the test directory explaining
 how to run them and how to add a new case.

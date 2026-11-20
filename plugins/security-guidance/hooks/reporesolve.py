@@ -4,7 +4,7 @@ import shlex
 import subprocess
 import time
 
-from gitutil import GIT_CMD, _git_toplevel
+from gitutil import GIT_CMD, _git_toplevel, _other_repo_with_commands, _stay_out, no_download_env
 from session_state import with_locked_state
 
 
@@ -178,6 +178,14 @@ def toplevel_from_command(command, cwd, subcommands=None, cwd_root=None):
     return None
 
 
+def command_in_left_out_repo(command, cwd, subcommands):
+    """True when a folder the command names is in a repository the hooks stay
+    out of: what it did there is not another repository's. For a command that
+    toplevel_from_command finds no repository for."""
+    return any(os.path.isdir(d) and _other_repo_with_commands(d)
+               for d in dirs_from_command(command, cwd, subcommands))
+
+
 def scan_roots(cwd):
     roots = []
     for r in (cwd, os.environ.get("CLAUDE_PROJECT_DIR")):
@@ -231,13 +239,18 @@ def repo_containing_commit(sha, roots, budget_s=None):
     for repo in iter_git_repos(roots, deadline=deadline):
         try:
             r = subprocess.run(
-                [*GIT_CMD, "cat-file", "-e", f"{sha}^{{commit}}"],
-                cwd=repo, capture_output=True, timeout=3,
+                # Unlike cat-file, this never downloads what a partial clone
+                # left out, in any git version.
+                [*GIT_CMD, "rev-list", "--missing=allow-any", "--no-walk", "--max-count=1",
+                 f"{sha}^{{commit}}"],
+                cwd=repo, capture_output=True, timeout=3, env=no_download_env(),
             )
         except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
             continue
         if r.returncode == 0:
-            return _git_toplevel(repo) or repo
+            top = _git_toplevel(repo)
+            if top or not _stay_out(repo):
+                return top or repo
     return None
 
 
@@ -311,6 +324,10 @@ def resolve_repo_root(cwd, command=None, subcommands=None, sha=None,
         top = toplevel_from_command(command, cwd, subcommands, cwd_root)
         if top and top != cwd_root:
             return top, RES_COMMAND
+        if not top and command_in_left_out_repo(command, cwd, subcommands):
+            # What it printed can still name a commit of another one.
+            top = repo_containing_commit(sha, scan_roots(cwd_root or cwd)) if sha else None
+            return (top, RES_SHA_SCAN) if top else (None, RES_NONE)
     if cwd_root:
         return cwd_root, RES_CWD
     if touched_paths:

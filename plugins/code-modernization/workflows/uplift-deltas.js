@@ -21,7 +21,7 @@ const source = ARGS && ARGS.source
 const target = ARGS && ARGS.target
 if (!system || !source || !target) {
   throw new Error(
-    'modernize-uplift-deltas requires args: {system, source, target, projectPattern?} — e.g. {system:"app", source:".NET Framework 4.8", target:".NET 8"}',
+    'modernize-uplift-deltas requires args: {system, source, target, projectPattern?} — e.g. {system:"app", source:".NET Framework 4.8", target:"<target version>"}',
   )
 }
 if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(system)) {

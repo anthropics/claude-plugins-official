@@ -116,7 +116,11 @@ If `$target_stack` was given, prove it with a throwaway project, not a version
 string: in a scratch directory outside `legacy/$system` (`mktemp -d`), create the
 smallest project the stack allows, restore, build, run one passing test with its
 real package manager and test framework, then delete it. A target that cannot
-build here is a finding.
+build here is a finding. If it names a version, also report whether that version
+is still supported, looked up as
+`${CLAUDE_PLUGIN_ROOT}/references/target-versions.md` says (never from memory):
+out of support or ending soon is ⚠️ with the date and the supported alternative,
+unverified is ⚠️ with the page to check; neither is ever ❌ or changes a verdict.
 
 ## Check 4 — Source completeness
 
