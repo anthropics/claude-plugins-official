@@ -479,7 +479,7 @@
         "url": "https://github.com/awslabs/agent-plugins.git",
         "path": "plugins/aws-transform",
         "ref": "main",
-        "sha": "097fe8ad56d8a1d5e2c81d7880adf145553cf244"
+        "sha": "c829ec19d5d5524863f5b57b46dec41a67363c0a"
       },
       "homepage": "https://github.com/awslabs/agent-plugins"
     },
