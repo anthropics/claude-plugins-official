@@ -3580,7 +3580,7 @@
         "url": "https://github.com/pendo-io/claude-pendo-plugin.git",
         "path": "plugins/setup-agent-analytics",
         "ref": "main",
-        "sha": "340d503c23eed487be83693aa4c1837df4a7dcd4"
+        "sha": "10e21650117e1c2a116f20de94e5bfc93ff63aa9"
       },
       "homepage": "https://github.com/pendo-io/claude-pendo-plugin/tree/main/plugins/setup-agent-analytics"
     },
