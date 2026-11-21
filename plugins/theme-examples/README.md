@@ -29,19 +29,36 @@ Each draws itself light or dark to match the window, whichever entry you picked 
 
 If you copy from this mod: a theme's row in `hooks/themes.ts` names its shader. Claude Code finds shader files by reading the source, so `hooks/interactive.tsx` writes each path out as a string. In a scene's SVG, give every `id` a hyphen, as in `k-deep`. The desktop app removes an id that is also the name of something built into a web page, such as `open` or `clear`, and says nothing, so a gradient, a mask or a clip that the picture refers to by that id goes missing. No such built-in name has a hyphen.
 
+## Scenes with sound
+
+Two of those nine pictures also have sound, in both of their entries: Koi Pond and Falling Sand. Sound is off until you turn it on with the speaker in the session's title bar, and the app keeps that choice. The menu beside the speaker sets the volume. It can also turn off the ambience (the steady sound in the background) and keep the short cues. The ambience plays while the session's window is in front and in use, and pauses while a permission request or a question waits. If one of these themes is applied and the title bar shows no speaker, your Claude Code or desktop app does not play theme sound yet.
+
+- Koi Pond: still water, with a drip now and then. A press on the backdrop drops food with a plop, lower at the left of the window and higher at the right. Short cues mark a message sent, a finished turn, Claude waiting on you and a turn that ends in an error.
+- Falling Sand: a steady pour, with a slide of sand now and then. A press pours with a short hiss. The same moments have cues, and each tool call is a single grain.
+
+A press plays its sound when it is short, as you let go. A long press or a drag plays none.
+
+Both are meant to be quiet and sparse, to sit under hours of work. The sound is numbers in `hooks/sounds.ts`, not a recording: layers of tones and noise that the app makes itself.
+
+Sound needs a Claude Code and a desktop app that play it. On older ones these scenes look and behave the same, in silence. The mod is never told whether a sound played.
+
+If you copy from this mod: an older Claude Code refuses a whole theme that names a sound, so `setBackdrop` in `hooks/register.tsx` asks for the theme with its sound first and, when that is refused, asks again without it. Keep that first ask apart from any other fallback; the comment there says why.
+
 ## What it needs
 
 A version of Claude Desktop that draws a mod's backdrop behind the chat. Where no window has said that it draws one, every command still answers, and applying or previewing a theme, or typing `/fireworks`, adds that this window may not draw themes yet. A theme applied to the project is saved all the same.
 
 ## What it does not do
 
-It looks at what Claude says for one word, "merged", and keeps none of it. At the start of each turn it checks the chosen theme and reads no text of your prompt. To tell which project a session in a git worktree belongs to, it asks Claude Code for the session's folder and repository, and looks from the project folder upward for an entry named `.git`; it opens no file. It writes a line to Claude Code's debug log saying how it found the project, and another whenever that changes, with no path in them; that log is kept when Claude Code runs with debugging on. If a background step fails, it adds a dim line with the error's own words to the transcript; that line is not sent to Claude. It sends nothing anywhere.
+It looks at what Claude says for one word, "merged", and keeps none of it. At the start of each turn it checks the chosen theme and reads no text of your prompt. To tell which project a session in a git worktree belongs to, it asks Claude Code for the session's folder and repository, and looks from the project folder upward for an entry named `.git`; it opens no file. It writes a line to Claude Code's debug log saying how it found the project, and another whenever that changes, with no path in them; that log is kept when Claude Code runs with debugging on. If setting a theme with its sound fails, the theme is set without it. Unless the failure is an older Claude Code that does not know sound, the theme's name and the error's own words go to that log too. If a background step fails, it adds a dim line with the error's own words to the transcript; that line is not sent to Claude. It sends nothing anywhere.
 
 It stores the name of the theme you chose, per project, under the project folder's path. For a session in a linked git worktree that is the path of the matching folder in the repository's main working tree. For a session with a choice of its own it stores that name under the session's id, and keeps it for the 200 sessions that chose last. If you turn off the show that goes off on "merged", it stores that too. A session's own state also has its choice, the theme being previewed and two flags for the card; that state lives in memory and ends with the session. To tell sessions apart it reads one environment variable, the desktop app's id for the session, and nothing else from your environment.
 
 ## Motion and comfort
 
 If your system asks for reduced motion, every scene rests in a composed picture and the bursts of a fireworks show stay hidden, on purpose; with no theme set, a show lays its own night sky over the window for its few seconds under that setting too. Where the app draws without GPU acceleration, it stops a scene's motion. Whether the app's own Motion setting stops it too depends on the version of the app; the mod reads no setting of the app.
+
+Sound does not follow these settings. Where you have turned it on, a theme's ambience and cues play while its picture rests, and a short press still makes its sound.
 
 ## Known limits
 

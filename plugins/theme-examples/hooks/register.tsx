@@ -13,6 +13,7 @@ import {
 import { overShader } from './interactive'
 import { keyToWrite, keysToClear, keysToRead, projectKeyFor } from './project-key'
 import type { KeptKey, KeyEngine } from './project-key'
+import type { Sound } from './sounds'
 import { THEMES, sceneFault, sceneOf } from './themes'
 import type { Theme } from './themes'
 import type { ThemeChoice } from '../types'
@@ -35,7 +36,7 @@ const SESSION_PREFIX = 'session:'
 const SESSIONS_KEPT = 200
 // Said where a theme is set and the engine answers that nothing draws it. That answer is what the attached windows said of themselves at the moment of
 // the set: one that attaches later still draws the theme, and one that draws themes under another name than this engine asks after draws it all the
-// same. An engine with none of the three calls is answered the same way (setBackdrop's last line), and there nothing draws it. So the words hold
+// same. An engine with none of the three calls is answered the same way (setWithoutSound's last line), and there nothing draws it. So the words hold
 // whether or not the theme shows, and never say why.
 const UNSHOWN = 'If no theme shows, this window may not draw themes yet'
 const KEPT_UNSHOWN = `${UNSHOWN}. Your choice is saved.`
@@ -52,7 +53,7 @@ const choice = atom({ plugin: 'theme-examples', key: 'choice' } as const, {}, {
 
 /** What a set comes to on any engine, as far as this mod reads it: drawn or not. */
 type BackdropAnswer = { isDrawn: boolean }
-type BackdropChoice = { id: string; glass: Theme['glass']; colorScheme?: Theme['window'] }
+type BackdropChoice = { id: string; glass: Theme['glass']; colorScheme?: Theme['window']; sound?: Sound }
 /**
  * The engines this mod meets, for the type checker alone: the theme noun or the older call may be absent.
  * A CALL ON A MEMBER THAT MAY BE ABSENT IS WRITTEN PLAINLY, as $.noun.method(...), under a line of "@ts-expect-error". A "!" or a
@@ -63,10 +64,18 @@ type BackdropChoice = { id: string; glass: Theme['glass']; colorScheme?: Theme['
 type AnyEngine = {
   theme?: { set(args: unknown): Promise<BackdropAnswer>; clear(): Promise<unknown> }
   // `toast` is named only so that this type shares a member with every engine's ui noun: the checker refuses one that shares none.
-  ui: { toast: EngineInterface['ui']['toast']; backdrop?(args: BackdropChoice | undefined): Promise<BackdropAnswer> }
+  ui: {
+    toast: EngineInterface['ui']['toast']
+    log: EngineInterface['ui']['log']
+    backdrop?(args: BackdropChoice | undefined): Promise<BackdropAnswer>
+  }
 }
 // The way of setting a backdrop this engine took, learnt at the first set that can tell; a reload learns it again.
 let taken: 'beside' | 'nested' | 'older' | 'none' | undefined
+// True once an engine has refused a set as holding an attribute "sound" that it does not know: no theme's sound is then tried; a reload learns it again.
+let engineLacksSound = false
+// The last failed set with sound told to the debug log, as the theme's id and the reason: told again only when either changes.
+let toldSoundFailure: string | undefined
 
 /**
  * A try may be followed by the next one only where the engine lacks the call (reaching for it throws a TypeError) or
@@ -83,6 +92,23 @@ function isNotThisEnginesWay(error: unknown, member?: string): boolean {
   )
 }
 
+/** The arguments of a set in the newest shape, without a sound. */
+function newestShape(backdrop: BackdropChoice): Record<string, unknown> {
+  return {
+    backdrop: { scene: backdrop.id, id: backdrop.id, glass: backdrop.glass },
+    ...(backdrop.colorScheme !== undefined && { overrideColorScheme: backdrop.colorScheme }),
+  }
+}
+
+/** Notes that the engine took a set in the newest shape. */
+function learnNewest(backdrop: BackdropChoice): void {
+  // With no kind to hand over this shape is the next one's too: it tells nothing of the engine, so nothing is learnt.
+  // A belt: learnt wrongly here, the next set with a kind would be refused once and the ways walked anew.
+  if (backdrop.colorScheme !== undefined) {
+    taken = 'beside'
+  }
+}
+
 /**
  * Sets a backdrop by whichever call this engine has: the theme noun with the window's kind beside the backdrop, the
  * theme noun with it inside the backdrop, or the older call on the ui noun. The calls are written out plainly, each in
@@ -96,17 +122,11 @@ function isNotThisEnginesWay(error: unknown, member?: string): boolean {
 async function setByAWay($: AnyEngine, backdrop: BackdropChoice): Promise<BackdropAnswer | undefined> {
   if (taken === undefined || taken === 'beside') {
     try {
+      const shape = newestShape(backdrop)
       // @ts-expect-error An engine may lack this call: see AnyEngine.
-      const set = await $.theme.set({
-        backdrop: { scene: backdrop.id, id: backdrop.id, glass: backdrop.glass },
-        ...(backdrop.colorScheme !== undefined && { overrideColorScheme: backdrop.colorScheme }),
-      })
+      const set = await $.theme.set(shape)
 
-      // With no kind to hand over this shape is the next one's too: it tells nothing of the engine, so nothing is learnt.
-      // A belt: learnt wrongly here, the next set with a kind would be refused once and the ways walked anew.
-      if (backdrop.colorScheme !== undefined) {
-        taken = 'beside'
-      }
+      learnNewest(backdrop)
 
       return set
     } catch (error) {
@@ -153,7 +173,7 @@ async function setByAWay($: AnyEngine, backdrop: BackdropChoice): Promise<Backdr
  * A way once learnt is the only one tried. Where the engine does not take it after all the ways are walked anew; an
  * engine with none of them draws nothing, and the answer says so.
  */
-async function setBackdrop($: AnyEngine, backdrop: BackdropChoice): Promise<BackdropAnswer> {
+async function setWithoutSound($: AnyEngine, backdrop: BackdropChoice): Promise<BackdropAnswer> {
   if (taken === 'none') {
     return { isDrawn: false }
   }
@@ -178,6 +198,74 @@ async function setBackdrop($: AnyEngine, backdrop: BackdropChoice): Promise<Back
   taken = 'none'
 
   return { isDrawn: false }
+}
+
+/**
+ * Whether a refused set shows that the engine is from before sound: it says that it does not know the attribute
+ * "sound". Any other failure, a refused member inside a sound too, proves nothing about the engine, so the next
+ * theme's sound is still tried.
+ */
+function isEngineWithoutSound(error: unknown): boolean {
+  return error instanceof Error && error.message.includes('does not know the attribute "sound"')
+}
+
+/**
+ * Says which theme could not be set with its sound and why, so that whoever changes a sound can read what to change.
+ * The failure may not be the sound's own, so the words say only what happened.
+ * TO THE DEBUG LOG ALONE, as `tellKeyStep` is: the person sees the theme, without its sound.
+ */
+async function tellSoundFailure($: AnyEngine, id: string, reason: string): Promise<void> {
+  const told = `${id}: ${reason}`
+
+  if (told === toldSoundFailure) {
+    return
+  }
+
+  toldSoundFailure = told
+
+  try {
+    await $.ui.log(`The theme ${id} could not be set with its sound, so it was set without it: ${reason}`, { to: 'debug' })
+  } catch {
+    // An engine without that call, or one that refuses it: nothing more to tell.
+  }
+}
+
+/**
+ * Sets a backdrop, with its sound where the theme has one and the engine takes it.
+ * THE SET WITH SOUND IS A TRY OF ITS OWN, AHEAD OF THE WAYS: were it the first way, an engine from before sound would
+ * refuse it in words that way's catch reads as "try the next shape", then refuse the next shape, and the theme would
+ * not be applied. After any failure here the theme is set without the sound; where that fails too, its error is thrown.
+ */
+async function setBackdrop($: AnyEngine, backdrop: BackdropChoice): Promise<BackdropAnswer> {
+  // Only an engine that takes the newest shape can take sound, so no other is asked.
+  if (backdrop.sound === undefined || engineLacksSound || (taken !== undefined && taken !== 'beside')) {
+    return setWithoutSound($, backdrop)
+  }
+
+  let failure: unknown
+
+  try {
+    const shape = { ...newestShape(backdrop), sound: backdrop.sound }
+    // @ts-expect-error An engine may lack this call: see AnyEngine.
+    const set = await $.theme.set(shape)
+
+    learnNewest(backdrop)
+
+    return set
+  } catch (error) {
+    failure = error
+  }
+
+  const set = await setWithoutSound($, backdrop)
+
+  if (isEngineWithoutSound(failure)) {
+    engineLacksSound = true
+  } else if (taken === 'beside') {
+    // Told only where the newest way took the theme. A show bears its theme's sound under the show's own id: the theme is the one to name.
+    await tellSoundFailure($, themeIdOfShow(backdrop.id) ?? backdrop.id, reasonOf(failure))
+  }
+
+  return set
 }
 
 /** Clears the backdrop by whichever call this engine has; an engine with neither is left alone. */
@@ -297,6 +385,11 @@ function themeList(): string {
   ].join('\n')
 }
 
+/** What a set of a theme's backdrop carries. `id`: the theme's own, or a show's over it. */
+function backdropOf(theme: Theme, id = theme.id): BackdropChoice {
+  return { id, glass: theme.glass, colorScheme: theme.window, sound: theme.sound }
+}
+
 /**
  * Shows a theme behind the chat, or with none clears the session's theme, and answers what a set came to.
  * A clear takes away whatever theme stands, whichever mod set it, so `show` is given none only on a person's ask
@@ -311,7 +404,7 @@ async function show($: EngineInterface, id: string | undefined): Promise<Backdro
     return undefined
   }
 
-  return setBackdrop($, { id: theme.id, glass: theme.glass, colorScheme: theme.window })
+  return setBackdrop($, backdropOf(theme))
 }
 
 const PROJECT_PREFIX = 'project:'
@@ -715,11 +808,12 @@ async function fireworks($: EngineInterface): Promise<string> {
 
     afterShader = theme?.shader !== undefined
 
+    // The theme's sound goes with its show: a set names the whole theme, and an ambience that is set again unchanged plays on.
     set = await setBackdrop(
       $,
       theme === undefined
         ? { id: NIGHT_ID, glass: NIGHT_GLASS }
-        : { id: `${theme.id}${suffix}`, glass: theme.glass, colorScheme: theme.window },
+        : backdropOf(theme, `${theme.id}${suffix}`),
     )
   } catch (error) {
     // A show that did not begin costs a reply nothing, and the next word may try again.

@@ -23,6 +23,8 @@ import { rippleTankSvg } from './scenes/ripple-tank/still'
 import { seaSparkleSvg } from './scenes/sea-sparkle/still'
 import { semicolonySvg } from './scenes/semicolony/still'
 import { starChartSvg } from './scenes/star-chart/still'
+import { FALLING_SAND_SOUND, KOI_POND_SOUND } from './sounds'
+import type { Sound } from './sounds'
 
 /** The scenes a shader plays over. Each name is a folder under ./scenes, which holds the shader and its still. */
 export type ShaderScene =
@@ -53,16 +55,18 @@ export type Theme = {
   shader?: ShaderScene
   /** Set where the picture is dark, or pale, whatever the window: a show's bursts are then bright, or deep, in both. */
   ground?: Theme['window']
+  /** The theme's sound, where it has one (see ./sounds). */
+  sound?: Sound
 }
 
 /** What a scene's two entries share: both of its rows below spread one of these, so they cannot differ. */
-type Picture = Required<Pick<Theme, 'scene' | 'shader'>> & Pick<Theme, 'ground'>
+type Picture = Required<Pick<Theme, 'scene' | 'shader'>> & Pick<Theme, 'ground' | 'sound'>
 
 const DUCK_POND: Picture = { scene: duckPondSvg, shader: 'duck-pond' }
-const FALLING_SAND: Picture = { scene: fallingSandSvg, shader: 'falling-sand' }
+const FALLING_SAND: Picture = { scene: fallingSandSvg, shader: 'falling-sand', sound: FALLING_SAND_SOUND }
 const FIELD_LINES: Picture = { scene: fieldLinesSvg, shader: 'field-lines' }
 const GARDEN_BEETLES: Picture = { scene: gardenBeetlesSvg, shader: 'garden-beetles' }
-const KOI_POND: Picture = { scene: koiPondSvg, shader: 'koi-pond', ground: 'dark' }
+const KOI_POND: Picture = { scene: koiPondSvg, shader: 'koi-pond', ground: 'dark', sound: KOI_POND_SOUND }
 const RIPPLE_TANK: Picture = { scene: rippleTankSvg, shader: 'ripple-tank' }
 const SEA_SPARKLE: Picture = { scene: seaSparkleSvg, shader: 'sea-sparkle' }
 const SEMICOLONY: Picture = { scene: semicolonySvg, shader: 'semicolony' }
