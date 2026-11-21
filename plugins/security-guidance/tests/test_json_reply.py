@@ -2,6 +2,7 @@
 whole reply only: in a longer text an object may be quoted from the code."""
 import io
 import json
+import sys
 import threading
 import time
 import urllib.error
@@ -41,10 +42,7 @@ F = "```json\n%s\n```"
 
 
 def read(texts, schema=SCHEMA, stop="end_turn"):
-    try:
-        return json.loads(texts[0])
-    except (ValueError, RecursionError):
-        return llm._whole_reply_object([{"type": "text", "text": t} for t in texts], schema, stop)[0]
+    return llm._read_reply({"content": [{"type": "text", "text": t} for t in texts], "stop_reason": stop}, schema)
 
 
 @pytest.mark.parametrize("verdict", [CLEAN, VULN, json.dumps(json.loads(VULN), indent=2)])
@@ -152,8 +150,13 @@ def test_without_a_known_schema_only_plain_json_is_read(schema):
 @pytest.mark.parametrize("wrap", ["%s", "x%s", F])
 def test_long_and_deep_text(before, block, wrap):
     start = time.monotonic()
-    out = read(before + [wrap.replace("%s", block)])
-    assert out is None or isinstance(out, dict) and "n" in out
+    try:
+        out = read(before + [wrap.replace("%s", block)])
+        # Parsed where Python has no limit on the digits of a number.
+        assert out is None or (not before and wrap == "%s" and list(out) == ["n"])
+    except (ValueError, RecursionError) as e:
+        # A failed review, as before this change: the caller catches it.
+        assert not before and wrap == "%s" and not isinstance(e, json.JSONDecodeError)
     assert time.monotonic() - start < 5
 
 
@@ -235,7 +238,20 @@ def test_odd_block_beside_a_fence_is_no_verdict(monkeypatch, odd, verdict):
 
 
 REPLIES = {"plain clean": CLEAN, "plain vuln": VULN, "fenced clean": F % CLEAN, "fenced vuln": F % VULN,
-           "bad fence": F % VULN.replace('"high"', '"HIGH"'), "prose": "a.py is injectable.", "error": None}
+           "bad fence": F % VULN.replace('"high"', '"HIGH"'), "prose": "a.py is injectable.", "error": None,
+           "null": "null", "other shape": '{"findings": [1]}', "list": "[]", "flag only": '{"hasVulnerabilities": true}',
+           "fenced low": F % VULN.replace('"high"', '"low"'),
+           "tool": [{"type": "tool_use", "name": "x", "input": {"hasVulnerabilities": True}}],
+           "refusal": [], "thinking": [{"type": "thinking", "thinking": "x"}],
+           "word": '"ok"', "empty object": "{}", "flag but none": '{"hasVulnerabilities": true, "vulnerabilities": []}',
+           "flag but null": '{"hasVulnerabilities": true, "vulnerabilities": null}', "empty body": {},
+           "no string": [{"type": "text", "text": None}], "deep": "[" * 200000,
+           "long number": '{"n": %s}' % ("1" * 5000)}
+# Raise out of the call, which fails the whole review.
+ABORTS = ["no string", "deep"] + ["long number"] * bool(getattr(sys, "get_int_max_str_digits", lambda: 0)())
+SETTLES_AS_BEFORE = ["flag only", "flag but none", "flag but null"]
+NO_VERDICT = ABORTS + SETTLES_AS_BEFORE + ["prose", "bad fence", "null", "other shape", "list", "word", "empty object",
+                                           "tool", "refusal", "thinking", "empty body"]
 
 
 def _review(monkeypatch, replies, dual=False):
@@ -246,8 +262,8 @@ def _review(monkeypatch, replies, dual=False):
         def __init__(self, text): self.text = text
         def __enter__(self): return self
         def __exit__(self, *a): return False
-        def read(self): return json.dumps({"content": [{"type": "text", "text": self.text}],
-                                           "stop_reason": "end_turn", "usage": {}}).encode()
+        def read(self): return b"{}" if self.text == {} else json.dumps({"content": self.text if isinstance(self.text, list) else
+                                           [{"type": "text", "text": self.text}], "stop_reason": "end_turn", "usage": {}}).encode()
 
     def answer(*a, **k):
         with lock:
@@ -276,6 +292,38 @@ def _review(monkeypatch, replies, dual=False):
 ])
 def test_retry_after_an_unread_reply(monkeypatch, replies, expected):
     assert _review(monkeypatch, replies) == expected
+
+
+@pytest.mark.parametrize("first", NO_VERDICT)
+@pytest.mark.parametrize("second", ["fenced clean", "fenced low"])
+def test_unheld_reply_without_findings_never_settles_it_beside_a_non_verdict(monkeypatch, first, second):
+    if first not in SETTLES_AS_BEFORE:
+        assert _review(monkeypatch, [first, second])[:2] == (0, True)
+    for replies in ([second, first, first], [first, second, first]):
+        assert _review(monkeypatch, replies, dual=True)[:2] == (0, True)
+
+
+@pytest.mark.parametrize("first", SETTLES_AS_BEFORE)
+def test_plain_reply_of_another_shape_on_its_own_is_taken_as_before(monkeypatch, first):
+    assert _review(monkeypatch, [first]) == (0, False, 1)
+
+
+@pytest.mark.parametrize("first", [n for n in NO_VERDICT if n not in ABORTS])
+def test_unheld_finding_stands_beside_a_non_verdict(monkeypatch, first):
+    # A plain non-verdict that is no null is not retried, so it is at most one call.
+    assert _review(monkeypatch, ["fenced vuln", first, first], dual=True)[:2] == (1, False)
+
+
+@pytest.mark.parametrize("first", ABORTS)
+def test_reply_that_json_cannot_hold_fails_the_review_as_before(monkeypatch, first):
+    assert _review(monkeypatch, [first, "fenced clean"]) == (0, True, 1)
+
+
+@pytest.mark.parametrize("second", ["fenced clean", "fenced low"])
+def test_alone_it_settles_it(monkeypatch, second):
+    assert _review(monkeypatch, [second]) == (0, False, 1)
+    assert _review(monkeypatch, ["error", second]) == (0, False, 2)
+    assert _review(monkeypatch, [second, second], dual=True)[:2] == (0, False)
 
 
 @pytest.mark.parametrize("replies,expected", [
@@ -307,3 +355,9 @@ def test_stop_reason_of_the_response(monkeypatch, stop):
 def test_plain_first_block_beside_another_kind_is_read_as_before(monkeypatch):
     content = [{"type": "text", "text": CLEAN}, {"type": "tool_use", "name": "x", "input": {}}]
     assert _through_call(monkeypatch, content) == json.loads(CLEAN)
+
+
+@pytest.mark.parametrize("pair", [("fenced low", "plain vuln"), ("fenced low", "fenced vuln")])
+def test_low_look_does_not_hide_the_same_finding_of_the_other(monkeypatch, pair):
+    for replies in (list(pair), list(pair)[::-1]):
+        assert _review(monkeypatch, replies, dual=True)[:2] == (1, False)

@@ -1335,6 +1335,16 @@ def _fits(value, schema):
     return kind == "boolean" and isinstance(value, bool)
 
 
+def _verdict_problem(value, schema):
+    """Why `value` is no verdict of a review with `schema`, or ""."""
+    flag, findings = (list((schema or {}).get("required") or ()) + [None, None])[:2]
+    if not flag or not findings or not _fits(value, schema):
+        return "the object does not fit the schema"
+    if value[flag] != bool(value[findings]):
+        return "the object contradicts itself"
+    return ""
+
+
 def _whole_reply_object(content, schema, stop_reason):
     """(the JSON object that is the whole reply, or None, and why not) for a
     reply whose first text block is not JSON.
@@ -1355,8 +1365,7 @@ def _whole_reply_object(content, schema, stop_reason):
                 texts.append(text)
         elif kind not in ("thinking", "redacted_thinking"):
             return None, "a block that is no text"
-    flag, findings = (list((schema or {}).get("required") or ()) + [None, None])[:2]
-    if not flag or not findings:
+    if len((schema or {}).get("required") or ()) < 2:
         return None, ""
     if len(texts) != 1:
         return None, f"{len(texts)} blocks with text"
@@ -1367,25 +1376,33 @@ def _whole_reply_object(content, schema, stop_reason):
         value = json.loads(fenced.group(1) if fenced else texts[0], object_pairs_hook=_each_key_once)
     except (ValueError, RecursionError) as e:
         return None, f"in its code fence: {e}" if fenced else ""
-    if not _fits(value, schema):
-        return None, "the object does not fit the schema"
-    if value[flag] != bool(value[findings]):
-        return None, "the object contradicts itself"
-    return _Unheld(value), ""
+    problem = _verdict_problem(value, schema)
+    return (None, problem) if problem else (_Unheld(value), "")
 
 
 class _Unheld(dict):
     """An object from a reply that nothing held to the schema."""
 
 
-def _without_lone_clean(result, flag, unread):
-    """None for an _Unheld `result` that says "nothing found" when another
-    reply of the same review could not be read: that one may have said
-    otherwise, and "nothing" fits the schema more easily than a finding."""
-    if unread and isinstance(result, _Unheld) and not result.get(flag):
-        debug_log("a reply of this review could not be read, so one without findings does not count")
-        return None
-    return result
+def _that_count(results, schema, list_key, unread):
+    """`results` of one review, with None for those that do not count.
+
+    When a reply was no verdict, an _Unheld one with nothing above low does not
+    count: the other may have said otherwise, and "nothing" fits the schema
+    more easily than a finding. And beside an _Unheld one, a leg that is no
+    verdict does not count as a look that found nothing.
+    """
+    unheld = any(isinstance(r, _Unheld) for r in results)
+    out = []
+    for r in results:
+        if isinstance(r, _Unheld):
+            if unread and all(item.get("severity") == "low" for item in r[list_key]):
+                debug_log("another reply of this review was no verdict, so one with nothing above low does not count")
+                r = None
+        elif unheld and r is not None and _verdict_problem(r, schema):
+            r = None
+        out.append(r)
+    return out
 
 
 def _call_claude(prompt, output_schema, thinking_budget=10000, max_tokens=16000, model=None,
@@ -1396,7 +1413,7 @@ def _call_claude(prompt, output_schema, thinking_budget=10000, max_tokens=16000,
     with cache_control, so repeated calls share a cached request prefix.
     Model defaults to default_review_model(); SECURITY_REVIEW_MODEL overrides it.
     Returns parsed JSON response or None on failure.
-    unread: a list that gets an entry for a reply that could not be read.
+    unread: a list that gets an entry for a reply that came but is no verdict.
     On failure, sets module-level _last_call_claude_http_error to the HTTP status
     (or -1 for network/timeout) so callers can distinguish API failure from an
     empty-result success.
@@ -1531,7 +1548,9 @@ def _call_claude(prompt, output_schema, thinking_budget=10000, max_tokens=16000,
                 return None
 
     if not response_data:
-        # Only reachable when the 401→token fallback `continue` landed on the
+        if response_data is not None and unread is not None:
+            unread.append(True)  # an answer with an empty body
+        # Otherwise only reachable when the 401→token fallback `continue` landed on the
         # final loop iteration. The sticky flag is already set so the next
         # call uses the token; record the 401 so callers don't see error=None.
         if _last_call_claude_http_error is None:
@@ -1539,6 +1558,13 @@ def _call_claude(prompt, output_schema, thinking_budget=10000, max_tokens=16000,
             _record_http_error(401)
         return None
 
+    value = _read_reply(response_data, output_schema)
+    if unread is not None and _verdict_problem(value, output_schema):
+        unread.append(True)
+    return value
+
+
+def _read_reply(response_data, output_schema):
     # Find the text block (skip thinking blocks)
     content = response_data.get("content", [])
     for block in content:
@@ -1549,8 +1575,6 @@ def _call_claude(prompt, output_schema, thinking_budget=10000, max_tokens=16000,
                 value, why = _whole_reply_object(content, output_schema, response_data.get("stop_reason"))
                 if value is None:
                     debug_log(f"JSON parse error: {e}" + (f"; {why}" if why else ""))
-                    if unread is not None:
-                        unread.append(why)
                 return value
 
     debug_log("No text block in response")
@@ -1608,7 +1632,7 @@ def _call_claude_dual_or(prompt, output_schema, *, bool_key: str, list_key: str,
             r = _call_claude(prompt, output_schema, thinking_budget=thinking_budget,
                              max_tokens=max_tokens, model=fallback,
                              retry_5xx=True, cacheable_prefix=cacheable_prefix, unread=unread)
-        return _without_lone_clean(r, bool_key, unread)
+        return _that_count([r], output_schema, list_key, unread)[0]
 
     def _leg():
         r = _call_claude(prompt, output_schema, thinking_budget=thinking_budget,
@@ -1625,7 +1649,7 @@ def _call_claude_dual_or(prompt, output_schema, *, bool_key: str, list_key: str,
         fa = ex.submit(_leg)
         fb = ex.submit(_leg)
         ra, rb = fa.result(), fb.result()
-    ra, rb = (_without_lone_clean(r, bool_key, unread) for r in (ra, rb))
+    ra, rb = _that_count([ra, rb], output_schema, list_key, unread)
 
     if ra is None and rb is None:
         return None
@@ -1640,7 +1664,11 @@ def _call_claude_dual_or(prompt, output_schema, *, bool_key: str, list_key: str,
     # different schema).
     merged: list = []
     seen: set = set()
-    for item in [*a_list, *b_list]:
+    items = [*a_list, *b_list]
+    if isinstance(ra, _Unheld) or isinstance(rb, _Unheld):
+        # The first of two alike stays, and a low one is not reported.
+        items.sort(key=lambda item: isinstance(item, dict) and item.get("severity") == "low")
+    for item in items:
         if isinstance(item, dict) and "filePath" in item and "vulnerableCode" in item:
             key = (item.get("filePath"), item.get("vulnerableCode"))
             if key in seen:
