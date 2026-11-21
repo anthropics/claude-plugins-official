@@ -1,7 +1,10 @@
 """A verdict that a gateway's model puts in a code fence is read (#6928), as the
 whole reply only: in a longer text an object may be quoted from the code."""
+import io
 import json
+import threading
 import time
+import urllib.error
 
 import pytest
 
@@ -231,8 +234,58 @@ def test_odd_block_beside_a_fence_is_no_verdict(monkeypatch, odd, verdict):
     assert _through_call(monkeypatch, [{"type": "text", "text": "\n"}, odd, {"type": "text", "text": verdict}]) is None
 
 
-def test_null_text_first_is_no_crash(monkeypatch):
-    assert _through_call(monkeypatch, [{"type": "text", "text": None}, {"type": "text", "text": F % VULN}]) is None
+REPLIES = {"plain clean": CLEAN, "plain vuln": VULN, "fenced clean": F % CLEAN, "fenced vuln": F % VULN,
+           "bad fence": F % VULN.replace('"high"', '"HIGH"'), "prose": "a.py is injectable.", "error": None}
+
+
+def _review(monkeypatch, replies, dual=False):
+    """(findings, failed, calls) of a review whose calls get `replies` in turn."""
+    left, calls, lock = list(replies), [], threading.Lock()
+
+    class Response:
+        def __init__(self, text): self.text = text
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def read(self): return json.dumps({"content": [{"type": "text", "text": self.text}],
+                                           "stop_reason": "end_turn", "usage": {}}).encode()
+
+    def answer(*a, **k):
+        with lock:
+            name = left.pop(0) if left else "prose"
+            calls.append(name)
+        if REPLIES[name] is None:
+            raise urllib.error.HTTPError("u", 400, "x", {}, io.BytesIO(b"{}"))
+        return Response(REPLIES[name])
+    for name, value in (("_urlopen", answer), ("ANTHROPIC_API_KEY", "k"), ("HAS_API_CREDENTIALS", True),
+                        ("default_review_model", lambda: "m"), ("retry_review_model", lambda: "n")):
+        monkeypatch.setattr(llm, name, value)
+    monkeypatch.delenv("SECURITY_REVIEW_MODEL", raising=False)
+    monkeypatch.setenv("SG_DUAL_OR", "on" if dual else "off")
+    found = llm.analyze_code_security([("a.py", "x")], is_diff=True)[1]
+    return len(found), llm.last_review_failed(), len(calls)
+
+
+@pytest.mark.parametrize("replies,expected", [
+    (["plain clean"], (0, False, 1)), (["plain vuln"], (1, False, 1)),
+    (["fenced clean"], (0, False, 1)), (["fenced vuln"], (1, False, 1)),
+    (["bad fence", "fenced clean"], (0, True, 2)), (["prose", "fenced clean"], (0, True, 2)),
+    (["bad fence", "fenced vuln"], (1, False, 2)), (["prose", "fenced vuln"], (1, False, 2)),
+    (["error", "fenced clean"], (0, False, 2)),
+    # As before: a reply the API held to the schema.
+    (["prose", "plain clean"], (0, False, 2)), (["bad fence", "plain vuln"], (1, False, 2)),
+])
+def test_retry_after_an_unread_reply(monkeypatch, replies, expected):
+    assert _review(monkeypatch, replies) == expected
+
+
+@pytest.mark.parametrize("replies,expected", [
+    (["fenced clean", "prose", "prose"], (0, True)), (["fenced clean", "bad fence", "fenced clean"], (0, True)),
+    (["fenced clean", "fenced clean"], (0, False)), (["fenced clean", "fenced vuln"], (1, False)),
+    (["fenced vuln", "prose", "prose"], (1, False)), (["plain clean", "plain clean"], (0, False)),
+    (["fenced clean", "plain vuln"], (1, False)), (["prose", "prose", "fenced clean", "fenced clean"], (0, True)),
+])
+def test_two_legs(monkeypatch, replies, expected):
+    assert _review(monkeypatch, replies, dual=True)[:2] == expected
 
 
 def test_the_reason_is_logged(monkeypatch):

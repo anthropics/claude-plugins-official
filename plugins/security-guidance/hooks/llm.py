@@ -1371,17 +1371,32 @@ def _whole_reply_object(content, schema, stop_reason):
         return None, "the object does not fit the schema"
     if value[flag] != bool(value[findings]):
         return None, "the object contradicts itself"
-    return value, ""
+    return _Unheld(value), ""
+
+
+class _Unheld(dict):
+    """An object from a reply that nothing held to the schema."""
+
+
+def _without_lone_clean(result, flag, unread):
+    """None for an _Unheld `result` that says "nothing found" when another
+    reply of the same review could not be read: that one may have said
+    otherwise, and "nothing" fits the schema more easily than a finding."""
+    if unread and isinstance(result, _Unheld) and not result.get(flag):
+        debug_log("a reply of this review could not be read, so one without findings does not count")
+        return None
+    return result
 
 
 def _call_claude(prompt, output_schema, thinking_budget=10000, max_tokens=16000, model=None,
-                 retry_5xx=True, cacheable_prefix=None):
+                 retry_5xx=True, cacheable_prefix=None, unread=None):
     """
     Call the configured LLM model with extended thinking and structured outputs.
     cacheable_prefix: static text sent ahead of `prompt` as its own content block
     with cache_control, so repeated calls share a cached request prefix.
     Model defaults to default_review_model(); SECURITY_REVIEW_MODEL overrides it.
     Returns parsed JSON response or None on failure.
+    unread: a list that gets an entry for a reply that could not be read.
     On failure, sets module-level _last_call_claude_http_error to the HTTP status
     (or -1 for network/timeout) so callers can distinguish API failure from an
     empty-result success.
@@ -1530,10 +1545,12 @@ def _call_claude(prompt, output_schema, thinking_budget=10000, max_tokens=16000,
         if block.get("type") == "text":
             try:
                 return json.loads(block["text"])
-            except (ValueError, RecursionError, TypeError) as e:
+            except json.JSONDecodeError as e:
                 value, why = _whole_reply_object(content, output_schema, response_data.get("stop_reason"))
                 if value is None:
                     debug_log(f"JSON parse error: {e}" + (f"; {why}" if why else ""))
+                    if unread is not None:
+                        unread.append(why)
                 return value
 
     debug_log("No text block in response")
@@ -1579,34 +1596,36 @@ def _call_claude_dual_or(prompt, output_schema, *, bool_key: str, list_key: str,
     # Not looked up for a pinned model, which is never retried on another.
     fallback = None if explicit else retry_review_model()
 
+    unread: list = []
     if not _dual_or_enabled():
         # Single-call path. Reuse the same sonnet-fallback retry as a dual_or
         # leg so a 529/400 on the primary doesn't drop recall to zero.
         r = _call_claude(prompt, output_schema, thinking_budget=thinking_budget,
                          max_tokens=max_tokens, model=primary, retry_5xx=False,
-                         cacheable_prefix=cacheable_prefix)
+                         cacheable_prefix=cacheable_prefix, unread=unread)
         if r is None and not explicit and not _gateway_review_timed_out:
             debug_log(f"single: {primary} failed, falling back to sonnet")
             r = _call_claude(prompt, output_schema, thinking_budget=thinking_budget,
                              max_tokens=max_tokens, model=fallback,
-                             retry_5xx=True, cacheable_prefix=cacheable_prefix)
-        return r
+                             retry_5xx=True, cacheable_prefix=cacheable_prefix, unread=unread)
+        return _without_lone_clean(r, bool_key, unread)
 
     def _leg():
         r = _call_claude(prompt, output_schema, thinking_budget=thinking_budget,
                          max_tokens=max_tokens, model=primary, retry_5xx=False,
-                         cacheable_prefix=cacheable_prefix)
+                         cacheable_prefix=cacheable_prefix, unread=unread)
         if r is None and not explicit and not _gateway_review_timed_out:
             debug_log(f"dual_or: {primary} leg failed, falling back to sonnet")
             r = _call_claude(prompt, output_schema, thinking_budget=thinking_budget,
                              max_tokens=max_tokens, model=fallback,
-                             retry_5xx=True, cacheable_prefix=cacheable_prefix)
+                             retry_5xx=True, cacheable_prefix=cacheable_prefix, unread=unread)
         return r
 
     with ThreadPoolExecutor(max_workers=2) as ex:
         fa = ex.submit(_leg)
         fb = ex.submit(_leg)
         ra, rb = fa.result(), fb.result()
+    ra, rb = (_without_lone_clean(r, bool_key, unread) for r in (ra, rb))
 
     if ra is None and rb is None:
         return None
