@@ -1310,6 +1310,70 @@ def _call_claude_via_sdk(prompt, output_schema, *, max_tokens=16000, model=None,
         return None
 
 
+_FENCED_RE = re.compile(r"```(?:json)?[ \t]*\r?\n(.*)```", re.S | re.I | re.A)
+
+
+def _each_key_once(pairs):
+    obj = dict(pairs)
+    if len(obj) != len(pairs):
+        raise ValueError("a key is there twice")
+    return obj
+
+
+def _fits(value, schema):
+    """Whether `value` is what `schema` describes: the part of JSON schema
+    that the review schemas use, and nothing for any other."""
+    kind = schema.get("type")
+    if kind == "object":
+        props = schema.get("properties") or {}
+        return (isinstance(value, dict) and all(k in value for k in schema.get("required") or ())
+                and all(k in props and _fits(v, props[k]) for k, v in value.items()))
+    if kind == "array":
+        return isinstance(value, list) and all(_fits(v, schema.get("items") or {}) for v in value)
+    if kind == "string":
+        return isinstance(value, str) and value in schema.get("enum", [value])
+    return kind == "boolean" and isinstance(value, bool)
+
+
+def _whole_reply_object(content, schema, stop_reason):
+    """(the JSON object that is the whole reply, or None, and why not) for a
+    reply whose first text block is not JSON.
+
+    The API holds a reply to the schema. A model behind a gateway may be held
+    to nothing and put the object in a code fence, or a blank block before it
+    (#6928). That is read, but only as the whole of a reply that ended by
+    itself. Never out of a longer text: the model has just read code that
+    somebody may have written for it, and next to a verdict in prose an object
+    may be a quotation from there, in whatever way it was spelled.
+    """
+    texts = []
+    for block in content:
+        kind = block.get("type") if isinstance(block, dict) else None
+        if kind == "text" and isinstance(block.get("text"), str):
+            text = block["text"].strip("\ufeff \t\r\n")
+            if text:
+                texts.append(text)
+        elif kind not in ("thinking", "redacted_thinking"):
+            return None, "a block that is no text"
+    flag, findings = (list((schema or {}).get("required") or ()) + [None, None])[:2]
+    if not flag or not findings:
+        return None, ""
+    if len(texts) != 1:
+        return None, f"{len(texts)} blocks with text"
+    if stop_reason != "end_turn":
+        return None, f"stop_reason {str(stop_reason)[:40]!r}"
+    fenced = _FENCED_RE.fullmatch(texts[0])
+    try:
+        value = json.loads(fenced.group(1) if fenced else texts[0], object_pairs_hook=_each_key_once)
+    except (ValueError, RecursionError) as e:
+        return None, f"in its code fence: {e}" if fenced else ""
+    if not _fits(value, schema):
+        return None, "the object does not fit the schema"
+    if value[flag] != bool(value[findings]):
+        return None, "the object contradicts itself"
+    return value, ""
+
+
 def _call_claude(prompt, output_schema, thinking_budget=10000, max_tokens=16000, model=None,
                  retry_5xx=True, cacheable_prefix=None):
     """
@@ -1461,13 +1525,16 @@ def _call_claude(prompt, output_schema, thinking_budget=10000, max_tokens=16000,
         return None
 
     # Find the text block (skip thinking blocks)
-    for block in response_data.get("content", []):
+    content = response_data.get("content", [])
+    for block in content:
         if block.get("type") == "text":
             try:
                 return json.loads(block["text"])
-            except json.JSONDecodeError as e:
-                debug_log(f"JSON parse error: {e}")
-                return None
+            except (ValueError, RecursionError, TypeError) as e:
+                value, why = _whole_reply_object(content, output_schema, response_data.get("stop_reason"))
+                if value is None:
+                    debug_log(f"JSON parse error: {e}" + (f"; {why}" if why else ""))
+                return value
 
     debug_log("No text block in response")
     return None
