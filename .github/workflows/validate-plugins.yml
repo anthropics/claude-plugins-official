@@ -79,7 +79,7 @@ jobs:
 
       - name: Validate marketplace.json
         if: steps.marketplace.outputs.changed == 'true'
-        uses: anthropics/claude-plugins-community/.github/actions/validate-plugins@163301d1904c0a994539f5226ce0fcd65b8652bf
+        uses: anthropics/claude-plugins-community/.github/actions/validate-plugins@24479d5a1fb7a1c4f068a6d3b74d0c0fbc1acfda
         with:
           marketplace-path: .claude-plugin/marketplace.json
           skip-local-folders: "true"
