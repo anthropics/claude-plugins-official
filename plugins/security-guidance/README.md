@@ -128,9 +128,22 @@ Where that data goes depends on your Claude Code configuration:
 - **Claude apps gateway, signed in with `/login`:** your installed Claude Code sends the reviews to the gateway, using its own stored sign-in. The plugin never reads the sign-in. The gateway operator's terms apply.
 - **3rd-party providers** (Bedrock / Vertex / Foundry / Mantle): sent to your configured provider endpoint. The provider's data-handling terms apply (e.g., AWS / GCP / Azure).
 
-The plugin writes its own debug log to `~/.claude/security/log.txt` (override with `SECURITY_GUIDANCE_DEBUG_LOG`). The log contains diffstate metadata, finding categories, the Agent SDK's own warnings and errors, and up to 20 lines of stderr from each Claude Code run the plugin starts for a review (20 in all for each agentic commit review, which starts several runs) — no full file contents or model prompts — and rotates at 1 MB. Nothing is uploaded.
+The plugin writes its own debug log to `~/.claude/security/log.txt` (override with `SECURITY_GUIDANCE_DEBUG_LOG`). The log contains diffstate metadata, finding categories, the Agent SDK's own warnings and errors, and up to 20 lines of stderr from each Claude Code run the plugin starts for a review (20 in all for each agentic commit review, which starts several runs) — no full file contents or model prompts — and rotates at 1 MB. The log is not uploaded.
 
 The agentic commit reviewer, and every review on a 3rd-party provider, runs an inner Claude Code through the Agent SDK. The plugin starts it with `--no-session-persistence`, so these runs are not saved as session transcripts under `~/.claude/projects/`. Set `SECURITY_GUIDANCE_PERSIST_SESSIONS=1` to keep them, for example to debug a review; a saved transcript contains the full review prompt, including diff hunks, and is removed by Claude Code's normal session cleanup (`cleanupPeriodDays`). A Claude Code older than 2.0.63 does not have the flag; the review then runs without it and is saved as before.
+
+### Usage data
+
+The plugin's hooks report numbers and true/false values about their own work to Claude Code, in the `metrics` field of their output. The plugin sends them nowhere itself. Claude Code can add them to its [usage metrics](https://code.claude.com/docs/en/data-usage#telemetry-services); that page says who receives those. The values cover:
+
+- **Reviews:** whether a review ran or why it was skipped, how long it took, how many files it covered, how many findings and of which severity, tokens, estimated cost, and error codes. When a model call fails, also which network settings were in use (a proxy, a custom CA file, an empty certificate store).
+- **Pattern warnings:** which built-in rules matched, and which were fixed or left at the end of the turn, as numbers. For your own rules, counts, timings and flags for how they are written, never their names or text.
+- **The repository and the turn:** counts, sizes and timings (for example commits, changed and untracked files, files whose name looks like a secret, index entries, size of a diff), how changes relate to Claude's own edits, which kinds of settings that name programs for git the repository has (for example Git LFS or nbstripout), and a sample of Bash calls without a commit or push in them (that there was one, not the command).
+- **The setup:** flags such as "no git repository", "no credentials", "reviews go through a gateway" or "on a WSL drive", the plugin's and Python's versions, other Pythons found, and how the hooks were started and the Agent SDK was installed (result codes, times, and a number from 0 to 999 computed from an install error line).
+
+They hold no code, diffs, prompts, commands, text of findings, file names, paths, URLs or repository names.
+
+Claude Code's metrics are off by default on Bedrock, Vertex, Foundry and Claude Platform on AWS, and `DISABLE_TELEMETRY=1`, `DO_NOT_TRACK=1` or `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` turns them off elsewhere. With a claude.ai sign-in these variables also stop the LLM reviews (see [Credentials](#credentials)); reviews on an API key, a cloud provider or a Claude apps gateway sign-in keep running. `SECURITY_GUIDANCE_DISABLE=1` stops the plugin's work but not the field. In [portable mode](#hook-output-for-other-hosts) the hooks leave the field out.
 
 ### Review usage and cost
 

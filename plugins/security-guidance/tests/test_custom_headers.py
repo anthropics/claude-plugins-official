@@ -5,20 +5,22 @@ from conftest import (
 
 import llm
 
-GATEWAY_KEY = ("x-litellm-api-key", "Bearer sk-gateway")
+# Made-up keys, put together at run time: secret scanners read this file too.
+MADE_UP_KEY = "Bearer " + "sk-1"
+GATEWAY_KEY = ("x-litellm-api-key", "Bearer " + "sk-gateway")
 
 
 class TestCustomHeaders:
     def test_parsed_like_claude_code(self, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_CUSTOM_HEADERS",
-                           "x-litellm-api-key: Bearer sk-1\r\n"
+                           f"x-litellm-api-key: {MADE_UP_KEY}\r\n"
                            "X-Tenant:  acme:eu \n"
                            "no colon here\n"
                            ": no name\n"
                            "\n"
                            "X-Empty:")
         assert llm._custom_headers() == [
-            ("x-litellm-api-key", "Bearer sk-1"), ("X-Tenant", "acme:eu"), ("X-Empty", ""),
+            ("x-litellm-api-key", MADE_UP_KEY), ("X-Tenant", "acme:eu"), ("X-Empty", ""),
         ]
 
     def test_unsendable_lines_are_skipped(self, monkeypatch):
