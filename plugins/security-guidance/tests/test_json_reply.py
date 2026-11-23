@@ -42,17 +42,27 @@ F = "```json\n%s\n```"
 
 
 def read(texts, schema=SCHEMA, stop="end_turn"):
-    return llm._read_reply({"content": [{"type": "text", "text": t} for t in texts], "stop_reason": stop}, schema)
+    """The verdict, also when it is only one for _from_fences."""
+    fenced = []
+    plain = llm._read_reply({"content": [{"type": "text", "text": t} for t in texts], "stop_reason": stop}, schema, fenced)
+    assert plain is None or not fenced
+    return fenced[0] if fenced else plain
 
 
 @pytest.mark.parametrize("verdict", [CLEAN, VULN, json.dumps(json.loads(VULN), indent=2)])
 @pytest.mark.parametrize("texts", [
     ["%s"], [F], ["```\n%s\n```"], ["```json\n\n  %s\n\n```\n"], ["```json\r\n%s\r\n```"], ["```JSON \n%s```"],
-    ["\n", "%s"], ["", F], [" %s \n"], ["\ufeff%s"], ["\n\n" + F + "\n"], ["\ufeff\n" + F], ["\ufeff", "%s"], ["\n\ufeff\n", F],
+    ["", F], [" %s \n"], ["\n\n" + F + "\n"], ["\ufeff\n" + F], ["\n\ufeff\n", F],
 ])
 def test_reply_is_read(texts, verdict):
     texts = [t.replace("%s", verdict) for t in texts]
     assert read(texts) == json.loads(verdict)
+
+
+@pytest.mark.parametrize("texts", [["\n", "%s"], ["\ufeff%s"], ["\ufeff", "%s"], ["", " %s"]])
+@pytest.mark.parametrize("verdict", [CLEAN, VULN])
+def test_without_a_fence_everything_is_as_before(texts, verdict):
+    assert read([t.replace("%s", verdict) for t in texts]) is None
 
 
 def test_every_schema_in_use_is_read_in_full():
@@ -204,7 +214,9 @@ def _through_call(monkeypatch, content, stop="end_turn"):
     monkeypatch.setattr(llm, "_urlopen", lambda *a, **k: Response())
     monkeypatch.setattr(llm, "ANTHROPIC_API_KEY", "k")
     monkeypatch.setattr(llm, "HAS_API_CREDENTIALS", True)
-    return llm._call_claude("x", SCHEMA, model="m")
+    fenced = []
+    plain = llm._call_claude("x", SCHEMA, model="m", fenced=fenced)
+    return fenced[0] if fenced else plain
 
 
 TEXT = {"type": "text", "text": F % CLEAN}
@@ -254,7 +266,7 @@ NO_VERDICT = ABORTS + SETTLES_AS_BEFORE + ["prose", "bad fence", "null", "other 
                                            "tool", "refusal", "thinking", "empty body"]
 
 
-def _review(monkeypatch, replies, dual=False):
+def _review(monkeypatch, replies, dual=False, pinned=False):
     """(findings, failed, calls) of a review whose calls get `replies` in turn."""
     left, calls, lock = list(replies), [], threading.Lock()
 
@@ -276,31 +288,51 @@ def _review(monkeypatch, replies, dual=False):
                         ("default_review_model", lambda: "m"), ("retry_review_model", lambda: "n")):
         monkeypatch.setattr(llm, name, value)
     monkeypatch.delenv("SECURITY_REVIEW_MODEL", raising=False)
+    if pinned:
+        monkeypatch.setenv("SECURITY_REVIEW_MODEL", "m")
     monkeypatch.setenv("SG_DUAL_OR", "on" if dual else "off")
-    found = llm.analyze_code_security([("a.py", "x")], is_diff=True)[1]
+    found = _review.found = llm.analyze_code_security([("a.py", "x")], is_diff=True)[1]
     return len(found), llm.last_review_failed(), len(calls)
 
 
+LOOSE = {  # plain replies the API's schema would not allow, delivered since always
+    "extra key": {"hasVulnerabilities": True, "vulnerabilities": [FINDING], "summary": "s"},
+    "extra item key": {"hasVulnerabilities": True, "vulnerabilities": [{**FINDING, "line": 3}]},
+    "no severity": {"hasVulnerabilities": True, "vulnerabilities": [{k: v for k, v in FINDING.items() if k != "severity"}]},
+    "info beside it": {"hasVulnerabilities": True, "vulnerabilities": [FINDING, {**FINDING, "severity": "info"}]},
+}
+REPLIES.update({k: json.dumps(v) for k, v in LOOSE.items()})
+REPLIES["{}"] = "{}"
+REPLIES["loose clean"] = '{"hasVulnerabilities": false, "vulnerabilities": [], "summary": "ok"}'
+UNSURE = ["fenced clean", "fenced low"]
+
+
 @pytest.mark.parametrize("replies,expected", [
-    (["plain clean"], (0, False, 1)), (["plain vuln"], (1, False, 1)),
-    (["fenced clean"], (0, False, 1)), (["fenced vuln"], (1, False, 1)),
+    (["plain clean"], (0, False, 1)), (["plain vuln"], (1, False, 1)), (["fenced vuln"], (1, False, 2)),
+    (["fenced vuln", "plain clean"], (0, False, 2)), (["fenced vuln", "plain vuln"], (1, False, 2)),
+    (["fenced vuln", "error"], (1, False, 2)), (["fenced vuln", "fenced clean"], (1, False, 2)),
+    (["fenced vuln", "{}"], (0, True, 2)),
+    # One fenced "nothing" asks the other model, as it always did.
+    (["fenced clean", "fenced clean"], (0, False, 2)), (["fenced clean", "fenced low"], (0, False, 2)),
+    (["fenced low", "fenced clean"], (0, False, 2)), (["fenced clean", "plain clean"], (0, False, 2)),
+    (["fenced clean", "plain vuln"], (1, False, 2)), (["fenced low", "plain vuln"], (1, False, 2)),
+    (["fenced clean", "fenced vuln"], (1, False, 2)), (["fenced clean", "extra key"], (1, False, 2)),
+    (["fenced clean", "error"], (0, True, 2)), (["fenced clean", "prose"], (0, True, 2)),
     (["bad fence", "fenced clean"], (0, True, 2)), (["prose", "fenced clean"], (0, True, 2)),
+    (["error", "fenced clean"], (0, True, 2)), (["error", "fenced low"], (0, True, 2)),
     (["bad fence", "fenced vuln"], (1, False, 2)), (["prose", "fenced vuln"], (1, False, 2)),
-    (["error", "fenced clean"], (0, False, 2)),
-    # As before: a reply the API held to the schema.
+    (["error", "fenced vuln"], (1, False, 2)),
     (["prose", "plain clean"], (0, False, 2)), (["bad fence", "plain vuln"], (1, False, 2)),
 ])
-def test_retry_after_an_unread_reply(monkeypatch, replies, expected):
+def test_one_look(monkeypatch, replies, expected):
     assert _review(monkeypatch, replies) == expected
 
 
 @pytest.mark.parametrize("first", NO_VERDICT)
-@pytest.mark.parametrize("second", ["fenced clean", "fenced low"])
-def test_unheld_reply_without_findings_never_settles_it_beside_a_non_verdict(monkeypatch, first, second):
+@pytest.mark.parametrize("second", UNSURE)
+def test_unsure_reply_after_a_non_verdict_does_not_settle_it(monkeypatch, first, second):
     if first not in SETTLES_AS_BEFORE:
         assert _review(monkeypatch, [first, second])[:2] == (0, True)
-    for replies in ([second, first, first], [first, second, first]):
-        assert _review(monkeypatch, replies, dual=True)[:2] == (0, True)
 
 
 @pytest.mark.parametrize("first", SETTLES_AS_BEFORE)
@@ -308,38 +340,143 @@ def test_plain_reply_of_another_shape_on_its_own_is_taken_as_before(monkeypatch,
     assert _review(monkeypatch, [first]) == (0, False, 1)
 
 
-@pytest.mark.parametrize("first", [n for n in NO_VERDICT if n not in ABORTS])
-def test_unheld_finding_stands_beside_a_non_verdict(monkeypatch, first):
-    # A plain non-verdict that is no null is not retried, so it is at most one call.
-    assert _review(monkeypatch, ["fenced vuln", first, first], dual=True)[:2] == (1, False)
-
-
 @pytest.mark.parametrize("first", ABORTS)
 def test_reply_that_json_cannot_hold_fails_the_review_as_before(monkeypatch, first):
     assert _review(monkeypatch, [first, "fenced clean"]) == (0, True, 1)
 
 
-@pytest.mark.parametrize("second", ["fenced clean", "fenced low"])
-def test_alone_it_settles_it(monkeypatch, second):
-    assert _review(monkeypatch, [second]) == (0, False, 1)
-    assert _review(monkeypatch, ["error", second]) == (0, False, 2)
-    assert _review(monkeypatch, [second, second], dual=True)[:2] == (0, False)
+@pytest.mark.parametrize("second", UNSURE)
+def test_pinned_model_has_no_second_one_to_ask(monkeypatch, second):
+    assert _review(monkeypatch, [second], pinned=True) == (0, False, 1)
+    assert _review(monkeypatch, [second, second], dual=True, pinned=True) == (0, False, 2)
+    assert _review(monkeypatch, ["error"], pinned=True) == (0, True, 1)
 
 
-@pytest.mark.parametrize("replies,expected", [
-    (["fenced clean", "prose", "prose"], (0, True)), (["fenced clean", "bad fence", "fenced clean"], (0, True)),
-    (["fenced clean", "fenced clean"], (0, False)), (["fenced clean", "fenced vuln"], (1, False)),
-    (["fenced vuln", "prose", "prose"], (1, False)), (["plain clean", "plain clean"], (0, False)),
-    (["fenced clean", "plain vuln"], (1, False)), (["prose", "prose", "fenced clean", "fenced clean"], (0, True)),
-])
-def test_two_legs(monkeypatch, replies, expected):
-    assert _review(monkeypatch, replies, dual=True)[:2] == expected
+# What two looks gave before fenced replies were read, as (findings, failed).
+WITHOUT_FENCES = {"plain clean": (0, False), "plain vuln": (1, False), "loose clean": (0, False),
+                  "extra key": (1, False), "extra item key": (1, False), "no severity": (1, False),
+                  "info beside it": (1, False), "flag only": (0, False), "flag but none": (0, False),
+                  "prose": (0, True), "error": (0, True), "bad fence": (0, True), "null": (0, True)}
+
+
+@pytest.mark.parametrize("plain", sorted(WITHOUT_FENCES))
+@pytest.mark.parametrize("unsure", UNSURE)
+@pytest.mark.parametrize("turn", [False, True])
+def test_unsure_leg_changes_nothing_beside_another(monkeypatch, plain, unsure, turn):
+    pair = [unsure, plain][::-1] if turn else [unsure, plain]
+    assert _review(monkeypatch, pair, dual=True, pinned=True)[:2] == WITHOUT_FENCES[plain]
+
+
+@pytest.mark.parametrize("plain", sorted(WITHOUT_FENCES))
+@pytest.mark.parametrize("turn", [False, True])
+@pytest.mark.parametrize("pinned", [False, True])
+def test_fenced_finding_counts_only_where_there_was_no_verdict(monkeypatch, plain, turn, pinned):
+    other = {**FINDING, "filePath": "b.py"}
+    monkeypatch.setitem(REPLIES, "fenced other", F % json.dumps({"hasVulnerabilities": True, "vulnerabilities": [other]}))
+    pair = ["fenced other", plain][::-1] if turn else ["fenced other", plain]
+    before = WITHOUT_FENCES[plain]
+    assert _review(monkeypatch, pair, dual=True, pinned=pinned)[:2] == ((1, False) if before[1] else before)
+    assert (other in _review.found) == before[1]
+
+
+@pytest.mark.parametrize("pair,severity", [(("fenced low", "fenced vuln"), "high"), (("fenced vuln", "fenced medium"), "high")])
+def test_like_findings_are_one_with_the_highest_severity(monkeypatch, pair, severity):
+    monkeypatch.setitem(REPLIES, "fenced medium", F % VULN.replace('"high"', '"medium"'))
+    for replies in (list(pair), list(pair)[::-1]):
+        for dual in (False, True):
+            _review(monkeypatch, replies, dual=dual, pinned=dual)
+            assert [v["severity"] for v in _review.found] == [severity]
+
+
+def test_two_problems_on_one_line_are_both_there(monkeypatch):
+    two = [FINDING, {**FINDING, "category": "y"}]
+    monkeypatch.setitem(REPLIES, "fenced two", F % json.dumps({"hasVulnerabilities": True, "vulnerabilities": two}))
+    for replies, pinned in ((["fenced two"], True), (["fenced two", "fenced two"], False), (["fenced two", "fenced vuln"], False)):
+        _review(monkeypatch, replies, pinned=pinned)
+        assert _review.found == two
+
+
+def test_every_call_has_its_own_list(monkeypatch):
+    lists = []
+
+    def call(*a, fenced=None, **k):
+        lists.append(fenced)
+    monkeypatch.setattr(llm, "_call_claude", call)
+    monkeypatch.delenv("SECURITY_REVIEW_MODEL", raising=False)
+    monkeypatch.setenv("SG_DUAL_OR", "on")
+    assert llm._call_claude_dual_or("p", SCHEMA, bool_key="hasVulnerabilities", list_key="vulnerabilities") is None
+    assert len(lists) == 4 and len({id(x) for x in lists}) == 4
+
+
+@pytest.mark.parametrize("item", ["x", {}, {"a": 1}, {"filePath": "a"}])
+def test_items_of_another_shape_do_not_raise(item):
+    llm._from_fences([[{"f": True, "l": [item]}]], True, "f", "l")
+
+
+def test_concerns_out_of_fences():
+    schema = _schemas()[1]
+    flag, findings = schema["required"]
+    item = {k: (v.get("enum") or ["x"])[0] for k, v in schema["properties"][findings]["items"]["properties"].items()}
+    verdict = {flag: True, findings: [item]}
+    assert llm._from_fences([[verdict], [verdict]], False, flag, findings) == verdict
+
+
+def test_a_failure_before_it_is_forgotten(monkeypatch):
+    assert _review(monkeypatch, ["error", "fenced vuln"])[:2] == (1, False)
+    assert llm.last_review_status() is None and llm._last_call_claude_http_error is None
+
+
+@pytest.mark.parametrize("stop", [["x"] * 3, {"a": 1}, None])
+def test_odd_stop_reason_is_no_verdict(stop):
+    assert read([F % VULN], stop=stop) is None
+
+
+def test_deep_stop_reason_is_no_verdict():
+    deep = []
+    for _ in range(100_000):
+        deep = [deep]
+    assert read([F % VULN], stop=deep) is None
+
+
+@pytest.mark.parametrize("single", ["fenced clean", "fenced vuln", "plain clean", "plain vuln"])
+@pytest.mark.parametrize("agentic", ["finds two", "clean", "fails", "late"])
+def test_race(monkeypatch, single, agentic):
+    import security_reminder_hook as hook
+    two = [{**FINDING, "category": "b"}, {**FINDING, "category": "c"}]
+
+    def slow(*a, **k):
+        time.sleep(2 if agentic == "late" else 0.5)
+        return {"finds two": ("g", two, {"agentic": True}), "late": ("g", two, {"agentic": True}),
+                "clean": (None, [], {"agentic": True}),
+                "fails": (None, [], {"agentic_fallback": "investigate:x"})}[agentic]
+    for name, value in (("agentic_review", slow), ("_RACE_MAX_WAIT_S", 1.2), ("_RACE_END_S", 5)):
+        monkeypatch.setattr(hook, name, value)
+    monkeypatch.setenv("SG_AGENTIC_RACE_DELAY_S", "0")
+    monkeypatch.delenv("SG_AGENTIC_NO_RACE", raising=False)
+
+    def one(*a, fenced=None, **k):
+        if single.startswith("plain"):
+            return json.loads(REPLIES[single])
+        fenced.append(read([REPLIES[single]]))
+    monkeypatch.setattr(llm, "_call_claude", one)
+    monkeypatch.setattr(llm, "HAS_API_CREDENTIALS", True)
+    monkeypatch.setenv("SECURITY_REVIEW_MODEL", "pinned")
+    vulns, m = hook._agentic_review_with_race("/", [("a.py", "x")], ["a.py"], [])[1:]
+    plain = single.startswith("plain")
+    agentic_wins = not plain and agentic in ("finds two", "clean")
+    assert m["race_winner"] == (1 if agentic_wins else 2)
+    if agentic_wins:
+        assert len(vulns) == (2 if agentic == "finds two" else 0)
+    else:
+        assert len(vulns) == single.endswith("vuln")
+        assert m["review_failed"] == (single == "fenced clean" and agentic == "late")
+        assert m.get("api_error") is None
 
 
 def test_the_reason_is_logged(monkeypatch):
     said = []
     monkeypatch.setattr(llm, "debug_log", said.append)
-    for content, stop, word in (([TEXT, TEXT], "end_turn", "2 blocks"), ([TEXT], "x" * 99, "stop_reason"),
+    for content, stop, word in (([TEXT, TEXT], "end_turn", "2 blocks"), ([TEXT], "x" * 99, "did not end by itself"),
                                 ([{"type": "text", "text": F % VULN[:-1]}], "end_turn", "in its code fence"),
                                 ([{"type": "text", "text": F % BAD_SEVERITY}], "end_turn", "does not fit")):
         _through_call(monkeypatch, content, stop)
@@ -355,9 +492,3 @@ def test_stop_reason_of_the_response(monkeypatch, stop):
 def test_plain_first_block_beside_another_kind_is_read_as_before(monkeypatch):
     content = [{"type": "text", "text": CLEAN}, {"type": "tool_use", "name": "x", "input": {}}]
     assert _through_call(monkeypatch, content) == json.loads(CLEAN)
-
-
-@pytest.mark.parametrize("pair", [("fenced low", "plain vuln"), ("fenced low", "fenced vuln")])
-def test_low_look_does_not_hide_the_same_finding_of_the_other(monkeypatch, pair):
-    for replies in (list(pair), list(pair)[::-1]):
-        assert _review(monkeypatch, replies, dual=True)[:2] == (1, False)

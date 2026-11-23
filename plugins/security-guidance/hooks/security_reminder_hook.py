@@ -1664,10 +1664,10 @@ def _agentic_review_with_race(
 
     Agentic starts at t=0. After SG_AGENTIC_RACE_DELAY_S (default 180s), the
     single-shot diff reviewer also starts. Whichever finishes first wins,
-    except that a single-shot review with no verdict waits for agentic up to
-    _RACE_MAX_WAIT_S from the start, and that if agentic fails after the
-    fallback started, the fallback's result (or, past the deadline, no
-    verdict) is returned so the caller never starts another review. If agentic
+    except that a single-shot review with no verdict, or one out of a code
+    fence, waits for agentic up to _RACE_MAX_WAIT_S from the start, and that if
+    agentic fails after the fallback started, the fallback's result (or, past
+    the deadline, no verdict) is returned so the caller never starts another review. If agentic
     finishes before the delay, the fallback never runs.
 
     `spent_s`, the time the hook has already run, comes off the delay and both
@@ -1720,10 +1720,15 @@ def _agentic_review_with_race(
         result = _single_shot_review(diff_files, previous_findings)
         fallback_result["r"] = result
         fallback_done.set()
-        if result[2]["review_failed"]:
+        from_fences = llm.last_review_from_fences()
+        if result[2]["review_failed"] or from_fences:
             # A failed fallback does not win: the agentic review's inner
-            # CLI may still get a verdict where direct calls cannot.
+            # CLI may still get a verdict where direct calls cannot. Nor does
+            # one whose verdict was the last resort (_from_fences in llm.py).
             agentic_done.wait(timeout=max(0.0, deadline - _t.monotonic()))
+            if from_fences and not result[1] and not agentic_done.is_set():
+                # Not "nothing found" while the other reviewer is at work.
+                result = (None, [], {"agentic": False, "review_failed": True, "api_error": None})
         try:
             q.put_nowait(("fallback", result))
         except _queue.Full:
