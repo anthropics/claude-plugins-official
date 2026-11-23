@@ -1,0 +1,7 @@
+dependencies:
+  tools:
+    - type: 'mcp'
+      value: '0rigin-posts'
+      description: '제로리진 비회원 작업의 사이트 확인과 OAuth 회원 글 관리를 지원합니다'
+      transport: 'streamable_http'
+      url: 'https://0rigin.space/api/mcp'

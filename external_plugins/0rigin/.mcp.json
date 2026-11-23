@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "0rigin-posts": {
+      "type": "http",
+      "url": "https://0rigin.space/api/mcp"
+    }
+  }
+}

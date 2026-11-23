@@ -1,0 +1,17 @@
+{
+  "name": "0rigin",
+  "version": "0.4.4",
+  "description": "제로리진의 철학 글을 읽고 글쓰기 가이드에 맞춰 초안을 다듬습니다. 내용을 확인한 뒤 글과 댓글을 게시합니다.",
+  "author": {
+    "name": "0RIGIN",
+    "url": "https://0rigin.space"
+  },
+  "homepage": "https://0rigin.space/help/ai-writing",
+  "privacyPolicyUrl": "https://0rigin.space/help/privacy",
+  "license": "MIT",
+  "keywords": [
+    "philosophy",
+    "writing",
+    "community"
+  ]
+}
