@@ -84,6 +84,14 @@ esac
 
 # Names whose interpreter runs but cannot see the hook script ("|"-separated).
 sg_unreadable=""
+# The other names that are there but cannot be used, each with why, e.g.
+# "python3 (exit 127)". sg_failed_short is for one short line: python3, python
+# and py -3, a full path by its last part, each once. sg_failed_versioned is
+# the first of the python3.NN names.
+sg_failed=""
+sg_failed_short=""
+sg_failed_versioned=""
+sg_failed_others=""
 
 probe() {
     # $1..N: the interpreter command (may be multi-word like `py -3`)
@@ -117,8 +125,39 @@ probe() {
 
 # Use as `ask ... || { note_unreadable "<name>"; continue; }` (see ask below).
 note_unreadable() {
-    [ $? -eq 3 ] && sg_unreadable="$sg_unreadable|$1|"
+    local rc=$?
+    if [ "$rc" -eq 3 ]; then
+        sg_unreadable="$sg_unreadable|$1|"
+    else
+        note_failed "$1" "exit $rc"
+    fi
     return 0
+}
+
+# For the message at the end only; changes nothing about the search.
+note_failed() {
+    local entry="${1##*/} ($2)"
+    sg_failed="${sg_failed:+$sg_failed, }$1 ($2)"
+    case "$1" in
+        */*) ;;
+        python3.*)
+            [ -z "$sg_failed_versioned" ] || sg_failed_others=1
+            sg_failed_versioned="${sg_failed_versioned:-$entry}"
+            return 0 ;;
+    esac
+    case ", $sg_failed_short, " in
+        *", $entry, "*) ;;
+        *) sg_failed_short="${sg_failed_short:+$sg_failed_short, }$entry" ;;
+    esac
+}
+
+# $1 answered with $v and is not started: notes it when that is not a version,
+# as from a version manager's shim that prints its complaint and exits 0.
+note_answer() {
+    case "$v" in
+        [0-9]*.[0-9]*) ;;
+        *) note_failed "$1" "unexpected answer" ;;
+    esac
 }
 
 # Where packaged aliases exist (and bash has what telling them apart needs).
@@ -381,6 +420,7 @@ for cmd in "python3.13" "python3.12" "python3.11" "python3.10"; do
         sg_direct "$cmd"
         exec "$cmd" "$@"
     fi
+    note_failed "$cmd" "unexpected answer"
 done
 
 # Pass 2 — bare interpreters, but only if SDK-compatible. Covers Linux distros
@@ -403,6 +443,7 @@ for cmd in "python3" "python" "py -3"; do
     case "$v" in
         [0-9]*.[0-9]*) [ -n "$sg_older" ] || sg_older="$cmd" ;;
     esac
+    note_answer "$cmd"
 done
 
 # Pass 2b — minor versions newer than the pass 1 list, so a machine whose
@@ -420,6 +461,7 @@ for cmd in "python3.14" "python3.15" "python3.16" "python3.17" "python3.18" "pyt
     if is_sdk_compatible "$v"; then
         exec "$cmd" "$@"
     fi
+    note_failed "$cmd" "unexpected answer"
 done
 
 # Pass 3 — fallback to any Python 3, even <3.10. Pattern-based checks
@@ -478,6 +520,7 @@ for cmd in "${sg_candidates[@]}"; do
     case "$v" in
         [0-9]*.[0-9]*) [ -n "$sg_fallback" ] || sg_fallback="$cmd" ;;
     esac
+    note_answer "$cmd"
 done
 if [ -n "$sg_fallback" ]; then
     exec "$sg_fallback" "$@"
@@ -490,15 +533,29 @@ if [ -n "$sg_unreadable" ]; then
     echo "  hook script: $SG_TARGET" >&2
     echo "  on Windows this happens when python, python3 and py are Microsoft Store or Python Install Manager aliases;" >&2
     echo "  install Python from https://python.org and put it ahead of ...\\Microsoft\\WindowsApps in PATH" >&2
+    [ -z "$sg_failed" ] || echo "  also tried: $sg_failed" >&2
     # No Python to report it, so the launcher emits the metric itself.
     echo '{"metrics": {"launcher_unreadable": 1}}'
     exit 1
 fi
-echo "security-guidance: no working Python 3 interpreter found." >&2
+# Claude Code's terminal shows only the first line of a failed hook, so what
+# tells a broken interpreter from a missing one is on it. Not all of it: a
+# version manager's folder has a name per version.
+sg_why=""
+if [ -n "$sg_failed" ]; then
+    sg_why="${sg_failed_short:-$sg_failed_versioned}"
+    if [ -n "$sg_failed_short" ] && [ -n "$sg_failed_versioned" ]; then sg_failed_others=1; fi
+    sg_why=" On PATH but not usable: $sg_why${sg_failed_others:+, and more}."
+fi
+echo "security-guidance: no working Python 3 interpreter found.$sg_why" >&2
 echo "  tried: python3.13 to python3.10, python3, python, py -3, python3.14 to python3.19" >&2
+[ -z "$sg_failed" ] || echo "  failed: $sg_failed" >&2
 if [ -n "$sg_skipped" ]; then
     echo "  not started: $sg_skipped (App Installer's alias, which is not a Python)" >&2
 fi
+# --version, because it is safe in any folder: -m and -c import from it.
+[ -z "$sg_failed" ] || echo "  running one of the failed ones with --version in the project folder may show why" >&2
+[ -z "$sg_failed" ] || echo "  if that does not help:" >&2
 echo "  on Windows, install Python from https://python.org (NOT the Microsoft Store)" >&2
 echo "  on macOS, install Python 3.10+ via Homebrew (\`brew install python\`)" >&2
 exit 1
