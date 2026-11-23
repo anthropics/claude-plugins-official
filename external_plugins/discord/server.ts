@@ -909,7 +909,10 @@ client.on('interactionCreate', async (interaction: Interaction) => {
 })
 
 client.on('messageCreate', msg => {
-  if (msg.author.bot) return
+  // EXPERIMENT: bot-to-bot messages allowed (the `msg.author.bot` guard that
+  // prevented agent loops is removed). Still ignore our own messages so the
+  // bot never reacts to what it just sent.
+  if (msg.author.id === client.user?.id) return
   // First message of a thread started from a message: a system pointer back
   // to that message, with no text of its own.
   if (msg.type === MessageType.ThreadStarterMessage) return
