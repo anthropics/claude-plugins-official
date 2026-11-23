@@ -12,8 +12,12 @@ name: Scan Plugins
 # workflow force-resets bump/plugin-shas every night, which makes the same
 # SHAs reappear in the diff on consecutive nights — without a cache, the
 # scan would re-burn ~90s of Claude time per entry per night. The cache is
-# keyed on the policy hash so a prompt or schema change invalidates all
-# verdicts and triggers a clean re-scan.
+# keyed on the hash of the policy the run actually uses, so a prompt or
+# schema change invalidates all verdicts and triggers a clean re-scan. The
+# cache directory and that policy live under the runner's temp directory,
+# outside the checkout; verdicts are only read back from an actual
+# actions/cache restore, and only on workflow_dispatch runs — a pull_request
+# run always reviews its changed entries fresh.
 #
 # Failure handling: a cached `passes:false` verdict still fails the job. The
 # Revert Failed Bumps workflow (revert-failed-bumps.yml) reacts to that by
@@ -43,8 +47,9 @@ concurrency:
 
 env:
   MARKETPLACE: .claude-plugin/marketplace.json
-  CACHE_DIR: ${{ github.workspace }}/.scan-cache
   CACHE_TTL_DAYS: '30'
+  # CACHE_DIR and POLICY_PROMPT are exported by the "Prepare scan directories
+  # and policy" step; both point under the runner's temp directory.
 
 jobs:
   scan:
@@ -83,22 +88,62 @@ jobs:
       # The previous "Require ANTHROPIC_API_KEY" fail-closed guard is
       # therefore no longer needed.
 
-      # Verdict cache, keyed on the policy content hash. A prompt change
-      # invalidates every cached verdict — that is intentional. The save key
-      # includes run_id so each run writes a fresh cache; restore-keys picks
-      # the most recent one. Verdicts older than CACHE_TTL_DAYS are pruned on
-      # restore to bound cache size as the marketplace grows.
-      - name: Restore verdict cache
+      # The verdict cache and the policy the scan runs with both live under
+      # the runner's temp directory, never inside the PR checkout. On
+      # pull_request the policy files (.github/policy/) are read from the base
+      # commit: a PR that edits the policy is scanned under the policy already
+      # on the base branch, and its edit takes effect for scans after it
+      # merges. A workflow_dispatch run uses the dispatched ref's own copy.
+      # The step also emits the hash the cache is keyed on.
+      - name: Prepare scan directories and policy
         if: steps.changes.outputs.relevant == 'true'
+        id: policy
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          cache_dir="$RUNNER_TEMP/scan-cache"
+          policy_dir="$RUNNER_TEMP/scan-policy"
+          rm -rf "$cache_dir" "$policy_dir"
+          mkdir -p "$cache_dir" "$policy_dir"
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            if ! git cat-file -e "${BASE_SHA}:.github/policy/prompt.md" 2>/dev/null; then
+              echo "::error::.github/policy/prompt.md does not exist at base commit ${BASE_SHA}; the scan policy has to be on the base branch before it can be used."
+              exit 1
+            fi
+            git archive --format=tar "$BASE_SHA" .github/policy | tar -x -C "$policy_dir" --strip-components=2
+          else
+            cp -R .github/policy/. "$policy_dir/"
+          fi
+          policy_hash="$(cd "$policy_dir" && find . -type f -print0 | sort -z | xargs -0r sha256sum | sha256sum | cut -c1-16)"
+          {
+            echo "CACHE_DIR=$cache_dir"
+            echo "POLICY_PROMPT=$policy_dir/prompt.md"
+          } >> "$GITHUB_ENV"
+          echo "hash=$policy_hash" >> "$GITHUB_OUTPUT"
+          echo "::notice::Scan policy $policy_hash from $([[ "$EVENT_NAME" == "pull_request" ]] && echo "base commit ${BASE_SHA:0:12}" || echo "the dispatched ref")."
+
+      # Verdict cache, keyed on the policy content hash from the step above.
+      # A prompt change invalidates every cached verdict — that is
+      # intentional. The save key includes run_id so each run writes a fresh
+      # cache; restore-keys picks the most recent one. Verdicts older than
+      # CACHE_TTL_DAYS are pruned on restore to bound cache size as the
+      # marketplace grows.
+      #
+      # The cache is only used on workflow_dispatch (the nightly bump path). PR runs
+      # review their changed entries fresh each time.
+      - name: Restore verdict cache
+        if: steps.changes.outputs.relevant == 'true' && github.event_name != 'pull_request'
         id: cache-restore
         uses: actions/cache/restore@v4
         with:
-          path: .scan-cache
+          path: ${{ env.CACHE_DIR }}
           # run_attempt so a re-run can save its own verdicts (cache keys are
           # immutable; without it a re-run would silently fail to save).
-          key: scan-verdicts-${{ hashFiles('.github/policy/**') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: scan-verdicts-${{ steps.policy.outputs.hash }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            scan-verdicts-${{ hashFiles('.github/policy/**') }}-
+            scan-verdicts-${{ steps.policy.outputs.hash }}-
 
       # Split the diff into cached (skip) and uncached (scan) entries. The
       # cache key is "<name>@<sha>" — a SHA is immutable, so a verdict for a
@@ -110,12 +155,14 @@ jobs:
           BASE_REF: ${{ steps.changes.outputs.base_ref }}
           SCAN_ALL: ${{ inputs.scan_all || 'false' }}
           TTL_DAYS: ${{ env.CACHE_TTL_DAYS }}
+          CACHE_MATCHED_KEY: ${{ steps.cache-restore.outputs.cache-matched-key }}
         run: |
           set -euo pipefail
           mkdir -p "$CACHE_DIR"
 
-          # Initialize / prune the verdict map.
-          if [[ -f "$CACHE_DIR/verdicts.json" ]] && jq -e 'type == "object"' "$CACHE_DIR/verdicts.json" >/dev/null 2>&1; then
+          # Initialize / prune the verdict map. A verdicts.json is only trusted
+          # when actions/cache actually restored one in the step above.
+          if [[ -n "$CACHE_MATCHED_KEY" && -f "$CACHE_DIR/verdicts.json" ]] && jq -e 'type == "object"' "$CACHE_DIR/verdicts.json" >/dev/null 2>&1; then
             # Drop entries older than TTL. Verdicts are immutable per (plugin, sha)
             # but pruning keeps the cache from accumulating forever.
             cutoff="$(date -u -d "-${TTL_DAYS} days" +%Y-%m-%dT%H:%M:%SZ)"
@@ -194,21 +241,19 @@ jobs:
         # The verdict (cached + fresh) is what gates the job, not the action's
         # exit code, and the revert workflow needs the artifact even on failure.
         continue-on-error: true
-        # Pinned to claude-plugins-community#34 (WIF input support).
-        # TODO: re-pin to a main-branch SHA once #34 merges.
-        uses: anthropics/claude-plugins-community/.github/actions/scan-plugins@426e469f322952061102b286b378c0c9733a0934
+        # Pin to a claude-plugins-community main-branch commit.
+        uses: anthropics/claude-plugins-community/.github/actions/scan-plugins@24479d5a1fb7a1c4f068a6d3b74d0c0fbc1acfda
         with:
           # Anthropic auth via Workload Identity Federation — the action
-          # mints a GitHub OIDC token (id-token: write above) and the claude
-          # CLI exchanges it for a short-lived bearer. The federation rule is
+          # mints a GitHub OIDC token (id-token: write above) and exchanges it
+          # for a short-lived bearer. The federation rule is
           # bound to this repository (repository_id-pinned).
           anthropic-federation-rule-id: fdrl_0147kJdru6bZKTtzwFNEqsDf
           anthropic-organization-id: 1ec12c5c-6542-4da8-bf2f-c15919aef01c
           anthropic-service-account-id: svac_01DnC3BtPHGjYJEGeuUUXZ8v
-          marketplace-path: .scan-cache/scan-targets.json
-          policy-prompt: .github/policy/prompt.md
+          marketplace-path: ${{ env.CACHE_DIR }}/scan-targets.json
+          policy-prompt: ${{ env.POLICY_PROMPT }}
           fail-on-findings: "true"
-          claude-cli-version: latest
 
       # Merge fresh verdicts into the cache and assemble this run's full
       # verdict set (cached + fresh) for downstream consumers. Runs even when
@@ -242,15 +287,12 @@ jobs:
             echo '[]' > "$CACHE_DIR/scanned-raw.json"
           fi
 
-          # Defense in depth: the scan action runs Claude with Read access over
-          # a cloned external repo. With WIF auth the process env carries a
-          # short-lived OIDC JWT (masked) and the CLI's exchanged bearer
-          # rather than a long-lived sk-ant- key, which bounds the blast
-          # radius of a prompt-injection exfil to a token that expires in
-          # minutes. The sk-ant- scrubber stays as defense-in-depth (covers
-          # any future static-key fallback) so key-shaped strings still never
-          # reach the cache, artifact, or PR comment.
-          jq -c '(.. | strings) |= gsub("sk-ant-[A-Za-z0-9_-]{8,}"; "[REDACTED]")' \
+          # Defense in depth: the verdict's text is shaped by an external repo.
+          # Scrub sk-ant- keys and JWTs (three base64url segments, the first two
+          # starting "eyJ"), so credential-shaped strings never reach the cache,
+          # artifact, or PR comment.
+          jq -c '(.. | strings) |= (gsub("sk-ant-[A-Za-z0-9_-]{8,}"; "[REDACTED]")
+                                   | gsub("eyJ[A-Za-z0-9_-]{8,}\\.eyJ[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}"; "[REDACTED]"))' \
             "$CACHE_DIR/scanned-raw.json" > "$CACHE_DIR/scanned-raw.json.tmp"
           mv "$CACHE_DIR/scanned-raw.json.tmp" "$CACHE_DIR/scanned-raw.json"
 
@@ -346,18 +388,18 @@ jobs:
         with:
           name: scan-verdicts
           path: |
-            .scan-cache/run-verdicts.json
-            .scan-cache/run-failed.json
+            ${{ env.CACHE_DIR }}/run-verdicts.json
+            ${{ env.CACHE_DIR }}/run-failed.json
           retention-days: 7
 
       # Save even when the scan failed — fail verdicts are what stop us from
       # re-burning Claude time on a known-bad SHA every night.
       - name: Save verdict cache
-        if: always() && steps.changes.outputs.relevant == 'true'
+        if: always() && steps.changes.outputs.relevant == 'true' && env.CACHE_DIR != '' && github.event_name != 'pull_request'
         uses: actions/cache/save@v4
         with:
-          path: .scan-cache
-          key: scan-verdicts-${{ hashFiles('.github/policy/**') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.CACHE_DIR }}
+          key: scan-verdicts-${{ steps.policy.outputs.hash }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       # Required-check gate. Fails on either fresh or cached policy failures —
       # a known-bad SHA must keep failing until it is reverted or upstream
@@ -365,6 +407,7 @@ jobs:
       - name: Gate on policy verdict
         if: steps.changes.outputs.relevant == 'true'
         env:
+          CHANGED: ${{ steps.filter.outputs.changed }}
           FAILED: ${{ steps.report.outputs.failed_count || '0' }}
           SCAN_OUTCOME: ${{ steps.scan.outcome }}
         run: |
@@ -379,6 +422,12 @@ jobs:
           # workflow does NOT misread it as "everything passed".
           if [[ "$SCAN_OUTCOME" == "failure" ]]; then
             echo "::error::Scan step failed without a parseable policy verdict (likely an infra error)."
+            exit 1
+          fi
+          # Every changed external entry needs its own passing verdict.
+          passed="$(jq '[.[] | select(.passes == true)] | length' "$CACHE_DIR/run-verdicts.json")"
+          if [[ "$passed" != "$CHANGED" ]]; then
+            echo "::error::$passed of $CHANGED changed external entries have a passing policy verdict. See the scan step log."
             exit 1
           fi
 

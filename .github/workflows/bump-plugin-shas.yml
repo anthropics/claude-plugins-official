@@ -61,7 +61,7 @@ jobs:
 
       # createCommitOnBranch-based bump so commits are signed by GitHub and
       # satisfy the org-level required_signatures ruleset on main.
-      - uses: anthropics/claude-plugins-community/.github/actions/bump-plugin-shas@9247660a88cf3f49456a2f6464d66fe4ea4f4a77
+      - uses: anthropics/claude-plugins-community/.github/actions/bump-plugin-shas@24479d5a1fb7a1c4f068a6d3b74d0c0fbc1acfda
         id: bump
         with:
           marketplace-path: .claude-plugin/marketplace.json
