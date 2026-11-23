@@ -84,7 +84,7 @@ esac
 
 # Names whose interpreter runs but cannot see the hook script ("|"-separated).
 sg_unreadable=""
-# The other names that are on PATH but gave no version, each with why, e.g.
+# The other names that are there but cannot be used, each with why, e.g.
 # "python3 (exit 127)". sg_failed_short is for one short line: python3, python
 # and py -3, a full path by its last part, each once. sg_failed_versioned is
 # the first of the python3.NN names.
@@ -140,6 +140,7 @@ note_failed() {
     local entry="${1##*/} ($2)"
     sg_failed="${sg_failed:+$sg_failed, }$1 ($2)"
     case "$1" in
+        */*) ;;
         python3.*)
             [ -z "$sg_failed_versioned" ] || sg_failed_others=1
             sg_failed_versioned="${sg_failed_versioned:-$entry}"
@@ -151,12 +152,12 @@ note_failed() {
     esac
 }
 
-# The name answered with $v: notes it when that is not a version, as from a
-# version manager's shim that prints its complaint and exits 0.
+# $1 answered with $v and is not started: notes it when that is not a version,
+# as from a version manager's shim that prints its complaint and exits 0.
 note_answer() {
     case "$v" in
         [0-9]*.[0-9]*) ;;
-        *) note_failed "$1" "no version in its answer" ;;
+        *) note_failed "$1" "unexpected answer" ;;
     esac
 }
 
@@ -553,7 +554,7 @@ for cmd in "python3.13" "python3.12" "python3.11" "python3.10"; do
         sg_direct "$cmd"
         exec "$cmd" "$@"
     fi
-    note_answer "$cmd"
+    note_failed "$cmd" "unexpected answer"
 done
 
 # Pass 2 — bare interpreters, but only if SDK-compatible. Covers Linux distros
@@ -594,7 +595,7 @@ for cmd in "python3.14" "python3.15" "python3.16" "python3.17" "python3.18" "pyt
         sg_direct "$cmd"
         exec "$cmd" "$@"
     fi
-    note_answer "$cmd"
+    note_failed "$cmd" "unexpected answer"
 done
 
 # Pass 3 — fallback to any Python 3, even <3.10. Pattern-based checks
@@ -680,18 +681,17 @@ sg_why=""
 if [ -n "$sg_failed" ]; then
     sg_why="${sg_failed_short:-$sg_failed_versioned}"
     if [ -n "$sg_failed_short" ] && [ -n "$sg_failed_versioned" ]; then sg_failed_others=1; fi
-    sg_why=" On PATH but did not work as Python 3.6 or later: $sg_why${sg_failed_others:+, and others}."
+    sg_why=" On PATH but not usable: $sg_why${sg_failed_others:+, and more}."
 fi
 echo "security-guidance: no working Python 3 interpreter found.$sg_why" >&2
 echo "  tried: python3.13 to python3.10, python3, python, py -3, python3.14 to python3.19" >&2
-if [ -n "$sg_failed" ]; then
-    echo "  failed: $sg_failed" >&2
-    echo "  to see why, start one as it is written here, with nothing after it, in the project folder" >&2
-fi
+[ -z "$sg_failed" ] || echo "  failed: $sg_failed" >&2
 if [ -n "$sg_skipped" ]; then
     echo "  not started: $sg_skipped (App Installer's alias, which is not a Python)" >&2
 fi
-[ -z "$sg_failed" ] || echo "  if that does not help, or none of those is meant to be Python 3:" >&2
+# --version, because it is safe in any folder: -m and -c import from it.
+[ -z "$sg_failed" ] || echo "  running one of the failed ones with --version in the project folder may show why" >&2
+[ -z "$sg_failed" ] || echo "  if that does not help:" >&2
 echo "  on Windows, install Python from https://python.org (NOT the Microsoft Store)" >&2
 echo "  on macOS, install Python 3.10+ via Homebrew (\`brew install python\`)" >&2
 exit 1

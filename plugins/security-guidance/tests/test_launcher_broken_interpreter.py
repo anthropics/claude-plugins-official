@@ -19,16 +19,19 @@ from conftest import HOOKS_DIR
 
 SHIM = HOOKS_DIR / "sg-python.sh"
 BASH = shutil.which("bash") or "/bin/bash"
-BASH_MAJOR = int(subprocess.run([BASH, "-c", "echo ${BASH_VERSINFO[0]}"], capture_output=True,
-                                text=True).stdout.strip() or 0)
+try:
+    BASH_MAJOR = int(subprocess.run([BASH, "-c", "echo ${BASH_VERSINFO[0]}"], capture_output=True,
+                                    text=True).stdout.strip() or 0)
+except (OSError, ValueError):
+    BASH_MAJOR = 0
 FIRST = "security-guidance: no working Python 3 interpreter found."
-WHY = " On PATH but did not work as Python 3.6 or later: "
+WHY = " On PATH but not usable: "
 
 
 @pytest.fixture
 def box(tmp_path):
     (tmp_path / "bin").mkdir()
-    (tmp_path / "hook.py").write_text("print('ran')\n")
+    (tmp_path / "hook.py").write_text("import sys\nprint('ran', sys.stdin.read())\n")
     return tmp_path
 
 
@@ -51,7 +54,7 @@ def _run(box, *folders, ostype=None):
     env["HOOK"] = str(box / "hook.py")
     posix = [_posix(f) for f in (folders or (box / "bin",))]
     return subprocess.run([BASH, "-c", script, "bash", posix[0], _posix(BASH), _posix(SHIM)] + posix[1:],
-                          input="", capture_output=True, text=True, timeout=60, env=env)
+                          input="payload", capture_output=True, text=True, timeout=60, env=env, cwd=box)
 
 
 def _posix(path):
@@ -76,7 +79,7 @@ def test_the_first_line_has_python3_and_a_later_one_has_them_all(box):
         _add(box / "bin", "python3.%d" % minor, "exit 127")
     _add(box / "bin", "python3", "exit 1")
     lines = _run(box).stderr.splitlines()
-    assert lines[0] == FIRST + WHY + "python3 (exit 1), and others."
+    assert lines[0] == FIRST + WHY + "python3 (exit 1), and more."
     assert ("  failed: python3.13 (exit 127), python3.12 (exit 127), python3.11 (exit 127), "
             "python3.10 (exit 127), python3 (exit 1)") in lines
 
@@ -93,7 +96,7 @@ def test_a_name_that_exits_0_with_no_version_is_named(box, name, body):
     _add(box / "bin", name, body)
     r = _run(box)
     assert r.returncode == 1
-    assert r.stderr.splitlines()[0] == FIRST + WHY + name + " (no version in its answer)."
+    assert r.stderr.splitlines()[0] == FIRST + WHY + name + " (unexpected answer)."
     assert "version is set" not in r.stderr + r.stdout
 
 
@@ -108,20 +111,41 @@ def test_nothing_is_named_when_nothing_is_there(box):
     r = _run(box)
     assert r.returncode == 1
     assert r.stderr.splitlines()[0] == FIRST
-    assert "failed:" not in r.stderr and "none of those" not in r.stderr
+    assert "failed:" not in r.stderr and "--version" not in r.stderr
+
+
+@pytest.mark.parametrize("name", ["python3.12", "python3.14"])
+@pytest.mark.parametrize("answer", ["3.9", "1.2.3 is not installed"])
+def test_a_versioned_name_with_another_version_is_named(box, name, answer):
+    _add(box / "bin", name, "echo '%s'" % answer)
+    assert _run(box).stderr.splitlines()[0] == FIRST + WHY + name + " (unexpected answer)."
+
+
+def test_an_older_python3_is_still_used_and_nothing_is_said(box):
+    _add(box / "bin", "python3.12", "echo 3.9")
+    _add(box / "bin", "python3", "[ \"$1\" = -c ] && { echo 3.9; exit 0; }; echo older ran")
+    r = _run(box)
+    assert (r.returncode, r.stdout.strip(), r.stderr) == (0, "older ran", "")
+
+
+def test_a_folder_named_like_a_version_is_a_path(box):
+    _add(box / "bin", "python3", "exit 4")
+    _add(box / "python3.12", "python3", "exit 5")
+    first = _run(box, box / "bin", "python3.12").stderr.splitlines()[0]
+    assert first == FIRST + WHY + "python3 (exit 4), python3 (exit 5)."
 
 
 def test_several_versioned_names_alone(box):
     _add(box / "bin", "python3.12", "exit 1")
     _add(box / "bin", "python3.14", "exit 2")
-    assert _run(box).stderr.splitlines()[0] == FIRST + WHY + "python3.12 (exit 1), and others."
+    assert _run(box).stderr.splitlines()[0] == FIRST + WHY + "python3.12 (exit 1), and more."
 
 
 def test_a_wrapper_that_talks_before_it_answers(box):
     _add(box / "bin", "python3", "echo notice; exec '%s' \"$@\"" % _posix(sys.executable))
     r = _run(box)
     assert r.returncode == 1
-    assert r.stderr.splitlines()[0] == FIRST + WHY + "python3 (no version in its answer)."
+    assert r.stderr.splitlines()[0] == FIRST + WHY + "python3 (unexpected answer)."
 
 
 def test_the_py_launcher_is_named_with_its_option(box):
@@ -145,7 +169,7 @@ def test_a_second_one_that_gives_no_version(box):
     _add(box / "bin", "python3", "exit 1")
     _add(box / "second", "python3", "exit 0")
     first = _run(box, box / "bin", box / "second").stderr.splitlines()[0]
-    assert first == FIRST + WHY + "python3 (exit 1), python3 (no version in its answer)."
+    assert first == FIRST + WHY + "python3 (exit 1), python3 (unexpected answer)."
 
 
 def test_the_same_failure_in_two_folders_is_on_the_first_line_once(box):
@@ -185,10 +209,12 @@ def test_failures_are_listed_next_to_an_interpreter_that_cannot_read_the_hook(bo
     assert "launcher_unreadable" in r.stdout
 
 
-def test_a_failed_name_is_not_reported_when_another_works(box):
+@pytest.mark.parametrize("body", ["exit 1", "exit 0", "echo 3.9"])
+def test_a_failed_name_is_not_reported_when_another_works(box, body):
+    _add(box / "bin", "python3.13", body)
     _add(box / "bin", "python3", "exit 1")
     _add(box / "bin", "python", "exec '%s' \"$@\"" % _posix(sys.executable))
     r = _run(box)
     assert r.returncode == 0, r.stderr
-    assert r.stdout.strip() == "ran"
+    assert r.stdout.strip() == "ran payload"
     assert r.stderr == ""
