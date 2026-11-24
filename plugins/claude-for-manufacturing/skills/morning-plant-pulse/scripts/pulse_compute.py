@@ -70,8 +70,38 @@ def read_csv(path):
     return rows
 
 
+# Built-in number formats that Excel shows with a date part (time-only ones are left alone).
+_DATE_FMT_IDS = {14, 15, 16, 17, 22, 27, 28, 29, 30, 31, 36} | set(range(50, 59))
+_DAYS_1904_TO_1900 = 1462   # serial of 1904-01-01 in the 1900 date system
+
+
+def _is_date_format(code):
+    code = re.sub(r'"[^"]*"|\\.|\[[^\]]*\]|_.|\*.', "", code)
+    return bool(re.search(r"[yd]", code, re.I))
+
+
+def _date_styles(z, ns):
+    """Indexes of the cell formats (the s attribute) that display a date or time."""
+    if "xl/styles.xml" not in z.namelist():
+        return set()
+    root = ElementTree.fromstring(z.read("xl/styles.xml"))
+    custom = {int(n.get("numFmtId")): n.get("formatCode", "")
+              for n in root.iterfind("m:numFmts/m:numFmt", ns)}
+    out = set()
+    for i, xf in enumerate(root.iterfind("m:cellXfs/m:xf", ns)):
+        fid = int(xf.get("numFmtId", "0"))
+        if fid in _DATE_FMT_IDS or (fid in custom and _is_date_format(custom[fid])):
+            out.add(i)
+    return out
+
+
 def read_xlsx(path):
-    """Every sheet of an XLSX, as {sheet_name: rows}, with the standard library."""
+    """Every sheet of an XLSX, as {sheet_name: rows}, with the standard library.
+
+    A workbook in the 1904 date system (workbookPr date1904) counts days from
+    1904-01-01, 1462 days later than the 1900 system parse_ts and parse_day
+    assume. Cells formatted as dates are moved onto the 1900 serial here, so
+    ordinary numeric quantities are left as they are."""
     ns = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main",
           "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships"}
     out = OrderedDict()
@@ -82,6 +112,9 @@ def read_xlsx(path):
             for si in root.findall("m:si", ns):
                 shared.append("".join(t.text or "" for t in si.iter("{%s}t" % ns["m"])))
         wb = ElementTree.fromstring(z.read("xl/workbook.xml"))
+        pr = wb.find("m:workbookPr", ns)
+        date1904 = pr is not None and pr.get("date1904", "").lower() in ("1", "true")
+        date_styles = _date_styles(z, ns) if date1904 else set()
         rels = ElementTree.fromstring(z.read("xl/_rels/workbook.xml.rels"))
         target = {r.get("Id"): r.get("Target") for r in rels}
         for sh in wb.find("m:sheets", ns):
@@ -104,6 +137,12 @@ def read_xlsx(path):
                         val = "".join(x.text or "" for x in c.iter("{%s}t" % ns["m"]))
                     else:
                         val = v.text if v is not None else ""
+                        if date1904 and val and c.get("t") in (None, "n") \
+                                and int(c.get("s", "0")) in date_styles:
+                            try:
+                                val = repr(float(val) + _DAYS_1904_TO_1900)
+                            except ValueError:
+                                pass
                     cells[col - 1] = val
                 if cells:
                     rows.append([cells.get(i, "") for i in range(max(cells) + 1)])
