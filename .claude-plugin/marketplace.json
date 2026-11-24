@@ -556,7 +556,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/GoogleCloudPlatform/bigquery-data-analytics-plugin.git",
-        "sha": "40b5dbe9f4d61d725e6ef051a385c1592603ea30"
+        "sha": "93e87e9c8145a4c728d44c2959d4eba596f81e92"
       },
       "homepage": "https://github.com/GoogleCloudPlatform/bigquery-data-analytics-plugin"
     },
