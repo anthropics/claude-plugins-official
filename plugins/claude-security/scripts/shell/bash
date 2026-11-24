@@ -1,0 +1,18 @@
+#!/bin/sh
+# Claude Code starts each Bash command of the scan through this file, as "-c -l COMMAND". The loop drops a separate login option such as -l: a login shell can run ~/.bash_logout, which the scan can write.
+options=true
+for word do
+  shift
+  if $options; then
+    case $word in
+      -l | +l | -login | --login) continue ;;
+      -* | +*) ;;
+      *) options=false ;;
+    esac
+  fi
+  set -- "$@" "$word"
+done
+unset BASH_ENV ENV
+# A command needs no model. The sandbox lets only Claude Code's own process call the relay, and with these gone a client that a command starts does not look for it.
+unset ANTHROPIC_BASE_URL ANTHROPIC_BEDROCK_BASE_URL ANTHROPIC_VERTEX_BASE_URL ANTHROPIC_FOUNDRY_BASE_URL
+exec /bin/bash --noprofile --norc "$@"

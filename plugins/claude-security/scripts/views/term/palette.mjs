@@ -1,0 +1,30 @@
+import { clamp, nearest } from './numbers.mjs';
+import { LENSES, SEVERITIES } from './scan.mjs';
+export const PAPER = 0x141413;
+export const RAISED = 0x1f1e1d;
+export const LIFTED = 0x30302e;
+export const HAIRLINE = 0x3d3d3a;
+export const EMBER = 0x2e1d17;
+export const SLATE = 0x5e5d59;
+export const ASH = 0x87867f;
+export const STONE = 0xc2c0b6;
+export const IVORY = 0xfaf9f5;
+export const CLAY = 0xd97757;
+export const SHIMMER = 0xeb9f7f;
+export const PEACH = 0xebc9b7;
+export const CREAM = 0xe3dacc;
+export const GREEN = 0x8fa670;
+const MINT = 0xbcd1ca;
+export const SKY = 0x6a9bcc;
+export const VIOLET = 0xb1a9e0;
+export const AMBER = 0xd9b36c;
+export const ERROR = 0xd6455d;
+export const LENS = [SKY, VIOLET, MINT];
+const SEVERITY = [ERROR, CLAY, AMBER, SKY];
+export const lens = (name) => LENS[LENSES.indexOf(name)];
+export const severity = (level) => SEVERITY[SEVERITIES.indexOf(level)] ?? STONE;
+function channel(start, end, share, shift) {
+	const from = (start >> shift) & 255;
+	return clamp(nearest(from + (((end >> shift) & 255) - from) * share), 0, 255) << shift;
+}
+export const mix = (start, end, share) => channel(start, end, share, 16) | channel(start, end, share, 8) | channel(start, end, share, 0);
