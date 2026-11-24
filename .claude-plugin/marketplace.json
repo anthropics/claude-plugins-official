@@ -555,10 +555,10 @@
       "category": "database",
       "source": {
         "source": "url",
-        "url": "https://github.com/gemini-cli-extensions/bigquery-data-analytics.git",
-        "sha": "6f9b35627d208b03e840271f6522a28f76e7f8df"
+        "url": "https://github.com/GoogleCloudPlatform/bigquery-data-analytics-plugin.git",
+        "sha": "40b5dbe9f4d61d725e6ef051a385c1592603ea30"
       },
-      "homepage": "https://github.com/gemini-cli-extensions/bigquery-data-analytics"
+      "homepage": "https://github.com/GoogleCloudPlatform/bigquery-data-analytics-plugin"
     },
     {
       "name": "boltz",
