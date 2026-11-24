@@ -1,4 +1,5 @@
-"""Whether a path is absolute on any platform, and where an absolute path sits under a root."""
+"""Whether a path is absolute on any platform, where an absolute path sits under a root, and
+whether a relative path stays below its root."""
 
 from __future__ import annotations
 
@@ -24,3 +25,11 @@ def relative(path: str, root: str) -> str | None:
         return None
     # A ".." could name somewhere above root; a normalised path never carries one.
     return None if ".." in inside.parts else inside.as_posix()
+
+
+def below_top(path: str) -> bool:
+    """Whether a normalised repository-relative path stays below the top level: it neither
+    climbs nor starts at a root or a share, and on Windows it holds no backslash or drive either."""
+    return path.split("/", maxsplit=1)[0] not in {"", ".", ".."} and not (
+        os.name == "nt" and ("\\" in path or spelled(path))
+    )

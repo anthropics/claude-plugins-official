@@ -66,6 +66,11 @@ class Catalog:
         number = self.category_of.get(cwe)
         return self.categories[number] if number is not None else None
 
+    def category_name(self, cwe: int) -> str:
+        """The name of the entry `cwe` rolls up to; UNCATEGORIZED where category() is None."""
+        entry = self.category(cwe)
+        return entry.name if entry is not None else UNCATEGORIZED
+
     def defines(self, cwe: int) -> bool:
         """Whether the release defines weakness `cwe` at all; category() is None either way."""
         return cwe in self.category_of
@@ -74,6 +79,11 @@ class Catalog:
 def id_number(cwe_id: str) -> int:
     """The number of a canonical `CWE-<number>` id, the spelling every validated finding carries."""
     return int(cwe_id.removeprefix("CWE-"))
+
+
+def page(number: int) -> str:
+    """The address of MITRE's page on the CWE entry with this number."""
+    return f"https://cwe.mitre.org/data/definitions/{number}.html"
 
 
 catalog = Catalog.load(Path(__file__).resolve().with_name("cwe-categories.json"))
