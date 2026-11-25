@@ -430,13 +430,14 @@ def launcher_probe_metrics():
 
 
 def launcher_direct_metric():
-    """`launcher_direct` when sg-python.sh ran this hook with the interpreter
-    behind a packaged Windows alias instead of the alias: 1 from the path it
-    remembered (one process for the hook), 2 when it had just worked that
-    path out. Read once, like the probe timings.
+    """`launcher_direct` when sg-python.sh started the interpreter by its own
+    path on Windows, instead of the name on PATH: 1 the remembered path behind
+    a packaged alias (one start for the hook), 2 the same, just worked out, 3
+    the remembered path of a regular interpreter (one start), 4 the same, just
+    worked out. Read once, like the probe timings.
     """
     how = os.environ.pop("SG_LAUNCHER_DIRECT", "")
-    return {"launcher_direct": int(how)} if how in ("1", "2") else {}
+    return {"launcher_direct": int(how)} if how in ("1", "2", "3", "4") else {}
 
 
 # Reparse tags that redirect every open below them: symbolic links and

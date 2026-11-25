@@ -107,7 +107,8 @@ probe() {
     # the model, whose reply runs the Stop hook again: an endless loop that
     # never reviewed anything. See #6251, #5781.
     #
-    # On Windows a second line carries sys.executable (see sg_own_path).
+    # On Windows a second line carries sys.executable (see sg_own_path), but not
+    # for a virtual environment's interpreter.
     #
     # Only for `$(probe ...)`: the `exec` replaces that subshell instead of
     # forking a second process from it.
@@ -120,7 +121,7 @@ probe() {
     # line of characters that arrive unchanged: a ">=" was read as a redirect
     # and left a stray file. See #7172. On Windows a name that loses the
     # argument also exits 3, so that pass 4 can start its real interpreter.
-    PYTHONSAFEPATH=1 exec "$@" -c 'import os, sys; t = (sys.argv[1:] or [""])[0]; sys.exit(3) if sys.platform == "win32" and not sys.argv[1:] or t and not (os.path.isfile(t) and os.access(t, os.R_OK)) else print(f"{sys.version_info[0]}.{sys.version_info[1]}"); sys.platform == "win32" and sys.version_info.__ge__((3, 10)) and print(sys.executable)' "$SG_TARGET" 2>/dev/null
+    PYTHONSAFEPATH=1 exec "$@" -c 'import os, sys; t = (sys.argv[1:] or [""])[0]; sys.exit(3) if sys.platform == "win32" and not sys.argv[1:] or t and not (os.path.isfile(t) and os.access(t, os.R_OK)) else print(f"{sys.version_info[0]}.{sys.version_info[1]}"); sys.platform == "win32" and sys.version_info.__ge__((3, 10)) and sys.prefix == sys.base_prefix and print(sys.executable)' "$SG_TARGET" 2>/dev/null
 }
 
 # Use as `ask ... || { note_unreadable "<name>"; continue; }` (see ask below).
@@ -217,6 +218,7 @@ sg_probe_ms=0
 sg_probe_max_ms=0
 sg_probe_first=""
 sg_coarse=""
+sg_rejected=""  # a name that is not a packaged alias was started and not used
 sg_clock() {
     # Sets $sg_now (ms) without starting a process.
     case "${EPOCHREALTIME:-}" in
@@ -252,6 +254,13 @@ ask() {
     if [ "$sg_probe_ms" -gt 0 ]; then
         export SG_LAUNCHER_PROBE_MS=$sg_probe_ms SG_LAUNCHER_PROBE_MAX_MS=$sg_probe_max_ms
     fi
+    # Only where sg_own_path asks: bash 5 on Windows.
+    if [ -n "$sg_memo" ] && { [ $rc -ne 0 ] || ! is_sdk_compatible "${v%$'\r'}"; }; then
+        case "$1" in
+            /*) sg_is_alias_path "$1" || sg_rejected=1 ;;
+            *) { hash "$1" 2>/dev/null && sg_is_alias_path "${BASH_CMDS[$1]:-}"; } || sg_rejected=1 ;;
+        esac
+    fi
     return $rc
 }
 
@@ -268,36 +277,44 @@ is_sdk_compatible() {
     esac
 }
 
-# Packaged launcher aliases on Windows (python, python3 and py under
-# ...\Microsoft\WindowsApps): starting one starts more than Python. The
-# Python Install Manager's aliases make Windows check the package for an
-# update on each start, and the launcher started the chosen name twice per
-# hook, on every Edit, prompt and Stop. See anthropics/claude-code#98929.
+# One interpreter start per hook on Windows. The search below starts the chosen
+# name twice, to check it and to run the hook, on every Edit, prompt and Stop,
+# and a start there can cost more than its own time:
+#   - a packaged alias (python, python3 and py under ...\Microsoft\WindowsApps)
+#     starts more than Python. The Python Install Manager's aliases make Windows
+#     check the package for an update. See anthropics/claude-code#98929.
+#   - in the packaged Claude Desktop app, Windows keeps some kernel memory until
+#     the next restart for every file opened through a junction or symlink under
+#     AppData, and uv's `python3.12` runs its interpreter through one, so every
+#     file Python loads counts. See anthropics/claude-code#96870.
 #
-# So when the name that answers is such an alias and its interpreter is a
-# regular file elsewhere, the hook runs with that file instead, and its path
-# is kept in the plugin's state folder (`launcher-python`) for a day. Later
-# hooks start it directly: one process, and none through the alias. The
-# remembered path is used only while PATH and the hook folder are what they
-# were when it was checked and the file is still there; anything else is the
-# full search below, which writes the entry again. A hook that fails on the
-# remembered path empties the entry, so the next one searches again; deleting
-# the file does the same by hand. One entry: sessions with different PATHs
-# take turns checking, which is still one alias start per hook instead of two.
+# So when the interpreter behind the name is certain (sg_own_path), the hook runs
+# with that file, by its path with the links resolved, and the path is kept in
+# the plugin's state folder (`launcher-python`) for a day. Later hooks start it
+# directly: one start, no alias, no link. The remembered path is used only while
+# PATH and the hook folder are what they were when it was checked and the file
+# is still there; anything else is the full search, which writes the entry again.
+# A hook that fails on the remembered path drops its entry, so the next one
+# searches again; deleting the file does the same by hand. Up to four entries
+# are kept, so sessions with different PATHs do not push each other out.
 #
-# Not while a virtual environment is active: the alias may be answering for
-# that environment's interpreter, which other sessions should not inherit.
+# Not while a virtual environment is active, and never an environment's own
+# interpreter: an environment can be rebuilt with another Python at the same
+# path, and other sessions should not inherit it. Not while PY_PYTHON or
+# PY_PYTHON3 chooses for the py launcher either.
 #
 # Builtins only: nothing here starts a process on the remembered route.
 unset SG_LAUNCHER_DIRECT
 sg_args=("$@")
 sg_exe=""    # sys.executable from the last `ask` (Windows, Python 3.10+)
 sg_own=""    # set by sg_recall and sg_own_path
-sg_memo=""   # the entry's file; empty where none of this applies
+sg_how=""    # with sg_own: "alias", "regular" or "fallback" (regular, by pass 4)
+sg_in_pass4=""
+sg_memo=""   # the file; empty where none of this applies
 sg_target_dir=""
 case "${OSTYPE:-}" in
     msys*|cygwin*)
-        if [ "${BASH_VERSINFO[0]:-0}" -ge 5 ] && [ -n "$SG_TARGET" ] && [ -z "${VIRTUAL_ENV:-}" ]; then
+        if [ "${BASH_VERSINFO[0]:-0}" -ge 5 ] && [ -n "$SG_TARGET" ] && [ -z "${VIRTUAL_ENV:-}${PY_PYTHON:-}${PY_PYTHON3:-}" ]; then
             # The folder _base.state_dir() resolves to.
             sg_home="${USERPROFILE:-${HOME:-}}"
             sg_memo="${SECURITY_WARNINGS_STATE_DIR:-}"
@@ -326,6 +343,7 @@ sg_is_alias_path() {
 sg_startable() {
     local name="${1##*/}"
     case "$1" in
+        //*) return 1 ;;  # a network share, which may be gone for the next hook
         /*) ;;
         *) return 1 ;;
     esac
@@ -337,51 +355,162 @@ sg_startable() {
     [ -f "$1" ] && [ -x "$1" ]
 }
 
-sg_recall() {
-    # Sets $sg_own to the remembered interpreter iff it may run this hook.
-    local tag saved path exe dir end age
-    [ -n "$sg_memo" ] && [ -r "$sg_memo" ] || return 1
-    {
-        IFS= read -r tag && IFS= read -r saved && IFS= read -r path &&
-            IFS= read -r exe && IFS= read -r dir && IFS= read -r end
-    } 2>/dev/null < "$sg_memo" || return 1
-    [ "$tag" = "sg-launcher-python 1" ] && [ "$end" = "end" ] || return 1
-    case "$saved" in
-        ""|*[!0-9]*|????????????*) return 1 ;;
+# Sets $sg_posix to $1, a path as Windows Python prints it, in the form the
+# shell uses.
+sg_to_posix() {
+    local drive
+    sg_posix="$1"
+    case "$1" in
+        [A-Za-z]:[\\/]*)
+            if [ -n "${sg_drive_mounts:-}" ]; then
+                drive="${1:0:1}"
+                sg_posix="/${drive,,}/${1:3}"
+                sg_posix="${sg_posix//\\//}"
+            else
+                sg_posix=$(cygpath -u "$1" 2>/dev/null) || return 1
+            fi ;;
     esac
-    age=$((EPOCHSECONDS - 10#$saved))
-    [ "$age" -ge 0 ] && [ "$age" -lt 86400 ] || return 1
-    [ "$path" = "$PATH" ] && [ "$dir" = "$sg_target_dir" ] || return 1
-    sg_startable "$exe" && [ -r "$SG_TARGET" ] || return 1
-    sg_own="$exe"
+}
+
+# True iff $1, found on PATH, is uv's starter for $2, one of uv's own Pythons:
+# a program in the folder uv puts them in. It always runs the same interpreter.
+sg_is_uv_starter() {
+    local root="${UV_PYTHON_INSTALL_DIR:-}" bin sg_posix
+    if [ -z "$root" ]; then
+        [ -n "${APPDATA:-}" ] || return 1
+        root="$APPDATA/uv/python"
+    fi
+    sg_to_posix "$root" || return 1
+    root="${sg_posix%/}"
+    case "$root" in /?*) ;; *) return 1 ;; esac
+    case "${2,,}" in "${root,,}"/*) ;; *) return 1 ;; esac
+    [ -f "${1%.exe}.exe" ] || return 1
+    for bin in "${UV_PYTHON_BIN_DIR:-}" "${XDG_BIN_HOME:-}" "${sg_home:+$sg_home/.local/bin}"; do
+        if [ -n "$bin" ] && [ "${1%/*}" -ef "$bin" ]; then return 0; fi
+    done
+    return 1
+}
+
+# Reads the file. Sets $sg_keep to the entries for other sessions and, if there
+# is one for this session that is not a day old, $sg_exe_kept and $sg_how.
+sg_read_memo() {
+    local tag saved path exe dir how end age kept=0
+    sg_keep=""
+    sg_exe_kept=""
+    sg_how=""
+    [ -f "$sg_memo" ] && [ -r "$sg_memo" ] || return 0
+    while IFS= read -r tag && IFS= read -r saved && IFS= read -r path &&
+            IFS= read -r exe && IFS= read -r dir && IFS= read -r how && IFS= read -r end; do
+        [ "$tag" = "sg-launcher-python 2" ] && [ "$end" = "end" ] || return 0
+        case "$how" in alias|regular|fallback|search) ;; *) return 0 ;; esac
+        case "$saved" in
+            ""|*[!0-9]*|????????????*) return 0 ;;
+        esac
+        age=$((EPOCHSECONDS - 10#$saved))
+        [ "$age" -ge 0 ] && [ "$age" -lt 86400 ] || continue
+        if [ "$path" = "$PATH" ] && [ "$dir" = "$sg_target_dir" ]; then
+            sg_exe_kept="$exe"
+            sg_how="$how"
+        elif [ "$kept" -lt 3 ]; then
+            kept=$((kept + 1))
+            sg_keep+="$tag"$'\n'"$saved"$'\n'"$path"$'\n'"$exe"$'\n'"$dir"$'\n'"$how"$'\n'"$end"$'\n'
+        fi
+    done 2>/dev/null < "$sg_memo" || true  # it may be locked, or gone by now
+    return 0
+}
+
+# Replaces this session's entry with $1 (empty: none) and keeps the others, read
+# again here because a hook can take minutes. Two hooks writing at once can lose
+# an entry or leave a broken one, which costs a search.
+sg_write_memo() {
+    local how="$sg_how"
+    [ -d "${sg_memo%/*}" ] || return 0
+    [ ! -e "$sg_memo" ] || [ -f "$sg_memo" ] || return 0
+    sg_read_memo
+    sg_how="$how"
+    printf '%s' "$1$sg_keep" 2>/dev/null > "$sg_memo" || true
+}
+
+# Use as `sg_uncertain; return`: for a day this session's hooks search as they
+# always did, instead of working out again that there is nothing to remember.
+sg_uncertain() {
+    sg_entry "" search
+    sg_write_memo "$sg_line"
+    return 1
+}
+
+sg_entry() {
+    # Sets $sg_line to the entry that says: run this session's hooks with $1.
+    sg_line="sg-launcher-python 2"$'\n'"$EPOCHSECONDS"$'\n'"$PATH"$'\n'"$1"$'\n'"$sg_target_dir"$'\n'"$2"$'\n'"end"$'\n'
+}
+
+sg_recall() {
+    # Sets $sg_own and $sg_how to the remembered interpreter iff it may run
+    # this hook.
+    [ -n "$sg_memo" ] || return 1
+    sg_read_memo
+    [ -n "$sg_how" ] || return 1
+    if [ "$sg_how" = search ]; then
+        sg_memo=""  # nothing to look for again today
+        return 1
+    fi
+    sg_startable "$sg_exe_kept" && [ -r "$SG_TARGET" ] || return 1
+    sg_own="$sg_exe_kept"
 }
 
 sg_own_path() {
     # $1: the name that just answered `ask` with version $v. Succeeds, with
-    # $sg_own set, iff that name is a packaged alias whose interpreter is a
-    # regular file elsewhere that reads the hook script when started by
-    # itself and is the same version. Remembers it for the next hooks.
-    local alias="" own="$sg_exe" want="$v" drive
-    [ -n "$sg_memo" ] && [ -n "$own" ] || return 1
-    hash "$1" 2>/dev/null && alias="${BASH_CMDS[$1]:-}"
-    sg_is_alias_path "$alias" || return 1
-    case "$own" in
-        [A-Za-z]:[\\/]*)
-            if [ -n "${sg_drive_mounts:-}" ]; then
-                drive="${own:0:1}"; own="/${drive,,}/${own:3}"; own="${own//\\//}"
-            else
-                own=$(cygpath -u "$own" 2>/dev/null) || return 1
-            fi ;;
+    # $sg_own set, iff it is certain which file runs under that name today and
+    # would run tomorrow: the name is a packaged alias, or the interpreter
+    # itself, or the py launcher, or uv's starter for one of its own Pythons.
+    # (Not certain: a version manager's shim, which chooses by folder, whether
+    # it is this name or an earlier one that had nothing to offer here.)
+    # Remembers the file for the next hooks.
+    local found="" own want="$v" real sg_posix sg_line
+    [ -n "$sg_memo" ] && [ -n "$sg_exe" ] || return 1
+    case "$1" in
+        /*) found="$1" ;;  # pass 4
+        *) hash "$1" 2>/dev/null && found="${BASH_CMDS[$1]:-}" ;;
     esac
-    sg_startable "$own" || return 1
-    ask "$own" || { v=$want; return 1; }
-    v=${v%$'\r'}
-    [ "$v" = "$want" ] || { v=$want; return 1; }
-    sg_own="$own"
-    if [ -d "${sg_memo%/*}" ]; then
-        { printf '%s\n' "sg-launcher-python 1" "$EPOCHSECONDS" "$PATH" "$own" "$sg_target_dir" "end"; } \
-            2>/dev/null > "$sg_memo" || true
+    case "$found" in
+        /*) ;;
+        *) return 1 ;;  # found through a relative PATH entry
+    esac
+    if sg_is_alias_path "$found"; then
+        sg_how=alias
+        sg_to_posix "$sg_exe" || return 1
+        own="$sg_posix"
+        sg_startable "$own" || return 1
+    else
+        [ -z "$sg_rejected" ] || return 1
+        # Where nothing can be kept, the search is all it costs.
+        [ -d "${sg_memo%/*}" ] && [ -w "${sg_memo%/*}" ] || return 1
+        if [ -e "$sg_memo" ]; then [ -f "$sg_memo" ] && [ -w "$sg_memo" ] || return 1; fi
+        sg_how=regular
+        [ -z "$sg_in_pass4" ] || sg_how=fallback
+        sg_to_posix "$sg_exe" || { sg_uncertain; return; }
+        own="$sg_posix"
+        sg_startable "$own" || { sg_uncertain; return; }
+        [ "$found" -ef "$own" ] || [ "$1" = "py" ] || sg_is_uv_starter "$found" "$own" || { sg_uncertain; return; }
+        [ ! -d "${own%/*}/conda-meta" ] || { sg_uncertain; return; }  # a conda environment
     fi
+    # Links resolved. One process, on hooks that do the search only. Full path:
+    # another readlink on PATH may not know Windows' links.
+    real=$(/usr/bin/readlink -f -- "$own" 2>/dev/null </dev/null) || real=""
+    if sg_startable "$real" && [ "$real" -ef "$own" ]; then own="$real"; fi
+    # The probe has run $found; any other path is checked before it is used.
+    if [ "$own" != "$found" ] && [ "$own" != "$found.exe" ]; then
+        if ! ask "$own" || [ "${v%$'\r'}" != "$want" ]; then
+            v=$want
+            [ "$sg_how" != alias ] || return 1
+            sg_uncertain
+            return
+        fi
+        v=${v%$'\r'}
+    fi
+    sg_own="$own"
+    sg_entry "$own" "$sg_how"
+    sg_write_memo "$sg_line"
     return 0
 }
 
@@ -389,21 +518,26 @@ sg_own_path() {
 # behind <name> instead when sg_own_path finds one, else returns.
 sg_direct() {
     if sg_own_path "$@"; then
-        export SG_LAUNCHER_DIRECT=2
+        if [ "$sg_how" = alias ]; then SG_LAUNCHER_DIRECT=2; else SG_LAUNCHER_DIRECT=4; fi
+        export SG_LAUNCHER_DIRECT
         exec "$sg_own" "${sg_args[@]}"
     fi
     return 0
 }
 
 if sg_recall; then
-    export SG_LAUNCHER_DIRECT=1
-    # Not exec'd, so a failure can empty the entry: no probe checked this
+    if [ "$sg_how" = alias ]; then SG_LAUNCHER_DIRECT=1; else SG_LAUNCHER_DIRECT=3; fi
+    export SG_LAUNCHER_DIRECT
+    [ "$sg_how" != fallback ] || export SG_LAUNCHER_FALLBACK=1
+    # Not exec'd, so a failure can drop the entry: no probe checked this
     # interpreter today, and a broken one must not fail every hook for a day.
+    # Exit 2 included, although a review with findings ends that way: so does a
+    # Python that cannot open the script (see probe).
     sg_rc=0
     "$sg_own" "$@" || sg_rc=$?
-    if [ "$sg_rc" -ne 0 ]; then
-        { : > "$sg_memo"; } 2>/dev/null || true
-    fi
+    # `|| true`: under `set -e` nothing here may end the launcher, because the
+    # exit code of the hook is what wakes the model.
+    [ "$sg_rc" -eq 0 ] || sg_write_memo "" || true
     exit "$sg_rc"
 fi
 
@@ -455,10 +589,10 @@ done
 # See #4907, #5024.
 for cmd in "python3.14" "python3.15" "python3.16" "python3.17" "python3.18" "python3.19"; do
     on_path "$cmd" || continue
-    v=$(probe "$cmd") || { note_unreadable "$cmd"; continue; }
-    v=${v%%$'\n'*}
+    ask "$cmd" || { note_unreadable "$cmd"; continue; }
     v=${v%$'\r'}
     if is_sdk_compatible "$v"; then
+        sg_direct "$cmd"
         exec "$cmd" "$@"
     fi
     note_failed "$cmd" "unexpected answer"
@@ -507,6 +641,7 @@ for cmd in "python3" "python" "py -3"; do
     sg_candidates+=("$c")
 done
 export SG_LAUNCHER_FALLBACK=1
+sg_in_pass4=1
 sg_fallback=""
 sg_tried="|"
 for cmd in "${sg_candidates[@]}"; do
@@ -515,6 +650,7 @@ for cmd in "${sg_candidates[@]}"; do
     ask "$cmd" || { note_unreadable "$cmd"; continue; }
     v=${v%$'\r'}
     if is_sdk_compatible "$v"; then
+        sg_direct "$cmd"
         exec "$cmd" "$@"
     fi
     case "$v" in
