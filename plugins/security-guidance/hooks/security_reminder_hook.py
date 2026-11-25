@@ -2191,7 +2191,7 @@ def handle_commit_review_posttooluse(input_data):
     # UnicodeDecodeError outside the except clause.
     diff_files = []
     renamed = []
-    resolved = 0
+    read_shas = []  # newest first, like `shas`
     max_files = 10 * MAX_DIFF_FILES
     for sha in shas:
         try:
@@ -2218,7 +2218,7 @@ def handle_commit_review_posttooluse(input_data):
             _cmd = "git diff" if pre_amend_sha else "git show"
             debug_log(f"Commit review: {_cmd} {sha} rc={result.returncode}")
             continue
-        resolved += 1
+        read_shas.append(sha)
         diff_text = result.stdout.decode("utf-8", errors="replace")
         diff_files.extend(parse_diff_into_files(diff_text))
         names = renamed_into_review(diff_text)
@@ -2226,10 +2226,10 @@ def handle_commit_review_posttooluse(input_data):
             revs, rev = ("show", "--format=", sha), sha
             if pre_amend_sha:
                 revs = ("diff", pre_amend_sha, sha)
-            elif sha != shas[0] and _is_ancestor(repo_root, sha, shas[0]):
+            elif sha != read_shas[0] and _is_ancestor(repo_root, sha, read_shas[0]):
                 # A later commit of the same call can have changed the file
                 # again: show it as the last one left it.
-                revs, rev = ("diff", f"{sha}^", shas[0]), shas[0]
+                revs, rev = ("diff", f"{sha}^", read_shas[0]), read_shas[0]
             renamed += [(name, revs, rev) for name in names]
 
     # Dedup by path. The widened reflog scan can return >1 SHA (e.g.
@@ -2244,7 +2244,7 @@ def handle_commit_review_posttooluse(input_data):
             if not (fp in _seen or _seen.add(fp))
         ]
 
-    if resolved == 0:
+    if not read_shas:
         debug_log("Commit review: no parsed SHA resolved in cwd repo")
         emit_metrics({"skipped": True, "skip_reason": 28, **_base,
                       "shas_found": len(shas), **_diff_read_metrics()})
@@ -2254,7 +2254,7 @@ def handle_commit_review_posttooluse(input_data):
 
     # Empty amend delta = message-only amend (or whitespace-only that the
     # diff already collapses). No code to review; skip cleanly. skip_reason=35.
-    # Gated on resolved > 0 so subprocess failures (caught with `continue`
+    # Gated on read_shas so subprocess failures (caught with `continue`
     # above) don't get mislabeled as message-only — they fall through to
     # skip_reason=28 correctly.
     if pre_amend_sha and not diff_files:
@@ -2275,7 +2275,7 @@ def handle_commit_review_posttooluse(input_data):
                       **_diff_read_metrics()})
         sys.exit(0)
 
-    debug_log(f"Commit review: {resolved}/{len(shas)} sha(s) resolved, "
+    debug_log(f"Commit review: {len(read_shas)}/{len(shas)} sha(s) resolved, "
               f"{len(diff_files)} files")
     if not diff_files:
         debug_log("Commit review: no reviewable source files in commit")
@@ -2330,10 +2330,10 @@ def handle_commit_review_posttooluse(input_data):
 
     # Tell a push review (or the next commit's reflog scan) that these commits
     # are being reviewed, so it does not start a second review of them.
-    _mark_inflight(repo_root, _full_shas(repo_root, shas))
+    _mark_inflight(repo_root, _full_shas(repo_root, read_shas))
     # Count only: keyed on what the reviewer is sent, after the byte caps.
     _diff_token, _seen_m = _diff_review_started(
-        repo_root, _cap_files_for_prompt(diff_files), tip=shas[0])
+        repo_root, _cap_files_for_prompt(diff_files), tip=read_shas[0])
     _TAIL_METRICS.update(_seen_m)
 
     review_start = _time.time()
@@ -2420,12 +2420,14 @@ def handle_commit_review_posttooluse(input_data):
 
     # push-sweep state: record this commit as reviewed (full 40-hex sha) so a
     # later `git push` can advance its diff base past it. Recorded only after a
-    # review that got a verdict, whether or not it found anything. `shas` holds abbreviated refs from
-    # `[branch sha]`; resolve to full so set-membership in the push-sweep is
-    # exact. Best-effort; failures here never block the review result.
+    # review that got a verdict, whether or not it found anything, and only for
+    # the commits git could show: the review saw nothing of the others.
+    # `read_shas` holds abbreviated refs from `[branch sha]`; resolve to full so
+    # set-membership in the push-sweep is exact. Best-effort; failures here
+    # never block the review result.
     try:
         full_shas = []
-        for s in shas:
+        for s in read_shas:
             # See #2099: drop text=True; decode manually for cp1252 safety.
             r = subprocess.run(
                 [*GIT_CMD, "rev-parse", "--verify", "-q", s],
