@@ -234,6 +234,11 @@ def has_key_helper() -> bool:
     return any(each.get("apiKeyHelper") for each in (_user_settings(), *_managed_settings()))
 
 
+def managed_names() -> set[str]:
+    """The variables that the managed settings set."""
+    return {name for each in _managed_settings() for name in provider.settings_env(each)}
+
+
 def refusing_settings() -> list[str]:
     """The managed settings that can keep Claude Code from starting in the sandbox."""
     merged = {name: value for each in _managed_settings() for name, value in each.items()}

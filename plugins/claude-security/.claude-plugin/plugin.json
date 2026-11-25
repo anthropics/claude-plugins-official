@@ -1,6 +1,6 @@
 {
   "name": "claude-security",
-  "version": "0.13.0",
+  "version": "0.13.1",
   "description": "Find and fix vulnerabilities before attackers exploit them. A team of agents maps your code, hunts for exploitable flaws and challenges every finding, so you spend your time on real bugs. Get patches analyzed by a panel of agents, and apply them when you choose. Triage other scanners' results, build a threat model, review pull requests with a GitHub Action, and see your hosted Claude Security findings.",
   "author": {
     "name": "Anthropic",

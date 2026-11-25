@@ -64,7 +64,7 @@ _REFUSED = (
 _MANAGED_CAUSE = (
     "Your organization's managed settings can be the cause: {}. In the sandbox, Claude Code "
     "reaches the model through a relay and loads the plugin from its folder. To scan with no "
-    "sandbox, add --no-sandbox."
+    "sandbox, add --no-sandbox in place of --provider."
 )
 _NOT_RENEWED = "Your login ends soon and could not be renewed. Start claude once to renew it."
 _OTHER_OWNER = (
@@ -81,7 +81,8 @@ _NO_AUTO = (
 )
 _NO_PLUGIN = (
     "Claude Code did not load the plugin, so nothing was scanned. Where managed settings turn the "
-    "plugin on, only its installed copy loads: install it, and add --no-sandbox."
+    "plugin on, only its installed copy loads: install it, and add --no-sandbox in place of "
+    "--provider."
 )
 _LEFT_AUTO = "Claude Code left auto mode during the scan, so the scan can have gaps."
 _UNFINISHED = (

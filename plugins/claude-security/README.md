@@ -70,11 +70,11 @@ In Claude Code 2.1.292 and newer, the plugin's [mod](https://code.claude.com/doc
 
 The `claude-security` command starts Claude Code inside [the plugin's sandbox](#running-in-a-sandbox), runs a scan, and writes the same report. It ships with the plugin: run `<plugin>/claude-security` in the repository (on Windows, `python -IS <plugin>\scripts\cli.py`), where `<plugin>` is the `installPath` that `claude plugin list --json` shows. An update moves that folder, so to type just `claude-security`, as below, run it once with `--install`, or type `/claude-security:install-cli` in Claude Code.
 
-    claude-security                  # scan the codebase
-    claude-security --changes        # scan this branch's changes
-    claude-security --tui            # watch the scan in your terminal
+    claude-security --provider <provider>            # scan the codebase
+    claude-security --provider <provider> --changes  # scan this branch's changes
+    claude-security --provider <provider> --tui      # watch the scan in your terminal
 
-`claude-security --help` lists the options. The command's sandbox needs Linux 5.19 or newer and a user other than root; on Ubuntu 24.04 and newer, add `--sudo`. The command does not run on macOS. On Windows, it stops unless you add `--no-sandbox`. It signs in with your Claude Code login, your provider's variables, `gcloud` or `--credential-command`. If `claude` is a link into a package in your home folder, add `--allow-read` with the folder that holds the package and `node`.
+`--provider` says where your code goes: `anthropic`, `bedrock`, `vertex` or `foundry`, with `--model-base-url` for another host. It is required, except with `--no-sandbox`, where Claude Code chooses. `claude-security --help` lists the options. The command's sandbox needs Linux 5.19 or newer and a user other than root; on Ubuntu 24.04 and newer, add `--sudo`. The command does not run on macOS. On Windows, it stops unless you leave out `--provider` and add `--no-sandbox`. It signs in with your Claude Code login, your provider's variables, `gcloud` or `--credential-command`. If `claude` is a link into a package in your home folder, add `--allow-read` with the folder that holds the package and `node`.
 
 `--tui` needs Node.js 18 or newer. [TUI.md](TUI.md) explains the screen and the keys.
 
