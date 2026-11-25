@@ -222,6 +222,12 @@ def last_review_failed() -> bool:
     return getattr(_review_status, "failed", False)
 
 
+def last_review_from_fences() -> bool:
+    """True if this thread's last analyze_code_security call got its verdict
+    from _from_fences: better than none, and no more than that."""
+    return getattr(_review_status, "from_fences", False)
+
+
 def last_review_status() -> Optional[int]:
     """A copy of the module-wide _last_call_claude_http_error, taken when this
     thread's last analyze_code_security call got no verdict (an overlapping call
@@ -1310,12 +1316,113 @@ def _call_claude_via_sdk(prompt, output_schema, *, max_tokens=16000, model=None,
         return None
 
 
+_FENCED_RE = re.compile(r"```(?:json)?[ \t]*\r?\n(.*)```", re.S | re.I | re.A)
+
+
+def _each_key_once(pairs):
+    obj = dict(pairs)
+    if len(obj) != len(pairs):
+        raise ValueError("a key is there twice")
+    return obj
+
+
+def _fits(value, schema):
+    """Whether `value` is what `schema` describes: the part of JSON schema
+    that the review schemas use, and nothing for any other."""
+    kind = schema.get("type")
+    if kind == "object":
+        props = schema.get("properties") or {}
+        return (isinstance(value, dict) and all(k in value for k in schema.get("required") or ())
+                and all(k in props and _fits(v, props[k]) for k, v in value.items()))
+    if kind == "array":
+        return isinstance(value, list) and all(_fits(v, schema.get("items") or {}) for v in value)
+    if kind == "string":
+        return isinstance(value, str) and value in schema.get("enum", [value])
+    return kind == "boolean" and isinstance(value, bool)
+
+
+def _fenced_verdict(content, schema, stop_reason):
+    """(the verdict in the code fence that is the whole reply, or None, and why
+    not) for a reply whose first text block is not JSON.
+
+    The API holds a reply to the schema. A model behind a gateway may be held
+    to nothing and put the object in a code fence (#6928). That is read, but
+    only as the whole of a reply that ended by itself. Never out of a longer
+    text: the model has just read code that somebody may have written for it,
+    and next to a verdict in prose an object may be a quotation from there, in
+    whatever way it was spelled.
+    """
+    texts = []
+    for block in content:
+        kind = block.get("type") if isinstance(block, dict) else None
+        if kind == "text" and isinstance(block.get("text"), str):
+            text = block["text"].strip("\ufeff \t\r\n")
+            if text:
+                texts.append(text)
+        elif kind not in ("thinking", "redacted_thinking"):
+            return None, "a block that is no text"
+    keys = list((schema or {}).get("required") or ())
+    if len(keys) != 2:
+        return None, ""
+    if len(texts) != 1:
+        return None, f"{len(texts)} blocks with text"
+    fenced = _FENCED_RE.fullmatch(texts[0])
+    if not fenced:
+        return None, ""
+    if stop_reason != "end_turn":
+        return None, "in a code fence, but the reply did not end by itself"
+    try:
+        value = json.loads(fenced.group(1), object_pairs_hook=_each_key_once)
+    except (ValueError, RecursionError) as e:
+        return None, f"in its code fence: {e}"
+    if not _fits(value, schema):
+        return None, "the object does not fit the schema"
+    if value[keys[0]] != bool(value[keys[1]]):
+        return None, "the object contradicts itself"
+    return value, ""
+
+
+def _from_fences(replies, pinned, bool_key, list_key):
+    """The verdict of a review in which no reply was one, or None. `replies`
+    has a list for each call, with the verdict of its code fence if any.
+
+    Only here do fenced replies count: every model has been asked by now, so
+    they take the place of nothing. A finding counts. "Nothing found" (or
+    nothing above low, which is not reported) is easier to give, so it counts
+    if every call gave just that, and more than one did unless the model is
+    pinned and there is no other to ask.
+    """
+    items = [item for reply in replies for verdict in reply for item in verdict[list_key] if isinstance(item, dict)]
+    if all(item.get("severity") == "low" for item in items):
+        if not all(replies) or len(replies) < (1 if pinned else 2):
+            if any(replies):
+                debug_log("a fenced reply without findings does not count here: not every call gave one, or only one did")
+            return None
+    rank = {"critical": 0, "high": 1, "medium": 2}
+    merged: list = []
+    seen: set = set()
+    for item in sorted(items, key=lambda item: rank.get(item.get("severity"), 3)):
+        key = (item.get("filePath"), item.get("category"), item.get("vulnerableCode")) if "filePath" in item else tuple(
+            sorted((k, str(v)) for k, v in item.items()))
+        if key not in seen:
+            seen.add(key)
+            merged.append(item)
+    debug_log(f"the verdict is from code fences, {sum(map(bool, replies))} of {len(replies)} calls")
+    _forget_failed_call()
+    return _FromFences({bool_key: bool(merged), list_key: merged})
+
+
+class _FromFences(dict):
+    """A verdict that _from_fences gave."""
+
+
 def _call_claude(prompt, output_schema, thinking_budget=10000, max_tokens=16000, model=None,
-                 retry_5xx=True, cacheable_prefix=None):
+                 retry_5xx=True, cacheable_prefix=None, fenced=None):
     """
     Call the configured LLM model with extended thinking and structured outputs.
     cacheable_prefix: static text sent ahead of `prompt` as its own content block
     with cache_control, so repeated calls share a cached request prefix.
+    fenced: a list that gets the verdict of a reply that is wholly a code fence.
     Model defaults to default_review_model(); SECURITY_REVIEW_MODEL overrides it.
     Returns parsed JSON response or None on failure.
     On failure, sets module-level _last_call_claude_http_error to the HTTP status
@@ -1460,13 +1567,22 @@ def _call_claude(prompt, output_schema, thinking_budget=10000, max_tokens=16000,
             _record_http_error(401)
         return None
 
+    return _read_reply(response_data, output_schema, fenced)
+
+
+def _read_reply(response_data, output_schema, fenced=None):
     # Find the text block (skip thinking blocks)
-    for block in response_data.get("content", []):
+    content = response_data.get("content", [])
+    for block in content:
         if block.get("type") == "text":
             try:
                 return json.loads(block["text"])
             except json.JSONDecodeError as e:
-                debug_log(f"JSON parse error: {e}")
+                value, why = _fenced_verdict(content, output_schema, response_data.get("stop_reason"))
+                debug_log(f"JSON parse error: {e}" + ("; a verdict in a code fence, kept for the end" if value is not None
+                                                      else f"; {why}" if why else ""))
+                if value is not None and fenced is not None:
+                    fenced.append(value)
                 return None
 
     debug_log("No text block in response")
@@ -1512,28 +1628,35 @@ def _call_claude_dual_or(prompt, output_schema, *, bool_key: str, list_key: str,
     # Not looked up for a pinned model, which is never retried on another.
     fallback = None if explicit else retry_review_model()
 
+    replies: list = []  # a list for each call, see _from_fences
+
+    def _fenced():
+        mine: list = []
+        replies.append(mine)
+        return mine
+
     if not _dual_or_enabled():
         # Single-call path. Reuse the same sonnet-fallback retry as a dual_or
         # leg so a 529/400 on the primary doesn't drop recall to zero.
         r = _call_claude(prompt, output_schema, thinking_budget=thinking_budget,
                          max_tokens=max_tokens, model=primary, retry_5xx=False,
-                         cacheable_prefix=cacheable_prefix)
+                         cacheable_prefix=cacheable_prefix, fenced=_fenced())
         if r is None and not explicit and not _gateway_review_timed_out:
             debug_log(f"single: {primary} failed, falling back to sonnet")
             r = _call_claude(prompt, output_schema, thinking_budget=thinking_budget,
                              max_tokens=max_tokens, model=fallback,
-                             retry_5xx=True, cacheable_prefix=cacheable_prefix)
-        return r
+                             retry_5xx=True, cacheable_prefix=cacheable_prefix, fenced=_fenced())
+        return r if r is not None else _from_fences(replies, bool(explicit), bool_key, list_key)
 
     def _leg():
         r = _call_claude(prompt, output_schema, thinking_budget=thinking_budget,
                          max_tokens=max_tokens, model=primary, retry_5xx=False,
-                         cacheable_prefix=cacheable_prefix)
+                         cacheable_prefix=cacheable_prefix, fenced=_fenced())
         if r is None and not explicit and not _gateway_review_timed_out:
             debug_log(f"dual_or: {primary} leg failed, falling back to sonnet")
             r = _call_claude(prompt, output_schema, thinking_budget=thinking_budget,
                              max_tokens=max_tokens, model=fallback,
-                             retry_5xx=True, cacheable_prefix=cacheable_prefix)
+                             retry_5xx=True, cacheable_prefix=cacheable_prefix, fenced=_fenced())
         return r
 
     with ThreadPoolExecutor(max_workers=2) as ex:
@@ -1542,7 +1665,7 @@ def _call_claude_dual_or(prompt, output_schema, *, bool_key: str, list_key: str,
         ra, rb = fa.result(), fb.result()
 
     if ra is None and rb is None:
-        return None
+        return _from_fences(replies, bool(explicit), bool_key, list_key)
 
     a_list = (ra or {}).get(list_key) or []
     b_list = (rb or {}).get(list_key) or []
@@ -1823,6 +1946,7 @@ def analyze_code_security(files: List[Tuple[str, str]], is_diff: bool = False, p
     """
     _review_status.failed = False
     _review_status.status = None
+    _review_status.from_fences = False
     if not (HAS_API_CREDENTIALS or _gateway_cli) or not files:
         return None, []
 
@@ -1955,6 +2079,7 @@ Respond with a JSON object. If vulnerabilities are found, set hasVulnerabilities
         _review_status.status = _last_call_claude_http_error
         debug_log("LLM code review: no verdict from the model")
         return None, []
+    _review_status.from_fences = isinstance(analysis, _FromFences)
     if not analysis.get("hasVulnerabilities") or not analysis.get("vulnerabilities"):
         debug_log("LLM code review: no vulnerabilities found")
         return None, []
