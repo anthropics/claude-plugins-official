@@ -1424,6 +1424,18 @@ def _list_untracked(cwd):
         debug_log(f"_list_untracked error: {e}")
         return {}
 
+def note_listed(listing, repo, paths):
+    """Add the untracked files about to be reviewed to the `listing` stored for
+    the next Stop. Without it those past the cap, or written just after the
+    listing, would look new again."""
+    paths = [p for p in paths if p not in listing and gitutil._is_reviewable_source(p)]
+    for p in paths[:UNTRACKED_BASELINE_CAP]:
+        try:
+            listing[p] = os.stat(os.path.join(repo, p)).st_mtime_ns
+        except OSError:
+            pass
+
+
 def compute_v2_review_set(cwd, baseline_sha, head_at_capture, untracked_at_baseline=None,
                           since_ns=None):
     """v2 diff strategy: derive the review set from git state alone.
