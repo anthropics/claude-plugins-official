@@ -14,8 +14,8 @@ import security_reminder_hook as hook
 
 
 class _ToolUse:
-    def __init__(self, id, name):
-        self.id, self.name, self.input = id, name, {}
+    def __init__(self, id, name, input=None):
+        self.id, self.name, self.input = id, name, {} if input is None else input
 
 
 class _ToolResult:
@@ -102,6 +102,44 @@ class TestAgenticReview:
         m = _review(tmp_path)
         assert "rv_tool_calls" not in m and "rv_tool_err" not in m
 
+    @pytest.mark.parametrize("verdict, wrapped", [
+        ({"findings": {"findings": []}}, 1),
+        ({"findings": {"findings": [{"filePath": "a.py"}]}}, 1),
+        ({"survived": {"survived": [0]}}, 1),
+        ({"findings": {}}, 0), ({"findings": None}, 0), ({"findings": "none"}, 0),
+        ({"findings": {"filePath": "a.py"}}, 0), ({"findings": {"findings": None}}, 0),
+        ({}, 0), (None, 0), ("[]", 0), ([], 0),
+    ])
+    def test_refused_verdict_is_counted_with_its_shape(self, sdk, tmp_path, verdict, wrapped):
+        call = _ToolUse("t1", "StructuredOutput")
+        call.input = verdict
+        sdk.messages = [sdk.assistant(call), sdk.user([_ToolResult("t1", is_error=True)])]
+        m = _review(tmp_path)
+        assert (m["rv_so_err"], m.get("rv_so_wrapped", 0)) == (1, wrapped)
+
+    def test_accepted_verdict_and_other_errors_are_not_counted(self, sdk, tmp_path):
+        sdk.messages = [
+            sdk.assistant(_ToolUse("t1", "StructuredOutput", {"findings": {"findings": []}}),
+                          _ToolUse("t2", "Read")),
+            sdk.user([_ToolResult("t1", is_error=False), _ToolResult("t2", is_error=True),
+                      _ToolResult("t9", is_error=True)]),
+        ]
+        m = _review(tmp_path)
+        assert "rv_so_err" not in m and "rv_so_wrapped" not in m
+
+    def test_refused_verdicts_are_counted_when_the_review_ends_without_one(
+            self, sdk, tmp_path, monkeypatch):
+        async def query(prompt, options):
+            for i in range(5):
+                yield sdk.assistant(_ToolUse(f"t{i}", "StructuredOutput", {"findings": {"findings": []}}))
+                yield sdk.user([_ToolResult(f"t{i}", is_error=True)])
+            raise RuntimeError("Failed to provide valid structured output after 5 attempts")
+
+        monkeypatch.setattr(sys.modules["claude_agent_sdk"], "query", query)
+        m = _review(tmp_path)
+        assert m["agentic_fallback"].startswith("investigate:")
+        assert (m["rv_so_err"], m["rv_so_wrapped"]) == (5, 5)
+
     def test_directory_missing_before_the_review(self, sdk, tmp_path):
         m = _review(tmp_path / "removed")
         assert m["agentic_fallback"].startswith("investigate:")
@@ -179,6 +217,21 @@ class TestEmittedRow:
         keys = list(self._row(capsys))
         assert keys[-5:] == ["vulns_found", "review_ms", "rv_cwd_gone", "rv_tool_err", "rv_tool_calls"]
 
+    @pytest.mark.parametrize("metrics, sent", [
+        ({"rv_so_err": 1, "rv_so_wrapped": 1}, 101),
+        ({"rv_so_err": 3}, 300),
+        ({"rv_so_err": 250, "rv_so_wrapped": 120}, 9999),
+        ({"rv_so_err": 0, "rv_so_wrapped": 0}, None),
+        ({}, None),
+    ])
+    def test_refused_verdicts_are_one_key(self, capsys, metrics, sent):
+        hook._note_reviewer_context({"rv_tool_calls": 2, "rv_turns": 3, "rv_api_ms": 9, **metrics})
+        hook.emit_metrics({"vulns_found": 0})
+        row = self._row(capsys)
+        assert row.get("rv_so") == sent
+        assert list(row)[-1] == "rv_effort"
+        assert "rv_so_err" not in row and "rv_so_wrapped" not in row
+
     def test_effort_is_one_key_after_every_other_key(self, capsys, monkeypatch):
         monkeypatch.setattr(hook, "_LAUNCHER_METRICS", {"launcher_probe_ms": 7000})
         hook._note_reviewer_context({"rv_api_ms": 9100, "rv_turns": 5, "rv_tool_calls": 4})
@@ -223,6 +276,19 @@ class TestEmittedRow:
         keys = list(self._row(capsys))
         assert keys[-2:] == ["rv_tool_calls", "rv_effort"] and len(keys) <= 20
 
+    def test_refused_verdicts_fit_under_the_cap_on_a_clean_commit_review_row(self, capsys, monkeypatch):
+        """They take the place rv_effort has on such a row."""
+        monkeypatch.setattr(hook, "_usage_metrics", lambda: {
+            "tok_in": 1, "tok_out": 1, "tok_cache_r": 0, "tok_cache_w": 0, "cost_usd": 0.1, "api_calls": 1})
+        hook._note_reviewer_context({"rv_tool_calls": 2, "rv_so_err": 1, "rv_so_wrapped": 1,
+                                     "rv_turns": 3, "rv_api_ms": 9100})
+        hook.emit_metrics({
+            "vulns_found": 0, "commit_review": True, "commit_review_on": True,
+            "sha_via_reflog": True, "reflog_shas_n": 1, "rate_count": 1, "agentic": True,
+            "candidates": 0, "race_winner": 1, "files_reviewed": 1, "review_ms": 9500,
+        })
+        assert "rv_so" in list(self._row(capsys))[:20]
+
     def test_zero_or_absent_keys_are_left_out(self, capsys):
         hook._note_reviewer_context({"rv_tool_calls": 3, "rv_tool_err": 0})
         hook.emit_metrics({"vulns_found": 0})
@@ -246,7 +312,7 @@ class TestRace:
             time.sleep(0.3)  # fails after the fallback has started
             return None, [], {"agentic_fallback": "investigate:RuntimeError",
                               "rv_cwd_gone": 2, "rv_tool_err": 4, "rv_tool_calls": 5,
-                              "rv_turns": 18, "rv_api_ms": 60000}
+                              "rv_so_err": 5, "rv_so_wrapped": 4, "rv_turns": 18, "rv_api_ms": 60000}
 
         monkeypatch.setenv("SG_AGENTIC_RACE_DELAY_S", "0")
         monkeypatch.delenv("SG_AGENTIC_NO_RACE", raising=False)
@@ -262,3 +328,4 @@ class TestRace:
         assert m["race_winner"] == 2 and m["agentic"] is False
         assert (m["rv_cwd_gone"], m["rv_tool_err"], m["rv_tool_calls"]) == (2, 4, 5)
         assert (m["rv_turns"], m["rv_api_ms"]) == (18, 60000)
+        assert (m["rv_so_err"], m["rv_so_wrapped"]) == (5, 4)

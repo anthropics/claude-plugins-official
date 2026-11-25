@@ -1,4 +1,4 @@
-"""Whether a path is a link that a removal must not be sent through."""
+"""Whether a path is a link."""
 
 from __future__ import annotations
 

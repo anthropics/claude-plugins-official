@@ -16,7 +16,8 @@
     "atlassian-forge-skills": "forge-skills",
     "azure-skills": "azure",
     "sonarqube-agent-plugins": "sonarqube",
-    "data-agent-kit-starter-pack": "data-agent-kit"
+    "data-agent-kit-starter-pack": "data-agent-kit",
+    "sap-fiori-mcp-server": "sap-ux-fiori-tools"
   },
   "plugins": [
     {
@@ -89,7 +90,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/AikidoSec/aikido-claude-plugin.git",
-        "sha": "8fdc995a44102a30ad54164e0bdd249d158c725c"
+        "sha": "e72df7749ff54736bc1a6b57acff0c7799c9bda7"
       },
       "homepage": "https://github.com/AikidoSec/aikido-claude-plugin"
     },
@@ -121,22 +122,6 @@
         "source": "git-subdir",
         "url": "https://github.com/airwallex/airwallex-marketplace.git",
         "path": "plugins/airwallex-agentos",
-        "ref": "master",
-        "sha": "877551077786664d1cbeb32013443291c66e69e6"
-      },
-      "homepage": "https://www.airwallex.com/docs"
-    },
-    {
-      "name": "airwallex-dev",
-      "description": "Build Airwallex payment integrations in your own codebase. Generates the checkout, card-element, onboarding, and subscription-billing code for an Airwallex integration and wires it into your project: Hosted Payment Page, Drop-in and Split Card elements, connected-account KYC onboarding, and Billing Hosted Checkout for subscriptions and card-saving. Also plans card-on-file merchant-initiated flows for AI providers such as top-ups and auto-recharge.",
-      "author": {
-        "name": "Airwallex"
-      },
-      "category": "development",
-      "source": {
-        "source": "git-subdir",
-        "url": "https://github.com/airwallex/airwallex-marketplace.git",
-        "path": "plugins/airwallex-dev",
         "ref": "master",
         "sha": "877551077786664d1cbeb32013443291c66e69e6"
       },
@@ -225,9 +210,8 @@
         "url": "https://github.com/amd/skills.git",
         "path": "skills",
         "ref": "main",
-        "sha": "6916fb371d1cba40757b223cf16b4cd4912b202f"
+        "sha": "d4417422312c82d4761d3255b69bfcd411147cf3"
       },
-      "strict": false,
       "skills": [
         "./local-ai-use",
         "./local-ai-app-integration",
@@ -571,10 +555,10 @@
       "category": "database",
       "source": {
         "source": "url",
-        "url": "https://github.com/gemini-cli-extensions/bigquery-data-analytics.git",
-        "sha": "6f9b35627d208b03e840271f6522a28f76e7f8df"
+        "url": "https://github.com/GoogleCloudPlatform/bigquery-data-analytics-plugin.git",
+        "sha": "93e87e9c8145a4c728d44c2959d4eba596f81e92"
       },
-      "homepage": "https://github.com/gemini-cli-extensions/bigquery-data-analytics"
+      "homepage": "https://github.com/GoogleCloudPlatform/bigquery-data-analytics-plugin"
     },
     {
       "name": "boltz",
@@ -602,7 +586,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/blackrock/advisor-center-agent-skills.git",
-        "sha": "591c758960c18c26fe8342ddb8ad3ba4dcfac6fe"
+        "sha": "736344f85fd43d5038f35170abd034f8fd0e1684"
       },
       "homepage": "https://github.com/blackrock/advisor-center-agent-skills"
     },
@@ -918,7 +902,7 @@
     },
     {
       "name": "claude-security",
-      "description": "Deep vulnerability scanning of your own code, run entirely inside your Claude Code session at a chosen effort tier, with every finding challenged before it is reported and the verification tally computed in code. Turns surviving findings into targeted patches, each verified by a panel of agents, that you apply when you choose.",
+      "description": "Find and fix vulnerabilities before attackers exploit them. A team of agents maps your code, hunts for exploitable flaws and challenges every finding, so you spend your time on real bugs. Get patches analyzed by a panel of agents, and apply them when you choose. Triage other scanners' results, build a threat model, review pull requests with a GitHub Action, and see your hosted Claude Security findings.",
       "author": {
         "name": "Anthropic",
         "email": "support@anthropic.com"
@@ -1018,7 +1002,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/cloudflare/skills.git",
-        "sha": "b052c32bab7dd493513260228a36c88294f343f1"
+        "sha": "cbf893b954222276bf1af57e5f23379231e0efb9"
       },
       "description": "Skills for the Cloudflare developer platform: Workers, Durable Objects, Agents SDK, MCP servers, Wrangler CLI, and web performance.",
       "category": "deployment",
@@ -1088,7 +1072,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/coderabbitai/skills.git",
-        "sha": "3e8763d24d543b48615b82535d02288de3ddae40"
+        "sha": "45bd1ae2c471cd861b8b6903f7dcab7c57aa0e59"
       },
       "homepage": "https://github.com/coderabbitai/skills"
     },
@@ -1201,7 +1185,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/CrowdStrike/foundry-skills.git",
-        "sha": "61572f38592d47c747e2595182459781bf0bc679"
+        "sha": "90082f829c6c2c4192b1459a01488863a1e82d1e"
       },
       "homepage": "https://github.com/CrowdStrike/foundry-skills"
     },
@@ -1215,7 +1199,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/CrowdStrike/fusion-skills.git",
-        "sha": "38527dc5afa970543859c31ca5dbf69352bfaa28"
+        "sha": "d4e2abf93b1f0900fcc67fe040e98d086fa1fb0c"
       },
       "homepage": "https://github.com/CrowdStrike/fusion-skills"
     },
@@ -1339,7 +1323,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/datadog-labs/claude-code-plugin.git",
-        "sha": "195f570c002beab3d7bd342739034d0019aa4863"
+        "sha": "a1603119c813f528b2d925a0ccadd73bf930550b"
       },
       "homepage": "https://www.datadoghq.com/"
     },
@@ -1588,7 +1572,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/figma/mcp-server-guide.git",
-        "sha": "f2789420e7e8b4e2465dfeb1e12e1fc6a31397e5"
+        "sha": "43a06ff1738935ad5c3d9b0437b5373aaf45cdc3"
       },
       "homepage": "https://github.com/figma/mcp-server-guide"
     },
@@ -2987,7 +2971,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/postmanlabs/postman-plugin.git",
-        "sha": "1fdd3f1e2736c7cb83780a221cb9f83641215ab7"
+        "sha": "d1f1cb9d0fba1c7442469fa68e14846ec966daf0"
       },
       "homepage": "https://github.com/postmanlabs/postman-plugin"
     },
@@ -3104,7 +3088,7 @@
         "url": "https://github.com/qodo-ai/qodo-skills.git",
         "path": "packages/qodo",
         "ref": "main",
-        "sha": "b8c21854199c538b1c35c981c12a93bab4839ef2"
+        "sha": "588e413a73b466ec4fe9cec79a34051d13f06ab3"
       },
       "homepage": "https://github.com/qodo-ai/qodo-skills.git"
     },
@@ -3416,8 +3400,8 @@
       "homepage": "https://cap.cloud.sap/"
     },
     {
-      "name": "sap-fiori-mcp-server",
-      "description": "MCP server for SAP Fiori development tools for Claude Code. Build and modify SAP Fiori applications with AI assistance.",
+      "name": "sap-ux-fiori-tools",
+      "description": "MCP server and skills for SAP Fiori development. Build, modify, and test SAP Fiori Elements applications with AI assistance.",
       "author": {
         "name": "SAP SE",
         "email": "ospo@sap.com",
@@ -3427,11 +3411,11 @@
       "source": {
         "source": "git-subdir",
         "url": "https://github.com/SAP/open-ux-tools.git",
-        "path": "packages/fiori-mcp-server",
+        "path": "plugins-coding-agents/fiori",
         "ref": "main",
-        "sha": "69e2c50833f10e6892d7c8f42b98b13133d8fdc3"
+        "sha": "08afc41ddb24c1be3142c4fe609971c7f3501ca1"
       },
-      "homepage": "https://github.com/SAP/open-ux-tools/tree/main/packages/fiori-mcp-server"
+      "homepage": "https://github.com/SAP/open-ux-tools/tree/main/plugins-coding-agents/fiori"
     },
     {
       "name": "sap-hana-cli",
@@ -3499,7 +3483,7 @@
     {
       "name": "security-guidance",
       "description": "Security review for Claude-generated code. Pattern-based warnings on edits, LLM-powered diff review on Stop, and an agentic commit reviewer that catches injection, XSS, SSRF, hardcoded secrets, and 25+ other vulnerability classes.",
-      "version": "2.0.18",
+      "version": "2.0.21",
       "author": {
         "name": "Anthropic",
         "email": "support@anthropic.com"
@@ -3847,7 +3831,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/obra/superpowers.git",
-        "sha": "bb92a77741419a4ab5f06e711a283343f1ada0c3"
+        "sha": "22f0b463e7a5e579904dd6211a520321035526f7"
       },
       "homepage": "https://github.com/obra/superpowers.git"
     },
@@ -3931,6 +3915,17 @@
       "category": "development",
       "source": "./external_plugins/terraform",
       "homepage": "https://github.com/anthropics/claude-plugins-public/tree/main/external_plugins/terraform"
+    },
+    {
+      "name": "theme-examples",
+      "description": "An example plugin to read, copy and change: thirty-eight animated backdrops behind the chat in the Claude desktop app, with frosted-glass panels, one per project or per session. Needs a version of Claude Desktop that draws a plugin's backdrop.",
+      "author": {
+        "name": "Anthropic",
+        "email": "support@anthropic.com"
+      },
+      "source": "./plugins/theme-examples",
+      "category": "design",
+      "homepage": "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/theme-examples"
     },
     {
       "name": "togetherai-skills",
@@ -4154,7 +4149,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/vercel/vercel-plugin.git",
-        "sha": "882e66c2698689324c341b7bb8fd8beb92c27bf6"
+        "sha": "50af4780eed8b2f69bc2290d20c670744f1e739c"
       },
       "homepage": "https://github.com/vercel/vercel-plugin"
     },
@@ -4207,7 +4202,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/wix/skills.git",
-        "sha": "8fc544d319c4a4dfc7ccf3ba4adf328e1fa9866f"
+        "sha": "e2bc48ebb04d355aaa413cfdd55574ed6d0df969"
       },
       "homepage": "https://dev.wix.com/docs/wix-cli/guides/development/about-wix-skills"
     },

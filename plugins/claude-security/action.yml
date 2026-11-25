@@ -1,0 +1,843 @@
+name: Claude Security plugin
+description: Review a pull request's changes, or scan a branch, with the Claude Security plugin for Claude Code.
+
+inputs:
+  anthropic_organization_id:
+    description: Workload identity federation, the organization ID.
+  anthropic_federation_rule_id:
+    description: Workload identity federation, the rule ID (fdrl_...).
+  anthropic_service_account_id:
+    description: Workload identity federation, the service account ID (svac_...).
+  anthropic_workspace_id:
+    description: Workload identity federation, the workspace ID (wrkspc_...).
+  anthropic_api_key:
+    description: A Claude API key, in place of workload identity federation.
+  use_bedrock:
+    description: Set to true to reach Claude through Amazon Bedrock (see CI.md, Amazon Bedrock).
+  aws_region:
+    description: "For use_bedrock: the AWS region, such as us-east-1. Empty takes the job's AWS_REGION variable."
+  use_vertex:
+    description: Set to true to reach Claude through Google Cloud's Agent Platform (see CI.md, Google Cloud's Agent Platform).
+  vertex_project_id:
+    description: "Required with use_vertex: the Google Cloud project's ID."
+  vertex_region:
+    description: "Required with use_vertex: the Google Cloud region, such as us-east5 or global."
+  use_foundry:
+    description: Set to true to reach Claude through Microsoft Foundry (see CI.md, Microsoft Foundry).
+  foundry_resource:
+    description: "Required with use_foundry and no model_base_url: the Foundry resource's name, not a URL."
+  model_base_url:
+    description: The https URL of a model gateway (see CI.md, Setup with a model gateway).
+  model_auth_token:
+    description: The gateway's own key, with model_base_url only. A gateway for use_vertex needs it. With another provider and no key, your provider's credential goes to the gateway.
+  allowed_bots:
+    description: The apps and bots whose events may start a review, comma-separated. None by default.
+  scan_effort:
+    description: "The scan's effort tier: low, medium or high."
+    default: medium
+  change_scan_effort:
+    description: "low (the default) or high. high searches a pull request's change harder, at high scan effort whatever scan_effort says, and costs more."
+  model:
+    description: "The scan's model: an alias such as fable or opus, or a model's full name."
+    default: fable
+  model_effort:
+    description: "The effort of the session that leads the scan: low, medium, high, xhigh or max."
+    default: high
+  fast_mode:
+    description: Set to true to turn on Claude Code's fast mode, which serves the same model faster, at about twice the price per token (see CI.md, Inputs). Off by default.
+  default_sonnet_model:
+    description: The full name of the model behind Claude Code's sonnet alias, which the plugin's supporting steps use.
+  default_opus_model:
+    description: The full name of the model behind Claude Code's opus alias.
+  claude_args:
+    description: Arguments for Claude Code, added after this action's own (see CI.md, Limits).
+  scan_variables:
+    description: Names of the job's variables that the scan gets besides its own fixed list, separated by spaces or line breaks. None by default.
+  fail_on:
+    description: "Which findings fail the verdict: confident-high, high (the default), medium, any or never (see CI.md, Blocking the merge)."
+  suggest_patches:
+    description: Set to false to leave out suggested fixes, or to later to leave them to a second job (see CI.md, Pull request reviews). On by default.
+  report:
+    description: "The output report of the job that scanned. Where it is not empty, this job scans nothing: it only drafts fixes for that report's findings, and posts them."
+  scheduled_fail_on:
+    description: As fail_on, for a run that reviews no pull request, such as a scheduled or manual one. Empty, the default, follows fail_on.
+  scan_drafts:
+    description: Set to true to scan draft pull requests. Off by default, with one exception (see CI.md, Inputs).
+  dangerously_scan_external_branches:
+    description: By default the action fails the job for a pull request whose branch is in another repository, such as a fork. Set to true to let the job go on. We do not encourage this, because code in such a branch can steer the scan and use its model credential. First read CI.md, External branches.
+  scan_agents:
+    description: "How many of the agents that find and verify flaws may run at once: a whole number from 1 to 256. Above 32, their model requests wait for one another."
+    default: 8
+
+outputs:
+  skipped:
+    description: "true on a run that passes without a verdict, and on every run given the input report, whether it passes or fails. Otherwise false."
+    value: ${{ steps.repeat.outputs.enforce == 'false' || inputs.report != '' }}
+  report:
+    description: "With suggest_patches: later, the ID of the artifact that holds the report, for the input report of a second job. Empty where nothing is handed over."
+    value: ${{ steps.hand_over.outputs.artifact-id }}
+  receipt:
+    description: The run's ID and the hash of the posted review, for the step Receipt of the sample workflow in CI.md. Empty where there is no receipt.
+    value: ${{ steps.post.outputs.in_run }}
+
+runs:
+  using: composite
+  steps:
+    # First, and with no if:. People who cannot push here can control a branch in another repository, and the scan trusts the code that it scans.
+    - name: Check for an external branch
+      shell: bash
+      env:
+        ALLOWED: ${{ inputs.dangerously_scan_external_branches }}
+        # The repository that the pull request's branch is in. Empty where it is deleted: the branch then counts as external.
+        BRANCH_IS_IN: ${{ github.event.pull_request.head.repo.full_name }}
+      run: |
+        if [[ ! $ALLOWED =~ ^(true|false)?$ ]]; then
+          echo "::error::The value of the input dangerously_scan_external_branches is not accepted (this message does not show it); it must be true or false. Nothing was scanned." >&2
+          exit 1
+        fi
+        if [[ $GITHUB_EVENT_NAME == pull_request* && $BRANCH_IS_IN != "$GITHUB_REPOSITORY" ]]; then
+          why="This pull request's branch is in another repository, such as a fork, so people who cannot push here can control it."
+          if [ "$ALLOWED" != true ]; then
+            echo "::error::By default, the Claude Security plugin does not run on external branches. $why Nothing was scanned. A maintainer who has read the change and trusts its submitter can push its commits to a branch of this repository, and open a new pull request from it. The input dangerously_scan_external_branches turns this stop off: first read this action's CI.md, External branches." >&2
+            exit 1
+          fi
+          echo "::warning::$why The Claude Security plugin goes on, because the input dangerously_scan_external_branches is true. Code in this branch can steer the scan and use the scan's model credential: see this action's CI.md, External branches."
+        fi
+
+    # RUNNER_TEMP lasts the whole job, and the steps below take it that nothing of theirs is there yet.
+    - name: Check that the job has not used this action before
+      shell: bash
+      run: |
+        if [ -e "$RUNNER_TEMP/claude-security-used" ]; then
+          echo "::error::A job can use this action only once. Nothing was scanned. Give a second scan a job of its own." >&2
+          exit 1
+        fi
+        mkdir "$RUNNER_TEMP/claude-security-used"
+
+    # No if:, and ahead of every step that holds the job's token. A self-hosted runner would keep what the steps below install and change.
+    - name: Check the runner
+      shell: bash
+      run: |
+        if [ "$RUNNER_OS" != Linux ] || [ "$RUNNER_ENVIRONMENT" != github-hosted ]; then
+          echo "::error::This action runs only on a GitHub-hosted Linux runner: the set-up of the scan adds a user and firewall rules, which stay for the rest of the job. Nothing was scanned. Set the job's runs-on to such a runner, for example ubuntu-24.04." >&2
+          exit 1
+        fi
+
+    # A job that was handed a report repeats no verdict: on an edit, it would find the review that the scan's job has just posted.
+    - name: Decide whether to scan the pull request
+      id: repeat
+      if: github.event_name == 'pull_request' && inputs.report == ''
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        CLAUDE_SECURITY_SCAN_DRAFTS: ${{ inputs.scan_drafts }}
+        CLAUDE_SECURITY_FAIL_ON: ${{ inputs.fail_on }}
+        CLAUDE_SECURITY_CHANGE_SCAN_EFFORT: ${{ inputs.change_scan_effort }}
+      run: python3 -I -S "$GITHUB_ACTION_PATH/scripts/repeat_verdict.py"
+
+    # Each credential comes as true or false, so no secret is in this env:. The step's outputs tell the later steps which provider the job uses (name), and the host and port that model requests go to (allowed).
+    - name: Check the inputs
+      id: provider
+      if: steps.repeat.outputs.scan != 'false'
+      shell: bash
+      env:
+        use_bedrock: ${{ inputs.use_bedrock }}
+        use_vertex: ${{ inputs.use_vertex }}
+        use_foundry: ${{ inputs.use_foundry }}
+        VERTEX_PROJECT_ID: ${{ inputs.vertex_project_id }}
+        CLOUD_ML_REGION: ${{ inputs.vertex_region }}
+        ANTHROPIC_FOUNDRY_RESOURCE: ${{ inputs.foundry_resource }}
+        AWS_REGION: ${{ inputs.aws_region || env.AWS_REGION }}
+        MODEL_BASE_URL: ${{ inputs.model_base_url }}
+        GATEWAY_KEY: ${{ inputs.model_auth_token != '' }}
+        CLAUDE_KEY: ${{ inputs.anthropic_api_key != '' }}
+        FEDERATION: ${{ inputs.anthropic_organization_id != '' && inputs.anthropic_federation_rule_id != '' }}
+        SCAN_EFFORT: ${{ inputs.scan_effort }}
+        MODEL_EFFORT: ${{ inputs.model_effort }}
+        FAST_MODE: ${{ inputs.fast_mode }}
+        SCAN_AGENTS: ${{ inputs.scan_agents }}
+        MODEL_AND_ARGS: ${{ inputs.model }} ${{ inputs.claude_args }}
+      run: |
+        stop() {
+          echo "::error::$1 Nothing was scanned.${2:+ $2}" >&2
+          exit 1
+        }
+        gateway="See this action's CI.md, Setup with a model gateway."
+        on=()
+        for cloud in bedrock vertex foundry; do
+          switch=use_$cloud
+          case ${!switch} in
+            true) on+=("$cloud") ;;
+            "" | false) ;;
+            *) stop "use_bedrock, use_vertex and use_foundry must each be true, false or not set." ;;
+          esac
+        done
+        [ ${#on[@]} -le 1 ] || stop "This job sets more than one of use_bedrock, use_vertex and use_foundry to true." "Set one of the three to true, and set the others to false or remove them."
+        provider=${on[0]:-anthropic}
+        if [[ $provider == vertex && ( -z $VERTEX_PROJECT_ID || -z $CLOUD_ML_REGION ) ]]; then
+          stop "This job sets use_vertex to true, but vertex_project_id or vertex_region is empty." "Give both inputs. ANTHROPIC_VERTEX_PROJECT_ID and CLOUD_ML_REGION in the job's env: are not read. See this action's CI.md, Google Cloud's Agent Platform."
+        fi
+        # Without this rule claude-code-action's refusal names environment variables, not these inputs.
+        if [[ $provider == anthropic && $CLAUDE_KEY$GATEWAY_KEY$FEDERATION != *true* ]]; then
+          stop "The inputs give no way to reach Claude." "Give a non-empty anthropic_api_key, or both anthropic_organization_id and anthropic_federation_rule_id, or set use_bedrock, use_vertex or use_foundry to true, or give model_base_url and model_auth_token. An input set from an empty secret or variable counts as not given. The action takes no Claude subscription token. ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN and CLAUDE_CODE_OAUTH_TOKEN in the job's env: are not read."
+        fi
+        # The scan takes its base URL from the inputs alone. A job that names its gateway in a variable that ends in BASE_URL would send the gateway's key to the provider, or scan past the gateway.
+        for name in "${!ANTHROPIC_@}"; do
+          if [[ -z $MODEL_BASE_URL && $name == *BASE_URL && -n ${!name} ]]; then
+            stop "$name is set in this job's environment, and the model_base_url input is empty." "The action does not read that variable. To use a model gateway, give its URL in model_base_url and its key in model_auth_token. If you do not use a gateway, remove the variable. $gateway"
+          fi
+        done
+        # A Claude Code settings file can name a gateway too. It also serves developers, who may use another provider, so only the variable of the job's provider counts.
+        name=ANTHROPIC_BASE_URL
+        [ "$provider" = anthropic ] || name=ANTHROPIC_$(tr '[:lower:]' '[:upper:]' <<< "$provider")_BASE_URL
+        for file in "$GITHUB_WORKSPACE"/.claude/settings{,.local}.json "$HOME/.claude/settings.json"; do
+          if [[ -z $MODEL_BASE_URL && -f $file ]] && grep -qE "\"$name\"[[:space:]]*:[[:space:]]*\"[^\"]" "$file"; then
+            stop "$file sets $name, and the model_base_url input is empty." "The action does not use that URL. To use a model gateway, give its URL in model_base_url and its key in model_auth_token. If this job does not use a gateway, remove the variable from the file, or from this job's copy of it in an earlier step. $gateway"
+          fi
+        done
+        if [[ $GATEWAY_KEY == true && -z $MODEL_BASE_URL ]]; then
+          stop "This job gives model_auth_token, but model_base_url is empty." "Without the URL, the gateway's key would go to the provider. Give the gateway's URL in model_base_url. $gateway"
+        fi
+        if [[ $GATEWAY_KEY == true && $CLAUDE_KEY == true ]]; then
+          stop "This job gives model_auth_token, and also anthropic_api_key." "A job with a gateway's key takes no other Claude credential. Remove anthropic_api_key. $gateway"
+        fi
+        if [[ -n $MODEL_BASE_URL && $provider == anthropic && $FEDERATION == true ]]; then
+          stop "This job gives model_base_url, and also anthropic_organization_id and anthropic_federation_rule_id." "Workload identity federation is not supported through a gateway. Remove the federation inputs, and give the gateway's key in model_auth_token. $gateway"
+        fi
+        if [[ $provider == bedrock && $GATEWAY_KEY == false && -z ${AWS_BEARER_TOKEN_BEDROCK:-} && ( -z ${AWS_ACCESS_KEY_ID:-} || -z ${AWS_SECRET_ACCESS_KEY:-} ) ]]; then
+          stop "This job gives use_bedrock, but no credential for it." "Run aws-actions/configure-aws-credentials earlier in the same job or, for a gateway, give model_base_url and model_auth_token. A Bedrock API key in AWS_BEARER_TOKEN_BEDROCK also serves. See this action's CI.md, Amazon Bedrock."
+        fi
+        # max is accepted but runs as high, so the message does not offer it.
+        [[ $SCAN_EFFORT =~ ^(low|medium|high|max)?$ ]] || stop "scan_effort must be low, medium or high."
+        # model_effort goes into the session's arguments as typed.
+        [[ $MODEL_EFFORT =~ ^(low|medium|high|xhigh|max)?$ ]] || stop "model_effort must be low, medium, high, xhigh or max."
+        [[ $FAST_MODE =~ ^(true|false)?$ ]] || stop "fast_mode must be true or false."
+        # Claude Code would ignore a scan_agents that it does not accept, and use its own default. In some locales a range such as [1-9] also matches characters that it does not accept.
+        LC_ALL=C
+        if [[ ! $SCAN_AGENTS =~ ^([1-9][0-9]{0,2})?$ ]] || [ "${SCAN_AGENTS:-1}" -gt 256 ]; then
+          stop "scan_agents must be a whole number from 1 to 256, in plain digits with no space or leading zero."
+        fi
+        [ -z "${CLAUDE_CODE_EFFORT_LEVEL:-}" ] || stop "CLAUDE_CODE_EFFORT_LEVEL is set in this job's environment, for instance in the workflow's env: or by a step that wrote it to GITHUB_ENV." "Remove it there and use the model_effort input. The variable overrides model_effort and the effort each of the scan's agents asks for."
+        [ -z "${CLAUDE_CODE_SUBPROCESS_ENV_SCRUB:-}" ] || stop "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB is set in this job's environment, for instance in the workflow's env:." "Remove it there: when it is on, it keeps the session out of Claude Code's auto mode, which the action always asks for."
+        case $MODEL_AND_ARGS in
+          *--permission-mode* | *skip-permissions*) stop "The model input or claude_args names --permission-mode or a flag that skips permissions." "Remove it, from comments too: the action always asks Claude Code for auto mode." ;;
+          *--permission-prompt*) stop "The model input or claude_args names --permission-prompt-tool or --permission-prompts." "Remove the flag, from comments too: it can change how Claude Code reports a tool call that auto mode denies, and the action reads those reports." ;;
+        esac
+        # The firewall's program, run before anything is installed: it refuses a model_base_url, a region or a foundry_resource that it cannot make a host's name of. It prints its refusal in the log alone.
+        allowed=$(python3 -I -S "$GITHUB_ACTION_PATH/scripts/scan_user.py" host "$provider" "$MODEL_BASE_URL") || stop "An early check of the host that model requests go to stopped the job." "The reason is above in the log, on the line that begins with scan_user.py, if there is one."
+        # Without the gateway's key, the relay sends the job's Google access token to the URL's host. No later step limits that host to Vertex's.
+        vertex_hosts='^([a-z0-9-]+-)?aiplatform(-[a-z0-9-]+\.p|\.[a-z0-9-]+\.rep|\.mtls)?\.googleapis\.com:[0-9]+$'
+        if [[ $provider == vertex && -n $MODEL_BASE_URL && $GATEWAY_KEY != true && ! $allowed =~ $vertex_hosts ]]; then
+          stop "This job gives use_vertex and a gateway's model_base_url, but no model_auth_token." "The action does not send the job's Google access token to a gateway. Give the gateway's key in model_auth_token. $gateway"
+        fi
+        echo "name=$provider" >> "$GITHUB_OUTPUT"
+        echo "allowed=$allowed" >> "$GITHUB_OUTPUT"
+
+    # The probe's answer sits under .git: git status does not show it, and the session reads it.
+    - name: Probe the job
+      id: probe
+      if: steps.repeat.outputs.scan != 'false'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        CLAUDE_SECURITY_FAIL_ON: >-
+          ${{ !startsWith(github.event_name, 'pull_request') && inputs.scheduled_fail_on
+          || inputs.fail_on }}
+        CLAUDE_SECURITY_SUGGEST_PATCHES: ${{ inputs.suggest_patches }}
+        CLAUDE_SECURITY_CHANGE_SCAN_EFFORT: ${{ inputs.change_scan_effort }}
+        SCAN_EFFORT: ${{ inputs.scan_effort || 'medium' }}
+        REPORT: ${{ inputs.report }}
+      run: |
+        # post_review.py prints its refusal, such as of an unknown fail_on, in the log and on the job summary. This trap adds an annotation.
+        trap 'echo "::error::The probe stopped the job. Nothing was scanned. The reason is above in the log, on the line that begins with post_review.py, if there is one." >&2' ERR
+        if [ ! -d .git ]; then
+          echo "::error::The top folder of this job's workspace holds no .git folder. Nothing was scanned. Run actions/checkout before this action, with no path: input." >&2
+          exit 1
+        fi
+        reports="$RUNNER_TEMP/claude-security-work/reports"
+        mkdir "${reports%/*}" "$reports"
+        # Each fix is tested in a clone under that folder, and Node looks for packages in the folders above a file.
+        [ ! -d node_modules ] || ln -s "$PWD/node_modules" "$reports/node_modules"
+        # -X utf8: the answer is read back as UTF-8 whatever the locale. Under -I Python ignores the variable for UTF-8 mode.
+        python3 -I -S -X utf8 "$GITHUB_ACTION_PATH/scripts/post_review.py" --probe "$SCAN_EFFORT" --reports "$reports" ${REPORT:+--handed-over "$reports"} . > .git/claude-security-probe.json
+        echo "plugin=$GITHUB_ACTION_PATH" >> "$GITHUB_OUTPUT"
+        echo "reports=$reports" >> "$GITHUB_OUTPUT"
+
+    # Into the folder that the session writes to in memory alone. So the post step reads the report
+    # here as it was handed over. It is unpacked into a new folder first: the probe step may have
+    # put a link to the checkout into the other.
+    - name: Fetch the report
+      if: inputs.report != ''
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        REPORT: ${{ inputs.report }}
+        REPORTS: ${{ steps.probe.outputs.reports }}
+      run: |
+        trap 'echo "::error::The report that the input report names could not be fetched; the reason, if one was given, is above in the log. No fix was drafted. The input must be the output report of a job of this run, and the workflow must grant actions: read. A report is kept for one day: after that, push a commit." >&2' ERR
+        # In some locales a range such as [0-9] also matches characters that are no digit.
+        LC_ALL=C
+        [[ $REPORT =~ ^[0-9]+$ ]]
+        # Else gh sends the job's token to github.com, or to the job's own GH_HOST.
+        export GH_HOST=${GITHUB_SERVER_URL#*://}
+        # The job's token can also read the artifacts of other runs.
+        run=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$REPORT" --jq .workflow_run.id)
+        if [ "$run" != "$GITHUB_RUN_ID" ]; then
+          echo "::error::GitHub does not name this run as the one that uploaded the artifact that the input report names, so no fix was drafted. The input must be the output report of a job of this run." >&2
+          exit 1
+        fi
+        zip="$RUNNER_TEMP/claude-security-report.zip" handed="$RUNNER_TEMP/claude-security-handed"
+        gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$REPORT/zip" > "$zip"
+        mkdir "$handed"
+        python3 -I -S -m zipfile -e "$zip" "$handed"
+        # One report directory, and nothing beside it, as the first job hands it over.
+        shopt -s dotglob
+        found=("$handed"/*)
+        if [[ ${#found[@]} != 1 || ! -d ${found[0]} || ${found[0]##*/} != CLAUDE-SECURITY-* ]]; then
+          echo "::error::The artifact that the input report names holds no single report directory, so no fix was drafted. The input must be the output report of the job that scanned, in this run." >&2
+          exit 1
+        fi
+        mv -- "${found[0]}" "$REPORTS/${found[0]##*/}"
+
+    # By itself, the runner masks only a value that the workflow takes from its secrets. These variables can hold other credentials, and what the relay and the token steps print can reach the job's log.
+    - name: Mask the job's credentials
+      if: steps.repeat.outputs.scan != 'false'
+      shell: bash
+      env:
+        ANTHROPIC_API_KEY: ${{ inputs.anthropic_api_key }}
+        MODEL_AUTH_TOKEN: ${{ inputs.model_auth_token }}
+        BEDROCK_KEYS: ${{ steps.provider.outputs.name == 'bedrock' && inputs.model_auth_token == '' }}
+      run: |
+        # Each line gets its own mask: the runner ends a line at a carriage return too. A % goes out as %25, which the runner decodes.
+        # A custom header's mask is its whole line: a mask for a value such as 1 would hide every 1 in the rest of the log.
+        cr=$'\r' lf=$'\n'
+        for name in ANTHROPIC_API_KEY CLAUDE_CODE_OAUTH_TOKEN MODEL_AUTH_TOKEN ANTHROPIC_AUTH_TOKEN ANTHROPIC_AWS_API_KEY ANTHROPIC_FOUNDRY_API_KEY ANTHROPIC_FOUNDRY_AUTH_TOKEN ANTHROPIC_IDENTITY_TOKEN CLAUDE_CODE_OAUTH_REFRESH_TOKEN CLAUDE_CODE_CLIENT_KEY_PASSPHRASE ANTHROPIC_CUSTOM_HEADERS AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_BEARER_TOKEN_BEDROCK AWS_CONTAINER_AUTHORIZATION_TOKEN AZURE_CLIENT_SECRET ACTIONS_ID_TOKEN_REQUEST_TOKEN; do
+          # The AWS names are masked only on Bedrock with no gateway key, where the relay gets the job's AWS keys. In another job, a mask for a made-up key such as test would hide every test in the log.
+          [[ $name != AWS_* || $BEDROCK_KEYS == true ]] || continue
+          value=${!name-}
+          while IFS= read -r line; do [ -z "$line" ] || echo "::add-mask::${line//%/%25}"; done <<< "${value//$cr/$lf}"
+        done
+
+    # The relay gets only a token.
+    - name: Get the Claude API token
+      id: claude_token
+      if: steps.repeat.outputs.scan != 'false' && steps.provider.outputs.name == 'anthropic' && inputs.anthropic_organization_id != '' && inputs.anthropic_federation_rule_id != '' && inputs.anthropic_api_key == ''
+      shell: bash
+      env:
+        ORGANIZATION: ${{ inputs.anthropic_organization_id }}
+        RULE: ${{ inputs.anthropic_federation_rule_id }}
+        SERVICE_ACCOUNT: ${{ inputs.anthropic_service_account_id }}
+        WORKSPACE: ${{ inputs.anthropic_workspace_id }}
+      run: |
+        trap 'echo "::error::A command of the step that gets the Claude API token failed; the reason, if one was given, is above in the log. Nothing was scanned." >&2' ERR
+        FOLDER="$RUNNER_TEMP/claude-security-credential" FILE="$RUNNER_TEMP/claude-security-token/token"
+        mkdir -m 700 "$FOLDER" "${FILE%/*}"
+        # One stream, so that the lines below reach the log in their order.
+        exec 2>&1
+        token=(python3 -I -S "$GITHUB_ACTION_PATH/scripts/cloud_token.py" anthropic "$FILE" "$ORGANIZATION" "$RULE" "$SERVICE_ACCOUNT" "$WORKSPACE")
+        if ! "${token[@]}"; then
+          echo "::error::The action got no access token for the Claude API; the reason is above in the log. Nothing was scanned. The job needs the permission id-token: write, and the federation rule must match this workflow. If the reason is temporary, run the job again. See this action's CI.md, If authentication fails." >&2
+          exit 1
+        fi
+        # claude-code-action takes this text for an OAuth token, so that the session asks for what a bearer token needs.
+        # No path or variable that the sandbox shows may hold this text: sandbox.py would refuse to start.
+        echo "stand_in=a-stand-in-for-a-federated-token" >> "$GITHUB_OUTPUT"
+        # This program outlives the step, so it holds none of the step's streams. It renews the token about every two minutes, until the token's folder is removed.
+        # A token can last only ten minutes, and the relay can keep one for five.
+        "${token[@]}" --every 120 < /dev/null > "$FOLDER/renewals" 2>&1 &
+
+    # The relay gets only a token. The sign-in's credentials file moves out of the workspace, to a folder that the scan cannot open.
+    - name: Get the Google Cloud token
+      if: steps.repeat.outputs.scan != 'false' && steps.provider.outputs.name == 'vertex' && inputs.model_auth_token == ''
+      shell: bash
+      # Without the project, gcloud looks it up at another Google host before it gives a token.
+      env:
+        GOOGLE_CLOUD_PROJECT: ${{ inputs.vertex_project_id }}
+      run: |
+        trap 'echo "::error::A command of the step that gets the Google Cloud token failed; the reason, if one was given, is above in the log. Nothing was scanned." >&2' ERR
+        FOLDER="$RUNNER_TEMP/claude-security-credential" FILE="$RUNNER_TEMP/claude-security-token/token"
+        mkdir -m 700 "$FOLDER" "${FILE%/*}"
+        # One stream, so that the lines below reach the log in their order.
+        exec 2>&1
+        token=(python3 -I -S "$GITHUB_ACTION_PATH/scripts/cloud_token.py" vertex "$FILE")
+        # The step copies the file only after cloud_token.py has made the first token from it. So a file that it refuses, such as a service account's key, is never copied.
+        if ! "${token[@]}" -- "${GOOGLE_APPLICATION_CREDENTIALS-}"; then
+          echo "::error::The action got no access token that it can use for Google Cloud; the reason is above in the log. Nothing was scanned. Run google-github-actions/auth, with workload identity federation and a service_account, after actions/checkout and before this action. The action does not accept a service account's key. If the reason is temporary, run the job again. Ignore any advice in the log to run a gcloud command. See this action's CI.md, Google Cloud's Agent Platform." >&2
+          exit 1
+        fi
+        cp -- "$GOOGLE_APPLICATION_CREDENTIALS" "$FOLDER/credentials.json"
+        printf '%s=\n' GOOGLE_APPLICATION_CREDENTIALS CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE GOOGLE_GHA_CREDS_PATH >> "$GITHUB_ENV"
+        rm -f -- "$GOOGLE_APPLICATION_CREDENTIALS" "$CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE" "$GOOGLE_GHA_CREDS_PATH"
+        # This program outlives the step, so it holds none of the step's streams. It renews the token about every five minutes, until the token's folder is removed.
+        "${token[@]}" "$FOLDER/credentials.json" --every 300 < /dev/null > "$FOLDER/renewals" 2>&1 &
+
+    # The relay gets only a token. cloud_token.py signs az in again for each token, and this step signs az out of azure/login's own sign-in, which lies in the runner's home folder.
+    - name: Get the Microsoft Foundry token
+      if: steps.repeat.outputs.scan != 'false' && steps.provider.outputs.name == 'foundry' && inputs.model_auth_token == ''
+      shell: bash
+      run: |
+        trap 'echo "::error::A command of the step that gets the Microsoft Foundry token failed; the reason, if one was given, is above in the log. Nothing was scanned." >&2' ERR
+        FOLDER="$RUNNER_TEMP/claude-security-credential" FILE="$RUNNER_TEMP/claude-security-token/token"
+        mkdir -m 700 "$FOLDER" "${FILE%/*}"
+        # One stream, so that the lines below reach the log in their order.
+        exec 2>&1
+        # az's words can hold anything. Between ::stop-commands::WORD and ::WORD:: the runner reads no workflow command, so they can set no mask and keep none from the runner.
+        bracketed() {
+          local ended=0 word
+          word=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n') || return
+          echo "::stop-commands::$word"
+          "$@" || ended=$?
+          printf '\n::%s::\n' "$word"
+          return "$ended"
+        }
+        # This rests on az giving an application's client ID as user.name.
+        identify() {
+          client=$(az account show --query user.name --output tsv) && tenant=$(az account show --query tenantId --output tsv) && [ -n "$client" ] && [ -n "$tenant" ]
+        }
+        if ! bracketed identify; then
+          echo "::error::az did not name the identity that it is signed in as; the reason, if one was given, is above in the log. Nothing was scanned. Run azure/login, with a federated credential, before this action. If this job's gateway has a key of its own, give it in model_auth_token. Ignore any advice in the log above to run an az command. See this action's CI.md, Microsoft Foundry." >&2
+          exit 1
+        fi
+        token=(python3 -I -S "$GITHUB_ACTION_PATH/scripts/cloud_token.py" foundry "$FILE" "$client" "$tenant")
+        if ! "${token[@]}"; then
+          echo "::error::The action got no access token that it can use for Microsoft Foundry; the reason is above in the log. Nothing was scanned. The job needs the permission id-token: write, and the identity needs a federated credential for this workflow. If the reason is temporary, run the job again. See this action's CI.md, Microsoft Foundry." >&2
+          exit 1
+        fi
+        if ! bracketed az account clear; then
+          echo "::error::az could not be signed out of azure/login's sign-in; the reason, if one was given, is above in the log. Nothing was scanned. Run the job again." >&2
+          exit 1
+        fi
+        "${token[@]}" --every 300 < /dev/null > "$FOLDER/renewals" 2>&1 &
+
+    # So that claude-code-action is not handed it, the sandbox's relay reads the job's key or token
+    # from this file. On Bedrock the scan step's AWS_BEARER_TOKEN_BEDROCK carries a gateway's key. A
+    # step after the scan removes the folder.
+    - name: Write the job's key or token to a file for the relay
+      if: steps.repeat.outputs.scan != 'false' && (inputs.model_auth_token != '' && steps.provider.outputs.name != 'bedrock' || inputs.anthropic_api_key != '' && steps.provider.outputs.name == 'anthropic')
+      shell: bash
+      env:
+        CREDENTIAL: ${{ inputs.model_auth_token || inputs.anthropic_api_key }}
+      run: |
+        trap 'echo "::error::A command of the step that writes the credential to a file failed; the reason, if one was given, is above in the log. Nothing was scanned." >&2' ERR
+        mkdir -m 700 "$RUNNER_TEMP/claude-security-token"
+        printf '%s\n' "$CREDENTIAL" > "$RUNNER_TEMP/claude-security-token/token"
+        # Readable by all, whatever the umask: the folder's mode keeps others out.
+        chmod 644 "$RUNNER_TEMP/claude-security-token/token"
+
+    # Claude Code is installed here: claude-code-action does not install it when given a program path.
+    - name: Install Claude Code
+      if: steps.repeat.outputs.scan != 'false'
+      shell: bash
+      run: |
+        trap 'echo "::error::A command of the step that installs Claude Code failed; the reason, if one was given, is above in the log. Nothing was scanned." >&2' ERR
+        # Each sum is from the signed manifest.json of the version below, which is the one that the pinned claude-code-action would install. So the action, the version and both sums belong together.
+        case "$(uname -m)" in
+          x86_64) platform=linux-x64 sum=b6b3647d981130dc44fc670846ae97b6cde531ffb667cf9c4d17cfcafb38cb37 ;;
+          aarch64) platform=linux-arm64 sum=98d56f6ffe53469767a74864a38eaf359d62ef557a8de1b1ad524d61a66ec119 ;;
+          *) echo "::error::This action can install Claude Code only on an x86_64 or aarch64 runner, and this runner is $(uname -m). Nothing was scanned. Use an x86_64 or aarch64 runner, such as ubuntu-24.04." >&2; exit 1 ;;
+        esac
+        version=2.1.326
+        program="$HOME/.local/share/claude/versions/$version"
+        mkdir -p "$HOME/.local/bin" "${program%/*}"
+        if ! curl -fsSL --retry 3 --retry-all-errors --max-time 300 --retry-max-time 600 -o "$program" "https://downloads.claude.ai/claude-code-releases/$version/$platform/claude"; then
+          echo "::error::Claude Code's program could not be downloaded from downloads.claude.ai; the reason, if one was given, is above in the log. Nothing was scanned. Run the job again. If the same error comes each time, update this action to its newest release." >&2
+          exit 1
+        fi
+        if ! echo "$sum  $program" | sha256sum --check --status; then
+          got="$(sha256sum "$program" | cut -d ' ' -f 1) ($(stat -c %s "$program") bytes)"
+          echo "::error::Claude Code's program, as downloaded from downloads.claude.ai, does not match the SHA-256 hash that this action holds for it, and was not run. Expected $sum; got $got. Nothing was scanned. Run the job again; if the hash differs again, please report it privately, as this action's SECURITY.md describes." >&2
+          exit 1
+        fi
+        chmod 755 "$program"
+        ln -sfn "$program" "$HOME/.local/bin/claude"
+        # claude-code-action's record of a session. If an earlier step of the job left one, and this scan failed before it wrote its own, a later step would read that record as this scan's.
+        rm -f "$RUNNER_TEMP/claude-execution-output.json"
+        mkdir "$RUNNER_TEMP/claude-security-work/home"
+
+    # claude-code-action runs on Bun, outside the sandbox. Given this path, it downloads no Bun of its own.
+    - name: Install Bun
+      id: bun
+      if: steps.repeat.outputs.scan != 'false'
+      shell: bash
+      run: |
+        trap 'echo "::error::A command of the step that installs Bun failed; the reason, if one was given, is above in the log. Nothing was scanned." >&2' ERR
+        # Each sum is from the SHASUMS256.txt of the version below, which is the one that the pinned claude-code-action would download. So the action, the version and both sums belong together.
+        case "$(uname -m)" in
+          x86_64) name=bun-linux-x64 sum=bf8ccbfb2b0b80159e0f9a6d15c55317add8077534dbc6130a3edb52fccb395c ;;
+          aarch64) name=bun-linux-aarch64 sum=baa6bb36f51d6e58561e02bbea825038a9df454f673d6d776e8bbf86f8c7850e ;;
+        esac
+        bun_version=1.4.4
+        folder="$RUNNER_TEMP/claude-security-bun"
+        archive="$folder/$name.zip"
+        mkdir "$folder"
+        curl -fsSL --retry 3 --retry-all-errors --max-time 300 --retry-max-time 600 -o "$archive" "https://github.com/oven-sh/bun/releases/download/bun-v$bun_version/$name.zip"
+        if ! echo "$sum  $archive" | sha256sum --check --status; then
+          got="$(sha256sum "$archive" | cut -d ' ' -f 1) ($(stat -c %s "$archive") bytes)"
+          echo "::error::Bun's archive, as downloaded from github.com, does not match the SHA-256 hash that this action holds for it, and was not unpacked. Expected $sum; got $got. Nothing was scanned. Run the job again; if the hash differs again, please report it privately, as this action's SECURITY.md describes." >&2
+          exit 1
+        fi
+        python3 -I -S -m zipfile -e "$archive" "$folder"
+        chmod 755 "$folder/$name/bun"
+        echo "path=$folder/$name/bun" >> "$GITHUB_OUTPUT"
+
+    - name: Write the sandbox's settings
+      id: settings
+      if: steps.repeat.outputs.scan != 'false'
+      shell: bash
+      env:
+        PROVIDER: ${{ steps.provider.outputs.name }}
+        FAST_MODE: ${{ inputs.fast_mode == 'true' }}
+        MODEL_BASE_URL: ${{ inputs.model_base_url }}
+      run: |
+        trap 'echo "::error::A command of the step that writes the settings of the sandbox failed; the reason, if one was given, is above in the log. Nothing was scanned." >&2' ERR
+        work="$RUNNER_TEMP/claude-security-work"
+        home="$work/home"
+        # What Claude Code loads and a scan need not write: the sandbox shows each read-only. shell-snapshots is a file, so that no folder takes its name. --add-dir names the last folder's parent.
+        folders=("$home"/{agents,commands,dev-mods,output-styles,plugins/cache,plugins/marketplaces,rules,session-env,skills,workflows} "$work/reports/.claude")
+        files=("$home"/{.claude.json,CLAUDE.md,loop.md,settings.json,remote-settings.json{,.signature.json,.signature-iat.json,.synced-at},plugins/installed_plugins.json,shell-snapshots})
+        mkdir "$home/plugins" "${folders[@]}"
+        touch "${files[@]}"
+        echo '{}' > "$home/settings.json"
+        # Claude Code reads this file again as it runs, and feature flags that auto mode reads can stand in it. It reads an empty file as a fault.
+        echo '{}' > "$home/.claude.json"
+        # The env block of these --settings repeats each variable that the start script sets to one value in every job, as a second guard.
+        session_env='"CLAUDE_CODE_DISABLE_CLAUDE_MDS": "1", "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1", "CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR": "1", "GIT_CONFIG_GLOBAL": "/dev/null", "PYTHONNOUSERSITE": "1", "CLAUDE_CODE_USE_COWORK_PLUGINS": "", "CLAUDE_SECURITY_ROOT_ELSEWHERE": "1", '
+        # The start script's shell too. Its path goes into the JSON unescaped: the workflow chooses the action's folder, so a quote or backslash there can only change that workflow's own scan.
+        session_env+="\"CLAUDE_CODE_SHELL\": \"$GITHUB_ACTION_PATH/scripts/shell/bash\", "
+        # Claude Code sends its model requests to this socket where one is named, whatever the base URL. It reads an empty value as none.
+        session_env+='"ANTHROPIC_UNIX_SOCKET": "", '
+        # A gateway on the Claude API's protocol may not pass on the API's own auto mode check, so there Claude Code's own classifier judges each call.
+        if [[ $PROVIDER == anthropic && -n $MODEL_BASE_URL ]]; then
+          session_env+='"CLAUDE_CODE_AUTO_MODE_SERVER": "0", '
+        fi
+        # The block also sets the variable from which Claude Code takes the base URL for this job's provider: the sandbox's relay.
+        relay=http://127.0.0.1:8417
+        case $PROVIDER in
+          anthropic) own=ANTHROPIC_BASE_URL ;;
+          vertex) own=ANTHROPIC_VERTEX_BASE_URL relay+=/v1 ;;
+          *) own=ANTHROPIC_${PROVIDER^^}_BASE_URL ;;
+        esac
+        session_env+="\"$own\": \"$relay\""
+        # The session's --settings. Claude Code's own sandbox cannot start inside this action's. enableWorkflows keeps the scan's workflow on, whatever the default.
+        echo "session_settings={\"sandbox\": {\"enabled\": false}, \"fastMode\": $FAST_MODE, \"enableWorkflows\": true, \"env\": {$session_env}}" >> "$GITHUB_OUTPUT"
+        # Claude Code's own format for an empty list of installed plugins: it logs errors for an empty file.
+        echo '{"version": 2, "plugins": {}}' > "$home/plugins/installed_plugins.json"
+        # A --read path stays read-only even inside the folder that the scan writes to in memory. The next step makes the folder of --out.
+        printf '%s\n' "--read=$GITHUB_WORKSPACE" "--read=$RUNNER_TOOL_CACHE" "--read=$HOME/.local/bin" "--read=$HOME/.local/share/claude" "${folders[@]/#/--read=}" "${files[@]/#/--read=}" --minutes=360 "--out=$RUNNER_TEMP/claude-security-out/reports" > "$RUNNER_TEMP/claude-security-sandbox-arguments"
+
+    # The job's own user has sudo, which could remove any firewall rule. So the relay runs as a user of its own, and the session as one of the sandbox's unused ids.
+    - name: Give the relay its own user, limited to the addresses that model requests go to
+      id: scan_user
+      if: steps.repeat.outputs.scan != 'false'
+      shell: bash
+      env:
+        ALLOWED: ${{ steps.provider.outputs.allowed }}
+        CLAUDE_SECURITY_SCAN_VARIABLES: ${{ inputs.scan_variables }}
+      run: |
+        trap 'echo "::error::A command of the step that gives the relay its own user failed; the reason, if one was given, is above in the log. Nothing was scanned." >&2' ERR
+        user=claude-security-scan firewall="$RUNNER_TEMP/claude-security-firewall" script="$GITHUB_ACTION_PATH/scripts/scan_user.py" out="$RUNNER_TEMP/claude-security-out"
+        # Its IDs come from a range that a service container's user is unlikely to share.
+        sudo useradd --system -K SYS_UID_MIN=59000 -K SYS_UID_MAX=59999 -K SYS_GID_MIN=59000 -K SYS_GID_MAX=59999 --user-group --no-create-home --shell /usr/sbin/nologin "$user"
+        # sandbox.py copies the report into reports as the user, so both folders are that user's and closed to others.
+        sudo mkdir -m 700 -- "$out" "$out/reports"
+        sudo chown -R "$user:$user" -- "$out"
+        # The step that ends what the scan left running, which takes the report back from the user, runs only if this output is set. So it is written before anything runs as the user.
+        echo "script=$script" >> "$GITHUB_OUTPUT"
+        # The sandbox's relay runs as the user, and reads the token below the home folder.
+        chmod g=x ~
+        sudo chgrp "$user" ~
+        # The relay needs no list of these two folders.
+        chmod o-r "$RUNNER_TEMP" "${GITHUB_OUTPUT%/*}"
+        # claude-code-action writes the job's token into the checkout's git settings, and writes
+        # them back after the session with the mode that they had. Closed to group and others, the
+        # file is out of reach of the relay's user and of the sandbox's unused IDs outside the
+        # sandbox. The probe step has checked that .git is a folder.
+        config="$GITHUB_WORKSPACE/.git/config"
+        if [ -O "$config" ]; then
+          chmod go= -- "$config"
+        fi
+        token="$RUNNER_TEMP/claude-security-token"
+        if [ -e "$token" ]; then
+          sudo chgrp "$user" "$token"
+          chmod g=rx "$token"
+        fi
+        mkdir -p "$firewall"
+        python3 -I -S "$script" rules "$ALLOWED" "$firewall"
+        for family in iptables ip6tables; do
+          sudo "$family-restore" --noflush < "$firewall/$family"
+        done
+        if ! python3 -I -S "$script" start "$firewall" -- /usr/bin/python3 -I -S "$script" check "$ALLOWED"; then
+          echo "::error::The check on the scan's user ($user) did not pass, or an entry of the input scan_variables was refused; what it found is above in the log. Nothing was scanned." >&2
+          exit 1
+        fi
+        # /usr and /opt are read-only while the scan runs: the image leaves folders there open to every user, and later steps find their programs there.
+        trees="/usr /opt"
+        for tree in $trees; do
+          sudo mount --bind -o ro "$tree" "$tree"
+        done
+        echo "read_only=$trees" >> "$GITHUB_OUTPUT"
+        # Starts the sandbox once, as the session will, and tries its walls from inside.
+        if ! python3 -I -S "$script" session "$firewall" -- --check "$RUNNER_TEMP/claude-security-work"; then
+          echo "::error::The sandbox does not start on this runner, or one of its walls does not hold; what it found is above in the log. Nothing was scanned. Unless that names a setting of this job's, such as a certificate's file, please report this privately, as this action's SECURITY.md describes." >&2
+          exit 1
+        fi
+
+    - uses: anthropics/claude-code-action@6070f08d2b4766348e0acded463606a7b176417b # v1.0.279
+      if: steps.repeat.outputs.scan != 'false'
+      id: scan
+      with:
+        # Stand-ins: the relay reads the credential from its file, and claude-code-action needs one
+        # of these two inputs. A gateway's stand-in goes as an API key, which the start script
+        # drops: as an OAuth token, the session would take itself for a subscriber and send the
+        # OAuth beta header to the gateway. The start script knows the stand-in for an API key by
+        # its text. No path or variable that the sandbox shows may hold a stand-in that the start
+        # script keeps: sandbox.py would refuse to start.
+        anthropic_api_key: ${{ steps.provider.outputs.name == 'anthropic' && (inputs.anthropic_api_key != '' && 'a-stand-in-for-an-api-key' || inputs.model_auth_token != '' && 'a-stand-in-for-a-gateways-key') || '' }}
+        claude_code_oauth_token: ${{ steps.claude_token.outputs.stand_in }}
+        # No federation ids, so that claude-code-action fetches no identity token itself.
+        use_bedrock: ${{ steps.provider.outputs.name == 'bedrock' }}
+        use_vertex: ${{ steps.provider.outputs.name == 'vertex' }}
+        use_foundry: ${{ steps.provider.outputs.name == 'foundry' }}
+        github_token: ${{ github.token }}
+        allowed_bots: ${{ inputs.allowed_bots }}
+        prompt: /claude-security:ci-review
+        # Without a program path, claude-code-action would install Claude Code and start the session itself, outside the sandbox.
+        path_to_claude_code_executable: ${{ steps.probe.outputs.plugin }}/scripts/sandbox/sandboxed-claude.sh
+        path_to_bun_executable: ${{ steps.bun.outputs.path }}
+        # Skips claude-code-action's step that posts buffered inline comments: this action posts the review.
+        classify_inline_comments: "false"
+        # Set outright here, and not left to claude-code-action's default: that action's report would put the session's text into the job summary as Markdown, past this action's own cleaning.
+        display_report: "false"
+        # Its rules guard a session that holds the job's token, and this one holds none. On a pull
+        # request from an app, or from an author without write access, they would refuse the scan's
+        # commands and replace some of the pull request's files with another branch's.
+        restrict_untrusted_prs: "false"
+        # --permission-mode auto comes before the model and claude_args inputs: claude-code-action drops what follows an unquoted # after an argument in either.
+        # Agent(isolation:*) refuses a call that can ask for a git worktree or a cloud session outside the sandbox and the firewall. Unquoted, claude-code-action cuts it to Agent, which refuses the whole tool.
+        claude_args: |-
+          --plugin-dir "${{ steps.probe.outputs.plugin }}"
+          --disallowedTools "EnterWorktree,ExitWorktree,CronCreate,CronDelete,CronList,ScheduleWakeup,RemoteTrigger,Design*,Artifact,WebFetch,WebSearch,SendMessage,Agent(isolation:*)"
+          --system-prompt-snapshot off
+          --add-dir "${{ steps.probe.outputs.reports }}"
+          --setting-sources user
+          --permission-mode auto
+          --settings '${{ steps.settings.outputs.session_settings }}'
+          --model ${{ inputs.model || 'fable' }} --effort ${{ inputs.model_effort || 'high' }}
+          ${{ inputs.claude_args }}
+      env:
+        # The scan's git: no system configuration, no hook folder, no file-system monitor, no bare repository picked up from the tree, no lazy fetch, no prompt.
+        GIT_CONFIG_NOSYSTEM: "1"
+        GIT_CONFIG_COUNT: "3"
+        GIT_CONFIG_KEY_0: core.fsmonitor
+        GIT_CONFIG_VALUE_0: ""
+        GIT_CONFIG_KEY_1: core.hooksPath
+        GIT_CONFIG_VALUE_1: /dev/null
+        GIT_CONFIG_KEY_2: safe.bareRepository
+        GIT_CONFIG_VALUE_2: explicit
+        GIT_NO_LAZY_FETCH: "1"
+        GIT_TERMINAL_PROMPT: "0"
+        CLAUDE_SECURITY_SCAN_VARIABLES: ${{ inputs.scan_variables }}
+        # Empty: claude-code-action would prefer the workflow's ANTHROPIC_MODEL to --model.
+        ANTHROPIC_MODEL: ""
+        # The inputs alone count, not the workflow's env:. The firewall allows the host of the vertex_region input, so the scan must get that same region.
+        ANTHROPIC_DEFAULT_SONNET_MODEL: ${{ inputs.default_sonnet_model }}
+        ANTHROPIC_DEFAULT_OPUS_MODEL: ${{ inputs.default_opus_model }}
+        ANTHROPIC_VERTEX_PROJECT_ID: ${{ inputs.vertex_project_id }}
+        CLOUD_ML_REGION: ${{ inputs.vertex_region }}
+        ANTHROPIC_FOUNDRY_RESOURCE: ${{ inputs.foundry_resource }}
+        # It reads the env context on purpose: AWS's sign-in step exports AWS_REGION to later steps.
+        AWS_REGION: ${{ inputs.aws_region || env.AWS_REGION }}
+        ANTHROPIC_BASE_URL: ${{ steps.provider.outputs.name == 'anthropic' && inputs.model_base_url || '' }}
+        ANTHROPIC_BEDROCK_BASE_URL: ${{ steps.provider.outputs.name == 'bedrock' && inputs.model_base_url || '' }}
+        ANTHROPIC_VERTEX_BASE_URL: ${{ steps.provider.outputs.name == 'vertex' && inputs.model_base_url || '' }}
+        ANTHROPIC_FOUNDRY_BASE_URL: ${{ steps.provider.outputs.name == 'foundry' && inputs.model_base_url || '' }}
+        CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS: ${{ inputs.scan_agents || '8' }}
+        # Not set from the input: a secret here would reach every step of claude-code-action.
+        ANTHROPIC_API_KEY: ""
+        CLAUDE_CODE_OAUTH_TOKEN: ""
+        # An exception to the rule above: claude-code-action starts a Bedrock job only with AWS keys or this variable.
+        AWS_BEARER_TOKEN_BEDROCK: ${{ steps.provider.outputs.name == 'bedrock' && inputs.model_auth_token || env.AWS_BEARER_TOKEN_BEDROCK }}
+        # Empty, so that a Foundry key or token in the workflow's env: does not reach the relay.
+        ANTHROPIC_FOUNDRY_API_KEY: ""
+        ANTHROPIC_FOUNDRY_AUTH_TOKEN: ""
+        # Empty, so that claude-code-action does not print the session's messages: a later access token has no mask yet.
+        ACTIONS_STEP_DEBUG: ""
+
+    # The first step after the scan: it must run before any later step prints text that the scan chose.
+    - name: Remove the credential folders
+      if: always() && steps.repeat.outputs.scan != 'false'
+      shell: bash
+      env:
+        SCAN_OUTCOME: ${{ steps.scan.outcome }}
+      run: |
+        failed=0
+        # The program that renews a token may make its new file just as rm empties the folder. Its next one is at least two minutes away, so a second rm finds the folder at rest.
+        rm -rf "$RUNNER_TEMP/claude-security-token" || rm -rf "$RUNNER_TEMP/claude-security-token" || failed=1
+        log="$RUNNER_TEMP/claude-security-credential/renewals"
+        if [ -e "$log" ]; then
+          # The runner takes each mask here, before cat: a full disk can leave a ::stop-commands:: bracket open in the log, and behind it a mask's line shows as text.
+          LC_ALL=C grep -aoE '::add-mask::[A-Za-z0-9._~+/-]+=*$' "$log" || [ $? = 1 ] || failed=1
+          cat "$log" || failed=1
+        fi
+        rm -rf "$RUNNER_TEMP/claude-security-credential" || failed=1
+        # claude-code-action may have written the job's token back into the checkout's git settings. The unset, the same as the start script's, keeps git on the checkout.
+        if [ "$SCAN_OUTCOME" != skipped ]; then
+          unset GIT_CONFIG GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM GIT_CONFIG_PARAMETERS GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE XDG_CONFIG_HOME
+          git remote set-url origin "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git" || failed=1
+        fi
+        if [ "$failed" = 1 ]; then
+          echo "::error::The action could not remove a credential folder, could not read the log of the program that renews the token, or could not take the job's token out of the checkout's git settings; the reason, if one was given, is above in the log. This job fails: it posts no review and records no scan." >&2
+          exit 1
+        fi
+
+    # Processes that outlive the session could change the report while it is read.
+    - name: End what the scan left running, and take back what it wrote
+      if: always() && steps.scan_user.outputs.script != ''
+      shell: bash
+      env:
+        # Set by the step that created the user: GITHUB_ACTION_PATH is not relied on after the nested action.
+        SCAN_USER: ${{ steps.scan_user.outputs.script }}
+        READ_ONLY: ${{ steps.scan_user.outputs.read_only }}
+        SCAN_OUTCOME: ${{ steps.scan.outcome }}
+      run: |
+        # One stream, so that the lines below reach the log in their order.
+        exec 2>&1
+        failed=0
+        # The next command can print names that the scan chose. Between ::stop-commands::WORD and ::WORD:: the runner reads no workflow command.
+        word=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
+        echo "::stop-commands::$word"
+        python3 -I -S "$SCAN_USER" end "$RUNNER_TEMP/claude-security-out" "$SCAN_OUTCOME" || failed=$?
+        printf '\n::%s::\n' "$word"
+        # /usr and /opt become writable again only once nothing of the scan's user runs. Lazily, since this step's own shell, started from /usr, keeps the mount busy.
+        if [ "$failed" = 0 ]; then
+          for tree in $READ_ONLY; do
+            sudo umount -l "$tree" || failed=1
+          done
+        fi
+        # If the session's launch failed early, it left behind the file that holds the job's variables for it.
+        rm -f "$RUNNER_TEMP"/claude-security-variables-* || true
+        if [ "$failed" != 0 ]; then
+          echo "::error::The action could not end the processes of the scan's user, could not give the report back to the job's user, or could not make /usr and /opt writable again; the reason is above in the log. This job fails: it posts no review and records no scan, and its later steps may find /usr and /opt read-only." >&2
+        fi
+        exit "$failed"
+
+    # The start script leaves this file, in a folder that the scan cannot write, just before it starts the sandbox.
+    - name: Check the session started through the sandbox's start script
+      if: steps.repeat.outputs.scan != 'false'
+      shell: bash
+      run: |
+        if [ ! -e "$RUNNER_TEMP/claude-security-session-started" ]; then
+          echo "::error::No session started through this action's start script, so if claude-code-action ran one, it ran outside the sandbox, with the job's token. This action does not read the scan's report and posts no review. Please report this privately, as this action's SECURITY.md describes." >&2
+          exit 1
+        fi
+        echo "The session started through this action's start script. Before the start, that script took the job's token out of the session's variables, and out of the checkout's git settings, where claude-code-action had put it."
+
+    # By default, claude-code-action's log does not say why a model request failed. From its record this step prints only the HTTP status and a count of tool calls.
+    # The error's text comes from the host, and could hold a workflow command.
+    - name: Print the HTTP status that ended a failed session
+      if: always() && steps.scan.outcome == 'failure'
+      shell: bash
+      env:
+        EXECUTION_FILE: ${{ steps.scan.outputs.execution_file }}
+        SESSION_STATUS: ${{ steps.probe.outputs.plugin }}/scripts/session_status.py
+      run: |
+        if ! python3 -I -S "$SESSION_STATUS" -- "$EXECUTION_FILE"; then
+          echo "::error::The scan's step failed. This action found no HTTP status for the failure, so it can add no reason. The reason, if one was given, is above in the log or in the job summary." >&2
+        fi
+
+    # --permission-mode auto is a request: where auto mode is unavailable, the session runs in another mode.
+    - name: Check the session ran in auto mode
+      if: steps.repeat.outputs.scan != 'false'
+      shell: bash
+      env:
+        EXECUTION_FILE: ${{ steps.scan.outputs.execution_file }}
+        SESSION_STATUS: ${{ steps.probe.outputs.plugin }}/scripts/session_status.py
+      run: |
+        python3 -I -S "$SESSION_STATUS" --auto-mode -- "$EXECUTION_FILE"
+
+    # Where Claude Code finds that it cannot use fast mode, it goes on at standard speed.
+    - name: Warn if the session did not end in fast mode
+      if: inputs.fast_mode == 'true' && steps.repeat.outputs.scan != 'false'
+      shell: bash
+      env:
+        EXECUTION_FILE: ${{ steps.scan.outputs.execution_file }}
+        SESSION_STATUS: ${{ steps.probe.outputs.plugin }}/scripts/session_status.py
+      run: |
+        python3 -I -S "$SESSION_STATUS" --fast-mode -- "$EXECUTION_FILE"
+
+    - name: Post the review or record the scan
+      id: post
+      if: steps.repeat.outputs.scan != 'false'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        # The scan step's git settings: this step has the job's token and runs git.
+        GIT_CONFIG_NOSYSTEM: "1"
+        GIT_CONFIG_COUNT: "3"
+        GIT_CONFIG_KEY_0: core.fsmonitor
+        GIT_CONFIG_VALUE_0: ""
+        GIT_CONFIG_KEY_1: core.hooksPath
+        GIT_CONFIG_VALUE_1: /dev/null
+        GIT_CONFIG_KEY_2: safe.bareRepository
+        GIT_CONFIG_VALUE_2: explicit
+        GIT_NO_LAZY_FETCH: "1"
+        GIT_TERMINAL_PROMPT: "0"
+        CLAUDE_SECURITY_FAIL_ON: >-
+          ${{ !startsWith(github.event_name, 'pull_request') && inputs.scheduled_fail_on
+          || inputs.fail_on }}
+        CLAUDE_SECURITY_SUGGEST_PATCHES: ${{ inputs.suggest_patches }}
+        CLAUDE_SECURITY_CHANGE_SCAN_EFFORT: ${{ inputs.change_scan_effort }}
+        POST_REVIEW: ${{ steps.probe.outputs.plugin }}/scripts/post_review.py
+        REPORT: ${{ inputs.report }}
+        REPORTS: ${{ steps.probe.outputs.reports }}
+        # The scan must have started from the pull request's merge base, which the probe step asked GitHub for.
+        CLAUDE_SECURITY_MERGE_BASE: ${{ steps.probe.outputs.merge_base }}
+        # The review names the model input. It names no model where claude_args has a --model of its own.
+        CLAUDE_SECURITY_MODEL: ${{ !contains(inputs.claude_args, '--model') && (inputs.model || 'fable') || '' }}
+      run: |
+        # The script prints text from the scan's report, and the runner would read a workflow command in it.
+        word=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
+        echo "::stop-commands::$word"
+        failed=0
+        python3 -I -S -u "$POST_REVIEW" --finished --reports "$RUNNER_TEMP/claude-security-out/reports" ${REPORT:+--handed-over "$REPORTS"} . 2>&1 || failed=$?
+        # One stream, so that the lines below reach the log in their order.
+        exec 2>&1
+        # Not in a trap: on a cancel bash would run it while the script still prints.
+        printf '\n::%s::\n' "$word"
+        if [ "$failed" != 0 ]; then
+          echo "::error::The step that posts the review or records the scan failed; the reason is above in the log. The job summary may give it too." >&2
+        fi
+        exit "$failed"
+
+    # Without this artifact, or the workflow's step Receipt after a re-run, later runs do not believe the review. So a failed upload does not fail the job.
+    - name: Upload the review's receipt
+      if: steps.post.outputs.receipt != ''
+      continue-on-error: true
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: ${{ steps.post.outputs.receipt }}
+        path: ${{ runner.temp }}/claude-security-verdict
+
+    # A failed upload costs only the fixes, so it does not fail the job. After a re-run of one job GitHub
+    # still lists the earlier attempts' artifacts, so the name holds the attempt. After "Re-run all jobs"
+    # it no longer lists them, the review receipts too.
+    - name: Hand over the report
+      id: hand_over
+      if: steps.post.outputs.hand_over == 'true'
+      continue-on-error: true
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: claude-security-report-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/claude-security-out/reports
+        retention-days: 1
+
+    # A job given the input report enforces no verdict: the job that made the report enforced it, and is the required check.
+    - name: Enforce the verdict
+      if: inputs.report == '' && steps.repeat.outputs.enforce != 'false'
+      shell: bash
+      run: |
+        VERDICT="$(sed -n 's/^verdict=//p' "$RUNNER_TEMP/claude-security-verdict" 2>/dev/null || true)"
+        if [ "$VERDICT" != "pass" ]; then
+          echo "::error::Claude Security plugin verdict: ${VERDICT:-none was left}. See the job summary and the steps above in the log." >&2
+          exit 1
+        fi

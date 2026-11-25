@@ -15,6 +15,8 @@ Discovery, in precedence order (matching CLAUDE.md / settings.json):
   - ``$CLAUDE_CONFIG_DIR/<name>``         (user, when set to another directory)
   - ``<cwd>/.claude/<name>``              (project, committed)
   - ``<cwd>/.claude/<name>.local.<ext>``  (project local, gitignored)
+  - the last two again in the project's own folder (``CLAUDE_PROJECT_DIR``)
+    once the session has moved away from it, see ``_project_dirs``
 
 Managed delivery via ``managed-settings.json`` is not yet supported.
 Org admins can still push files to ``~/.claude/`` (or the directory
@@ -38,9 +40,13 @@ Trust model:
 """
 
 import fnmatch
+import functools
 import json
 import os
 import re
+import subprocess
+import sys
+import time
 from typing import Any, Dict, List, Optional, Tuple
 
 from _base import debug_log
@@ -58,6 +64,14 @@ PATTERNS_BASENAMES = ("security-patterns.yaml", "security-patterns.yml", "securi
 _guidance_block: str = ""
 _user_patterns: List[Dict[str, Any]] = []
 
+# Custom rules whose regex the slow-regex check refused. Telemetry only.
+_refused_regexes = 0
+# Seconds the slowest custom regex took in this hook. Telemetry only.
+slowest_regex = 0.0
+# The folder a custom rule's globs are relative to: the project's own.
+_match_roots: Tuple[Optional[str], ...] = ()
+_rels_cache: Dict[str, Tuple[str, ...]] = {}
+
 
 # ── public API ───────────────────────────────────────────────────────────────
 
@@ -68,7 +82,14 @@ def load_for_session(cwd: Optional[str]) -> None:
     Called from the hook's main() before dispatching. Failures are non-fatal —
     a malformed config file produces a debug_log entry, never a crash.
     """
-    global _guidance_block, _user_patterns
+    global _guidance_block, _user_patterns, _refused_regexes, _match_roots
+    global _brace_forms_left
+    _refused_regexes = 0
+    env_project = os.environ.get("CLAUDE_PROJECT_DIR") or None
+    _match_roots = tuple(_project_dirs(cwd)[:1]) or ((env_project,) if env_project else ())
+    _rels_cache.clear()
+    _forms_cache.clear()
+    _brace_forms_left = _BRACE_BUDGET
     try:
         _guidance_block = _wrap_guidance(_load_guidance(cwd))
     except Exception as e:
@@ -79,6 +100,7 @@ def load_for_session(cwd: Optional[str]) -> None:
     except Exception as e:
         debug_log(f"extensibility: failed to load security-patterns: {e}")
         _user_patterns = []
+    _reset_regex_limit()
 
 
 def guidance_block() -> str:
@@ -115,26 +137,97 @@ def _same_dir(a: str, b: str) -> bool:
         return os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))
 
 
-def _config_paths(cwd: Optional[str], basename: str) -> List[Tuple[str, str]]:
-    """Existing config file paths, lowest precedence first (so concat reads in
-    precedence order user → project → project-local). Truncation is done on
-    the concatenated string, so lowest-precedence content is dropped last."""
-    paths = [("User", os.path.join(d, basename)) for d in _user_config_dirs()]
-    if cwd:
-        paths.append(("Project", os.path.join(cwd, ".claude", basename)))
-        # claude-security-guidance.local.md / security-patterns.local.yaml
-        stem, ext = os.path.splitext(basename)
-        paths.append(("Project (local)", os.path.join(cwd, ".claude", f"{stem}.local{ext}")))
+def _config_paths(cwd: Optional[str], basename: str) -> List[Tuple[str, str, Optional[str]]]:
+    """(label, path, project folder or None for a user file) of every config
+    file to look for, lowest precedence first (so concat reads in precedence
+    order user → project → project-local). Truncation is done on the
+    concatenated string, so lowest-precedence content is dropped last, and a
+    subfolder's files never push out the project's."""
+    paths: List[Tuple[str, str, Optional[str]]] = [
+        ("User", os.path.join(d, basename), None) for d in _user_config_dirs()]
+    # claude-security-guidance.local.md / security-patterns.local.yaml
+    stem, ext = os.path.splitext(basename)
+    for folder in _project_dirs(cwd):
+        paths.append(("Project", os.path.join(folder, ".claude", basename), folder))
+        paths.append(("Project (local)",
+                      os.path.join(folder, ".claude", f"{stem}.local{ext}"), folder))
     return paths
 
 
-def _readable_config(path: str, cwd: Optional[str]) -> bool:
-    """Whether a config file may be read. A project file (`cwd` given) must be
+def _checkout_of(path: str) -> Tuple[Optional[str], Optional[str]]:
+    """(top folder, shared git directory) of the checkout `path` is in, both
+    real paths, or (None, None). Read from disk, so no git process starts.
+    Linked worktrees of one repository share the second."""
+    top = os.path.realpath(path)
+    while not os.path.lexists(os.path.join(top, ".git")):
+        parent = os.path.dirname(top)
+        if parent == top:
+            return None, None
+        top = parent
+    git_dir = os.path.join(top, ".git")
+    if os.path.isfile(git_dir):
+        try:
+            with open(git_dir, encoding="utf-8", errors="replace") as f:
+                text = f.read(4096)
+        except OSError:
+            return top, None
+        if not text.startswith("gitdir:"):
+            return top, None
+        git_dir = os.path.join(top, text[len("gitdir:"):].strip())
+    try:
+        # A linked worktree's own git directory names the shared one here.
+        with open(os.path.join(git_dir, "commondir"), encoding="utf-8", errors="replace") as f:
+            git_dir = os.path.join(git_dir, f.read(4096).strip())
+    except OSError:
+        pass
+    return top, os.path.realpath(git_dir)
+
+
+def _is_inside(path: str, folder: str) -> bool:
+    """Compared on disk, so another spelling of a folder's name (case, an
+    8.3 name, a link) does not matter."""
+    path = os.path.realpath(path)
+    while not _same_dir(path, folder):
+        parent = os.path.dirname(path)
+        if parent == path:
+            return False
+        path = parent
+    return True
+
+
+def _project_dirs(cwd: Optional[str]) -> List[str]:
+    """Folders whose ``.claude`` holds this session's project files: the
+    project's own when the session has moved to another folder of it
+    (``cd src``), then the session's current folder. In a linked worktree the
+    first is the same folder of the worktree, which has that branch's files.
+    A folder of another repository outside the project gets its own only."""
+    if not cwd:
+        return []
+    project = (os.environ.get("CLAUDE_PROJECT_DIR") or "").strip()
+    if not project or not os.path.isabs(project) or _same_dir(cwd, project):
+        return [cwd]
+    top, shared = _checkout_of(cwd)
+    project_top, project_shared = _checkout_of(project)
+    same_top = bool(top and project_top and _same_dir(top, project_top))
+    if not same_top and shared and project_shared and _same_dir(shared, project_shared):
+        rel = os.path.relpath(os.path.realpath(project), project_top)
+        project = os.path.normpath(os.path.join(top, rel))
+    elif not (same_top or _is_inside(cwd, project)):
+        return [cwd]
+    # A session started in the home folder: those are the user files.
+    config = os.path.join(project, ".claude")
+    if _same_dir(cwd, project) or any(_same_dir(config, d) for d in _user_config_dirs()):
+        return [cwd]
+    return [project, cwd]
+
+
+def _readable_config(path: str, folder: Optional[str]) -> bool:
+    """Whether a config file may be read. A project file (`folder` given) must be
     a regular file at that very place: a link, or a `.claude` that is one,
     would bring in text from wherever it points."""
-    if cwd is None or not os.path.lexists(path):
+    if folder is None or not os.path.lexists(path):
         return True
-    expected = os.path.join(os.path.realpath(cwd), os.path.relpath(path, cwd))
+    expected = os.path.join(os.path.realpath(folder), os.path.relpath(path, folder))
     real = os.path.realpath(path)
     if os.path.normcase(real) == os.path.normcase(expected) and os.path.isfile(real):
         return True
@@ -144,8 +237,8 @@ def _readable_config(path: str, cwd: Optional[str]) -> bool:
 
 def _load_guidance(cwd: Optional[str]) -> str:
     parts = []
-    for label, path in _config_paths(cwd, GUIDANCE_BASENAME):
-        if not _readable_config(path, cwd if label.startswith("Project") else None):
+    for label, path, folder in _config_paths(cwd, GUIDANCE_BASENAME):
+        if not _readable_config(path, folder):
             continue
         try:
             with open(path, encoding="utf-8") as f:
@@ -194,7 +287,7 @@ def _wrap_guidance(guidance: str) -> str:
 
 def _load_user_patterns(cwd: Optional[str]) -> List[Dict[str, Any]]:
     rules: List[Dict[str, Any]] = []
-    for label, path in _config_paths(cwd, "security-patterns"):
+    for label, path, folder in _config_paths(cwd, "security-patterns"):
         # _config_paths returns an extensionless stem (e.g.
         # ".claude/security-patterns" or ".claude/security-patterns.local");
         # try each supported extension.
@@ -203,7 +296,7 @@ def _load_user_patterns(cwd: Optional[str]) -> List[Dict[str, Any]]:
             # One unusable file is skipped on its own, so the rules from the
             # other locations still load.
             try:
-                if not _readable_config(candidate, cwd if label.startswith("Project") else None):
+                if not _readable_config(candidate, folder):
                     continue
                 found = _rules_from_file(candidate, label)
             except Exception as e:
@@ -313,6 +406,8 @@ def _validate_pattern(entry: Any, source: str) -> Optional[Dict[str, Any]]:
         rule["substrings"] = substrings
     if regex:
         if _has_redos_structure(regex):
+            global _refused_regexes
+            _refused_regexes += 1
             debug_log(f"extensibility: skipping {name}: regex looks ReDoS-prone: {regex!r:.60}")
             return None
         try:
@@ -328,15 +423,35 @@ def _validate_pattern(entry: Any, source: str) -> Optional[Dict[str, Any]]:
         if not isinstance(paths, list) or not isinstance(exclude, list):
             debug_log(f"extensibility: skipping {name}: paths/exclude_paths must be lists")
             return None
+        for glob in (*paths, *exclude):
+            if isinstance(glob, str):
+                _glob_forms(glob, name)  # now, so the log can name the rule
+        rule["_globs"] = (tuple(paths), tuple(exclude))  # read by edit_stats
         # Capture as defaults so the lambda doesn't share state across rules.
         rule["path_filter"] = (
-            lambda p, _inc=tuple(paths), _exc=tuple(exclude): _glob_match(p, _inc, _exc)
+            lambda p, _inc=tuple(paths), _exc=tuple(exclude): _rule_covers(p, _inc, _exc)
         )
     return rule
 
 
+def _rule_covers(path: str, include: Tuple[str, ...], exclude: Tuple[str, ...]) -> bool:
+    """Whether a rule's globs let it apply to `path`, as check_patterns hands it
+    over (POSIX absolute paths without their leading `/`). Globs are read against
+    the full path and the path inside the project, `**/` can match no folder, and
+    `{a,b}` is either."""
+    full = path if os.path.isabs(path) else "/" + path
+    rels = _rels_cache.get(full)
+    if rels is None:
+        # As written, and resolved: a linked folder is matched by either name.
+        rels = _rels_cache[full] = tuple(dict.fromkeys(
+            r for d in _match_roots
+            for r in (_inside(d, full, resolve=False), _inside(d, full)) if r is not None))
+    return _wider_glob_match(full, rels, include, exclude)
+
+
 def _glob_match(path: str, include: Tuple[str, ...], exclude: Tuple[str, ...]) -> bool:
-    """Match a path against include/exclude globs. ``**`` matches any depth."""
+    """The reading of globs before _rule_covers, kept for edit_stats: full path
+    or file name only, `**/` needs a folder, and braces are literal."""
     norm = path.replace(os.sep, "/")
     base = os.path.basename(norm)
     def _hit(globs: Tuple[str, ...]) -> bool:
@@ -378,3 +493,297 @@ def _has_redos_structure(regex: str) -> bool:
                 if a.startswith(b) or b.startswith(a):
                     return True
     return False
+
+
+# ── telemetry: how custom rules are written ──────────────────────────────────
+# Counts and flags only, never a glob, a regex, a rule name or a path. Nothing
+# here changes which rules apply.
+
+# Bits of cr_shapes.
+_SHAPE_PLAIN_PATHS = 1      # a `paths` glob with a folder and no leading `*`
+_SHAPE_PLAIN_EXCLUDE = 2    # the same in `exclude_paths`
+_SHAPE_MID_STARS = 4        # `/**/` inside a glob
+_SHAPE_BRACES = 8           # `{`, as in `{a,b}`
+_SHAPE_LEADING = 16         # starts with `/` or `./`
+_SHAPE_REGEX_REFUSED = 32   # a rule dropped by the slow-regex check
+_SHAPE_REGEX_COUNTED = 64   # a loaded regex repeats a repeated group by count
+
+_COUNTED_REPEAT = re.compile(r"\((?:\?:)?[^()\[\]\\]*[+*][^()\[\]\\]*\)\{\d*(?:,\d*)?\}")
+
+
+def _shape_bits(globs: Tuple[str, ...], plain: int) -> int:
+    bits = 0
+    for g in globs:
+        if not isinstance(g, str):
+            continue
+        g = g.replace("\\", "/")
+        if "/" in g and not g.startswith(("*", "/", "./")):
+            bits |= plain
+        if "/**/" in g:
+            bits |= _SHAPE_MID_STARS
+        if "{" in g:
+            bits |= _SHAPE_BRACES
+        if g.startswith(("/", "./")):
+            bits |= _SHAPE_LEADING
+    return bits
+
+
+@functools.lru_cache(maxsize=512)
+def _zero_depth_forms(glob: str) -> Tuple[str, ...]:
+    """`glob`, and the globs left when each `**/` matches no folder."""
+    forms = [glob]
+    for form in forms:
+        for m in re.finditer(r"(?:^|(?<=/))\*\*/", form):
+            shorter = form[:m.start()] + form[m.end():]
+            if shorter and shorter not in forms and len(forms) < 16:
+                forms.append(shorter)
+    return tuple(forms)
+
+
+# Globs that braces may stand for: in one glob, and in all the rules loaded,
+# counted with their `**/` forms. Real rules list a few file types and folders;
+# this bounds what a project's file can cost. A glob beyond either is read as it
+# is written. User files load first, so a project's cannot use up their share.
+_MAX_BRACE_FORMS = 256
+_MAX_BRACE_GLOB_LEN = 1000
+_BRACE_BUDGET = 4096
+_brace_forms_left = _BRACE_BUDGET
+# glob -> its _glob_forms.
+_forms_cache: Dict[str, Tuple[Tuple[str, str, bool], ...]] = {}
+
+
+def _brace_group(glob: str) -> Optional[Tuple[int, Tuple[int, ...], int]]:
+    """The first `{...}` with a comma of its own: where it opens, its commas,
+    where it closes. Braces inside `[...]` are members of that set."""
+    stack: List[Tuple[int, List[int]]] = []
+    found = None
+    i, last_set_end = 0, glob.rfind("]")
+    while i < len(glob):
+        c = glob[i]
+        if c == "[" and i < last_set_end:
+            # As fnmatch reads a set: `]` right after `[` or `[!` is a member.
+            start = i + 2 if glob.startswith("!", i + 1) else i + 1
+            end = glob.find("]", start + 1)
+            if end > 0:
+                i = end
+        elif c == "{":
+            stack.append((i, []))
+        elif c == "," and stack:
+            stack[-1][1].append(i)
+        elif c == "}" and stack:
+            opened, commas = stack.pop()
+            if commas and (found is None or opened < found[0]):
+                found = (opened, tuple(commas), i)
+        i += 1
+    return found
+
+
+def _brace_forms(glob: str) -> Optional[Tuple[str, ...]]:
+    """`glob`, and the globs its braces stand for: `*.{ts,tsx}` is also `*.ts`
+    and `*.tsx`. None when there are too many. Braces with no comma are literal."""
+    todo, done = [glob], []
+    while todo:
+        form = todo.pop()
+        group = _brace_group(form)
+        if group is None:
+            done.append(form)
+            continue
+        opened, commas, closed = group
+        if len(todo) + len(done) + len(commas) + 1 > _MAX_BRACE_FORMS:
+            return None
+        edges = (opened,) + commas + (closed,)
+        rest = form[closed + 1:]
+        for a, b in zip(edges, edges[1:]):
+            option = form[a + 1:b].strip()
+            # `{src,}/**` would leave `/**`, which takes in every file.
+            if option or opened or not rest.startswith("/"):
+                todo.append(form[:opened] + option + rest)
+    # The glob as written stays, for a name that has braces in it.
+    return tuple(dict.fromkeys([glob] + [f for f in done if f]))
+
+
+def _glob_forms(glob: str, rule_name: str = "") -> Tuple[Tuple[str, str, bool], ...]:
+    """The globs `glob` stands for, each as (glob, its literal end, whether it
+    has a folder in it), in the filesystem's case."""
+    global _brace_forms_left
+    if glob in _forms_cache:
+        return _forms_cache[glob]
+    braces = (glob,)
+    if "{" in glob and "," in glob:
+        fits = _brace_forms_left > 0 and len(glob) <= _MAX_BRACE_GLOB_LEN
+        braces = (_brace_forms(glob) if fits else None) or ()
+    forms = tuple((b, f) for b in braces for f in _zero_depth_forms(b))
+    if not braces or (len(braces) > 1 and len(forms) > _brace_forms_left):
+        debug_log(f"extensibility: {rule_name}: too many combinations in braces, "
+                  f"read as written: {glob!r:.80}")
+        # Finding out that it does not fit has a cost too.
+        _brace_forms_left -= _MAX_BRACE_FORMS
+        forms = tuple((glob, f) for f in _zero_depth_forms(glob))
+    elif len(braces) > 1:
+        _brace_forms_left -= len(forms)
+    out = []
+    for b, f in forms:
+        # A glob with no folder in it is about the file name: `*` crosses `/`,
+        # so against the path inside the project `test*` would take in a tree.
+        folder = "/" in b.replace("\\", "/")
+        f = os.path.normcase(f)
+        out.append((f, f[max(f.rfind(c) for c in "*?[]") + 1:], folder))
+    _forms_cache[glob] = tuple(out)
+    return _forms_cache[glob]
+
+
+def _wider_glob_match(path: str, rels: Tuple[str, ...],
+                      include: Tuple[str, ...], exclude: Tuple[str, ...]) -> bool:
+    """_glob_match, with globs also read against the path inside the project
+    (`rels`), `**/` able to match no folder, and braces as alternatives."""
+    full = path.replace(os.sep, "/")
+    names = [os.path.normcase(n) for n in (full, full.lstrip("/"), os.path.basename(full))]
+    inside = names + [os.path.normcase(n) for rel in rels for n in (rel, "/" + rel, "./" + rel)]
+
+    def _hit(globs: Tuple[str, ...]) -> bool:
+        # The literal end first: compiling a glob is the slow part, and most of
+        # the options in braces end differently.
+        return any(n.endswith(tail) and fnmatch.fnmatchcase(n, form) for g in globs
+                   for form, tail, folder in _glob_forms(g)
+                   for n in (inside if folder else names))
+    if include and not _hit(include):
+        return False
+    if exclude and _hit(exclude):
+        return False
+    return True
+
+
+def _inside(root: Optional[str], path: str, resolve: bool = True) -> Optional[str]:
+    if not root:
+        return None
+    normal = os.path.realpath if resolve else os.path.normpath
+    try:
+        rel = os.path.relpath(normal(path), normal(root))
+    except (OSError, ValueError):
+        return None
+    if rel == os.pardir or rel.startswith(os.pardir + os.sep):
+        return None
+    return rel.replace(os.sep, "/")
+
+
+def edit_stats(file_path: str) -> Dict[str, int]:
+    """Counts for one edit; empty for a user with no custom rules. cr_gain and
+    cr_loss are rule and edit pairs that _rule_covers decides differently from
+    the older reading. Telemetry only."""
+    stats: Dict[str, int] = {}
+    shapes = _SHAPE_REGEX_REFUSED if _refused_regexes else 0
+    gain = loss = 0
+    for rule in _user_patterns:
+        include, exclude = rule.get("_globs", ((), ()))
+        if include or exclude:
+            shapes |= _shape_bits(include, _SHAPE_PLAIN_PATHS)
+            shapes |= _shape_bits(exclude, _SHAPE_PLAIN_EXCLUDE)
+            try:
+                now = _glob_match(file_path.lstrip("/"), include, exclude)
+                wider = _rule_covers(file_path.lstrip("/"), include, exclude)
+            except Exception:
+                continue
+            gain += wider and not now
+            loss += now and not wider
+        if _COUNTED_REPEAT.search(rule.get("regex", "")):
+            shapes |= _SHAPE_REGEX_COUNTED
+    if _user_patterns:
+        stats["cr_rules"] = len(_user_patterns)
+    if shapes:
+        stats["cr_shapes"] = shapes
+    if gain:
+        stats["cr_gain"] = int(gain)
+    if loss:
+        stats["cr_loss"] = int(loss)
+    return stats
+
+
+# A custom regex that takes at least this long is reported, in seconds.
+SLOW_REGEX_S = 0.1
+
+# A project's own files can make a custom regex arbitrarily slow, and the shape
+# check at load cannot catch every slow pattern. So they run in a child process
+# that can be stopped, on every platform: re holds the GIL, so a thread cannot
+# interrupt a search, and Windows has no setitimer.
+# Seconds of child process time per hook run.
+REGEX_TIME_LIMIT_S = 3.0
+_regex_seconds_left = REGEX_TIME_LIMIT_S
+# Regexes stopped in this hook run. They are not tried again.
+_stopped_regexes: set = set()
+
+_REGEX_WORKER = """
+import faulthandler, json, re, sys, time
+job = json.load(sys.stdin)
+# Ends this process if the hook that started it is killed first.
+faulthandler.dump_traceback_later(job["limit"] + 1, exit=True)
+for regex in job["regexes"]:
+    started = time.perf_counter()
+    try:
+        hit = bool(re.search(regex, job["content"]))
+    except Exception:
+        hit = False
+    print(int(hit), time.perf_counter() - started, flush=True)
+"""
+
+
+def _reset_regex_limit() -> None:
+    global _regex_seconds_left
+    _regex_seconds_left = REGEX_TIME_LIMIT_S
+    _stopped_regexes.clear()
+
+
+def search_custom_regexes(regexes: List[str], content: str) -> List[bool]:
+    """Whether each regex is found in content. A regex that does not finish in
+    time counts as not found and is left out for the rest of this hook run;
+    the ones after it are still searched while time remains."""
+    global slowest_regex, _regex_seconds_left
+    found = [False] * len(regexes)
+    waiting = [i for i, r in enumerate(regexes) if r not in _stopped_regexes]
+    while waiting and _regex_seconds_left > 0.05:
+        limit = _regex_seconds_left / 2  # one stuck regex leaves time for the rest
+        started = time.monotonic()
+        timed_out = False
+        try:
+            done = subprocess.run(
+                [sys.executable, "-I", "-S", "-c", _REGEX_WORKER],
+                input=json.dumps({
+                    "regexes": [regexes[i] for i in waiting],
+                    "content": content,
+                    "limit": limit,
+                }).encode("ascii"),
+                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=limit)
+            lines = done.stdout
+            if done.returncode:
+                raise OSError(f"exit {done.returncode}")
+        except subprocess.TimeoutExpired as e:
+            timed_out = True
+            lines = e.stdout or b""
+        except (OSError, TypeError, ValueError, subprocess.SubprocessError) as e:
+            # As it was before the limit: no worse than a machine with no child.
+            debug_log(f"extensibility: regex worker failed: {e}")
+            return _search_here(regexes, content)
+        _regex_seconds_left -= time.monotonic() - started
+        results = lines.split(b"\n")[:-1][:len(waiting)]  # whole lines only
+        for i, line in zip(waiting, results):
+            hit, seconds = line.split()
+            found[i] = hit == b"1"
+            slowest_regex = max(slowest_regex, float(seconds))
+        waiting = waiting[len(results):]
+        if timed_out and waiting:
+            stuck = regexes[waiting.pop(0)]
+            _stopped_regexes.add(stuck)
+            slowest_regex = max(slowest_regex, limit)
+            debug_log(f"extensibility: stopped a custom regex after {limit:.1f} s: {stuck!r:.60}")
+    if waiting:
+        debug_log(f"extensibility: no time left for {len(waiting)} custom regexes")
+    return found
+
+
+def _search_here(regexes: List[str], content: str) -> List[bool]:
+    found = []
+    for regex in regexes:
+        try:
+            found.append(bool(re.search(regex, content)))
+        except Exception:
+            found.append(False)
+    return found

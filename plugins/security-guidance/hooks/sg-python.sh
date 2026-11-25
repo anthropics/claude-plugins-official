@@ -3,14 +3,13 @@
 #
 # On Windows + Git Bash, `python3` typically resolves to the Microsoft Store
 # stub at C:\Users\<user>\AppData\Local\Microsoft\WindowsApps\python3, which
-# exits 49 silently in non-TTY subprocess context (a known Microsoft Store
-# stub behavior). This shim
-# probes each candidate with `-c ""` and skips any that fails, so the Store
-# stub falls through to the real python.org install (`python` in Git Bash) or
+# is not a Python; it is told by its link and not started (sg_is_redirector).
+# This shim probes each other candidate with `-c ""` and skips any that fails,
+# so the search reaches the real python.org install (`python` in Git Bash) or
 # the `py -3` launcher.
 #
 # Order:
-#   1. python3   — canonical on macOS/Linux; the Store stub fails the probe.
+#   1. python3   — canonical on macOS/Linux; the Store stub is skipped.
 #   2. python    — python.org installs on Windows; some Linux distros (RHEL 7
 #                  EOL'd 2024-06) point this at Python 2, but `-c ""` succeeds
 #                  on Python 2 too — guard with a version check.
@@ -85,6 +84,14 @@ esac
 
 # Names whose interpreter runs but cannot see the hook script ("|"-separated).
 sg_unreadable=""
+# The other names that are there but cannot be used, each with why, e.g.
+# "python3 (exit 127)". sg_failed_short is for one short line: python3, python
+# and py -3, a full path by its last part, each once. sg_failed_versioned is
+# the first of the python3.NN names.
+sg_failed=""
+sg_failed_short=""
+sg_failed_versioned=""
+sg_failed_others=""
 
 probe() {
     # $1..N: the interpreter command (may be multi-word like `py -3`)
@@ -105,20 +112,98 @@ probe() {
     # Only for `$(probe ...)`: the `exec` replaces that subshell instead of
     # forking a second process from it.
     [ "${BASH_SUBSHELL:-0}" -gt 0 ] || return 1
-    exec "$@" -c 'import os, sys; t = (sys.argv[1:] or [""])[0]; sys.exit(3) if t and not (os.path.isfile(t) and os.access(t, os.R_OK)) else print(f"{sys.version_info[0]}.{sys.version_info[1]}"); sys.platform == "win32" and sys.version_info >= (3, 10) and print(sys.executable)' "$SG_TARGET" 2>/dev/null
+    # PYTHONSAFEPATH (3.11+, ignored before): the probe needs the standard
+    # library only, so Python is told not to add its usual first entry to the
+    # import path. For this call alone; the hook's environment is unchanged.
+    #
+    # The code can reach cmd.exe through a .bat shim (pyenv-win), so it is one
+    # line of characters that arrive unchanged: a ">=" was read as a redirect
+    # and left a stray file. See #7172. On Windows a name that loses the
+    # argument also exits 3, so that pass 4 can start its real interpreter.
+    PYTHONSAFEPATH=1 exec "$@" -c 'import os, sys; t = (sys.argv[1:] or [""])[0]; sys.exit(3) if sys.platform == "win32" and not sys.argv[1:] or t and not (os.path.isfile(t) and os.access(t, os.R_OK)) else print(f"{sys.version_info[0]}.{sys.version_info[1]}"); sys.platform == "win32" and sys.version_info.__ge__((3, 10)) and print(sys.executable)' "$SG_TARGET" 2>/dev/null
 }
 
 # Use as `ask ... || { note_unreadable "<name>"; continue; }` (see ask below).
 note_unreadable() {
-    [ $? -eq 3 ] && sg_unreadable="$sg_unreadable|$1|"
+    local rc=$?
+    if [ "$rc" -eq 3 ]; then
+        sg_unreadable="$sg_unreadable|$1|"
+    else
+        note_failed "$1" "exit $rc"
+    fi
     return 0
 }
 
+# For the message at the end only; changes nothing about the search.
+note_failed() {
+    local entry="${1##*/} ($2)"
+    sg_failed="${sg_failed:+$sg_failed, }$1 ($2)"
+    case "$1" in
+        */*) ;;
+        python3.*)
+            [ -z "$sg_failed_versioned" ] || sg_failed_others=1
+            sg_failed_versioned="${sg_failed_versioned:-$entry}"
+            return 0 ;;
+    esac
+    case ", $sg_failed_short, " in
+        *", $entry, "*) ;;
+        *) sg_failed_short="${sg_failed_short:+$sg_failed_short, }$entry" ;;
+    esac
+}
+
+# $1 answered with $v and is not started: notes it when that is not a version,
+# as from a version manager's shim that prints its complaint and exits 0.
+note_answer() {
+    case "$v" in
+        [0-9]*.[0-9]*) ;;
+        *) note_failed "$1" "unexpected answer" ;;
+    esac
+}
+
+# Where packaged aliases exist (and bash has what telling them apart needs).
+sg_windows=""
+case "${OSTYPE:-}" in
+    msys*|cygwin*) [ "${BASH_VERSINFO[0]:-0}" -lt 4 ] || sg_windows=1 ;;
+esac
+
 # True iff the command's executable is on PATH ($1 of a possibly multi-word
 # command like `py -3`). A builtin lookup: `$(probe ...)` costs a process even
-# when the interpreter does not exist, so missing names are skipped first.
+# when the interpreter does not exist, so missing names are skipped first. On
+# Windows a python or python3 that is only App Installer's alias counts as
+# missing; that check takes one process, in place of starting the alias.
+sg_skipped=""
 on_path() {
-    command -v "$1" >/dev/null 2>&1
+    case "$sg_windows:$1" in
+        1:python|1:python3)
+            hash "$1" 2>/dev/null || return 1
+            if sg_is_redirector "${BASH_CMDS[$1]:-}"; then
+                sg_skipped="${sg_skipped:+$sg_skipped, }$1"
+                return 1
+            fi ;;
+        *) command -v "$1" >/dev/null 2>&1 ;;
+    esac
+}
+
+# True iff $1 is the path of App Installer's python or python3, which Windows
+# puts under ...\Microsoft\WindowsApps when no packaged Python is installed.
+# It is not a Python, it points the user to the Store, so nothing is lost by
+# telling it by where its link leads instead of starting it. Starting it is a
+# packaged app activation on every hook, and waits for Windows' package
+# services: normally a fraction of a second, but until they answer again when
+# they are stuck, in every session on the machine at once. See #3870, #6348.
+# Git Bash shows these aliases as symbolic links; where the link cannot be
+# read, the name is probed like any other. Aliases of a packaged Python are
+# interpreters and are probed too.
+sg_is_redirector() {
+    local to
+    [ -n "$sg_windows" ] && sg_is_alias_path "$1" || return 1
+    # Full path: another readlink on PATH may not know these links.
+    to=$(/usr/bin/readlink -- "$1" 2>/dev/null </dev/null) || return 1
+    # Not lowercased: the result would depend on the locale.
+    case "$to" in
+        *[/\\]Microsoft.DesktopAppInstaller_*) return 0 ;;
+    esac
+    return 1
 }
 
 # How long the probes took, for the launcher_probe_max_ms / launcher_probe_ms
@@ -335,6 +420,7 @@ for cmd in "python3.13" "python3.12" "python3.11" "python3.10"; do
         sg_direct "$cmd"
         exec "$cmd" "$@"
     fi
+    note_failed "$cmd" "unexpected answer"
 done
 
 # Pass 2 — bare interpreters, but only if SDK-compatible. Covers Linux distros
@@ -357,6 +443,7 @@ for cmd in "python3" "python" "py -3"; do
     case "$v" in
         [0-9]*.[0-9]*) [ -n "$sg_older" ] || sg_older="$cmd" ;;
     esac
+    note_answer "$cmd"
 done
 
 # Pass 2b — minor versions newer than the pass 1 list, so a machine whose
@@ -374,6 +461,7 @@ for cmd in "python3.14" "python3.15" "python3.16" "python3.17" "python3.18" "pyt
     if is_sdk_compatible "$v"; then
         exec "$cmd" "$@"
     fi
+    note_failed "$cmd" "unexpected answer"
 done
 
 # Pass 3 — fallback to any Python 3, even <3.10. Pattern-based checks
@@ -401,15 +489,16 @@ for name in "python3" "python"; do
     first=1
     while IFS= read -r c; do
         if [ -n "$first" ]; then first=""; continue; fi
-        [ -n "$c" ] && sg_candidates+=("$c")
+        [ -n "$c" ] && ! sg_is_redirector "$c" && sg_candidates+=("$c")
     done <<EOF
 $(type -ap "$name" 2>/dev/null)
 EOF
 done
 for cmd in "python3" "python" "py -3"; do
     case "$sg_unreadable" in *"|$cmd|"*) ;; *) continue ;; esac
+    # The same limits on the code as in probe.
     # shellcheck disable=SC2086
-    c=$($cmd -c 'import sys; print(sys.executable)' 2>/dev/null) || continue
+    c=$(PYTHONSAFEPATH=1 $cmd -c 'import sys; print(sys.executable)' 2>/dev/null) || continue
     c=${c%$'\r'}  # native Windows Python prints CRLF
     [ -n "$c" ] || continue
     if command -v cygpath >/dev/null 2>&1; then
@@ -431,6 +520,7 @@ for cmd in "${sg_candidates[@]}"; do
     case "$v" in
         [0-9]*.[0-9]*) [ -n "$sg_fallback" ] || sg_fallback="$cmd" ;;
     esac
+    note_answer "$cmd"
 done
 if [ -n "$sg_fallback" ]; then
     exec "$sg_fallback" "$@"
@@ -443,12 +533,29 @@ if [ -n "$sg_unreadable" ]; then
     echo "  hook script: $SG_TARGET" >&2
     echo "  on Windows this happens when python, python3 and py are Microsoft Store or Python Install Manager aliases;" >&2
     echo "  install Python from https://python.org and put it ahead of ...\\Microsoft\\WindowsApps in PATH" >&2
+    [ -z "$sg_failed" ] || echo "  also tried: $sg_failed" >&2
     # No Python to report it, so the launcher emits the metric itself.
     echo '{"metrics": {"launcher_unreadable": 1}}'
     exit 1
 fi
-echo "security-guidance: no working Python 3 interpreter found." >&2
+# Claude Code's terminal shows only the first line of a failed hook, so what
+# tells a broken interpreter from a missing one is on it. Not all of it: a
+# version manager's folder has a name per version.
+sg_why=""
+if [ -n "$sg_failed" ]; then
+    sg_why="${sg_failed_short:-$sg_failed_versioned}"
+    if [ -n "$sg_failed_short" ] && [ -n "$sg_failed_versioned" ]; then sg_failed_others=1; fi
+    sg_why=" On PATH but not usable: $sg_why${sg_failed_others:+, and more}."
+fi
+echo "security-guidance: no working Python 3 interpreter found.$sg_why" >&2
 echo "  tried: python3.13 to python3.10, python3, python, py -3, python3.14 to python3.19" >&2
+[ -z "$sg_failed" ] || echo "  failed: $sg_failed" >&2
+if [ -n "$sg_skipped" ]; then
+    echo "  not started: $sg_skipped (App Installer's alias, which is not a Python)" >&2
+fi
+# --version, because it is safe in any folder: -m and -c import from it.
+[ -z "$sg_failed" ] || echo "  running one of the failed ones with --version in the project folder may show why" >&2
+[ -z "$sg_failed" ] || echo "  if that does not help:" >&2
 echo "  on Windows, install Python from https://python.org (NOT the Microsoft Store)" >&2
 echo "  on macOS, install Python 3.10+ via Homebrew (\`brew install python\`)" >&2
 exit 1

@@ -40,7 +40,7 @@ except ImportError:  # a Python built without TLS
 
 import extensibility
 import review_api
-from _base import debug_log, _record_usage, _record_http_error, _record_net_error, _clear_net_error, _PV, PROVENANCE_TAG, state_dir as _resolve_state_dir, agent_sdk_site_dirs, make_state_dir  # noqa: F401
+from _base import debug_log, _record_usage, _record_http_error, _record_net_error, _clear_net_error, _PV, PROVENANCE_TAG, state_dir as _resolve_state_dir, agent_sdk_site_dirs, make_state_dir, other_host  # noqa: F401
 from session_state import load_state, with_locked_state
 from gitutil import git_config_env, SAFE_GIT_CONFIG
 
@@ -108,11 +108,45 @@ def _bootstrap_pywin32(site_packages_dir):
         debug_log(f"pywin32 bootstrap failed (may break SDK import on Windows): {e}")
 
 
-# Plan Security Check Configuration
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-# OAuth access token — Claude Code passes this for /login users.
-# The Anthropic API accepts it as `Authorization: Bearer <token>` instead of `x-api-key`.
-ANTHROPIC_AUTH_TOKEN = os.environ.get("ANTHROPIC_AUTH_TOKEN", "")
+_CLAUDE_AI_TOKEN_PREFIX = "sk-ant-oat"
+_API_HOST = "api.anthropic.com"
+
+
+def _route_credentials(env, on_other_host: bool) -> bool:
+    """Put the credentials in `env` where the default API host can use them.
+    Returns whether a token was held back. Does nothing for another API host
+    or a cloud provider: what those take is their own business.
+
+    - Claude Code hands an apiKeyHelper's output over as ANTHROPIC_API_KEY,
+      also when it is a claude.ai token. The API takes that only as a
+      bearer, so as a key every review ends in a 401.
+    - A host other than Claude Code can hand its own gateway's bearer without
+      the gateway's address. It is no credential for the default API host, so
+      it is not sent there. Claude Code passes both, so its sessions are left
+      alone."""
+    base = env.get("ANTHROPIC_BASE_URL", "").strip()
+    try:
+        api_host = (urllib.parse.urlsplit(base).hostname or "").lower() if base else _API_HOST
+    except ValueError:
+        return False
+    if api_host != _API_HOST or _HAS_3P_PROVIDER_AT_LOAD:
+        return False
+    held_back = False
+    token = env.get("ANTHROPIC_AUTH_TOKEN", "")
+    # With a base URL the token was meant for it, whichever shape it has.
+    if on_other_host and not base and token and not token.startswith(_CLAUDE_AI_TOKEN_PREFIX):
+        del env["ANTHROPIC_AUTH_TOKEN"]
+        token, held_back = "", True
+        debug_log("ANTHROPIC_AUTH_TOKEN not used: it is not a claude.ai token and "
+                  "ANTHROPIC_BASE_URL is not set")
+    key = env.get("ANTHROPIC_API_KEY", "")
+    if key.startswith(_CLAUDE_AI_TOKEN_PREFIX) and (
+            not token or token.startswith(_CLAUDE_AI_TOKEN_PREFIX)):
+        env["ANTHROPIC_AUTH_TOKEN"] = token or key
+        del env["ANTHROPIC_API_KEY"]
+    return held_back
+
+
 # On 3P providers (Bedrock/Vertex/Foundry/Mantle), credentials live in the
 # provider env (AWS_PROFILE, GOOGLE_APPLICATION_CREDENTIALS, etc.) — not in
 # ANTHROPIC_*. Treat presence of any 3P provider flag as "has credentials"
@@ -130,6 +164,14 @@ _HAS_3P_PROVIDER_AT_LOAD = any(
         "CLAUDE_CODE_USE_ANTHROPIC_AWS",
     )
 )
+# In os.environ itself, so the CLI a review starts gets the same credentials.
+AUTH_TOKEN_HELD_BACK = _route_credentials(os.environ, other_host())
+
+# Plan Security Check Configuration
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+# OAuth access token — Claude Code passes this for /login users.
+# The Anthropic API accepts it as `Authorization: Bearer <token>` instead of `x-api-key`.
+ANTHROPIC_AUTH_TOKEN = os.environ.get("ANTHROPIC_AUTH_TOKEN", "")
 HAS_API_CREDENTIALS = bool(
     ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN or _HAS_3P_PROVIDER_AT_LOAD
 )
@@ -139,14 +181,23 @@ HAS_API_CREDENTIALS = bool(
 # driver, so the default favors precision over recall and over latency.
 # Override via the SECURITY_REVIEW_MODEL env var (see README).
 #
-# Without an override the review follows the newest Opus rather than a
-# release named here: default_review_model() resolves it per call path.
-# _PINNED_REVIEW_MODEL is only what a review uses when that lookup fails.
+# Every review gets its model from default_review_model(), retry_review_model()
+# or agentic_review_model(); nothing else in this plugin picks one. Without an
+# override they follow the newest Opus (and Sonnet, for a retry) the endpoint
+# lists rather than a release named here.
+#
+# These two names are only what a direct API call uses when the endpoint can't
+# list its models, because the API takes no alias.
 _PINNED_REVIEW_MODEL = "claude-opus-5-5"
-# Claude Code's own alias. The CLI the Agent SDK spawns resolves it to the
-# newest Opus it knows how to drive, in the provider's id form on 3P.
+_PINNED_RETRY_MODEL = "claude-sonnet-5-5"
+# Claude Code's own aliases, for reviews that run through a CLI. The CLI
+# resolves them to the newest model it knows how to drive, in the provider's
+# id form on 3P. A CLI that is out of date resolves them to an old model.
 _CLI_OPUS_ALIAS = "opus"
-SECURITY_REVIEW_MODEL = os.environ.get("SECURITY_REVIEW_MODEL", "").strip() or _PINNED_REVIEW_MODEL
+_CLI_SONNET_ALIAS = "sonnet"
+# What a named model runs at: a CLI older than the model doesn't know the
+# effort it should default to.
+_REVIEWER_EFFORT = "medium"
 
 # OAuth subscriber tokens (ANTHROPIC_AUTH_TOKEN) require this exact system prompt
 # for api.anthropic.com/v1/messages — the API checks for one of the known Claude
@@ -214,10 +265,19 @@ def _anthropic_base_url() -> str:
 # the ones that fail; _urlopen does the same on the releases that do not.
 
 _STORE_TLS_UNSET = object()
-_store_tls_context = _STORE_TLS_UNSET  # None once Python's default context is known to build
+# The context the API calls use; None once Python's default one is known to do.
+_store_tls_context = _STORE_TLS_UNSET
 _store_tls_lock = threading.Lock()
 # Store entries left out of that context; emit_metrics reports it.
 _store_certs_skipped = 0
+
+
+def _as_http_client_would(context):
+    """Sets what http.client sets on the context it makes itself."""
+    context.set_alpn_protocols(["http/1.1"])
+    if context.post_handshake_auth is not None:
+        context.post_handshake_auth = True
+    return context
 
 
 def _context_without_unreadable_store_certs():
@@ -256,31 +316,82 @@ def _context_without_unreadable_store_certs():
     if context is None:
         return None, skipped
     context.set_default_verify_paths()
-    # What http.client sets on the context it would have made.
-    context.set_alpn_protocols(["http/1.1"])
-    if context.post_handshake_auth is not None:
-        context.post_handshake_auth = True
-    return context, skipped
+    return _as_http_client_would(context), skipped
+
+
+# ── macOS Python with no certificates ────────────────────────────────────
+# A Python from the python.org installer has no CA certificates until its
+# "Install Certificates" command is run, and every HTTPS call from it fails
+# to verify. macOS ships a CA file, the one Apple's /usr/bin/python3 uses;
+# with it the calls verify as they do there.
+
+_ON_MACOS = sys.platform == "darwin"
+_MACOS_CA_FILE = "/etc/ssl/cert.pem"
+
+
+def _context_with_os_ca_file():
+    """Python's default TLS context plus the CA file macOS ships, or None.
+    Only where the default one has no certificate at all, so a Python that
+    can verify anything keeps exactly what it trusts. SSL_CERT_FILE and
+    SSL_CERT_DIR are the user's own choice of what to trust and win, also
+    when they point at nothing."""
+    if not _ON_MACOS or ssl is None:
+        return None
+    if "SSL_CERT_FILE" in os.environ or "SSL_CERT_DIR" in os.environ:
+        return None
+    if not _anthropic_base_url().lower().startswith("https:"):
+        return None
+    paths = ssl.get_default_verify_paths()
+    if paths.cafile or not os.path.isfile(_MACOS_CA_FILE):
+        return None
+    # The factory urllib uses, so a site that replaced it keeps its choice.
+    context = ssl._create_default_https_context()
+    if context.verify_mode != ssl.CERT_REQUIRED or context.cert_store_stats()["x509"]:
+        return None
+    # A CA directory is read during the handshake and is not in those counts.
+    # OpenSSL reads only hashed names (1a2b3c4d.0) from it; Homebrew keeps a
+    # placeholder file there.
+    with contextlib.suppress(OSError):
+        if paths.capath and any(re.fullmatch(r"[0-9a-f]{8}\.\d+", name)
+                                for name in os.listdir(paths.capath)):
+            return None
+    context.load_verify_locations(cafile=_MACOS_CA_FILE)
+    return _as_http_client_would(context)
+
+
+def _own_tls_context():
+    """The context for API calls where Python's default one fails every call
+    (see above), else None."""
+    global _store_certs_skipped
+    try:
+        context, skipped = _context_without_unreadable_store_certs()
+    except Exception as e:
+        debug_log(f"TLS: certificate store check failed: {type(e).__name__}")
+        context, skipped = None, 0
+    if context is not None:
+        debug_log(f"TLS: the Windows certificate store has {skipped} certificate(s) "
+                  "OpenSSL cannot read; using the store without them")
+        _store_certs_skipped = skipped
+        return context
+    try:
+        context = _context_with_os_ca_file()
+    except Exception as e:
+        debug_log(f"TLS: check for a Python without CA certificates failed: {type(e).__name__}")
+        return None
+    if context is not None:
+        debug_log(f"TLS: this Python has no CA certificates; using {_MACOS_CA_FILE}")
+    return context
 
 
 def _urlopen(request, timeout):
     """urllib.request.urlopen for the plugin's API calls. Uses Python's
-    default TLS context unless that cannot be built because of the Windows
-    certificate store (see above); checked once per process."""
-    global _store_tls_context, _store_certs_skipped
+    default TLS context unless that one fails every call (see
+    _own_tls_context); checked once per process."""
+    global _store_tls_context
     if _store_tls_context is _STORE_TLS_UNSET:
         with _store_tls_lock:
             if _store_tls_context is _STORE_TLS_UNSET:
-                try:
-                    context, skipped = _context_without_unreadable_store_certs()
-                except Exception as e:
-                    debug_log(f"TLS: certificate store check failed: {type(e).__name__}")
-                    context, skipped = None, 0
-                if context is not None:
-                    debug_log(f"TLS: the Windows certificate store has {skipped} certificate(s) "
-                              "OpenSSL cannot read; using the store without them")
-                    _store_certs_skipped = skipped
-                _store_tls_context = context
+                _store_tls_context = _own_tls_context()
     if _store_tls_context is None:
         return urllib.request.urlopen(request, timeout=timeout)
     return urllib.request.urlopen(request, timeout=timeout, context=_store_tls_context)
@@ -593,6 +704,9 @@ _LEGACY_THINKING_MODELS = (
     "claude-sonnet-4-0",
     "claude-sonnet-4-5",
     "claude-haiku-4-5",
+    # Dated ids of the first 4.0 releases, which a listing can name.
+    "claude-opus-4-2",
+    "claude-sonnet-4-2",
 )
 
 
@@ -658,19 +772,23 @@ _REVIEW_MODEL_RETRY_SECONDS = 3600
 _REVIEW_MODEL_LOOKUP_TIMEOUT = 5
 _REVIEW_MODEL_LISTING_MAX_BYTES = 4 * 1024 * 1024
 
-# claude-opus-<major>[-<minor>][-<yyyymmdd>]. Anything else a listing or the
+# claude-<family>-<major>[-<minor>][-<yyyymmdd>]. Anything else a listing or the
 # cache file holds (other families, gateway-prefixed names, free text) is
 # never sent as a model id.
-_OPUS_ID = re.compile(r"claude-opus-(\d{1,2})(?:-(\d{1,2}))?(?:-(\d{8}))?")
+_MODEL_ID = {
+    family: re.compile(rf"claude-{family}-(\d{{1,2}})(?:-(\d{{1,2}}))?(?:-(\d{{8}}))?", re.ASCII)
+    for family in ("opus", "sonnet")
+}
 
-_review_model_memo: Optional[str] = None
+# The newest models this process knows the endpoint lists; None before the lookup.
+_review_model_memo: Optional[Dict[str, Optional[str]]] = None
 
 
-def _newest_opus(model_ids) -> Optional[str]:
-    """The highest-versioned Opus id in `model_ids`, or None."""
+def _newest_in_family(model_ids, family) -> Optional[str]:
+    """The highest-versioned id of `family` in `model_ids`, or None."""
     best = None
     for model_id in model_ids:
-        m = _OPUS_ID.fullmatch(model_id) if isinstance(model_id, str) else None
+        m = _MODEL_ID[family].fullmatch(model_id) if isinstance(model_id, str) else None
         if not m:
             continue
         version = (int(m.group(1)), int(m.group(2) or 0), m.group(3) or "")
@@ -679,8 +797,8 @@ def _newest_opus(model_ids) -> Optional[str]:
     return best[1] if best else None
 
 
-def _fetch_newest_opus() -> Optional[str]:
-    """Newest Opus the configured endpoint lists; None if it can't say."""
+def _fetch_newest_models() -> Dict[str, Optional[str]]:
+    """Newest Opus and Sonnet the configured endpoint lists; {} if it can't say."""
     # Newest first, so one modest page is enough; an org with many models
     # otherwise returns a megabyte-sized listing.
     url = _anthropic_base_url() + "/v1/models?limit=100"
@@ -697,58 +815,69 @@ def _fetch_newest_opus() -> Optional[str]:
             entries = listing.get("data") if isinstance(listing, dict) else None
             if not isinstance(entries, list):
                 debug_log("review model lookup: no model list in response")
-                return None
+                return {}
             ids = [e.get("id") for e in entries if isinstance(e, dict)]
-            if listing.get("has_more"):
-                # A truncated page may hold no current Opus at all (an org's
-                # own models can fill it); never let it pick an older one.
-                ids.append(_PINNED_REVIEW_MODEL)
-            return _newest_opus(ids)
+            def newest(family, pinned):
+                if not listing.get("has_more"):
+                    return _newest_in_family(ids, family)
+                # A truncated page may hold no current model at all (an org's
+                # own models can fill it). Never let it pick an older one.
+                found = _newest_in_family(ids + [pinned], family)
+                return None if found == pinned and pinned not in ids else found
+            return {"opus": newest("opus", _PINNED_REVIEW_MODEL),
+                    "sonnet": newest("sonnet", _PINNED_RETRY_MODEL)}
         except urllib.error.HTTPError as e:
             if e.code == 401 and not use_token and ANTHROPIC_AUTH_TOKEN:
                 use_token = True
                 continue
             debug_log(f"review model lookup: HTTP {e.code}")
-            return None
+            return {}
         except Exception as e:
             debug_log(f"review model lookup failed: {type(e).__name__}")
-            return None
-    return None
+            return {}
+    return {}
 
 
 def _read_review_model_cache(path, endpoint_key, now):
-    """(hit, model) from the cache file. `model` is None for a remembered
-    failed lookup. The file is user-writable state: every field is checked
-    and a model id is accepted only if it has the shape of an Opus id."""
+    """(hit, models) from the cache file. `models` has no "opus" for a
+    remembered failed lookup. The file is user-writable state: every field is
+    checked and a model id is accepted only if it has the shape of its family's
+    ids."""
     try:
         with open(path, "r", encoding="utf-8") as f:
             entry = json.loads(f.read(4096))
     except (OSError, ValueError):
-        return False, None
-    if not isinstance(entry, dict) or entry.get("endpoint") != endpoint_key:
-        return False, None
+        return False, {}
+    # Without "sonnet" it was written by a version that didn't look that up.
+    if (not isinstance(entry, dict) or entry.get("endpoint") != endpoint_key
+            or "sonnet" not in entry):
+        return False, {}
     at = entry.get("at")
     if isinstance(at, bool) or not isinstance(at, (int, float)):
-        return False, None
+        return False, {}
     model = entry.get("model")
     if model is None:
         ttl = _REVIEW_MODEL_RETRY_SECONDS
-    elif isinstance(model, str) and _OPUS_ID.fullmatch(model):
+    elif isinstance(model, str) and _MODEL_ID["opus"].fullmatch(model):
         ttl = _REVIEW_MODEL_TTL_SECONDS
     else:
-        return False, None
+        return False, {}
     if not 0 <= now - at < ttl:
-        return False, None
-    return True, model
+        return False, {}
+    sonnet = entry.get("sonnet")
+    if not (isinstance(sonnet, str) and _MODEL_ID["sonnet"].fullmatch(sonnet)):
+        sonnet = None
+    return True, {"opus": model, "sonnet": sonnet}
 
 
-def _write_review_model_cache(path, endpoint_key, model, now):
+def _write_review_model_cache(path, endpoint_key, models, now):
     tmp = None
     try:
         make_state_dir(os.path.dirname(path))
         fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix=".review_model.")
         with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump({"endpoint": endpoint_key, "model": model, "at": now}, f)
+            json.dump({"endpoint": endpoint_key, "model": models.get("opus"),
+                       "sonnet": models.get("sonnet"), "at": now}, f)
         os.replace(tmp, path)
     except OSError as e:
         debug_log(f"review model cache not written: {type(e).__name__}")
@@ -759,24 +888,12 @@ def _write_review_model_cache(path, endpoint_key, model, now):
                 pass
 
 
-def default_review_model() -> str:
-    """Model for a review the user hasn't pinned with SECURITY_REVIEW_MODEL.
-
-    3P providers and Claude apps gateway sign-ins go through the Agent SDK,
-    so the CLI alias does the work. 1P and LLM gateways set with
-    ANTHROPIC_BASE_URL get the newest Opus the endpoint lists, looked up at
-    most once per _REVIEW_MODEL_TTL_SECONDS; _PINNED_REVIEW_MODEL when the
-    lookup can't answer. Never raises.
-    """
+def _listed_models() -> Dict[str, Optional[str]]:
+    """Newest models the endpoint lists, looked up at most once per
+    _REVIEW_MODEL_TTL_SECONDS. {} (or no "opus") when it can't answer. Never
+    raises."""
     global _review_model_memo
-    explicit = os.environ.get("SECURITY_REVIEW_MODEL", "").strip()
-    if explicit:
-        return explicit
-    if _is_3p_provider() or _gateway_cli:
-        return _CLI_OPUS_ALIAS
-    if not HAS_API_CREDENTIALS:
-        return _PINNED_REVIEW_MODEL
-    if _review_model_memo:
+    if _review_model_memo is not None:
         return _review_model_memo
     try:
         path = os.path.join(_resolve_state_dir(), _REVIEW_MODEL_CACHE_FILE)
@@ -785,15 +902,62 @@ def default_review_model() -> str:
             _anthropic_base_url().encode("utf-8")
         ).hexdigest()[:16]
         now = time.time()
-        hit, model = _read_review_model_cache(path, endpoint_key, now)
+        hit, models = _read_review_model_cache(path, endpoint_key, now)
         if not hit:
-            model = _fetch_newest_opus()
-            _write_review_model_cache(path, endpoint_key, model, now)
+            models = _fetch_newest_models()
+            _write_review_model_cache(path, endpoint_key, models, now)
     except Exception as e:
         debug_log(f"review model resolution failed: {type(e).__name__}")
-        model = None
-    _review_model_memo = model or _PINNED_REVIEW_MODEL
-    return _review_model_memo
+        models = {}
+    _review_model_memo = models
+    return models
+
+
+def default_review_model() -> str:
+    """Model for a review the user hasn't pinned with SECURITY_REVIEW_MODEL.
+
+    3P providers and Claude apps gateway sign-ins go through the Agent SDK,
+    so the CLI alias does the work. 1P and LLM gateways set with
+    ANTHROPIC_BASE_URL get the newest Opus the endpoint lists;
+    _PINNED_REVIEW_MODEL when the lookup can't answer. Never raises.
+    """
+    explicit = os.environ.get("SECURITY_REVIEW_MODEL", "").strip()
+    if explicit:
+        return explicit
+    if _is_3p_provider() or _gateway_cli:
+        return _CLI_OPUS_ALIAS
+    if not HAS_API_CREDENTIALS:
+        return _PINNED_REVIEW_MODEL
+    return _listed_models().get("opus") or _PINNED_REVIEW_MODEL
+
+
+def retry_review_model() -> str:
+    """Model a review retries on when the default model's call fails: the CLI
+    alias through the Agent SDK, else the newest Sonnet the endpoint lists."""
+    if _is_3p_provider() or _gateway_cli:
+        # Through the user's CLI, the alias gives the Sonnet id the user's own
+        # sessions use, including any ANTHROPIC_DEFAULT_SONNET_MODEL.
+        return _CLI_SONNET_ALIAS
+    if not HAS_API_CREDENTIALS:
+        return _PINNED_RETRY_MODEL
+    return _listed_models().get("sonnet") or _PINNED_RETRY_MODEL
+
+
+def agentic_review_model() -> Tuple[str, bool]:
+    """(model, listed) for the agentic reviewer, which always runs through a
+    CLI. `listed` is True for the newest Opus the endpoint lists, named so that
+    a CLI that is out of date (the copy bundled with the Agent SDK is frozen
+    when the SDK is installed) still uses it. Otherwise the model is
+    SG_AGENTIC_MODEL, or the CLI alias where the plugin can't list models or
+    the user has told the CLI what `opus` means. Never raises."""
+    explicit = os.environ.get("SG_AGENTIC_MODEL", "").strip()
+    if explicit:
+        return explicit, False
+    if (_is_3p_provider() or _gateway_cli or not HAS_API_CREDENTIALS
+            or os.environ.get("ANTHROPIC_DEFAULT_OPUS_MODEL", "").strip()):
+        return _CLI_OPUS_ALIAS, False
+    model = _listed_models().get("opus")
+    return (model, True) if model else (_CLI_OPUS_ALIAS, False)
 
 
 # A session signed in to a Claude apps gateway with /login gives hooks no
@@ -962,7 +1126,13 @@ def gateway_review_cli(session_id) -> Optional[str]:
     global _gateway_cli, _gateway_check_unanswered
     if _gateway_cli is not None:
         return _gateway_cli or None
-    cli = _user_cli_path() or ""
+    cli = _user_cli_path()
+    if cli is None and _WINDOWS:
+        # The native installer's fixed path, as on macOS and Linux. Not PATH:
+        # this check starts the program with no user action.
+        native = os.path.join(os.path.expanduser("~"), ".local", "bin", "claude.exe")
+        cli = native if os.path.isfile(native) else None
+    cli = cli or ""
     ok = None
     # No skip for CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC, as on Bedrock and Vertex:
     # the gateway docs suggest setting it, and the review goes through the
@@ -1339,9 +1509,8 @@ def _call_claude_dual_or(prompt, output_schema, *, bool_key: str, list_key: str,
 
     explicit = os.environ.get("SECURITY_REVIEW_MODEL", "").strip()
     primary = default_review_model()
-    # Through the user's CLI, the alias gives the Sonnet id the user's own
-    # sessions use on the gateway, including any ANTHROPIC_DEFAULT_SONNET_MODEL.
-    fallback = "sonnet" if _gateway_cli else "claude-sonnet-4-6"
+    # Not looked up for a pinned model, which is never retried on another.
+    fallback = None if explicit else retry_review_model()
 
     if not _dual_or_enabled():
         # Single-call path. Reuse the same sonnet-fallback retry as a dual_or
@@ -1828,6 +1997,35 @@ def _agentic_commit_review_enabled() -> bool:
 # precedents and an adversarial refute taxonomy to drop low-signal findings.
 
 _AGENTIC_INVESTIGATE_SYSTEM = review_api.AGENTIC_INVESTIGATE_SYSTEM
+
+# The investigate stages return their findings through the StructuredOutput
+# tool and nothing reads what they write beside it. Told so here, not in
+# review_api: a caller of that module may take its answer from the text.
+_REVIEWER_OUTPUT_RULE = (
+    "\n\nOUTPUT: only the `findings` you return are read, not text you write. "
+    "Write no prose before, between or after tool calls, and no verdicts "
+    "for files you clear: think them through instead. Ask for the files "
+    "and searches you can already name in one message, within the budget "
+    "above. `explanation` must still name the source, the sink and the path "
+    "between them. When you are done, return the findings at once."
+)
+
+
+def _investigate_system() -> str:
+    """The investigate stages' system prompt. Text between tool calls is where
+    a model reasons when thinking is off or the user picked the model, so the
+    output rule is left out there."""
+    thinking_off = (os.environ.get("MAX_THINKING_TOKENS", "").strip() == "0"
+                    or any(os.environ.get(v, "").strip().lower() in ("1", "true", "yes", "on")
+                           for v in ("CLAUDE_CODE_DISABLE_THINKING",
+                                     "CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING")))
+    picked = any(os.environ.get(v, "").strip()
+                 for v in ("SG_AGENTIC_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL"))
+    if thinking_off or picked:
+        return _AGENTIC_INVESTIGATE_SYSTEM
+    return _AGENTIC_INVESTIGATE_SYSTEM + _REVIEWER_OUTPUT_RULE
+
+
 _FINDINGS_SCHEMA = review_api.FINDINGS_SCHEMA
 _SURVIVED_SCHEMA = review_api.SURVIVED_SCHEMA
 
@@ -1971,6 +2169,19 @@ def _api_retry_status(msg: Any) -> Optional[int]:
     return status if isinstance(status, int) else None
 
 
+_OAUTH_TOKEN_PREFIX = "sk-ant-oat"
+
+
+def _oauth_variable_is_safe() -> bool:
+    """Whether a claude.ai token may move out of ANTHROPIC_AUTH_TOKEN. With a
+    base URL set it can be a gateway's bearer, bare mode ignores the OAuth
+    variable, and a cloud session has no stored login to protect and rotates
+    its own token."""
+    bare = os.environ.get("CLAUDE_CODE_SIMPLE", "").strip().lower()
+    return not (os.environ.get("ANTHROPIC_BASE_URL", "").strip()
+                or bare in ("1", "true", "yes", "on") or _is_remote_session())
+
+
 def _agentic_spawn_env() -> Dict[str, str]:
     """opts.env for the SDK-spawned inner `claude` CLI.
 
@@ -1986,7 +2197,8 @@ def _agentic_spawn_env() -> Dict[str, str]:
     blanking the inherited OAuth token there strands the grandchild with
     zero credentials → ProcessError → agentic silently falls back to
     single-shot on every commit. So forward the OAuth token whenever it
-    is the only credential.
+    is the only credential, as CLAUDE_CODE_OAUTH_TOKEN when it is a
+    claude.ai token.
     """
     env = {
         # Policy settings can enable this plugin inside the reviewing CLI too;
@@ -2018,12 +2230,29 @@ def _agentic_spawn_env() -> Dict[str, str]:
     # No API key — forward the OAuth token from the parent process so the
     # SDK grandchild has credentials. Empty string is fine (the SDK will
     # use whatever auth path is left).
-    env["ANTHROPIC_AUTH_TOKEN"] = os.environ.get("ANTHROPIC_AUTH_TOKEN") or ""
+    token = os.environ.get("ANTHROPIC_AUTH_TOKEN") or ""
+    if token.startswith(_OAUTH_TOKEN_PREFIX) and _oauth_variable_is_safe():
+        # Given as ANTHROPIC_AUTH_TOKEN, the inner CLI still renews a stored
+        # claude.ai login it does not run on, which can sign the user out.
+        # Given as its OAuth token, it leaves the stored login alone. That
+        # route also turns on 1-hour cache writes, which cost more.
+        env["CLAUDE_CODE_OAUTH_TOKEN"] = token
+        env["FORCE_PROMPT_CACHING_5M"] = "1"
+        token = ""
+    env["ANTHROPIC_AUTH_TOKEN"] = token
     return env
 
 
 # The tools the agentic reviewer is given to look around the repo.
 _REVIEWER_FILE_TOOLS = ("Read", "Grep", "Glob")
+
+
+def _is_wrapped_verdict(value: Any) -> bool:
+    """True for a verdict nested inside its own list key:
+    {"findings": {"findings": [...]}}."""
+    return isinstance(value, dict) and any(
+        isinstance(inner, dict) and isinstance(inner.get(key), list)
+        for key, inner in value.items())
 
 
 def _agentic_context_dir(repo_dir: str) -> str:
@@ -2041,6 +2270,9 @@ def agentic_review(
                      before the review, 2 = it went missing during it
       rv_tool_err    Read/Grep/Glob calls that came back as errors
       rv_tool_calls  Read/Grep/Glob calls made
+      rv_so_err      verdicts the CLI refused, e.g. for breaking the schema
+      rv_so_wrapped  of those, verdicts wrapped in their own key, as in
+                     {"findings": {"findings": [...]}}
       rv_turns       turns the reviewer took, as the CLI counts them
       rv_api_ms      time the reviewer spent waiting on the model, in ms
 
@@ -2049,7 +2281,8 @@ def agentic_review(
     that ends without one (the CLI exits early) adds nothing to them."""
     context_dir = _agentic_context_dir(repo_dir)
     gone = 0 if os.path.isdir(context_dir) else 1
-    ctx = {"rv_tool_err": 0, "rv_tool_calls": 0, "rv_turns": 0, "rv_api_ms": 0}
+    ctx = {"rv_tool_err": 0, "rv_tool_calls": 0, "rv_turns": 0, "rv_api_ms": 0,
+           "rv_so_err": 0, "rv_so_wrapped": 0}
     guidance, vulns, metrics = _agentic_review(repo_dir, diff_files, touched_paths, ctx)
     if not gone and not os.path.isdir(context_dir):
         gone = 2
@@ -2110,8 +2343,10 @@ def _agentic_review(
             return None, [], {"agentic_fallback": f"import:{type(e).__name__}"}
 
     _send_sdk_logs_to_debug_log()
-    # Overridable via SG_AGENTIC_MODEL.
-    model = os.environ.get("SG_AGENTIC_MODEL") or _CLI_OPUS_ALIAS
+    model, listed = agentic_review_model()
+    spawn_env = _agentic_spawn_env()
+    if listed and not os.environ.get("CLAUDE_CODE_EFFORT_LEVEL", "").strip():
+        spawn_env["CLAUDE_CODE_EFFORT_LEVEL"] = _REVIEWER_EFFORT
     max_turns = int(os.environ.get("SG_AGENTIC_MAX_TURNS", "18"))
     # In production repo_dir is the user's working tree (full repo). Under the
     # eval harness it's a temp dir with ONLY touched_paths — the agent can't
@@ -2205,10 +2440,8 @@ def _agentic_review(
             #
             # Identical --model/--fallback-model is rejected by the inner CLI
             # at startup ("Fallback model cannot be the same as the main
-            # model", exit 1 → ProcessError). The default model here IS
-            # _CLI_OPUS_ALIAS, so an unconditional fallback_model would
-            # kill every spawn before the first API call. Omit the fallback
-            # when it would equal the primary.
+            # model", exit 1 → ProcessError). The check compares the two
+            # strings, so a listed id may fall back to the alias.
             fallback_model=(
                 _CLI_OPUS_ALIAS if model != _CLI_OPUS_ALIAS else None
             ),
@@ -2217,7 +2450,8 @@ def _agentic_review(
             # env as {**os.environ, **opts.env}, so the inner claude inherits
             # it and prefers it over ANTHROPIC_API_KEY — but some model
             # endpoints reject OAuth bearers (401 → exit 1 → silent
-            # fallback). Override with empty so API-key auth wins.
+            # fallback). Override with empty so API-key auth wins. With no
+            # API key, a claude.ai token moves to CLAUDE_CODE_OAUTH_TOKEN.
             #
             # On CCR (entrypoint=remote*) the daemon passes auth on file
             # descriptors to the top-level claude process; the SDK-spawned
@@ -2232,7 +2466,7 @@ def _agentic_review(
             # versions. Clearing WEBSOCKET_AUTH_FILE_DESCRIPTOR alone lets
             # the review run end-to-end; the others are belt-and-suspenders
             # for the same fd-passing pattern.
-            env=_agentic_spawn_env(),
+            env=spawn_env,
             stderr=_on_child_stderr,
         )
         n = 0
@@ -2252,6 +2486,8 @@ def _agentic_review(
 
         # Blocks are matched by shape so older SDK builds need no extra import.
         file_tool_ids = set()
+        # StructuredOutput call id -> whether its verdict was wrapped.
+        verdicts: Dict[str, bool] = {}
         auth_retries = 0
         # Closed on the way out, also on a raise, so the CLI stops with the review.
         async with contextlib.aclosing(query(prompt=_once(), options=opts)) as messages:
@@ -2268,6 +2504,9 @@ def _agentic_review(
                                 and getattr(b, "id", None)):
                             file_tool_ids.add(b.id)
                             ctx["rv_tool_calls"] += 1
+                        elif (getattr(b, "name", None) == "StructuredOutput"
+                                and getattr(b, "id", None)):
+                            verdicts[b.id] = _is_wrapped_verdict(getattr(b, "input", None))
                 elif isinstance(msg, ResultMessage):
                     subtype = msg.subtype
                     if msg.structured_output is not None:
@@ -2300,6 +2539,11 @@ def _agentic_review(
                             if getattr(b, "is_error", None) is True
                             and getattr(b, "tool_use_id", None) in file_tool_ids
                         )
+                        for b in content:
+                            wrapped = verdicts.get(getattr(b, "tool_use_id", None))
+                            if wrapped is not None and getattr(b, "is_error", None) is True:
+                                ctx["rv_so_err"] += 1
+                                ctx["rv_so_wrapped"] += wrapped
         return structured, n, subtype
 
     def _run(system: str, prompt: str, *, schema: Dict[str, Any]
@@ -2313,7 +2557,7 @@ def _agentic_review(
     t0 = _t.time()
     try:
         inv, inv_turns, inv_subtype = _run(
-            _AGENTIC_INVESTIGATE_SYSTEM, user_prompt, schema=_FINDINGS_SCHEMA
+            _investigate_system(), user_prompt, schema=_FINDINGS_SCHEMA
         )
         if os.environ.get("SG_AGENTIC_DEBUG_DIR"):
             _dd = os.environ["SG_AGENTIC_DEBUG_DIR"]
@@ -2379,7 +2623,7 @@ def _agentic_review(
         )
         try:
             inv2, _, _ = _run(
-                _AGENTIC_INVESTIGATE_SYSTEM, iter2_prompt, schema=_FINDINGS_SCHEMA
+                _investigate_system(), iter2_prompt, schema=_FINDINGS_SCHEMA
             )
             if inv2:
                 seen = {(c.get("filePath"), c.get("category")) for c in candidates}

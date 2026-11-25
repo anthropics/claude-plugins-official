@@ -30,8 +30,10 @@ All configuration is via environment variables. None are required for default be
 
 By default both reviews run on the newest Claude Opus, and move to the next one when it is released — there is no model version to bump:
 
-- The LLM diff review asks your API endpoint (`GET /v1/models`) which Opus models it serves and uses the newest. The answer is cached for a day in the plugin's state directory. If the endpoint can't answer, the review uses `claude-opus-5-5`.
-- The agentic commit reviewer, and every review in a session signed in to a Claude apps gateway with `/login`, run through your installed Claude Code. Other reviews on Bedrock, Vertex, and Foundry run through the copy of Claude Code bundled with the Agent SDK, or `SG_AGENTIC_CLI_PATH` if set. On Windows the agentic commit reviewer runs through the bundled copy too, unless `SG_AGENTIC_CLI_PATH` is set. Where the Agent SDK has no bundled copy for Windows, those reviews run through `~\.local\bin\claude.exe`, or else a `claude.exe` on `PATH`; if there is neither, set `SG_AGENTIC_CLI_PATH`. All of them use Claude Code's `opus` alias: the model `/model opus` selects, including any `ANTHROPIC_DEFAULT_OPUS_MODEL` you have set. On a gateway that alias may name an older Opus than the newest one.
+- The plugin asks your API endpoint (`GET /v1/models`) which Opus models it serves and uses the newest. The answer is cached for a day in the plugin's state directory.
+- A diff review call that fails is retried on the newest Sonnet the endpoint lists.
+- If the endpoint can't answer, the diff review uses `claude-opus-5-5` (retrying on `claude-sonnet-5-5`), and the agentic commit reviewer uses Claude Code's `opus` alias. When it does use the listed Opus, the agentic commit reviewer runs at medium effort unless you set `CLAUDE_CODE_EFFORT_LEVEL`.
+- The agentic commit reviewer runs through your installed Claude Code. Every review in a session signed in to a Claude apps gateway with `/login` also does, and they use Claude Code's `opus` and `sonnet` aliases. On Bedrock, Vertex, and Foundry reviews use those aliases too, through the copy of Claude Code bundled with the Agent SDK, or `SG_AGENTIC_CLI_PATH` if set. On Windows the agentic commit reviewer runs through the bundled copy too, unless `SG_AGENTIC_CLI_PATH` is set. Where the Agent SDK has no bundled copy for Windows, those reviews run through `~\.local\bin\claude.exe`, or else a `claude.exe` on `PATH`; if there is neither, set `SG_AGENTIC_CLI_PATH`. If you set `ANTHROPIC_DEFAULT_OPUS_MODEL`, the agentic commit reviewer uses the `opus` alias so that setting applies. On a gateway that alias may name an older Opus than the newest one.
 
 To pin a model, or to use a cheaper one:
 
@@ -53,11 +55,13 @@ SECURITY_REVIEW_MODEL=claude-opus-5-5
 The pattern warnings need no credentials. The LLM reviews (the diff review on Stop and the commit/push reviewer) use the first of these that applies:
 
 - **A cloud provider (Bedrock, Vertex, Foundry)** — if Claude Code is configured for one, reviews run through Claude Code with that provider config.
-- **`ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` in the environment** — used as is, against `ANTHROPIC_BASE_URL` if you set one.
-- **Signed in to Claude Code (`/login`)** — Claude Code passes your sign-in to the plugin's hooks, and reviews use that account.
-- **Signed in to a Claude apps gateway (`/login`)** — Claude Code passes no sign-in to plugins on a gateway, so reviews run through your installed Claude Code, which uses its own stored sign-in. The plugin never reads it. The plugin looks for Claude Code at `~/.local/bin/claude`, where the native installer puts it on macOS and Linux; on Windows, or for any other install, set `SG_AGENTIC_CLI_PATH` to its full path.
+- **`ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` in the environment** — used as is, against `ANTHROPIC_BASE_URL` if you set one. With no base URL, the commit/push reviewer treats a claude.ai token (`sk-ant-oat`) the way it treats a sign-in, below.
+- **Signed in to Claude Code (`/login`)** — Claude Code passes your sign-in to the plugin's hooks, and reviews use that account. The commit/push reviewer's Claude Code runs on that token alone and does not renew the login you have stored.
+- **Signed in to a Claude apps gateway (`/login`)** — Claude Code passes no sign-in to plugins on a gateway, so reviews run through your installed Claude Code, which uses its own stored sign-in. The plugin never reads it. The plugin looks for Claude Code where the native installer puts it: `~/.local/bin/claude` on macOS and Linux, `~\.local\bin\claude.exe` on Windows. For any other install, set `SG_AGENTIC_CLI_PATH` to its full path.
 
 Claude Code does not pass your sign-in to plugins in a session started with `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`, `DISABLE_TELEMETRY`, or `DO_NOT_TRACK` set. If no credentials reach the plugin, for that or any other reason, and the plugin cannot review through a Claude apps gateway sign-in, the LLM reviews are skipped and only the pattern warnings run. The plugin tells you so when Claude edits a file in a git repo, at most once a week. Set `ENABLE_CODE_SECURITY_REVIEW=0` if that is what you want; it also hides the notice.
+
+On the default API host, a claude.ai token (`sk-ant-oat`) that arrives as `ANTHROPIC_API_KEY`, for example from an `apiKeyHelper`, is sent as a bearer token. On hosts other than Claude Code, any other `ANTHROPIC_AUTH_TOKEN` is not used without a base URL, because it is meant for a gateway: set `ANTHROPIC_BASE_URL` to that gateway.
 
 ### Enabling/disabling layers
 
@@ -68,6 +72,7 @@ Claude Code does not pass your sign-in to plugins in a session started with `CLA
 | `ENABLE_CODE_SECURITY_REVIEW=0` | on | Disable all LLM reviews (Stop hook + commit/push) |
 | `ENABLE_STOP_REVIEW=0` | on | Disable only the Stop-hook diff review, keeping commit/push reviews. Useful for multi-agent / shared-worktree setups where another agent can move HEAD between a worker's turns |
 | `ENABLE_COMMIT_REVIEW=0` | on | Disable layer 3 (agentic commit review) |
+| `MAX_COMMIT_REVIEWS_PER_HOUR=<n>` | `20` | The most commit reviews, and separately the most push reviews, that one session runs in a rolling hour. A commit or push past the limit still goes through, without a review and without a message; a later push can still review the commit. Must be a whole number; `0` runs none. It counts reviews, not tokens or cost, and does not limit the Stop-hook diff review |
 | `SECURITY_GUIDANCE_PERSIST_SESSIONS=1` | unset | Keep the reviewer's own Claude Code runs as session transcripts (see [Privacy and data handling](#privacy-and-data-handling)) |
 
 ### Hook output for other hosts
@@ -94,9 +99,11 @@ Drop a `claude-security-guidance.md` in any of:
 - `<project>/.claude/claude-security-guidance.md` — project rules, intended to be committed
 - `<project>/.claude/claude-security-guidance.local.md` — local overrides, intended to be `.gitignore`'d
 
+The project files keep loading after the session moves to another folder of the project (`cd src`). A `.claude` in the folder it moved to is read too, after the project's. In a linked worktree, that worktree's own files are the project files.
+
 Project files must be regular files: a link there, or a `.claude` folder that is a link, is skipped.
 
-All three are loaded and concatenated into the LLM diff review's prompt in the order user → project → project-local. If the combined size exceeds the 8 KB prompt budget, the tail is truncated, so user-wide rules are kept and project-local rules are dropped first. The agentic commit reviewer (layer 3) does not currently read this file. Example:
+These are loaded and concatenated into the LLM diff review's prompt in the order user → project → project-local. If the combined size exceeds the 8 KB prompt budget, the tail is truncated, so user-wide rules are kept and project-local rules are dropped first. The agentic commit reviewer (layer 3) does not currently read this file. Example:
 
 ```markdown
 # Acme security rules
@@ -121,9 +128,22 @@ Where that data goes depends on your Claude Code configuration:
 - **Claude apps gateway, signed in with `/login`:** your installed Claude Code sends the reviews to the gateway, using its own stored sign-in. The plugin never reads the sign-in. The gateway operator's terms apply.
 - **3rd-party providers** (Bedrock / Vertex / Foundry / Mantle): sent to your configured provider endpoint. The provider's data-handling terms apply (e.g., AWS / GCP / Azure).
 
-The plugin writes its own debug log to `~/.claude/security/log.txt` (override with `SECURITY_GUIDANCE_DEBUG_LOG`). The log contains diffstate metadata, finding categories, the Agent SDK's own warnings and errors, and up to 20 lines of stderr from each Claude Code run the plugin starts for a review (20 in all for each agentic commit review, which starts several runs) — no full file contents or model prompts — and rotates at 1 MB. Nothing is uploaded.
+The plugin writes its own debug log to `~/.claude/security/log.txt` (override with `SECURITY_GUIDANCE_DEBUG_LOG`). The log contains diffstate metadata, finding categories, the Agent SDK's own warnings and errors, and up to 20 lines of stderr from each Claude Code run the plugin starts for a review (20 in all for each agentic commit review, which starts several runs) — no full file contents or model prompts — and rotates at 1 MB. The log is not uploaded.
 
 The agentic commit reviewer, and every review on a 3rd-party provider, runs an inner Claude Code through the Agent SDK. The plugin starts it with `--no-session-persistence`, so these runs are not saved as session transcripts under `~/.claude/projects/`. Set `SECURITY_GUIDANCE_PERSIST_SESSIONS=1` to keep them, for example to debug a review; a saved transcript contains the full review prompt, including diff hunks, and is removed by Claude Code's normal session cleanup (`cleanupPeriodDays`). A Claude Code older than 2.0.63 does not have the flag; the review then runs without it and is saved as before.
+
+### Usage data
+
+The plugin's hooks report numbers and true/false values about their own work to Claude Code, in the `metrics` field of their output. The plugin sends them nowhere itself. Claude Code can add them to its [usage metrics](https://code.claude.com/docs/en/data-usage#telemetry-services); that page says who receives those. The values cover:
+
+- **Reviews:** whether a review ran or why it was skipped, how long it took, how many files it covered, how many findings and of which severity, tokens, estimated cost, and error codes. When a model call fails, also which network settings were in use (a proxy, a custom CA file, an empty certificate store).
+- **Pattern warnings:** which built-in rules matched, and which were fixed or left at the end of the turn, as numbers. For your own rules, counts, timings and flags for how they are written, never their names or text.
+- **The repository and the turn:** counts, sizes and timings (for example commits, changed and untracked files, files whose name looks like a secret, index entries, size of a diff), how changes relate to Claude's own edits, which kinds of settings that name programs for git the repository has (for example Git LFS or nbstripout), and a sample of Bash calls without a commit or push in them (that there was one, not the command).
+- **The setup:** flags such as "no git repository", "no credentials", "reviews go through a gateway" or "on a WSL drive", the plugin's and Python's versions, other Pythons found, and how the hooks were started and the Agent SDK was installed (result codes, times, and a number from 0 to 999 computed from an install error line).
+
+They hold no code, diffs, prompts, commands, text of findings, file names, paths, URLs or repository names.
+
+Claude Code's metrics are off by default on Bedrock, Vertex, Foundry and Claude Platform on AWS, and `DISABLE_TELEMETRY=1`, `DO_NOT_TRACK=1` or `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` turns them off elsewhere. With a claude.ai sign-in these variables also stop the LLM reviews (see [Credentials](#credentials)); reviews on an API key, a cloud provider or a Claude apps gateway sign-in keep running. `SECURITY_GUIDANCE_DISABLE=1` stops the plugin's work but not the field. In [portable mode](#hook-output-for-other-hosts) the hooks leave the field out.
 
 ### Review usage and cost
 
@@ -134,7 +154,7 @@ Review usage: review=stop session=<session id> model=claude-opus-5-5 calls=1 in=
 ```
 
 - `review` is `stop`, `commit` or `push`; `session` is the Claude Code session that triggered it.
-- `calls` counts API requests for the diff review and reviewer runs for the agentic commit/push review, where `model` is the model that was asked for (`opus` by default).
+- `calls` counts API requests for the diff review and reviewer runs for the agentic commit/push review, where `model` is the model that was asked for (`opus` if the endpoint can't list its models).
 - `est_cost_usd` is an estimate at list prices, not a bill: on a subscription the review counts against your usage limits instead. A trailing `~` means the model had no entry in the plugin's price table and a default rate was used. A review cut short (timeout, session exit) may not be counted.
 - The log rotates at 1 MB, so copy these lines out if you need a longer history.
 
@@ -150,7 +170,7 @@ This is a best-effort assistive tool, not a guarantee. Treat findings as suggest
 
 **Looking into one commit review** — set `SECURITY_GUIDANCE_PERSIST_SESSIONS=1` before the run; the reviewer's prompt, tool calls and answer are then kept as session transcripts under `~/.claude/projects/`.
 
-**Review never finds anything** — verify your API path works, and that credentials reach the plugin (see [Credentials](#credentials)): `~/.claude/security/log.txt` says `no API credentials` when they don't. When a commit or push review gets no usable answer from the model, Claude is told once per session for each kind of review and failure (for example "Commit security review did not complete: …"), and the reason is logged. If a commit whose review failed is pushed later from Claude Code, the push review checks it. On 3P providers, if you set `SECURITY_REVIEW_MODEL`, check it is a provider-specific id your account can invoke. On LLM gateways, check the gateway's logs for `POST /v1/messages` traffic from the plugin. In a session signed in to a Claude apps gateway with `/login`, reviews run only when `claude auth status` shows the gateway and that you are logged in. They run through the Claude Code at `~/.local/bin/claude`, where the native installer puts it on macOS and Linux. On Windows, or for any other install, set `SG_AGENTIC_CLI_PATH` to its full path.
+**Review never finds anything** — verify your API path works, and that credentials reach the plugin (see [Credentials](#credentials)): `~/.claude/security/log.txt` says `no API credentials` when they don't. When a commit or push review gets no usable answer from the model, Claude is told once per session for each kind of review and failure (for example "Commit security review did not complete: …"), and the reason is logged. If a commit whose review failed is pushed later from Claude Code, the push review checks it. On 3P providers, if you set `SECURITY_REVIEW_MODEL`, check it is a provider-specific id your account can invoke. On LLM gateways, check the gateway's logs for `POST /v1/messages` traffic from the plugin. In a session signed in to a Claude apps gateway with `/login`, reviews run only when `claude auth status` shows the gateway and that you are logged in. They run through the Claude Code at `~/.local/bin/claude`, where the native installer puts it on macOS and Linux, or on Windows at `~\.local\bin\claude.exe`. For any other install, set `SG_AGENTIC_CLI_PATH` to its full path.
 
 **Too many false positives** — set `SECURITY_REVIEW_MODEL` to a cheaper model (`claude-sonnet-5-5`) and re-evaluate; if precision is the priority, stay on the default.
 

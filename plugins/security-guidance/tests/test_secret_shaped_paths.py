@@ -95,7 +95,8 @@ def test_rename_away_from_a_secret_name_is_left_out(tmp_path):
 def test_stop_hook_reports_how_many_files_it_left_out(tmp_path, hook_env, stub_api):
     repo = make_repo(tmp_path / "repo")
     run_hook(ups_payload(repo), hook_env)
-    (repo / "id_ed25519").write_text("-----BEGIN OPENSSH PRIVATE KEY-----\n")
+    # Split so secret scanners do not flag this made-up value.
+    (repo / "id_ed25519").write_text("-----BEGIN OPENSSH " + "PRIVATE KEY-----\n")
     (repo / ".env.local").write_text("TOKEN=abc\n")
     _rc, stdout, _err = run_hook(stop_payload(repo), hook_env)
     assert metrics_of(stdout).get("secret_shaped_skipped") == 2

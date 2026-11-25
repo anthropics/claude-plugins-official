@@ -34,6 +34,12 @@ function quoteSpecialValues(text: string): string {
         result.push(line);
         continue;
       }
+      // Skip block scalar headers ("description: |"): the value is on the
+      // lines below
+      if (/^[|>][-+0-9]*\s*(#.*)?$/.test(value)) {
+        result.push(line);
+        continue;
+      }
       // Skip already-quoted values
       if (
         (value.startsWith('"') && value.endsWith('"')) ||

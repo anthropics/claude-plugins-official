@@ -14,9 +14,10 @@ if TYPE_CHECKING:
 
 def read(scan_root: str, file: str) -> str | None:
     """The text of `file`, relative to `scan_root`; None when it cannot be read."""
+    path = Path(scan_root, file)
     try:
-        return Path(scan_root, file).read_bytes().decode("utf-8", "surrogateescape")
-    except (OSError, ValueError):
+        return path.read_bytes().decode("utf-8", "surrogateescape") if path.is_file() else None
+    except (OSError, MemoryError):
         return None
 
 

@@ -387,6 +387,7 @@ This plugin is part of the claude-code-marketplace. To contribute improvements:
 
 ## Version
 
+0.1.2 - Two MCP reference examples now run a bundled server instead of an npm package
 0.1.1 - Initial release with seven comprehensive skills and three validation agents
 
 ## Author

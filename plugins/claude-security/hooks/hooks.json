@@ -1,13 +1,37 @@
 {
-  "description": "Shows the Claude Security banner when the /claude-security menu opens, reports usage counts after the plugin's helper scripts run, closes the yes/no question asked before a scan starts if it is left unanswered for 60 seconds, and suggests a scan of the changes after a branch is pushed or a pull request opened.",
+  "description": "Shows the Claude Security plugin's banner when the /claude-security menu opens in a terminal. Elsewhere it shows one plain line on auto mode, unless the session is in auto mode. Notes the id of the prompt at which /claude-security:threat-model is typed, and stops that command where it finds that it cannot. Reports usage counts after the plugin's helper scripts run. If the yes/no question asked before a scan or an attack surface analysis starts is left unanswered for 60 seconds, cancels it. No hook approves a call or changes its input. Suggests a scan of the changes after a branch is pushed or a pull request opened. Checks the Bash commands of the plugin's own agents, and refuses some. It can miss a command. From all of them: kill, pkill, killall, a sed script that the shell fills in, git config with --global or --system, in full or shortened, and an override of git's refusal of a repository. From all of them, except claude-security:claude-security as the main agent of a session: some commands that download or install, such as pip download or npm install. From the patch verifier: a call that hands over its notes (patch_artifacts.py --keep-notes) in any form but one. From a scan's verifiers, the explore agents, and a codebase scan's inventory and its component and sheet researchers: an interpreter or pip, such as python or node. From the agents of the attack surface analysis: other commands, such as python or rm. Draws a live view of a scan while it runs, and changes nothing in it.",
+  "modules": ["./live/register.js"],
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/hooks.sh\" guard || true",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
     "UserPromptExpansion": [
       {
         "matcher": "^claude-security:claude-security$",
         "hooks": [
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/hooks.sh\" banner"
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/hooks.sh\" banner",
+            "timeout": 30
+          }
+        ]
+      },
+      {
+        "matcher": "^claude-security:threat-model$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/hooks.sh\" turn || true",
+            "timeout": 10
           }
         ]
       }
@@ -19,7 +43,7 @@
           {
             "type": "command",
             "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/hooks.sh\" metrics || true",
-            "if": "Bash(py* *claude-security*scripts/*.py *)",
+            "if": "Bash(*py* *plugin*scripts/*.py *)",
             "async": true,
             "asyncRewake": true,
             "timeout": 10
@@ -46,7 +70,7 @@
           {
             "type": "command",
             "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/hooks.sh\" metrics || true",
-            "if": "Bash(py* *claude-security*scripts/*.py *)",
+            "if": "Bash(*py* *plugin*scripts/*.py *)",
             "async": true,
             "asyncRewake": true,
             "timeout": 10
@@ -61,7 +85,8 @@
           {
             "type": "command",
             "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/hooks.sh\" unanswered || true",
-            "timeout": 90
+            "timeout": 90,
+            "onFailure": "continue"
           }
         ]
       }

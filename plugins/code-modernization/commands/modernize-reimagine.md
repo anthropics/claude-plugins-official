@@ -47,15 +47,21 @@ reimagined system, and should any be deliberately dropped?" Wait, and record the
 ## Phase C — Architecture, then critique
 
 Design the target architecture for <vision>: a Mermaid C4 Container diagram, service boundaries with
-rationale (which rules and entities live where), technology choices with a one-line justification each, and
-the data migration approach from the legacy stores. Then spawn **architecture-critic**: "Review this
+rationale (which rules and entities live where), technology choices with a one-line justification each, a
+**Target versions** table (component, version, support end, source and date checked, status), and the data
+migration approach from the legacy stores. **Versions are looked up, never remembered:** before choosing any,
+read `${CLAUDE_PLUGIN_ROOT}/references/target-versions.md` and follow it (check each with the web tools, on the
+vendor's support page or endoflife.date; newest supported release, or newest LTS where the vendor keeps an LTS line;
+`unverified` only when every lookup failed). Then spawn **architecture-critic**: "Review this
 architecture for <vision> against `analysis/$system/AI_NATIVE_SPEC.md`: over-engineering, missed
-requirements, scaling risks, simpler alternatives." Incorporate the critique and write
-`analysis/$system/REIMAGINED_ARCHITECTURE.md`.
+requirements, scaling risks, simpler alternatives, and any technology that is out of support or has no version,
+support date and source." Incorporate the critique (look up any version that changes, here or at Phase D, and
+update the table) and write `analysis/$system/REIMAGINED_ARCHITECTURE.md`.
 
 ## Phase D — Checkpoint 2
 
-Present the architecture and **stop: scaffold nothing until the user explicitly approves** (plan mode if
+Present the architecture, naming every **Target versions** row that is not `supported` (the user pins an
+`unverified` one here), and **stop: scaffold nothing until the user explicitly approves** (plan mode if
 available). The approval authorizes the build-out.
 
 ## Phase E — Parallel scaffolding (only after Phase D approval)
@@ -81,7 +87,9 @@ do not conflict). From the result report `scaffolded[]` (each service with its `
 
 **Without it,** spawn a **scaffolder** agent per service in parallel (at most 3 at a time; say which you
 deferred): "Scaffold the <service-name> service per `analysis/$system/REIMAGINED_ARCHITECTURE.md` and
-`AI_NATIVE_SPEC.md`: project skeleton, domain model, API stubs matching the interface contracts, and
+`AI_NATIVE_SPEC.md`: project skeleton on exactly the versions in the architecture's Target versions table (for a
+dependency not in it, the newest compatible stable release the package registry reports, never one from memory;
+report a version that cannot be resolved as a blocker), domain model, API stubs matching the interface contracts, and
 **executable acceptance tests** for every behavior-contract rule assigned to this service (mark unimplemented
 ones expected-failure with the rule ID). No credential from legacy code becomes a fixture or config default:
 use fake same-shape values and env-var placeholders. Write to `modernized/$system-reimagined/<service-name>/`."

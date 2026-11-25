@@ -226,3 +226,46 @@ def test_marker_from_the_future_does_not_stretch_the_cooldown(install):
     ahead = time.time() + 6 * 3600
     os.utime(install.state / "agent-sdk-venv.timeout", (ahead, ahead))
     assert boot._timeout_cooldown_remaining(install.state) == boot.PIP_TIMEOUT_COOLDOWN_SEC
+
+
+def _link(target, path):
+    try:
+        os.symlink(target, path, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("cannot create links here")
+
+
+def test_sweep_needs_a_real_temp_folder(install, tmp_path):
+    other = tmp_path / "other"
+    (other / "old").mkdir(parents=True)
+    then = time.time() - boot._PIP_TEMP_STALE_SEC - 60
+    os.utime(other / "old", (then, then))
+    install.state.mkdir(exist_ok=True)
+    _link(other, install.state / "pip-tmp")
+    boot._sweep_pip_temp(install.state)
+    assert (other / "old").is_dir()
+    assert not os.path.lexists(install.state / "pip-tmp")
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX ownership")
+def test_temp_folder_of_another_user_is_not_used(install, monkeypatch):
+    root = install.state / "pip-tmp"
+    root.mkdir(parents=True)
+    (root / "tmpold").mkdir()
+    then = time.time() - boot._PIP_TEMP_STALE_SEC - 60
+    os.utime(root / "tmpold", (then, then))
+    monkeypatch.setattr(boot.os, "getuid", lambda: os.stat(root).st_uid + 1)
+    boot._sweep_pip_temp(install.state)
+    assert _left_in(root) == ["tmpold"]
+    install.mode = "exit"
+    assert boot.main()[0] == boot.BUILT
+    assert _left_in(root) == ["tmpold"]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX modes")
+def test_temp_folder_is_private(install):
+    install.mode = "exit"
+    (install.state / "pip-tmp").mkdir(parents=True, mode=0o775)
+    (install.state / "pip-tmp").chmod(0o775)
+    assert boot.main()[0] == boot.BUILT
+    assert (install.state / "pip-tmp").stat().st_mode & 0o077 == 0

@@ -6,22 +6,27 @@ there so callers keep resolving bare names through the hook module's
 globals — tests that ``monkeypatch.setattr(hook, "<fn>", …)`` continue
 to work without retargeting.
 """
+import errno
 import hashlib
 import os
+import stat
 import subprocess
 import sys
+import unicodedata
 import time
 
-from _base import debug_log, portable_output, _PV
+from _base import debug_log, make_state_dir, portable_output, _PV
 import gitutil
 from gitutil import (
     GIT_CMD,
-    _git_dir, _git_toplevel, _git_status_porcelain,
+    _git_dir, _git_toplevel, _stay_out, _git_status_porcelain,
     _git_rev_parse_head, _is_ancestor, _git_name_only, _temp_index,
     _secret_rename_origins, index_entry_count,
 )
-from session_state import with_locked_state
+from session_state import load_state, with_locked_state
 from extensibility import _same_dir
+from gitutil import turn_commit_shas
+from session_state import commit_log_files, get_commit_log_file
 
 
 # =====================================================================
@@ -60,7 +65,7 @@ def load_baseline_sha(session_id):
     return with_locked_state(session_id, _load)
 
 
-def record_touched_path(session_id, file_path):
+def record_touched_path(session_id, file_path, custom_rule_stats=None):
     """Append a file path to the touched_paths list (deduped, capped at 200).
 
     Stop is the consumer and clears under the same lock it reads with; UPS
@@ -69,12 +74,67 @@ def record_touched_path(session_id, file_path):
     stale paths so over-retention is harmless, just wasteful.
     """
     def _record(state):
+        # In the save this hook makes anyway: one more could drop another
+        # hook's change where there is no state lock (Windows).
+        _fold_custom_rule_stats(state, custom_rule_stats)
         paths = state.setdefault("touched_paths", [])
         if file_path not in paths:
             paths.append(file_path)
-            if len(paths) > 200:
-                del paths[:len(paths) - 200]
+            if len(paths) > TOUCHED_PATHS_CAP:
+                del paths[:len(paths) - TOUCHED_PATHS_CAP]
     with_locked_state(session_id, _record)
+
+
+# A full Stop row lost these and the turn's commit count, so they travel as
+# one decimal number, each field capped to its digits:
+#   rules (2) shapes (3) gain (3) loss (3) slow_ms (4)
+# 15 digits at most, well inside what a JSON number holds exactly.
+_CUSTOM_RULE_PACK = (("cr_rules", 99), ("cr_shapes", 999), ("cr_gain", 999),
+                     ("cr_loss", 999), ("cr_slow_ms", 9999))
+
+
+# Kept in the state per turn. See extensibility.edit_stats. cr_rules, cr_shapes
+# and cr_slow_ms are maximum or union over the turn's edits, the others are
+# added up.
+CUSTOM_RULE_KEYS = tuple(key for key, _ in _CUSTOM_RULE_PACK)
+
+
+def custom_rule_pack(kept):
+    """The turn's custom rule counts as one number; 0 when there are none."""
+    if not isinstance(kept, dict):
+        return 0
+    value = 0
+    for key, cap in _CUSTOM_RULE_PACK:
+        part = kept.get(key, 0)
+        if not isinstance(part, int) or isinstance(part, bool) or part < 0:
+            part = 0
+        value = value * (10 ** len(str(cap))) + min(part, cap)
+    return value
+
+
+def _fold_custom_rule_stats(state, stats):
+    if not stats:
+        return
+    kept = state.get("custom_rules")
+    if not isinstance(kept, dict):
+        kept = state["custom_rules"] = {}
+    for key in CUSTOM_RULE_KEYS:
+        new, old = stats.get(key, 0), kept.get(key, 0)
+        if not isinstance(old, int):
+            old = 0
+        if key == "cr_shapes":
+            value = old | new
+        elif key in ("cr_rules", "cr_slow_ms"):
+            value = max(old, new)
+        else:
+            value = old + new
+        if value:
+            kept[key] = value
+
+
+def record_custom_rule_stats(session_id, stats):
+    """Fold one edit's custom rule counts into the turn's. Telemetry only."""
+    with_locked_state(session_id, lambda state: _fold_custom_rule_stats(state, stats))
 
 
 def consume_stop_state(session_id, clear=True):
@@ -104,6 +164,7 @@ def consume_stop_state(session_id, clear=True):
             # Where and when the prompt hook captured it; see baseline_origin.
             "baseline_root": state.get("baseline_root"),
             "prompt_at": state.get("prompt_at"),
+            "turn_started": state.get("turn_started"),
             "baseline_kept": state.get("baseline_kept") or 0,
             "untracked_at_baseline": (
                 dict(state["untracked_at_baseline"])
@@ -117,30 +178,65 @@ def consume_stop_state(session_id, clear=True):
             "state_resets": state.get("state_resets", 0),
             "state_overwrites": state.get("state_overwrites", 0),
             "baseline_fail": state.get("baseline_fail") or 0,
+            "custom_rules": (
+                dict(state["custom_rules"])
+                if isinstance(state.get("custom_rules"), dict) else {}
+            ),
         }
         # touched_paths is cleared per Stop, but one baseline can be
         # reviewed by several Stops (rewakes). turn_touched keeps every path
-        # recorded since the baseline; only telemetry reads it.
+        # recorded since the prompt hook's baseline. Read by the scope
+        # metric and, through touched_since_prompt, by the no-edit-record note.
         turn = list(dict.fromkeys(
             [p for p in state.get("turn_touched", []) if isinstance(p, str)]
-            + snap["touched_paths"]))[-200:]
+            + snap["touched_paths"]))[-TOUCHED_PATHS_CAP:]
         snap["turn_touched"] = turn
         if clear:
+            if snap["state_resets"] or snap["state_overwrites"]:
+                # turn_touched outlives this Stop, and so does its gap.
+                state["turn_touched_lost"] = True
             state["turn_touched"] = turn
             state["touched_paths"] = []
             state.pop("reviewed_diff_hash", None)
             state.pop("state_resets", None)
             state.pop("state_overwrites", None)
+            state.pop("custom_rules", None)
         return snap
 
     return with_locked_state(session_id, _snap) or {
         "touched_paths": [], "baseline_sha": None, "head_at_capture": None,
         "untracked_at_baseline": {}, "baseline_root": None, "prompt_at": None,
-        "baseline_kept": 0,
+        "baseline_kept": 0, "turn_started": None,
         "fire_count": 0, "fire_count_expired": False, "previous_findings": [],
         "reviewed_diff_hash": None, "state_resets": 0, "state_overwrites": 0,
-        "baseline_fail": 0, "turn_touched": [],
+        "baseline_fail": 0, "turn_touched": [], "custom_rules": {},
     }
+
+
+# record_touched_path and turn_touched keep the newest paths only.
+TOUCHED_PATHS_CAP = 200
+
+
+def touched_since_prompt(session_id):
+    """(paths, complete): every path the session's edit tools recorded since
+    the prompt hook's baseline, read now and without consuming or writing
+    anything, so edits recorded while a Stop review runs are in it.
+    `complete` is False when the list is known to be missing paths: the
+    state was lost or overwritten since the prompt, it could not be read, or
+    the prompt hook's own save is not in it. Callers check the length
+    against TOUCHED_PATHS_CAP."""
+    try:
+        state = load_state(session_id)
+    except Exception:
+        return [], False
+    if not isinstance(state, dict):
+        return [], False
+    paths = list(dict.fromkeys(
+        [p for p in state.get("turn_touched", []) if isinstance(p, str)]
+        + [p for p in state.get("touched_paths", []) if isinstance(p, str)]))
+    lost = (state.get("state_resets") or state.get("state_overwrites")
+            or state.get("turn_touched_lost"))
+    return paths, not lost and state.get("prompt_at") is not None
 
 
 # Path names compare without case where the filesystem usually does.
@@ -151,13 +247,21 @@ def _rel_in_repo(real_root, path):
     """`path` relative to the repo root (a real path), or None when it lies
     outside the repo."""
     real = os.path.realpath(path)
+    if sys.platform == "darwin":
+        # git and the file system can spell one name composed and decomposed.
+        real = unicodedata.normalize("NFC", real)
+        real_root = unicodedata.normalize("NFC", real_root)
+    if _FOLD_CASE:
+        # Fold before comparing: realpath keeps the case a path was typed in,
+        # so the repo folder itself can be spelled differently too.
+        real, real_root = real.casefold(), real_root.casefold()
     try:
         rel = os.path.relpath(real, real_root)
     except ValueError:  # another drive
         return None
     if rel == os.pardir or rel.startswith(os.pardir + os.sep):
         return None
-    return rel.casefold() if _FOLD_CASE else rel
+    return rel
 
 
 def touched_scope(repo_root, cwd, touched_paths):
@@ -165,7 +269,7 @@ def touched_scope(repo_root, cwd, touched_paths):
     (scope, repo-relative paths inside the repo). scope: 0 none recorded,
     1 all inside the reviewed repo, 2 some outside, 3 all outside. Relative
     paths are read against `cwd`. The list holds the newest 200 paths, so
-    this is approximate past that. Telemetry only."""
+    this is approximate past that."""
     root = os.path.realpath(repo_root)
     inside, outside = set(), 0
     for p in touched_paths:
@@ -199,6 +303,44 @@ def review_scope_code(repo_root, scope, inside, files, base_fail):
     return int(base_fail or 0) * 100000 + scope * 10000 + min(untouched, 9999)
 
 
+def findings_without_edit_record(session_id, at_stop_start, repo_root, cwd,
+                                 finding_paths, reviewed):
+    """Which findings are in a reviewed file for which there is no record of
+    this session's edit tools writing it since the prompt: (those files as
+    the review named them, in order and without repeats; how many findings
+    they hold). The count is -1, with no files, when the record is known to
+    be incomplete: lost state, or more paths than the list keeps.
+
+    `at_stop_start`: turn_touched as the Stop began; a prompt that arrives
+    while the review runs resets the stored list. A finding path that is not
+    one of the `reviewed` files, or that cannot be resolved, is left out."""
+    since, complete = touched_since_prompt(session_id)
+    touched = list(dict.fromkeys(list(at_stop_start) + since))
+    if not complete or len(touched) >= TOUCHED_PATHS_CAP:
+        return [], -1
+    _, inside = touched_scope(repo_root, cwd, touched)
+    root = os.path.realpath(repo_root)
+
+    def rel(f):
+        try:
+            return _rel_in_repo(root, os.path.join(root, f))
+        except (ValueError, OSError):  # NUL, or a name the OS cannot encode
+            return None
+    candidates = {}
+    for f in reviewed:
+        r = rel(f)
+        if r is not None and r not in inside:
+            candidates.setdefault(r, f)
+    names, count = [], 0
+    for f in finding_paths:
+        r = rel(f) if isinstance(f, str) and f else None
+        if r in candidates:
+            count += 1
+            if candidates[r] not in names:
+                names.append(candidates[r])
+    return names, count
+
+
 def record_reviewed_diff(session_id, diff_hash):
     def _save(state):
         state["reviewed_diff_hash"] = diff_hash
@@ -221,8 +363,8 @@ def restore_unreviewed_stop_state(session_id, paths, baseline_sha):
     def _restore(state):
         existing = state.get("touched_paths", [])
         merged = list(dict.fromkeys(list(paths) + list(existing)))
-        if len(merged) > 200:
-            merged = merged[:200]
+        if len(merged) > TOUCHED_PATHS_CAP:
+            merged = merged[:TOUCHED_PATHS_CAP]
         state["touched_paths"] = merged
         if baseline_sha and not state.get("baseline_sha"):
             state["baseline_sha"] = baseline_sha
@@ -308,6 +450,8 @@ def get_baseline_file_content(session_id, file_path, cwd):
             # Windows for any file that is not directly in the session
             # directory.
             rel_path = rel_path.replace(os.sep, "/")
+            if _stay_out(git_cwd or cwd_abs):
+                return None
             result = subprocess.run(
                 [*GIT_CMD, "show", f"{baseline_sha}:./{rel_path}"],
                 cwd=git_cwd, capture_output=True, timeout=5
@@ -369,7 +513,9 @@ def _snapshot_commit(cwd, env, head_tree):
     # No pathspec: `add -u` has staged the whole work tree, whatever directory
     # of it `cwd` is, since git 2.0. `-- :/` would say the same but fails
     # outright under a user's GIT_LITERAL_PATHSPECS.
-    add = run(["add", "-u"])
+    # Not for files in a directory that a sparse index stores as one entry.
+    sparse = gitutil.may_be_sparse(env["GIT_INDEX_FILE"])
+    add = run([*(gitutil.SPARSE_AS_IT_IS if sparse else []), "add", "-u"])
     if add.returncode != 0:
         debug_log(f"Snapshot: add -u failed: {_stderr_of(add)}")
         return None
@@ -439,6 +585,9 @@ def capture_git_baseline(cwd):
     global last_baseline_fail, last_index_entries
     last_baseline_fail = 0
     last_index_entries = None
+    if _stay_out(cwd):
+        debug_log("Not a checkout to run git in, skipping baseline capture")
+        return None
     try:
         # HEAD's commit and its tree in one call: the commit is the answer
         # for a clean tree, the tree is what the snapshot is compared with.
@@ -512,6 +661,52 @@ def capture_git_baseline(cwd):
 _REVIEWED_SHAS_BASENAME = "sg-reviewed-shas"
 _REVIEWED_SHAS_CAP = 500
 
+# The records and markers this module keeps in the git directory are small
+# regular files of its own. Whatever else has one of their names is not one of
+# them: a link leads to a file that is not the plugin's to read or change, and
+# opening a pipe can hold a hook until its timeout. The largest of them is cut
+# back at 1 MiB, and no more than this is ever read from one.
+_OWN_FILE_MAX_BYTES = 4 * 1024 * 1024
+_NO_FOLLOW = getattr(os, "O_NOFOLLOW", 0)
+
+
+def _is_own_file(st):
+    return (stat.S_ISREG(st.st_mode) and st.st_nlink <= 1
+            and st.st_size <= _OWN_FILE_MAX_BYTES)
+
+
+def _open_own_file(path, flags, mode=0o666):
+    """os.open for one of those files. Also works as the `opener` of open().
+    Anything else at `path` is replaced by a new file when `flags` would create
+    one, as session_state does for the state file, and refused with OSError
+    otherwise. The open itself never waits.
+
+    After the open the name is looked at again and has to be that very file:
+    it can come to mean something else at any moment before that."""
+    try:
+        if not _is_own_file(os.lstat(path)):
+            if not flags & os.O_CREAT:
+                raise OSError(errno.EINVAL, "not a file of the plugin's", path)
+            flags |= os.O_EXCL
+            try:
+                os.unlink(path)
+            except FileNotFoundError:
+                pass
+    except FileNotFoundError:
+        pass
+    fd = os.open(path, flags | _NO_FOLLOW | getattr(os, "O_NONBLOCK", 0), mode)
+    try:
+        seen, st = os.lstat(path), os.fstat(fd)
+        own = (_is_own_file(seen) and _is_own_file(st)
+               and (st.st_ino, st.st_dev) == (seen.st_ino, seen.st_dev))
+    except OSError:
+        own = False
+    if not own:
+        os.close(fd)
+        raise OSError(errno.EINVAL, "not a file of the plugin's", path)
+    return fd
+
+
 def _is_full_sha(sha):
     return len(sha) == 40 and all(c in "0123456789abcdef" for c in sha)
 
@@ -529,8 +724,8 @@ def _load_reviewed_shas(repo_root, _gd=None):
         return set()
     out = set()
     try:
-        with open(p, "r") as f:
-            for line in f:
+        with open(p, "r", errors="replace", opener=_open_own_file) as f:
+            for line in f.read(_OWN_FILE_MAX_BYTES).splitlines():
                 sha = line.split("\t", 1)[0].strip()
                 if _is_full_sha(sha):
                     out.add(sha)
@@ -544,7 +739,8 @@ def _append_reviewed_shas(repo_root, shas, vulns_found=0):
 
     Uses fcntl.flock for the read-gc-write; appends are O_APPEND-atomic but
     GC needs the lock so concurrent CC sessions in the same clone don't race
-    each other's truncation.
+    each other's truncation. The findings go out after this call, so it waits
+    for the lock only a moment, then appends without it.
     """
     p = _reviewed_shas_path(repo_root)
     if not p or not shas:
@@ -555,11 +751,12 @@ def _append_reviewed_shas(repo_root, shas, vulns_found=0):
     lines = [f"{s}\t{ts}\t{pv}\t{int(vulns_found)}\n" for s in shas]
     try:
         import fcntl
-        with open(p, "a+") as f:
-            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+        with open(p, "a+", errors="replace", opener=_open_own_file) as f:
+            if not _seen_lock(f.fileno()):
+                raise OSError("record is locked")
             try:
                 f.seek(0)
-                existing = f.read().splitlines(keepends=True)
+                existing = f.read(_OWN_FILE_MAX_BYTES).splitlines(keepends=True)
                 # Dedup by sha (first column) — keep newest, then cap.
                 seen = set()
                 merged = []
@@ -572,16 +769,102 @@ def _append_reviewed_shas(repo_root, shas, vulns_found=0):
                 f.seek(0)
                 f.truncate()
                 f.writelines(merged)
+                f.flush()  # while the lock is still held
             finally:
                 fcntl.flock(f.fileno(), fcntl.LOCK_UN)
     except (OSError, ImportError):
-        # fcntl unavailable (Windows) or write failed — degrade to plain
-        # append; cap enforcement happens on the next locked write.
+        # fcntl unavailable (Windows), lock held or write failed — degrade to
+        # plain append; cap enforcement happens on the next locked write.
         try:
-            with open(p, "a") as f:
+            with open(p, "a", opener=_open_own_file) as f:
                 f.writelines(lines)
         except OSError:
             pass
+
+
+# ─── commits of a turn, count only ──────────────────────────────────────────
+#
+# A commit review starts from a hook on the Bash or PowerShell tool. A commit
+# made another way (a script, the user's own terminal) starts none.
+# The Stop row says how many commits a turn made and how many of them no
+# commit hook saw. Nothing reads these to decide whether a review runs.
+#
+# Kept in a file of its own per session, append-only: saving the session state
+# from one more background hook could drop another hook's change where there
+# is no state lock (Windows). Lines: `seen <sha prefix>` from commit hooks,
+# `counted <sha>` from the Stop hook. Every session's are read, so a commit
+# is seen by any of them and counted once on this machine.
+
+TURN_COMMITS_ERROR = -1
+
+
+def _note_commits(session_id, kind, shas):
+    """Never raises."""
+    if not shas or portable_output():
+        return
+    try:
+        path = get_commit_log_file(session_id)
+        make_state_dir(os.path.dirname(path))
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND
+                     | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        with os.fdopen(fd, "a") as f:
+            f.write("".join(f"{kind} {sha}\n" for sha in shas))
+    except Exception as e:
+        debug_log(f"{kind} commits not noted: {e}")
+
+
+def note_seen_commits(session_id, shas):
+    """A commit hook saw these commits."""
+    _note_commits(session_id, "seen", shas)
+
+
+def note_counted_commits(session_id, shas):
+    """These commits went out in a Stop row."""
+    _note_commits(session_id, "counted", shas)
+
+
+def turn_commits_code(repo_root, prompt_at, until, head_before=None):
+    """(code, shas) for the commits made in this checkout from the prompt to
+    `until` that no Stop row has counted yet:
+
+        made * 10000 + no_review * 100 + unseen     (each capped at 99)
+
+    no_review: no finished or running review in this clone, for whatever
+    reason. unseen: of those, the ones no commit hook saw. The code is None
+    when nothing was committed or the start of the turn is not known,
+    TURN_COMMITS_ERROR when git could not say."""
+    if not isinstance(prompt_at, (int, float)) or not 0 < prompt_at < 1e11:
+        return None, []
+    shas = turn_commit_shas(repo_root, prompt_at, until, head_before)
+    if not shas:
+        return (TURN_COMMITS_ERROR if shas is None else None), []
+    noted = {"seen": set(), "counted": set()}
+    for path in commit_log_files(newer_than=prompt_at):
+        try:
+            with open(path, encoding="utf-8", errors="replace") as f:
+                for line in f:
+                    kind, _, value = line.strip().partition(" ")
+                    if value and kind in noted:
+                        noted[kind].add(value)
+        except OSError:
+            return TURN_COMMITS_ERROR, []
+    new = [s for s in shas if s not in noted["counted"]]
+    if not new:
+        return None, []
+    gd = _git_dir(repo_root)
+    if not gd:
+        return TURN_COMMITS_ERROR, []
+    # The marker file, not its lock: taking the lock for a moment could make
+    # the review that is about to claim the commit leave it alone. Markers
+    # first: a review that ends in between then reads as finished.
+    missed = [s for s in new
+              if not os.path.exists(os.path.join(gd, _INFLIGHT_PREFIX + s))]
+    reviewed = _load_reviewed_shas(repo_root, _gd=gd)
+    missed = [s for s in missed if s not in reviewed]
+    seen = tuple(noted["seen"])
+    unseen = sum(1 for s in missed if not s.startswith(seen))
+    code = min(len(new), 99) * 10000 + min(len(missed), 99) * 100 + min(unseen, 99)
+    return code, new
 
 
 # ─── repeated-diff count ────────────────────────────────────────────────────
@@ -670,7 +953,7 @@ def _append_diff_row(f, locked, token, done):
     if locked is not False and size + len(row) > _SEEN_DIFFS_TRIM_BYTES:
         f.seek(0)
         keep, room = [], _SEEN_DIFFS_TRIM_BYTES // 2
-        for ln in reversed(f.read().splitlines(keepends=True)):
+        for ln in reversed(f.read(_OWN_FILE_MAX_BYTES).splitlines(keepends=True)):
             room -= len(ln)
             if room < 0:
                 break
@@ -704,12 +987,12 @@ def _diff_review_started(repo_root, diff_files, tip="HEAD"):
         best = dict.fromkeys(keys, DIFF_SEEN_NO)
         # Read and note under one lock, so two reviews of one diff that start
         # together cannot both miss each other.
-        with open(token[0], "a+b") as f:
+        with open(token[0], "a+b", opener=_open_own_file) as f:
             locked = _seen_lock(f.fileno())
             if locked is False:
                 raise OSError("record is locked")
             f.seek(0)
-            for ln in f.read().decode("ascii", "replace").splitlines():
+            for ln in f.read(_OWN_FILE_MAX_BYTES).decode("ascii", "replace").splitlines():
                 row = ln.split("\t")
                 if len(row) != 4 or not row[0].isdigit() or len(row[0]) > 12:
                     continue
@@ -736,7 +1019,7 @@ def _diff_review_done(token):
     if not token:
         return
     try:
-        with open(token[0], "a+b") as f:
+        with open(token[0], "a+b", opener=_open_own_file) as f:
             _append_diff_row(f, _seen_lock(f.fileno()), token, done=True)
     except Exception as e:
         debug_log(f"Repeated-diff count: verdict not noted ({type(e).__name__}: {e})")
@@ -886,9 +1169,13 @@ def _sweep_inflight(gd):
         if not name.startswith(_INFLIGHT_PREFIX) or p in _inflight_held:
             continue
         try:
-            if os.path.getmtime(p) > cutoff:
+            st = os.lstat(p)
+            if st.st_mtime > cutoff:
                 continue
-            fd = os.open(p, os.O_RDWR)
+            if not _is_own_file(st):
+                os.unlink(p)  # no marker, so nobody holds it
+                continue
+            fd = _open_own_file(p, os.O_RDWR)
         except OSError:
             continue
         try:
@@ -912,7 +1199,7 @@ def _mark_inflight(repo_root, shas):
             if not _is_full_sha(sha) or p in _inflight_held:
                 continue
             try:
-                fd = _again_if_refused(os.open, p, os.O_RDWR | os.O_CREAT, 0o600)
+                fd = _again_if_refused(_open_own_file, p, os.O_RDWR | os.O_CREAT, 0o600)
             except OSError:
                 # One marker that cannot be opened does not cost the others
                 # their claim.
@@ -938,9 +1225,88 @@ def _mark_inflight(repo_root, shas):
                 import atexit
                 atexit.register(_release_inflight)
             _inflight_held[p] = fd
-            os.utime(p)
+            # The open file where that can be named; Windows keeps the name
+            # on this file for as long as it is open.
+            os.utime(fd if os.utime in os.supports_fd else p)
     except Exception:
         pass
+
+
+_holds = {}
+
+
+def hold_until_exit(path):
+    """Lock the file at `path` until this process ends or calls
+    `release_hold`, so that others can see it `is_held`. Best-effort; never
+    raises."""
+    import time as _time
+    try:
+        fd = _open_own_file(path, os.O_RDWR)
+    except (OSError, TypeError):
+        return
+    try:
+        for _ in range(10):  # another process may be looking at this moment
+            if _flock_nb(fd, exclusive=True):
+                _holds[path] = fd  # left open: the lock goes when the process does
+                return
+            _time.sleep(0.01)
+    except OSError:
+        pass
+    os.close(fd)
+
+
+def release_hold(path):
+    """Give up the lock `hold_until_exit` took. Never raises."""
+    fd = _holds.pop(path, None)
+    if fd is not None:
+        _drop_marker(path, fd, unlink=False)
+
+
+def is_held(path):
+    """Whether a live process holds the file at `path`; None when that cannot
+    be told (no such file, or no locks here)."""
+    try:
+        fd = _open_own_file(path, os.O_RDONLY)
+    except (OSError, TypeError):
+        return None
+    try:
+        # Shared, so two processes looking at once do not look like a holder
+        # to each other.
+        return not _flock_nb(fd, exclusive=False)
+    except OSError:
+        return None
+    finally:
+        os.close(fd)
+
+
+def becomes_held(path, max_wait_s, poll_s=0.1):
+    """Whether a live process holds the file at `path` or does so soon."""
+    import time as _time
+    end = _time.monotonic() + max_wait_s
+    while not is_held(path):
+        if _time.monotonic() >= end:
+            return False
+        _time.sleep(poll_s)
+    return True
+
+
+def wait_for_holder(path, max_wait_s, poll_s=0.5):
+    """Wait for the process holding the file at `path` to end. Returns
+    (ended, waited_s); `ended` is False when it still runs after `max_wait_s`,
+    or when that cannot be told."""
+    import time as _time
+    start = _time.monotonic()
+    waited, looks_free = False, 0
+    while True:
+        held = is_held(path)
+        # Free twice in a row: a holder creates the file a moment before it
+        # locks it.
+        looks_free = 0 if held else looks_free + 1
+        spent = _time.monotonic() - start
+        if held is None or looks_free == 2 or (held and spent >= max_wait_s):
+            return looks_free == 2 and held is False, spent if waited else 0.0
+        waited = waited or held
+        _time.sleep(poll_s)
 
 
 def _load_inflight_shas(repo_root, shas, _gd=None):
@@ -953,18 +1319,8 @@ def _load_inflight_shas(repo_root, shas, _gd=None):
         p = os.path.join(gd, _INFLIGHT_PREFIX + sha)
         if not _is_full_sha(sha) or p in _inflight_held:
             continue
-        try:
-            fd = os.open(p, os.O_RDONLY)
-        except OSError:
-            continue
-        try:
-            # Shared, so two reviews asking at once do not look like a
-            # holder to each other.
-            if not _flock_nb(fd, exclusive=False):
-                out.add(sha)
-        except OSError:
-            pass
-        os.close(fd)
+        if is_held(p):
+            out.add(sha)
     return out
 
 
@@ -1031,6 +1387,8 @@ def _list_untracked(cwd):
     gitutil.py already follow the lenient pattern; this function and
     capture_git_baseline / _git_name_only / _git_status_porcelain were
     the holdouts."""
+    if _stay_out(cwd):
+        return {}
     try:
         repo = _git_toplevel(cwd) or cwd
         started_ns = time.time_ns()
@@ -1104,7 +1462,7 @@ def compute_v2_review_set(cwd, baseline_sha, head_at_capture, untracked_at_basel
     if not isinstance(untracked_at_baseline, dict):
         untracked_at_baseline = {}
 
-    tracked_dirty, untracked = _git_status_porcelain(repo)
+    tracked_dirty, untracked = (None, None) if _stay_out(cwd) else _git_status_porcelain(repo)
     if tracked_dirty is None:
         return [], "HEAD", repo, [], {"dirty_now_count": -1, "changed_since_count": -1, "review_set_count": 0}
 

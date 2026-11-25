@@ -1,80 +1,84 @@
-<!-- Audience: the Security Lead assembling a report from workflow findings, which writes CLAUDE-SECURITY-RESULTS.md as the delivery step of the scan job. Load this file only when a scan reaches delivery. -->
+# The report's Coverage section — spec
 
-# CLAUDE-SECURITY-RESULTS.md — report spec
-
-The markdown report is the one artifact written as prose rather than generated. It is what a human actually reads, so it is written for a specific reader: an engineer who owns this code, is busy, and will decide in about ninety seconds whether to act on each finding.
-
-`render_report.py` generates the machine-readable companions from `findings.json` and `votes.json`. Do not hand-write the JSONL, the SARIF, or the stamp, and do not restate the JSONL here — this file is the part a person reads.
+`render_report.py` writes `CLAUDE-SECURITY-RESULTS.md`; you write only the text of its Coverage section, to `coverage.md` in the run directory. Under your text the render prints the scan's own records itself, such as the lines on what the later research stages left out and the line on the last report, so your text neither writes nor restates them. Where coverage.context lists what the scan was given, the report has its own section on it. Say nothing of coverage.context yourself, above all not whether a file on it was read: the scan's other agents may have opened it.
 
 ## Shape
 
 ```markdown
-# Claude Security results
-
-<one paragraph: what was scanned (path, revision, mode, scope), when, at what
-effort, and the headline: how many findings at what severities, or that there
-were none. Read `revision.dirty` in the run dir's scan-meta.json: on `true`,
-say the repository's working tree held uncommitted changes or untracked files
--- which ones is not recorded, so never name or explain them; on `null`, say
-the tree state could not be determined; otherwise say nothing of it.>
-
-## Coverage
-
 <what was examined and what was not. Name the components. If the scope was
-narrowed, say to what and why. If write_scan_meta.py reported a sparse
-checkout (`revision.not_checked_out_dirs` in the run dir's scan-meta.json
-holds the list), say that only the checked-out part of the repository was
-scanned and name those tracked top-level directories as not checked out.
+narrowed, say to what and why. If write_scan_meta.py printed a
+`sparse checkout:` line, say that only the checked-out part of the
+repository was scanned and name the tracked top-level directories that
+line lists as not checked out.
 Say how many verification runs the panel took
 (coverage.verificationRun), and name any candidate never verified and why:
-lost on the way to a further run (coverage.lostCandidates), or handed to a run
-that did not complete.
-If coverage.researchersReturned is below coverage.researchersDispatched:
-- say how many researchers did not return and that their reading is missing
-  from this scan;
-- name each entry of coverage.lostResearchers by its reading, with its reason
-  quoted;
-- with more than 10 entries, group them by reason instead, each group with
-  what its researchers were sent to read;
-- describe why a researcher did not return only by its recorded reason;
-- wherever the report says what the research covered or read, including the
-  "What was verified" section, credit only readings in coverage.returnedReadings.
+of each entry of coverage.lostCandidates, say only that no complete panel judged it (it was
+lost within a run or on the way to a further one, and coverage.json does not say which); of a
+candidate handed to a run that did not complete, say so (coverage.continued counts them;
+coverage.waiting names the first of them, each with why it waits).
+If coverage.changeScanEffort is "high" and coverage.runNotRecorded is there, the run that it
+names completed but was not recorded, and coverage.verificationRun does not count it. Name the
+run, and say that it completed and was not recorded, not that it did not complete. Give its
+cause in plain words. Say that its findings are not reported, and that the candidates handed to
+it were not verified.
+If a Workflow completion notice says a safety check of an agent's finished work
+was unavailable, could not finish or flagged it, say so, in your own words,
+without agent labels.
+If coverage.researchersReturned is below coverage.researchersDispatched, then
+wherever you say what the research covered or read, credit only readings in
+coverage.returnedReadings.
+If coverage.pastFixFollowUp is "not run", your text says
+"These results include no follow-up of past security fixes."; if it is "nothing
+listed", your text says "These results include no follow-up of past security
+fixes, because the scan listed no earlier commit whose message reads like one.
+If this is a shallow clone, such as a CI checkout of depth 1, scan a clone with
+its full history."; if it is "none needed", your text says "An agent
+looked at the list of commits that read like past security fixes and named no
+area for a further look.". That text, in those words, is all that your text or
+your message to the user says of it. The message still reports lost researchers.
+Where coverage.json's pastFixPaths lists paths, name them as code that one more
+researcher was sent to, because security flaws were fixed there before.
+The render prints the lines on what the later research stages left out under Coverage, in the
+workflow's own words. Your text and your message to the user add nothing to them: no count, no
+cause and no list of places of your own.
 Name every area the scan deliberately did NOT examine, and WHY: each entry of
-coverage.skippedComponents carries the paths left out and the componentizer's
+coverage.skippedComponents carries the paths left out and the inventory's
 one-line reason (vendored, generated, documentation, and the like); a
 directory skipped on purpose is disclosure, not failure, so state the reason
 rather than letting the area silently vanish.
-If coverage.prunedBuckets is non-empty, each entry is a group's (or
-component's) name, as coverage.components lists it, followed by
+If coverage.prunedBuckets is non-empty, each entry is a group's
+name, as coverage.components lists it, followed by
 ":memory-and-unsafe", the research lens it went without. Write each name
 whole and say plainly that none of that group's researchers was asked about
 memory-safety bugs, whatever the tier. An entry for "change boundary" has no
 coverage.components row: it is the researcher working outward from the
 change, under the same rule over every changed file, not a second group. Give
 only the workflow's reason: it decided from the language alone -- the changed
-files' extensions on a changes or commit scan, the inventory's language on a
-codebase scan -- before the group's researchers were briefed, because it took
+files' extensions -- before the group's researchers were briefed, because it took
 the code to be all in managed languages. Do not add that the lens does not
 apply to such code, and never describe the prune as something the researchers
 or the panel did, or as a lens dropped because a finding was in hand. A group
 with no entry kept the lens.
 On a whole-repository scan the
-workflow requires the inventory to account for every top-level directory --
-scanned or explicitly skipped -- and coverage.completenessCheckOutcome says whether
-that check ran: "checked" (say the whole tree is accounted for),
-"partial" (the inventory left some top-level directories in neither ledger and
+workflow requires the inventory to account for every directory on a list one or
+two levels deep -- scanned or explicitly skipped -- and
+coverage.completenessCheckOutcome says whether that check ran: "checked" (say
+that each directory on that list was scanned at least in part or set aside, not
+that the whole tree was),
+"partial" (the inventory left some of them in neither ledger and
 the answer was used as it stood -- coverage.unaccountedTopLevelDirs names them;
 list every one and say plainly they were neither scanned nor skipped, because
 that is exactly the coverage a "no findings" would otherwise overstate),
-"not-checkable" (the tree's directory list was not supplied, was unreadable, or
-was empty while the inventory named subdirectories -- coverage.topLevelRejected
-says which; say plainly that completeness could NOT be checked, since that is
-what turns "no findings" into "clean" rather than "not examined"), or
+"not-checkable" (the tree's directory list was not supplied, was unreadable,
+was not as long as write_scan_meta.py's, or
+was empty while the inventory named subdirectories, or the scan could not read
+some directories -- coverage.topLevelRejected
+gives the cause; say plainly that completeness could NOT be checked), or
 "not-applicable" (a diff, commit, or scoped scan, whose target
 is the change or the scope, or a low-effort run with no inventory). If
 coverage.inventoryFallback is set, the inventory's partition was not used and
-the whole tree was read as one component instead of the matrix -- complete,
-but coarser -- and the reason is: "incomplete-partition" (its answer would have
+the whole tree went to one researcher (two at high) as a single component --
+far coarser than a researcher per component, so say so -- and the reason is: "incomplete-partition" (its answer would have
 credited coverage it never named -- a skip of the whole target, or nothing but
 paths climbing out of the tree; the rejections are listed in
 coverage.inventoryRejected),
@@ -83,26 +87,33 @@ nothing). For a changes or commit scan, say that the change was reviewed
 rather than the repository: name the change in plain words (following
 `jobs/scan-changes.md`'s rules on the commit count and the branch) rather
 than by the commit ids in coverage.range, the changed files by group
-(coverage.components; coverage.diffFiles files of the coverage.changedFileCount
-the helper counted, coverage.diffLines lines), and
-how many researchers were dispatched and how many returned
-(coverage.researchersDispatched, coverage.researchersReturned), and the
-effort they were asked for (coverage.researchEffort -- asked, not measured:
+(coverage.components), and the
+effort the researchers were asked for (coverage.researchEffort -- asked, not measured:
 the model's runtime may apply its own); say that a flaw the change takes no part in is out
-of this review's scope and left to a scan of the codebase, and list every
+of this review's scope and left to a scan of the codebase (if
+coverage.changeScanEffort is "high": but that the researchers also looked for
+older flaws in the functions that the change touches, and that those which
+the panel judged real are reported under "Older than the change"), and list every
 entry of coverage.preExisting as a candidate the panel judged real but
 predating the change. When the base is the branch's own pushed copy, so that
 the diff holds only the unpushed commits, say that the commits already pushed
-were not part of this review. If coverage.outsideScope is non-empty, say that those
+were not part of this review. If coverage.candidatesReplaced is set, say that before the
+panel one agent replaced that many candidates, which reported the same flaws, with
+coverage.candidatesWritten new ones, and that the new ones, not those that they replaced,
+went to the panel. If coverage.candidatesRewritten is set, say that before the panel one agent also wrote
+that many candidates anew, each from the reports that had been joined into it, and that these replaced no other.
+If coverage.outsideScope is non-empty, say that those
 findings (it names them) sit outside the requested scope and are reported
-because the change reaches them. If coverage.changedFilesRejected is set, the changed-file
+because the change reaches them (because a lead from the change goes there, if
+coverage.changeScanEffort is "high").
+If coverage.changedFilesRejected is set, the changed-file
 list could not be read or loaded: quote the recorded value and say the change
 was reviewed as one group whose researchers listed it themselves; if
 coverage.changedFilesMiscounted is set, the list handed over disagreed with
 the count: give both, say which list was reviewed (its reviewed field) and
 how many files that was (coverage.diffFiles). If a scoped
-scan collapsed to the proportionate single-researcher shape rather than the
-full component matrix, say so: coverage.collapsed is "small-scope" for a small
+scan collapsed to the proportionate single-researcher shape rather than an
+inventory and a researcher per component, say so: coverage.collapsed is "small-scope" for a small
 scope at medium (give coverage.scopeFiles) -- a fast targeted pass, still
 panel-verified, not an exhaustive read. If a supplied scope size could not be
 read (coverage.scopeSizeRejected), quote the recorded value and state its
@@ -111,8 +122,7 @@ treated as small so the full pipeline ran instead of the fast path, and an
 empty scope could not have been short-circuited.
 Say how the run was sized when coverage.targetComponents is set: the target's
 coverage.targetFiles tracked files, about coverage.targetComponents components
-asked for (of roughly coverage.filesPerComponent files each, or larger when
-the target holds more than coverage.componentCap components of that size),
+asked for (of roughly coverage.filesPerComponent files each),
 at most coverage.componentCap kept. Then say what the researchers themselves report
 not having read, as their account rather than as fact: coverage.research.components
 lists, per component, the paths its researchers declared not reached and why --
@@ -134,86 +144,12 @@ check did not run; say nothing of it, though any declared paths still stand.
 This section is
 what makes the rest of the report trustworthy: a reader who knows what you did
 not look at can calibrate everything else.>
-
-## Findings
-
-The `F<n>` in each heading is that finding's `id` from `findings.json`, copied exactly — the findings arrive already in report order, so never renumber, reorder, or invent an id. A gap in the numbering is a candidate the panel did not keep under that id; call it rejected only when a complete panel refuted it, never when coverage.adversarialCasualties, coverage.preExisting or coverage.lostCandidates (the last by candidate id) names it.
-
-### F1 — <title> (HIGH, confidence medium)
-
-**Impact.** <what an attacker gets. Lead with this: it is what decides
-priority.>
-
-**Where.** `path/to/file.py:123` in `function_name` — <cwe_id, then
-"(also <other_cwe_ids>)" when the finding carries further CWEs>
-
-**Link to the change.** <a changes or commit scan only: the finding's
-via_change, the changed line that takes part in the attack and how, named by
-file:line and never quoted; omit the line for a scan of the codebase>
-
-**What.** <the vulnerability, in two or three sentences. Name the untrusted
-source, the dangerous operation, and why nothing in between stops it.>
-
-**Exploit scenario.** <a concrete walk-through. Not "an attacker could inject
-SQL" -- what they send, what happens, what they get.>
-
-**Preconditions.** <bullets: what must be true. Authentication? A non-default
-config? Victim interaction? An empty list means none, which is worth saying.>
-
-**Fix.** <what to change, in outcome terms. The root cause at the sink, not a
-patch at one caller.>
-
-**Verification.** <n>/3 lens verifiers confirmed.
-
-### F2 — ...
-
-## What was verified
-
-<one paragraph: the pipeline that produced these findings, the votes each
-survived, and the stamp's verification.status. If the status is anything other
-than "verified", explain what it means in plain language and what to do about
-it -- do not bury it. If the status is "verified" and a researcher did not
-return, say that "verified" does not cover the missing readings.>
 ```
 
 ## Rules
 
-**Severity is exploitability and impact, not confidence.** CRITICAL means severe impact with nothing in the attacker's way. HIGH means severe impact behind one real hurdle. MEDIUM means bounded impact, or serious impact behind several conditions. LOW means limited impact and demanding exploitation. The severity in `findings.json` is final: where the panel's confirming voters rated a finding lower than its researchers did, the workflow already lowered it, and coverage.severityLowered names each such finding with both ratings — say so in its **Verification.** line and do not restore the reported one. Uncertainty belongs in `confidence` — a word, `low`, `medium`, or `high` — which the panel's vote clamps: only a unanimous panel earns `high`, and the workflow has already lowered any other `high`; `render_report.py` lowers it if you raise it.
+**A candidate dropped while a verifier could not open a file was not refuted.** Where a coverage.adversarialCasualties entry ending "dropped without a verdict" says a verifier could not open a file, say under Coverage that the panel reached no verdict on that candidate, and name the file as one that at least one verifier could not open. Do not say nobody saw its text: a change scan's diff can show it.
 
-**Order by severity, then by confidence.** The reader stops partway down; put what matters at the top.
+**The researchers' lenses are not the panel's.** A researcher's lens is a vulnerability category, one of them or every category its group kept, or, at Change Scan Effort `high`, a question lens; a panel voter's is reachability, impact or defenses. A codebase scan's component researcher has no lens: it owns every kind of vulnerability in its component. Never give the panel's three as the researchers'.
 
-**More than twenty findings are written in batches.** One call holding every finding can exceed the model's output limit, and a Write cut off there is refused whole. So the first Write holds the opening paragraph, Coverage, the first twenty findings and What was verified, and each further twenty go in with Edit, inserted above the `## What was verified` heading.
-
-**Every finding cites a real `file:line`.** A finding pointing at the wrong line costs the reader more than a missed finding, because they lose trust in the rest of the report while chasing it.
-
-**A hard-coded credential finding gets no "Link to the change" line.** That is any finding carrying CWE-798, CWE-259, CWE-321 or CWE-671, in `cwe_id` or in `other_cwe_ids`: the changed line it would name is the credential, and the JSONL and SARIF already withhold that link.
-
-**No control characters.** Only `\n` and `\t`. The report is read in a terminal, where an escape sequence can rewrite what a human sees. If a byte like that genuinely appears in the scanned source, describe it rather than reproducing it.
-
-**No hedging, no padding.** Do not soften a real finding to be polite about the code, and do not inflate a nit to look thorough. "No findings" is a complete report, and writing it well — what you covered, what you did not — is more valuable than a page of maybes.
-
-**The researchers' lenses are not the panel's.** A researcher's lens is a vulnerability category, one of them or every category its group kept; a panel voter's is reachability, impact or defenses. Never give the panel's three as the researchers'.
-
-**Never claim something ran that did not.** Nothing in a scan executes the repository's code: no tests were run, no exploit was fired, no proof-of-concept was validated. Every finding is derived from reading. Say so rather than implying a demonstration.
-
-## Example of the bar
-
-Not this:
-
-> The code may be vulnerable to SQL injection. Consider using parameterized
-> queries as a best practice.
-
-This:
-
-> **Impact.** Any unauthenticated caller of `GET /users?name=` can read every
-> row of the `users` table, including password hashes and email addresses.
->
-> **Where.** `api/app.py:3` in `get_user` — CWE-89
->
-> **What.** `name` arrives from the query string in `handlers.py:41` and is
-> interpolated into the SQL string with `%`. No escaping or validation runs on
-> the path between them; the `validate_name` call in `handlers.py:38` checks
-> length only.
->
-> **Exploit scenario.** `GET /users?name=' OR '1'='1` makes the WHERE clause
-> tautological and returns the full table in the JSON response.
+Never claim something ran that did not.

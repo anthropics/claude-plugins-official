@@ -102,6 +102,52 @@ class TestGatewaySignInCheck:
         monkeypatch.setattr(llm, "_user_cli_path", lambda: None)
         assert llm.can_review("s1") is False
 
+    @pytest.fixture
+    def windows_home(self, no_credential, monkeypatch, tmp_path):
+        """Windows path choices, with `~\\.local\\bin` in an empty home folder."""
+        monkeypatch.delenv("SG_AGENTIC_CLI_PATH")
+        monkeypatch.setattr(llm, "_WINDOWS", True)
+        home = tmp_path / "home"
+        monkeypatch.setenv("HOME", str(home))
+        monkeypatch.setenv("USERPROFILE", str(home))
+        bin_dir = home / ".local" / "bin"
+        bin_dir.mkdir(parents=True)
+        return bin_dir
+
+    @staticmethod
+    def _claude_exe(folder):
+        # write_cli adds .exe to the name on Windows only.
+        return make_cli(folder, SIGNED_IN, name="claude" if os.name == "nt" else "claude.exe")
+
+    def test_windows_finds_the_installed_claude_exe(self, windows_home):
+        cli, calls = self._claude_exe(windows_home)
+        assert llm.gateway_review_cli("s1") == str(cli)
+        assert len(calls_of(calls)) == 1
+
+    def test_windows_with_no_claude_exe_means_no_review(self, windows_home):
+        assert llm.can_review("s1") is False
+
+    def test_windows_does_not_search_path(self, windows_home, monkeypatch, tmp_path):
+        on_path = tmp_path / "on-path"
+        on_path.mkdir()
+        _, calls = self._claude_exe(on_path)
+        monkeypatch.setenv("PATH", str(on_path))
+        assert llm.can_review("s1") is False
+        assert calls_of(calls) == []
+
+    def test_windows_lookup_leaves_a_named_cli_alone(self, windows_home, monkeypatch):
+        _, calls = self._claude_exe(windows_home)
+        monkeypatch.setenv("SG_AGENTIC_CLI_PATH", "")
+        assert llm.can_review("s1") is False
+        assert calls_of(calls) == []
+
+    def test_windows_lookup_is_windows_only(self, windows_home, monkeypatch):
+        _, calls = self._claude_exe(windows_home)
+        monkeypatch.setattr(llm, "_WINDOWS", False)
+        monkeypatch.setattr(llm, "_user_cli_path", lambda: None)
+        assert llm.can_review("s1") is False
+        assert calls_of(calls) == []
+
     def test_relative_cli_path_is_not_run(self, no_credential, monkeypatch, tmp_path):
         cli, calls = make_cli(tmp_path, SIGNED_IN)
         monkeypatch.chdir(tmp_path)
@@ -272,6 +318,21 @@ def test_timed_out_review_logs_what_the_cli_retried(no_credential, monkeypatch, 
     monkeypatch.setattr(llm, "_gateway_review_timed_out", False)
     assert llm._call_claude_via_sdk("review this", schema) is None
     assert llm._gateway_review_timed_out is False
+
+
+@pytest.mark.skipif(os.name != "nt", reason="the claude.exe lookup is Windows only")
+def test_hook_on_windows_asks_the_installed_claude_exe(hook_env, tmp_path, workspace):
+    home = tmp_path / "home"
+    bin_dir = home / ".local" / "bin"
+    bin_dir.mkdir(parents=True)
+    _, calls = make_cli(bin_dir, SIGNED_IN)
+    env = {k: v for k, v in without_credential(hook_env).items()
+           if k not in ("SG_AGENTIC_CLI_PATH", "CLAUDE_CODE_EXECPATH")}
+    env.update({"USERPROFILE": str(home), "HOME": str(home)})
+    _, repo = workspace
+    _, out = commit_file(repo, "app.py", VULN_PY)
+    run_hook(bash_payload(repo, "git commit -m change", out), env)
+    assert calls_of(calls)[0].startswith("auth status --json")
 
 
 def without_credential(hook_env):

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "fusion": {
+      "type": "http",
+      "url": "http://127.0.0.1:${FUSION_MCP_PORT:-27182}/mcp"
+    }
+  }
+}

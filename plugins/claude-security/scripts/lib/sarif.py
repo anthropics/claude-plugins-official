@@ -1,4 +1,5 @@
-"""SARIF 2.1.0 for one scan: the log encoder."""
+"""SARIF 2.1.0 for one scan or one attack surface analysis: the log encoder, and the encoder of the
+JSONL that the log's results carry."""
 
 from __future__ import annotations
 
@@ -6,47 +7,52 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Final, NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 from urllib.parse import quote
 
-from . import cwe, secret, source
-from .finding import LINK_SITE, repository_file
+from . import cwe, plugin, secret, source, strictjson
+from .display import single_line
+from .finding import FINDING_ID, LINK_SITE, escaped, percent, repository_file
 
 if TYPE_CHECKING:
     import uuid
     from collections.abc import Collection, Mapping, Sequence
 
-    from .finding import Finding, Panel, Record
+    from .finding import AlsoAt, Finding, Panel, Record
 
 SCHEMA_ID = (
     "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json"
 )
 # The driver name GitHub keys alert identity on; renaming it orphans every open alert.
 TOOL_NAME = "Claude Security Plugin for Claude Code"
-TOOL_URI = "https://claude.com/product/claude-security"
+TOOL_URI = "https://code.claude.com/docs/en/claude-security"
 PROPERTY_BAG = "claudeSecurityPlugin"
 ID_PREFIX = "claude-security-plugin"
-FINDING_ID: Final = "claudeSecurityPluginFindingId"
 ID_VERSION = "v3"
+# The grammar of a claudeSecurityPluginFindingId value as fingerprint() writes one.
+FINGERPRINT_PATTERN = re.escape(ID_VERSION) + r":[0-9a-f]{64}"
+FINGERPRINT_RE = re.compile(FINGERPRINT_PATTERN + r"\Z")
 CONTEXT_LINES = 3
 SRCROOT = "%SRCROOT%"
 # error is SARIF's highest level, so CRITICAL and HIGH both map to it.
 LEVEL = {"CRITICAL": "error", "HIGH": "error", "MEDIUM": "warning", "LOW": "note"}
+# The UUID versions that the guid pattern admits. The nil UUID has no version.
+GUID_VERSIONS = range(1, 6)
 
 
 @dataclass(frozen=True)
 class Scan:
-    """The one scan a log describes: its identity, where it ran, and the repository it names."""
+    """The one scan or analysis a log describes: its identity, where it ran, and its repository."""
 
     id: uuid.UUID
     mode: str
     # The scan root below the repository top level, slash-terminated; "" when there is none.
     prefix: str
-    # The credential-free https form of the repository's remote; None when there is not one.
+    # The remote in its recorded https form; None when none is recorded or the render leaves it out.
     remote: str | None
     # The directories the scan was limited to, relative to the scan root; empty for all of it.
     scope: tuple[str, ...]
-    # The commit the scanned tree was exactly at; None when it was dirty, unversioned or unknown.
+    # The commit the scanned tree was exactly at; None when dirty, unversioned, unknown or left out.
     revision: str | None
 
 
@@ -58,10 +64,11 @@ def log(
     panels: Mapping[str, Panel],
     notifications: Sequence[Mapping[str, object]],
 ) -> dict[str, object]:
-    """The SARIF 2.1.0 log for one scan: one run, one rule per category, one result per finding.
+    """The SARIF 2.1.0 log for one scan or one analysis: one run, one rule per category, one result
+    per finding.
 
-    `findings` are the records render_report built with placed(): each on the
-    line its file places it on, carrying its id.
+    `findings` are records built with placed(): each on the line its file places
+    it on, carrying its id.
     """
     filed = [(item, category_of(item)) for item in findings]
     categories = list(dict.fromkeys(category for _, category in filed))
@@ -112,7 +119,7 @@ def automation_id(scan: Scan) -> str:
     else:
         extent = scan.prefix.rstrip("/")
     if extent:
-        category += "/" + quote(uri_bytes(extent))
+        category += "/" + uri(extent)
     return f"{category}/{scan.id}"
 
 
@@ -130,8 +137,8 @@ def rule(category: cwe.Category | None) -> dict[str, object]:
     """The reporting descriptor for one entry: the catalog's names, its page, its fixed tags."""
     help_text = (
         "Each alert's message names the finding's own CWE and states the impact, exploit "
-        "scenario, preconditions and recommended fix; the finding appears under its F<n> id "
-        "in CLAUDE-SECURITY-RESULTS.md."
+        "scenario, preconditions and recommended fix, each where the finding states it; the "
+        f"finding appears under its F<n> id in {plugin.RESULTS_MD_NAME}."
     )
     if category is None:
         return {
@@ -156,7 +163,7 @@ def rule(category: cwe.Category | None) -> dict[str, object]:
             f"{TOOL_NAME} from static review of the source."
         },
         "help": {"text": help_text},
-        "helpUri": f"https://cwe.mitre.org/data/definitions/{category.number}.html",
+        "helpUri": cwe.page(category.number),
         "properties": {"tags": ["security", f"external/cwe/cwe-{category.number}"]},
     }
 
@@ -166,9 +173,11 @@ def placed(
     scan: Scan,
     sources: Mapping[str, str],
     *,
+    listed: Mapping[str, Finding],
     refused_secrets: Collection[str],
 ) -> list[Record]:
-    """Each finding as the products carry it: `line` moved to where its file places it, id added.
+    """Each finding as the products carry it: `line` moved to where its file places it, and an id
+    given to it and to each finding it lists (`listed`, by `id`).
 
     `sources` is the text of each scanned file by the finding's `file`; a
     finding whose file is absent from it keeps its line and hashes the number.
@@ -185,7 +194,20 @@ def placed(
         for path, text in texts.items()
         for line in source.quoted_lines(text, quote, whole=False)
     }
-    return [placed_one(f, scan, sources.get(f["file"]), secrets) for f in findings]
+
+    def place(finding: Finding) -> Record:
+        return placed_one(finding, scan, sources.get(finding["file"]), secrets)
+
+    return [
+        {
+            **record,
+            "also_at": [
+                {**entry, FINDING_ID: place(listed[entry["id"]])[FINDING_ID]}
+                for entry in record["also_at"]
+            ],
+        }
+        for record in map(place, findings)
+    ]
 
 
 class Span(NamedTuple):
@@ -265,8 +287,12 @@ def fingerprint(finding: Finding, scan: Scan, code: str | None) -> str:
     None hashes the finding's line number in its place.
     """
     where: str | int = finding["line"] if code is None else code
-    basis = [rule_id(category_of(finding)), repository_path(scan, finding), where]
-    canonical = json.dumps(basis, separators=(",", ":"), ensure_ascii=True)
+    return keyed(rule_id(category_of(finding)), repository_path(scan, finding), where)
+
+
+def keyed(rule: str, path: str, where: str | int) -> str:
+    """The id over a rule id, a repository path, and the code or the line number there."""
+    canonical = json.dumps([rule, path, where], separators=(",", ":"), ensure_ascii=True)
     return f"{ID_VERSION}:{hashlib.sha256(canonical.encode()).hexdigest()}"
 
 
@@ -276,18 +302,23 @@ def code_at(lines: Sequence[str], row: int) -> str:
 
 
 class Site(NamedTuple):
-    """What one result stands for: a rule at a line of a file; the log holds one result per site."""
+    """Where a result stands: a rule at a line of a file."""
 
     rule: str
     path: str
     line: int
 
 
-def site(finding: Record, scan: Scan) -> Site | None:
+def site(finding: Finding, scan: Scan) -> Site | None:
     """The finding's site: its rule id, repository path and placed line; None for a line below 1."""
     if finding["line"] < 1:
         return None
     return Site(rule_id(category_of(finding)), repository_path(scan, finding), finding["line"])
+
+
+def jsonl_text(findings: Sequence[Record]) -> str:
+    """The findings as JSONL: one record per line as the products carry it, in the order given."""
+    return "".join(strictjson.text(escaped(secret.withheld(item))) + "\n" for item in findings)
 
 
 def result(
@@ -299,14 +330,14 @@ def result(
 ) -> dict[str, object]:
     """One result: the finding under its rule, its location, and its JSONL record, id included."""
     shown = secret.withheld(finding)
-    record: dict[str, object] = {**shown}
+    record = escaped(shown)
     if panel is not None:
         record["verification"] = {"panel": panel}
     return {
         "ruleId": rule_id(category),
         "ruleIndex": rule_index,
-        "level": LEVEL[finding["severity"]],
-        "message": {"text": message(finding)},
+        "level": "note" if "older_than_the_change" in finding else LEVEL[finding["severity"]],
+        "message": {"text": message(finding, scan)},
         "locations": [location(shown, scan)],
         "properties": {PROPERTY_BAG: record},
     }
@@ -320,12 +351,12 @@ def location(finding: Finding, scan: Scan) -> dict[str, object]:
     """
     line = finding["line"]
     region: dict[str, object] = {"startLine": max(line, 1)}
-    if line >= 1 and finding["snippet"].strip():
+    if line >= 1 and finding["snippet"]:
         region["snippet"] = {"text": finding["snippet"]}
     place: dict[str, object] = {
         "physicalLocation": {
             "artifactLocation": {
-                "uri": quote(uri_bytes(repository_path(scan, finding))),
+                "uri": uri(repository_path(scan, finding)),
                 "uriBaseId": SRCROOT,
             },
             "region": region,
@@ -336,8 +367,9 @@ def location(finding: Finding, scan: Scan) -> dict[str, object]:
     return place
 
 
-def repository_path(scan: Scan, finding: Finding) -> str:
-    """The finding's file relative to the repository top level, with any leading climb folded."""
+def repository_path(scan: Scan, finding: Finding | AlsoAt) -> str:
+    """The file of a finding, or of one that a finding lists, relative to the repository top level,
+    with any leading climb folded."""
     return repository_file(scan.prefix, file=finding["file"])
 
 
@@ -349,19 +381,70 @@ def uri_bytes(text: str) -> bytes:
         return text.encode("utf-8", "surrogatepass")
 
 
+def uri(path: str) -> str:
+    """`path` as a location's uri spells it: the bytes that uri_bytes() gives, percent-encoded."""
+    return quote(uri_bytes(path))
+
+
 def notification(descriptor_id: str, level: str, text: str) -> dict[str, object]:
     """One invocation notification: its namespaced descriptor id, its level, and its message."""
     return {"descriptor": {"id": descriptor_id}, "level": level, "message": {"text": text}}
 
 
-def message(finding: Finding) -> str:
-    """A result's message: the finding's prose, its stated parts labeled, then its ratings."""
+def unrecognized_cwe_note(text: str) -> dict[str, object]:
+    """The notification for a finding whose CWE id the catalog does not define."""
+    return notification("cwe/unrecognized", "warning", text)
+
+
+def unverified_note(reason: str) -> dict[str, object]:
+    """The notification of a run whose report reads unverified."""
+    return notification("verification/unverified", "error", reason)
+
+
+def listed_place(entry: AlsoAt, scan: Scan) -> str:
+    """The place of a listed finding, for a message: its path as repository_path() gives it, then
+    its line if that is 1 or more. A "%" and a byte that is not UTF-8 are written as %XX. A path
+    that holds any other character that str.isprintable() rejects is spelled whole as uri() spells
+    it."""
+    path = repository_path(scan, entry)
+    text = percent(path)
+    name = text if text.isprintable() else uri(path)
+    return f"{name}:{entry['line']}" if entry["line"] >= 1 else name
+
+
+def listed_findings(finding: Finding, scan: Scan) -> str:
+    """The paragraph of a result's message on the findings in `also_at`: an opening line, then one
+    line for each of them, in `also_at`'s order, with its `id`, its place and its title. The title
+    is on one line: each run of white space is one space, and none is at either end. `finding`
+    lists at least one other."""
+    opening = (
+        f"This alert is for finding {finding['id']}. Also fix each finding below, which may need a "
+        f"different fix and has no alert of its own (search {plugin.RESULTS_MD_NAME} for its id):"
+    )
+    entries = (
+        f"- {entry['id']}, {listed_place(entry, scan)}: {single_line(entry['title'])}"
+        for entry in finding["also_at"]
+    )
+    return "\n".join([opening, *entries])
+
+
+def message(finding: Finding, scan: Scan) -> str:
+    """A result's message: the finding's prose, its stated parts labeled, then its ratings. It
+    opens by saying so if the finding is older than the change. Where the finding lists others,
+    listed_findings() follows the title. In a scan's log, the recommendation's label says that it
+    is not verified."""
     parts = [sentence(finding["title"]), sentence(finding["description"])]
+    if finding["also_at"]:
+        parts.insert(1, listed_findings(finding, scan))
+    if "older_than_the_change" in finding:
+        few = "fewer than two verifiers found that the change takes part in it"
+        parts.insert(0, f"Older than the change: {few}.")
+    fix_label = "Recommendation (not verified)" if scan.mode in plugin.MODES else "Recommendation"
     labeled = (
         ("Impact", finding["impact"]),
         ("Exploit scenario", finding["exploit_scenario"]),
         ("Preconditions", "; ".join(finding["preconditions"])),
-        ("Recommendation", finding["recommendation"]),
+        (fix_label, finding["recommendation"]),
     )
     parts += [f"{label}: {text}" for label, value in labeled if (text := sentence(value))]
     if finding["line"] < 1:
@@ -380,6 +463,6 @@ def rule_name(category: str) -> str:
 
 
 def sentence(text: str) -> str:
-    """`text` stripped and closed with a period unless it already ends in punctuation."""
+    """`text` stripped and closed with a period unless it already ends in ".", "!" or "?"."""
     text = text.strip()
     return text if not text or text[-1] in ".!?" else text + "."

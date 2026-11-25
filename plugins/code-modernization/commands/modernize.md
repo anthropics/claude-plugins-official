@@ -30,24 +30,28 @@ items. A pop-up allows at most four options per question, and the person can alw
 **Pop-up 1, two questions:**
 
 1. **What do you want to do with it?** *Move to a newer version of the same technology* (for example .NET Framework to
-   .NET 8, Java 8 to 17, Python 2 to 3), *Rewrite it in a different technology, one piece at a time, while the old system
-   keeps running*, *Rebuild it from scratch on a new architecture*, *Understand it first: map it and list what it does*
-   (also the right choice when they are not sure: the assessment then recommends one of the other three).
+   modern .NET, Java 8 to the current LTS, Python 2 to 3), *Rewrite it in a different technology, one piece at a time,
+   while the old system keeps running*, *Rebuild it from scratch on a new architecture*, *Understand it first: map it and
+   list what it does* (also the right choice when they are not sure: the assessment then recommends one of the other
+   three).
 2. **What must stay true?** Pick any: *The old system keeps running during the move*, *Behavior must match exactly,
    including known quirks*, *Fix known bugs as we go*, *A security review comes first*. Choosing none means nothing
    special.
 
 **Pop-up 2, one question, only after the first answer and never for "understand it first":** *What should it become?*
-Tailor it to what you found in step 2: for a version move, the newest supported versions of the code's stack ("Java
-21", "Java 17"); for a rewrite, two or three common target technologies for this kind of code; for a rebuild, the
-architecture options that fit (a REST API with a separate front end, a few services, a modular monolith). The person
-can type any other target.
+Tailor it to what you found in step 2: for a version move, the newest supported versions of the code's stack, looked up
+now as `${CLAUDE_PLUGIN_ROOT}/references/target-versions.md` says (web tools first, never from memory; if every lookup
+fails, offer "the newest LTS", unverified, with no number); for a rewrite, two or three common target technologies for this kind of code, with no
+version numbers (a later command checks and picks those); for a rebuild, the architecture options that fit (a REST API
+with a separate front end, a few services, a modular monolith). The person can type any other target; check a version
+they name the same way.
 
 ## 4 — Write it down once
 
 Write `analysis/$system/INTENT.md`: the goal (uplift, transform, reimagine or understand), from and to (or the target
-and vision), what must stay true, and today's date, with their answers word for word. Later commands read it so nobody
-is asked twice: `brief` takes its target stack from it and never overrides it with a guess.
+and vision), what must stay true, and today's date, with their answers word for word, plus the **Target versions** rows
+for any version you checked. Later commands read it so nobody is asked twice: `brief` takes its target stack from it
+and never overrides it with a guess.
 
 ## 5 — Show the road
 
@@ -59,6 +63,6 @@ first and let the assessment's recommended pattern pick the road. Name the place
 ## 6 — First step
 
 Give the exact command with everything filled in, for example
-`/code-modernization:modernize-preflight billing "Java 17" --source /work/billing`, and ask "Shall I start it?". On yes, or in a
+`/code-modernization:modernize-preflight billing "<the target from INTENT.md>" --source /work/billing`, and ask "Shall I start it?". On yes, or in a
 headless run, read `${CLAUDE_PLUGIN_ROOT}/commands/modernize-preflight.md` and carry it out with those arguments as if they had
 typed it. After it finishes, name the next command.

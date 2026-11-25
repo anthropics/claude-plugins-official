@@ -1,0 +1,7 @@
+#!/bin/sh
+# The system's realpath, not one on PATH, follows a link to this file back to the plugin's folder.
+self=$(command -p realpath "$0")
+# `bash claude-security` finds this file on PATH, but leaves the bare name in $0.
+[ -f "$self" ] || { echo "claude-security: cannot find its folder; start it by its path" >&2; exit 2; }
+# -IS keeps PYTHONPATH and .pth files from loading code: they can name the code to scan.
+exec python3 -ISB "${self%/*}/scripts/cli.py" "$@"

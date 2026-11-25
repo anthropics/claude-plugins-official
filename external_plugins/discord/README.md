@@ -32,6 +32,7 @@ Navigate to **OAuth2** → **URL Generator**. Select the `bot` scope. Under **Bo
 - View Channels
 - Send Messages
 - Send Messages in Threads
+- Create Public Threads
 - Read Message History
 - Attach Files
 - Add Reactions
@@ -93,9 +94,11 @@ Quick reference: IDs are Discord **snowflakes** (numeric — enable Developer Mo
 | --- | --- |
 | `reply` | Send to a channel. Takes `chat_id` + `text`, optionally `reply_to` (message ID) for native threading and `files` (absolute paths) for attachments — max 10 files, 25MB each. Auto-chunks; files attach to the first chunk. Returns the sent message ID(s). |
 | `react` | Add an emoji reaction to any message by ID. Unicode emoji work directly; custom emoji need `<:name:id>` form. |
+| `list_emojis` | List the custom emoji the bot can use in a chat, in the `<:name:id>` form `react` and `reply` need. A server channel lists that server's emoji; a DM lists those of servers with an opted-in channel. The application's own emoji (Developer Portal → Emojis) are always included. Optional `query` filters by name; capped at 200 per call. |
 | `edit_message` | Edit a message the bot previously sent. Useful for "working…" → result progress updates. Only works on the bot's own messages. |
 | `fetch_messages` | Pull recent history from a channel (oldest-first). Capped at 100 per call. Each line includes the message ID so the model can `reply_to` it; messages with attachments are marked `+Natt`. Discord's search API isn't exposed to bots, so this is the only lookback. |
 | `download_attachment` | Download all attachments from a specific message by ID to `~/.claude/channels/discord/inbox/`. Returns file paths + metadata. Use when `fetch_messages` shows a message has attachments. |
+| `create_thread` | Start a public thread in an opted-in text or announcement channel. Takes `chat_id` + `name`, optionally `message_id` to start from a message. Returns the thread ID, which works as `chat_id` in the other tools. The thread follows its parent channel's access rules. Needs the Create Public Threads permission — if you invited the bot without it, add it to the bot's role. |
 
 Inbound messages trigger a typing indicator automatically — Discord shows
 "botname is typing…" while the assistant works on a response.

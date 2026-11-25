@@ -261,18 +261,13 @@ class TestHooksJson:
 
 
 def _read_state(env):
+    # The review model cache is JSON in this directory too.
     d = env["SECURITY_WARNINGS_STATE_DIR"]
-    files = [e.path for e in os.scandir(d) if e.name.endswith(".json")]
-    assert files, os.listdir(d)
+    files = [e.path for e in os.scandir(d)
+             if e.name.startswith("security_warnings_state_") and e.name.endswith(".json")]
+    assert len(files) == 1, os.listdir(d)
     with open(files[0]) as f:
         return json.load(f)
-
-
-def _read_state_or_empty(env):
-    d = env["SECURITY_WARNINGS_STATE_DIR"]
-    if not any(e.name.endswith(".json") for e in os.scandir(d)):
-        return {}
-    return _read_state(env)
 
 
 class TestCommitReview:
@@ -334,7 +329,7 @@ class TestCommitReview:
         m = metrics_of(so)
         assert m.get("skip_reason") is None, m
         assert m["repo_resolution"] == rr.RES_SHA_SCAN and m["files_reviewed"] == 1
-        assert "repo_root_hint" not in _read_state_or_empty(hook_env)
+        assert "repo_root_hint" not in _read_state(hook_env)
 
     def test_workspace_cwd_sha_scan_via_project_dir(self, workspace, hook_env, tmp_path):
         ws, repo = workspace
@@ -393,8 +388,11 @@ class TestCommitReview:
         p = bash_payload(ws, "git -C sub commit -m change && git -C sub push", out, tool_use_id="toolu_1")
         rc1, so1, _ = run_hook(p, hook_env)
         rc2, so2, _ = run_hook(p, hook_env)
+        rc3, so3, _ = run_hook(p, hook_env)
         assert metrics_of(so1).get("commit_review") is True
-        assert metrics_of(so2) == {"bash_hook_dedup": True}
+        # A commit-and-push command gets one more start, for the push review.
+        assert metrics_of(so2).get("push_sweep") is True
+        assert metrics_of(so3) == {"bash_hook_dedup": True}
 
 
 class TestPushSweep:
@@ -429,7 +427,7 @@ class TestPushSweep:
         m = metrics_of(so)
         assert m["push_sweep"] is True and m["repo_resolution"] == rr.RES_SHA_SCAN, m
         assert m.get("skip_reason") != 26
-        assert "repo_root_hint" not in _read_state_or_empty(hook_env)
+        assert "repo_root_hint" not in _read_state(hook_env)
 
     def test_cwd_is_repo_dash_C_other_repo(self, workspace, hook_env, tmp_path):
         ws, repo = workspace
@@ -644,3 +642,70 @@ class TestStop:
         m = metrics_of(so)
         assert m["skip_reason"] == 9 and m["repo_resolution"] == rr.RES_NONE
         assert not stub_api.calls
+
+
+class TestPowerShellTool:
+    def _payload(self, ws, command, out):
+        return {**bash_payload(ws, command, out), "tool_name": "PowerShell"}
+
+    def test_commit_is_reviewed(self, workspace, hook_env, stub_api):
+        ws, repo = workspace
+        sha, out = commit_file(repo, "app.py", VULN_PY)
+        rc, so, se = run_hook(self._payload(ws, "git commit -m change", out), hook_env)
+        m = metrics_of(so)
+        assert m.get("skip_reason") is None and m["files_reviewed"] == 1, m
+
+    def test_git_exe_commit_is_reviewed(self, workspace, hook_env, stub_api):
+        ws, repo = workspace
+        sha, out = commit_file(repo, "app.py", VULN_PY)
+        rc, so, se = run_hook(self._payload(repo, "git.exe commit -m change", out), hook_env)
+        assert metrics_of(so)["files_reviewed"] == 1
+
+    def test_other_command_starts_no_review(self, workspace, hook_env, stub_api):
+        ws, repo = workspace
+        rc, so, se = run_hook(self._payload(repo, "Get-ChildItem | Select-Object Name", ""), hook_env)
+        assert rc == 0 and not so.strip()
+
+    @pytest.mark.parametrize("command", [
+        "Set-Location {d}; git commit -m x",
+        "set-location -Path {d}; git commit -m x",
+        "Push-Location -LiteralPath {d}; git.exe commit -m x",
+        "cd {d}; git.exe commit -m x",
+        "Push-Location {d}\ngit commit -m x\nPop-Location",
+        "Set-Location {d}; if ($?) {{ git commit -m x }}",
+        "Git.EXE -C {d} commit -m x",
+    ])
+    def test_folder_from_the_command(self, tmp_path, command):
+        target = tmp_path / "work"
+        got = rr.dirs_from_command(command.format(d=target), str(tmp_path), {("git", "commit")})
+        assert got == [str(target)]
+
+    def test_push_location_ends_at_pop_location(self, tmp_path):
+        command = f"Push-Location {tmp_path / 'other'}; git status; Pop-Location; git commit -m x"
+        assert rr.dirs_from_command(command, str(tmp_path), {("git", "commit")}) == [str(tmp_path)]
+
+    @pytest.mark.parametrize("command", [
+        "git.exe push", "GIT push origin main", "& 'C:\\Git\\cmd\\git.exe' push",
+    ])
+    def test_push_spellings(self, command):
+        assert hook._GIT_PUSH_RE.search(command)
+
+    @pytest.mark.parametrize("command", [
+        "Git commit -m x", "git.cmd commit -m x", '& "C:\\Program Files\\Git\\cmd\\git.exe" commit -m x',
+    ])
+    def test_commit_spellings(self, command):
+        assert hook._GIT_COMMIT_RE.search(command)
+
+    def test_git_commit_tree_is_still_left_alone(self):
+        assert not hook._GIT_COMMIT_RE.search("git.exe commit-tree abc")
+
+    def test_bash_line_continuation_stays_one_statement(self, tmp_path):
+        got = rr.dirs_from_command("git \\\n  commit -m x", str(tmp_path), {("git", "commit")})
+        assert got == [str(tmp_path)]
+
+    def test_hook_entries(self):
+        with open(os.path.join(HOOKS_DIR, "hooks.json")) as f:
+            groups = json.load(f)["hooks"]["PostToolUse"]
+        group = next(g for g in groups if g["matcher"] == "PowerShell")
+        assert [h["if"] for h in group["hooks"]] == ["PowerShell(git*commit*)", "PowerShell(git*push*)"]
+        assert all(h["asyncRewake"] for h in group["hooks"])

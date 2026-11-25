@@ -461,8 +461,9 @@ def test_single_shot_after_a_fast_agentic_failure_ends_in_time(
     repo, _ = _repo_with_remote(tmp_path)
     _, commit_out = commit_file(repo, "handlers.py", "def h(x):\n    return x\n")
     stub_api.delay = 6
+    # The model is pinned so the stub's delay doesn't also hold up the model lookup.
     env = {**hook_env, "SG_AGENTIC_COMMIT_REVIEW": "1", "SG_AGENTIC_CLI_PATH": failing_inner_cli,
-           "SG_AGENTIC_RACE_DELAY_S": "60"}
+           "SG_AGENTIC_RACE_DELAY_S": "60", "SG_AGENTIC_MODEL": "opus"}
     took, r = _run_with_limit(bash_payload(repo, "git commit -m change", commit_out), env, 4)
     assert 4 <= took < 10, r.stderr
     assert r.returncode == 2 and "did not finish in time" in r.stderr

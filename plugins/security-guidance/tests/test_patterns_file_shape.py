@@ -109,7 +109,8 @@ def test_edit_hook_still_warns_with_a_wrong_shape_file_present(project, hook_env
     payload = {
         "session_id": "s1", "hook_event_name": "PostToolUse", "tool_name": "Write",
         "tool_input": {"file_path": str(project / "cfg.py"),
-                       "content": "KEY = 'AKIAABCDEFGHIJKLMNOP'\n"},
+                       # Split so secret scanners do not flag this made-up value.
+                       "content": "KEY = 'AKIA" + "ABCDEFGHIJKLMNOP'\n"},
         "cwd": str(project), "tool_response": {},
     }
     _rc, stdout, stderr = run_hook(payload, env)

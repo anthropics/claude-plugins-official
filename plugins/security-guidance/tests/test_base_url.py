@@ -65,7 +65,7 @@ def test_requests_go_to_the_default_endpoint(monkeypatch, value):
     monkeypatch.setattr(llm, "HAS_API_CREDENTIALS", True)
     monkeypatch.setattr(llm, "_urlopen", urlopen)
     assert llm._probe_anthropic()
-    llm._fetch_newest_opus()
+    llm._fetch_newest_models()
     llm._call_claude("prompt", {"type": "object"}, thinking_budget=0, model="claude-x")
     assert urls == [f"{DEFAULT}/", f"{DEFAULT}/v1/models?limit=100", f"{DEFAULT}/v1/messages"]
 
