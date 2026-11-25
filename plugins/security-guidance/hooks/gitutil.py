@@ -1401,6 +1401,8 @@ def _own_settings(path):
 
 def _names_commands(settings):
     for key, value in settings:
+        if key == b"core.usegvfshelper" and value.lower() in (b"false", b"no", b"off", b"0"):
+            continue  # a boolean, and off
         if _COMMAND_SETTING.match(key) and value and not (
                 key.startswith(b"filter.lfs.") and _LFS_VALUE.match(value)):
             return True

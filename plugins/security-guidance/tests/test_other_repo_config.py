@@ -250,6 +250,12 @@ def test_a_driver_the_user_set_up_is_kept(project, marker, clean_env):
      "[commitGraph]\n\tchangedPaths = true\n[index]\n\tsparse = true\n[lfs]\n\trepositoryformatversion = 0\n"
      "[alias]\n\tst = status\n[merge]\n\tstat = false\n", True),
     ('[core]\n\tuseGvfsHelper = true\n', False),
+    ('[core]\n\tuseGvfsHelper = yes\n', False),
+    ('[core]\n\tuseGvfsHelper = false\n\tuseGvfsHelper = true\n', False),
+    ('[core]\n\tuseGvfsHelper = false\n[filter "x"]\n\tclean = cat\n', False),
+    ('[core]\n\tuseGvfsHelper = false\n\tvirtualFilesystem = x\n', False),
+    ('[core]\n\tuseGvfsHelper = false\n', True),
+    ('[core]\n\tuseGvfsHelper = OFF\n\tuseGVFSHelper = 0\n', True),
     ('[http]\n\tcookieFile = x\n[fetch]\n\tbundleURI = x\n', True),
     ('[lfs "EXTENSION.x"]\n\tclean = true\n', False),
     ('[remote "o"]\n\tpromisor = true\n\turl = ext::sh -c x\n', False),
