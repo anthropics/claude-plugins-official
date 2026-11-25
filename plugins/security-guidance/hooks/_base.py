@@ -152,6 +152,25 @@ def debug_log(message):
         pass
 
 
+def env_number(name, default, kind=int, log=True):
+    """The environment variable `name` as a number, or `default` when it is
+    unset, empty or not a number `kind` takes.
+
+    Most callers read their setting while the hook's modules load, where an
+    exception would end every hook of the session: the pattern warnings and
+    the kill switch too, not only what the setting is for."""
+    raw = os.environ.get(name, "")
+    if not raw:
+        return default
+    try:
+        return kind(raw)
+    except ValueError:
+        if log:
+            what = "whole number" if kind is int else "number"
+            debug_log(f"Ignoring {name}={raw[:40]!r}: not a {what}")
+        return default
+
+
 # Provenance tag prepended to injected/emitted text so a reader (especially a
 # model hardened against prompt injection) can recognize the source. Not an
 # authority claim — an attacker could spoof the exact string; the tag is a

@@ -15,7 +15,7 @@ import sys
 import unicodedata
 import time
 
-from _base import debug_log, make_state_dir, portable_output, _PV
+from _base import debug_log, env_number, make_state_dir, portable_output, _PV
 import gitutil
 from gitutil import (
     GIT_CMD,
@@ -44,7 +44,7 @@ STOP_LOOP_STATE_TTL_SEC = 120
 # re-flags across turns without masking regressions that change the code. v2's
 # git-derived review set can re-surface the same uncommitted file across turns;
 # 120s could let warnings pile up over a long session.
-PREVIOUS_FINDINGS_TTL_SEC = int(os.environ.get("PREVIOUS_FINDINGS_TTL_SEC", "3600"))
+PREVIOUS_FINDINGS_TTL_SEC = env_number("PREVIOUS_FINDINGS_TTL_SEC", 3600)
 
 
 # =====================================================================
