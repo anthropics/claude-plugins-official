@@ -21,12 +21,12 @@ _STATUS_SECONDS = 60
 _NOT_STORED = {
     "api_key_helper": "give the helper as --credential-command",
     "oauth_token": (
-        "add --credential-command with a command that prints the token, and set "
-        "ANTHROPIC_BASE_URL if that sign-in uses a host of its own"
+        "add --credential-command with a command that prints the token, and "
+        "--model-base-url if that sign-in uses a host of its own"
     ),
     "third_party": (
-        "set your provider's variables, or add --no-sandbox. --credential-command alone sends "
-        "the scanned code to the Claude API or ANTHROPIC_BASE_URL"
+        "name your cloud in --provider and set its variables, or use --no-sandbox in its place. "
+        "--credential-command alone sends the scanned code to the Claude API or --model-base-url"
     ),
 }
 

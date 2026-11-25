@@ -73,7 +73,7 @@ jobs:
           persist-credentials: false
 
       - id: claude-security
-        uses: anthropics/claude-plugins-official/plugins/claude-security
+        uses: anthropics/claude-plugins-official/plugins/claude-security@RELEASE_COMMIT
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           # Draft fixes in the second job. "false" leaves them out.
@@ -176,7 +176,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - uses: anthropics/claude-plugins-official/plugins/claude-security
+      - uses: anthropics/claude-plugins-official/plugins/claude-security@RELEASE_COMMIT
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           # scan_effort: low                       # low, medium (the default) or high.
@@ -207,7 +207,7 @@ Each method changes a few lines of your workflow files. For example, with Bedroc
 +      - uses: aws-actions/configure-aws-credentials@v4
 +        # ...
 
-       - uses: anthropics/claude-plugins-official/plugins/claude-security
+       - uses: anthropics/claude-plugins-official/plugins/claude-security@RELEASE_COMMIT
          with:
 -          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
 +          use_bedrock: "true"
@@ -254,7 +254,7 @@ Bedrock and Foundry match **full subjects**: `<subject>:pull_request`, and `<sub
 
 ```yaml
       - id: claude-security
-        uses: anthropics/claude-plugins-official/plugins/claude-security
+        uses: anthropics/claude-plugins-official/plugins/claude-security@RELEASE_COMMIT
         with:
           anthropic_organization_id: ${{ vars.ANTHROPIC_ORGANIZATION_ID }}
           anthropic_federation_rule_id: ${{ vars.ANTHROPIC_FEDERATION_RULE_ID }}
@@ -306,7 +306,7 @@ gcloud projects add-iam-policy-binding PROJECT_ID \
           service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
 
       - id: claude-security
-        uses: anthropics/claude-plugins-official/plugins/claude-security
+        uses: anthropics/claude-plugins-official/plugins/claude-security@RELEASE_COMMIT
         with:
           use_vertex: "true"
           vertex_project_id: your-project-id
@@ -364,7 +364,7 @@ gcloud projects add-iam-policy-binding PROJECT_ID \
           role-duration-seconds: 14400
 
       - id: claude-security
-        uses: anthropics/claude-plugins-official/plugins/claude-security
+        uses: anthropics/claude-plugins-official/plugins/claude-security@RELEASE_COMMIT
         with:
           use_bedrock: "true"
           default_sonnet_model: us.anthropic.claude-sonnet-5
@@ -410,7 +410,7 @@ gcloud projects add-iam-policy-binding PROJECT_ID \
           allow-no-subscriptions: true
 
       - id: claude-security
-        uses: anthropics/claude-plugins-official/plugins/claude-security
+        uses: anthropics/claude-plugins-official/plugins/claude-security@RELEASE_COMMIT
         with:
           use_foundry: "true"
           foundry_resource: your-resource-name
@@ -434,7 +434,7 @@ gcloud projects add-iam-policy-binding PROJECT_ID \
 
 ```yaml
       - id: claude-security
-        uses: anthropics/claude-plugins-official/plugins/claude-security
+        uses: anthropics/claude-plugins-official/plugins/claude-security@RELEASE_COMMIT
         with:
           model_base_url: https://{your-gateway}
           model_auth_token: ${{ secrets.MODEL_GATEWAY_KEY }}

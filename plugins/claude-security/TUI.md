@@ -1,6 +1,6 @@
 # Run a scan in a full-screen view
 
-`claude-security --tui` starts a scan of your repository with the Claude Security plugin, and shows its progress full screen. When the scan ends, you read the findings in the same view.
+With `--tui`, the `claude-security` command starts a scan of your repository with the Claude Security plugin, and shows its progress full screen. When the scan ends, you read the findings in the same view.
 
 ## What you need
 
@@ -13,7 +13,7 @@
 **Warning:** On Windows, the scan has no sandbox. Its agents run commands with your access. Read the [trust model](SECURITY.md#trust-model) first.
 
 1. Open a terminal in the repository.
-2. Run `claude-security --tui`. On Ubuntu 24.04 and newer, add `--sudo`. On Windows, add `--no-sandbox`.
+2. Run `claude-security --tui --provider <provider>`, with `anthropic`, `bedrock`, `vertex` or `foundry`. On Ubuntu 24.04 and newer, add `--sudo`. On Windows, use `--no-sandbox` in place of `--provider`.
 3. Type `y` to accept the time and the token cost. Type `n` to cancel.
 
 To scan only this branch's changes, add `--changes`.

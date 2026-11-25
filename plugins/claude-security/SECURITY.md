@@ -22,6 +22,8 @@ Scan only code that you own or have permission to test. To work with code you do
 
 The `claude-security` command runs a scan inside `scripts/sandbox.py`'s sandbox, unless you add `--no-sandbox`. The command is not supported on WSL 2. The scan can read the repository, the system's programs, what `--allow-read` names and a copy of your Claude Code settings. It writes only to memory and reaches only the model, and your credential stays outside. If another user can write a folder between the repository's top and the folder that you scan, the sandbox leaves the repository out: git fails there, and a scan of changes stops. The repository's `.claude/` settings and hooks do not apply to the command's scans, deny rules included. In the sandbox, neither do your organization's server-managed settings. The command's scans load no `CLAUDE.md` file, not even a managed one. The command itself runs outside the sandbox, where it reads the repository, runs read-only `git` commands and writes the report. It starts on the first Python on your `PATH`, so for code that you do not fully trust, deactivate a virtual environment that lies in the repository first.
 
+In the command's sandbox, your code goes where `--provider` and `--model-base-url` say. The command cannot see all that your organization chose: give the provider and URL that `/status` shows in Claude Code in your terminal. If it shows neither, ask your administrator.
+
 The sandbox needs Python 3.10 or later.
 
 The command's views run outside the sandbox, with your access, each in a Node.js process with two pipes and no credential in its environment. A view only draws what the command sends it. From Node.js 20 on, it runs under Node's permission model, which guards against a mistake and is no sandbox.

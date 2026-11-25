@@ -23,6 +23,7 @@ import tempfile
 from contextlib import ExitStack, suppress
 from functools import partial
 from pathlib import Path
+from urllib.parse import urlsplit
 
 # lib/ lies beside this script, whose folder Python leaves off the import path under -I or -P.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -42,6 +43,20 @@ _ENDINGS = [
 _MAC = sys.platform == "darwin"
 _NOT_ON_MAC = "the command does not run on macOS: scan from a Claude Code session"
 COST = "This scan may take a while and may use a significant number of tokens."
+_PROVIDERS = {
+    "anthropic": "the Claude API (api.anthropic.com)",
+    "bedrock": "Amazon Bedrock",
+    "vertex": "Google Cloud's Agent Platform (Vertex)",
+    "foundry": "Microsoft Foundry",
+}
+_NO_PROVIDER = (
+    f"say where your code goes: add --provider with one of {', '.join(_PROVIDERS)}. For another "
+    "host, add --model-base-url too, and set its key, or your own sign-in can go there. If your "
+    "organization chooses these, type /status in Claude Code in your terminal, and give the "
+    "provider and URL that it shows. If it shows neither, ask your administrator."
+)
+_NO_SANDBOX = "To scan with no sandbox, add --no-sandbox in place of --provider and its URL."
+_URL_TEXT = re.compile(r"((?![@?#])[!-~])+")
 _REF = re.compile(r"[A-Za-z0-9_@][A-Za-z0-9._/@^~-]{0,199}")
 _MODEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/@\[\]-]{0,299}")
 _WORDS = re.compile(r".+", re.DOTALL)
@@ -71,6 +86,8 @@ class Args(argparse.Namespace):
     change_scan_effort: str = "low"
     model: str = ""
     output: Path | None = None
+    provider: str = ""
+    model_base_url: str = ""
     yes: bool = False
     sudo: bool = False
     no_cgroup: bool = False
@@ -94,6 +111,16 @@ def _matching(pattern: re.Pattern[str], value: str) -> str:
     return value
 
 
+def _host(url: str) -> str:
+    """The host and port of `url`; empty if the relay refuses it or it is not safe to print."""
+    with suppress(ValueError):
+        parts = urlsplit(url)
+        local = parts.scheme == "http" and parts.hostname in {"127.0.0.1", "localhost", "::1"}
+        if (local or (parts.scheme == "https" and parts.hostname)) and _URL_TEXT.fullmatch(url):
+            return parts.netloc
+    return ""
+
+
 def parse(argv: list[str]) -> Args:
     parser = argparse.ArgumentParser(
         prog=plugin.NAME,
@@ -115,6 +142,9 @@ def parse(argv: list[str]) -> Args:
     what.add_argument("--model", type=model, help="default: your Claude Code model")
     what.add_argument("--output", type=Path, metavar="DIR", help="where the report directory goes")
     show.add_options(parser)
+    where = parser.add_argument_group("where your code goes")
+    where.add_argument("--provider", choices=_PROVIDERS, help="required in the sandbox")
+    where.add_argument("--model-base-url", type=words, metavar="URL", help="for another host")
     run = parser.add_argument_group("how to run it")
     run.add_argument("-y", "--yes", action="store_true", help="accept the time and token cost")
     run.add_argument(
@@ -137,6 +167,13 @@ def parse(argv: list[str]) -> Args:
         parser.error("--commit scans one commit: leave out --base and --changes")
     if args.no_sandbox and (args.sudo or args.credential_command or args.allow_read):
         parser.error("--sudo, --credential-command and --allow-read need the sandbox")
+    if args.no_sandbox and (args.provider or args.model_base_url):
+        parser.error(
+            "with --no-sandbox Claude Code chooses where your code goes: leave out --provider "
+            "and --model-base-url"
+        )
+    if args.model_base_url and not _host(args.model_base_url):
+        parser.error("--model-base-url must be an https address with no @, ? or #")
     if args.no_cgroup and not args.sudo:
         parser.error("--no-cgroup needs --sudo")
     high = args.change_scan_effort == plugin.CHANGE_SCAN_EFFORT_HIGH
@@ -172,6 +209,56 @@ def shown(args: Args) -> tuple[str, list[str]]:
         return args.effort, folders
     high = plugin.CHANGE_SCAN_EFFORT_HIGH
     return high if args.change_scan_effort == high else args.effort, [change, *folders]
+
+
+def route(args: Args, variables: dict[str, str]) -> dict[str, str]:
+    """The variables to add, so that the relay calls what the options name. StartError where they
+    name no provider, or where `variables` select another provider or base URL."""
+    if not args.provider:
+        raise StartError(_NO_PROVIDER)
+    cloud = args.provider.upper()
+    switch, url = f"CLAUDE_CODE_USE_{cloud}", f"ANTHROPIC_{cloud}_BASE_URL"
+    if args.provider == "anthropic":
+        switch, url = "", "ANTHROPIC_BASE_URL"
+    on = provider.clouds_on(variables)
+    other = [name for name in on if name != switch]
+    if variables.get(url, "") not in {"", args.model_base_url}:
+        other.append(url)
+    if switch and not on and variables.get("ANTHROPIC_BASE_URL"):
+        other.append("ANTHROPIC_BASE_URL")
+    if other:
+        msg = (
+            f"your environment or Claude Code's settings set {', '.join(other)}: give the same "
+            "provider in --provider and the same URL, letter for letter, in --model-base-url, or "
+            "unset these names. The sandbox serves one provider at a time, and only those of "
+            f"--provider. {_NO_SANDBOX}"
+        )
+        raise StartError(msg)
+    added = {switch: "1"} if switch and not on else {}
+    if args.model_base_url and not variables.get(url):
+        added[url] = args.model_base_url
+    if fixed := sandbox.managed_names().intersection(added):
+        msg = (
+            f"your organization's managed settings turn off {', '.join(sorted(fixed))}, so the "
+            "scan cannot go where --provider and --model-base-url say: ask your administrator"
+        )
+        raise StartError(msg)
+    return added
+
+
+def destination(args: Args, held: login.Login | None) -> str:
+    """Where the code goes, and where its credential comes from."""
+    if args.credential_command:
+        how = "signed in by what --credential-command prints"
+    elif held:
+        kind = "login" if login.TOKEN in held.variables else "key"
+        how = f"signed in by Claude Code's stored {kind}"
+    else:
+        how = "configured by environment variables"
+        how += " and gcloud" if args.provider == "vertex" else ""
+    host = _host(args.model_base_url)
+    place = f"{host} (provider {args.provider})" if host else _PROVIDERS[args.provider]
+    return f"Your code goes to {place}, {how}."
 
 
 def confirm(args: Args) -> None:
@@ -247,6 +334,8 @@ def start(args: Args, stack: ExitStack) -> tuple[Scan, session.Session]:
             raise StartError(why)
     claude = str(found)
     variables = sandbox.session_variables()
+    if not args.no_sandbox:
+        variables |= route(args, variables)
     by_command = bool(args.credential_command)
     if routes := sandbox.routes_not_loaded(root, variables, by_command=by_command):
         named = ", ".join(f"{name} ({file})" for name, file in routes.items())
@@ -256,7 +345,8 @@ def start(args: Args, stack: ExitStack) -> tuple[Scan, session.Session]:
             "environment, or under env in your own Claude Code settings. With an empty value, "
             "your key or sign-in goes to the provider's own host, or to a host that you have set. "
             "A cloud's variable, such as a region or a profile, can need a value. Copy the "
-            "project's value only if you trust it."
+            "project's value only if you trust it. In the sandbox, a provider goes in --provider, "
+            "and its URL in --model-base-url."
         )
         if sandbox.KEY_HELPER in routes:
             msg += (
@@ -313,6 +403,7 @@ def start(args: Args, stack: ExitStack) -> tuple[Scan, session.Session]:
         signed = held.variables if held else {}
         passed = [name for name in signed if name not in provider.SECRETS]
         box = sandbox.Sandbox(root, run, variables | signed, passed, reads, options, python)
+        print(destination(args, held), file=sys.stderr)
     confirm(args)
     if box:
         box.check()
@@ -364,7 +455,7 @@ def main(argv: list[str]) -> int:
             sys.stderr.write(f"{plugin.NAME}: {error}\n")
             return 1
         except SandboxError as error:
-            advice = "" if SWAPPED in str(error) else "To scan with no sandbox, add --no-sandbox.\n"
+            advice = "" if SWAPPED in str(error) else f"{_NO_SANDBOX}\n"
             sys.stderr.write(f"{plugin.NAME}: {error}\n{advice}")
             return 2
         except _REFUSALS as error:
