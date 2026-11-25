@@ -137,7 +137,7 @@ Hints the host uses for UX — red confirm button for destructive, auto-approve 
 ```typescript
 server.registerTool("delete_file", {
   description: "Delete a file",
-  inputSchema: { path: z.string() },
+  inputSchema: z.object({ path: z.string() }),
   annotations: { destructiveHint: true, idempotentHint: false },
 }, handler);
 ```
@@ -159,8 +159,8 @@ Pair with the read/write split advice in `build-mcpb/references/local-security.m
 ```typescript
 server.registerTool("get_weather", {
   description: "Get current weather",
-  inputSchema: { city: z.string() },
-  outputSchema: { temp: z.number(), conditions: z.string() },
+  inputSchema: z.object({ city: z.string() }),
+  outputSchema: z.object({ temp: z.number(), conditions: z.string() }),
 }, async ({ city }) => {
   const data = await fetchWeather(city);
   return {

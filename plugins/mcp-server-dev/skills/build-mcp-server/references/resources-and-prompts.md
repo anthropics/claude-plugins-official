@@ -30,7 +30,7 @@ A resource is data identified by a URI. Unlike a tool, it's not *called* — it'
 server.registerResource(
   "config",
   "config://app/settings",
-  { name: "App Settings", description: "Current configuration", mimeType: "application/json" },
+  { title: "App Settings", description: "Current configuration", mimeType: "application/json" },
   async (uri) => ({
     contents: [{ uri: uri.href, mimeType: "application/json", text: JSON.stringify(config) }],
   }),
@@ -50,14 +50,14 @@ def get_settings() -> str:
 RFC 6570 templates let one registration serve many URIs:
 
 ```typescript
-import { ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { ResourceTemplate } from "@modelcontextprotocol/server";
 
 server.registerResource(
   "file",
   new ResourceTemplate("file:///{path}", { list: undefined }),
-  { name: "File", description: "Read a file from the workspace" },
+  { title: "File", description: "Read a file from the workspace" },
   async (uri, { path }) => ({
-    contents: [{ uri: uri.href, text: await fs.readFile(path, "utf8") }],
+    contents: [{ uri: uri.href, text: await fs.readFile(String(path), "utf8") }],
   }),
 );
 ```
@@ -86,7 +86,7 @@ server.registerPrompt(
   {
     title: "Summarize document",
     description: "Generate a concise summary of the given text",
-    argsSchema: { text: z.string(), max_words: z.string().optional() },
+    argsSchema: z.object({ text: z.string(), max_words: z.string().optional() }),
   },
   ({ text, max_words }) => ({
     messages: [{
