@@ -210,7 +210,7 @@
         "url": "https://github.com/amd/skills.git",
         "path": "skills",
         "ref": "main",
-        "sha": "d4417422312c82d4761d3255b69bfcd411147cf3"
+        "sha": "3e41c083bfb30c4c796d42882b42b0d365c5358c"
       },
       "skills": [
         "./local-ai-use",
