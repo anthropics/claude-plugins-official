@@ -161,6 +161,12 @@ type Access = {
    * Default: 120.
    */
   pollerTakeoverSeconds?: number
+  /**
+   * Who receives permission prompts, when more than one person is paired.
+   * Must be one of allowFrom. With one paired person it is unnecessary; with
+   * several and no value set, prompts are not sent to Telegram at all.
+   */
+  permissionChatId?: string
 }
 
 function defaultAccess(): Access {
@@ -208,6 +214,8 @@ function readAccessFile(): Access {
       textChunkLimit: parsed.textChunkLimit,
       chunkMode: parsed.chunkMode,
       pollerTakeoverSeconds: parsed.pollerTakeoverSeconds,
+      permissionChatId:
+        parsed.permissionChatId != null ? String(parsed.permissionChatId) : undefined,
     }
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return defaultAccess()
@@ -490,13 +498,56 @@ const mcp = new Server(
   },
 )
 
+// Said once per process, when prompts stop going to Telegram because the
+// install pairs more than one person and has not said who decides.
+let ambiguityNoticeSent = false
+
 // Stores full permission details for "See more" expansion keyed by request_id.
 const pendingPermissions = new Map<string, { tool_name: string; description: string; input_preview: string }>()
 
-// Receive permission_request from CC → format → send to all allowlisted DMs.
-// Groups are intentionally excluded — the security thread resolution was
-// "single-user mode for official plugins." Anyone in access.allowFrom
-// already passed explicit pairing; group members haven't.
+// Telegram formats a plain message on its own: a word starting with "/"
+// becomes a bot command that sends itself to the chat when tapped, a word
+// ending in something that looks like a TLD becomes a web link, and $WORD
+// becomes a cashtag. A permission prompt is full of paths, flags and
+// variables, and it is the one message where a stray tap is expensive — so
+// its body goes inside <pre>, which Telegram leaves alone.
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+/** Keeps the expanded prompt under Telegram's 4096-character limit. */
+const MAX_PREVIEW_CHARS = 3000
+/** Entries are dropped on a tap; a prompt answered in the terminal leaves one behind. */
+const MAX_PENDING_PERMISSIONS = 100
+
+// allowFrom is who may talk to this session, which is not the same as who
+// decides what it may do. Sending a prompt to all of them shows one person's
+// file paths and commands to everyone paired, and hands an actionable Allow
+// to someone who has no idea what they are answering. One recipient only:
+// the configured one, or the only paired person when there is just one.
+// Groups never get prompts — the security thread resolution was "single-user
+// mode for official plugins", and group members never passed pairing.
+function permissionRecipient(access: Access): { chat_id: string } | { skip: string } {
+  // The owner turned the channel off. Inbound is already dropped, so a live
+  // Allow button here would be the one thing still getting through.
+  if (access.dmPolicy === 'disabled') return { skip: 'dmPolicy is "disabled"' }
+  const configured = access.permissionChatId
+  if (configured) {
+    if (!access.allowFrom.includes(configured)) {
+      return {
+        skip: `permissionChatId ${configured} is not in allowFrom — add it with /telegram:access allow ${configured}`,
+      }
+    }
+    return { chat_id: configured }
+  }
+  if (access.allowFrom.length === 1) return { chat_id: access.allowFrom[0]! }
+  if (access.allowFrom.length === 0) return { skip: 'nobody is paired' }
+  return {
+    skip:
+      `${access.allowFrom.length} people are paired and permissionChatId is not set, so there is no one ` +
+      `person to ask — set it with /telegram:access set permissionChatId <id>`,
+  }
+}
 mcp.setNotificationHandler(
   z.object({
     method: z.literal('notifications/claude/channel/permission_request'),
@@ -519,20 +570,64 @@ mcp.setNotificationHandler(
       )
       return
     }
-    pendingPermissions.set(request_id, { tool_name, description, input_preview })
     const access = loadAccess()
-    const text = `🔐 Permission: ${tool_name}`
+    const recipient = permissionRecipient(access)
+    if ('skip' in recipient) {
+      // The prompt still waits in the terminal, so nothing is lost but the
+      // convenience — and the reason is worth saying, because silence here
+      // looks exactly like the channel being broken.
+      logLine(
+        `telegram channel: permission request for ${tool_name} not sent to Telegram: ${recipient.skip}\n`,
+      )
+      // An install that used to get prompts on Telegram stops getting them
+      // the moment a second person pairs. Say so once, in the chat, since
+      // nobody reads a log they have no reason to open. No tool details:
+      // that is the disclosure this is here to prevent.
+      if (!ambiguityNoticeSent && access.allowFrom.length > 1 && !access.permissionChatId) {
+        ambiguityNoticeSent = true
+        for (const chat_id of access.allowFrom) {
+          void bot.api
+            .sendMessage(
+              chat_id,
+              'Claude Code asked for permission to run something. More than one person is paired here, ' +
+                'so it was not sent to Telegram — answer in the terminal, or choose who gets these:\n\n' +
+                '/telegram:access set permissionChatId <id>',
+            )
+            .catch(() => {})
+        }
+      }
+      return
+    }
+    // A prompt answered in the terminal never comes back here to be cleared.
+    while (pendingPermissions.size >= MAX_PENDING_PERMISSIONS) {
+      const oldest = pendingPermissions.keys().next().value
+      if (oldest === undefined) break
+      pendingPermissions.delete(oldest)
+    }
+    pendingPermissions.set(request_id, { tool_name, description, input_preview })
     const keyboard = new InlineKeyboard()
       .text('See more', `perm:more:${request_id}`)
       .text('✅ Allow', `perm:allow:${request_id}`)
       .text('❌ Deny', `perm:deny:${request_id}`)
-    for (const chat_id of access.allowFrom) {
-      void bot.api.sendMessage(chat_id, text, { reply_markup: keyboard }).catch(e => {
-        logLine(`permission_request send to ${chat_id} failed: ${e}\n`)
+    void bot.api
+      .sendMessage(recipient.chat_id, `🔐 Permission: <code>${escapeHtml(tool_name)}</code>`, {
+        parse_mode: 'HTML',
+        reply_markup: keyboard,
       })
-    }
+      .catch(e => {
+        pendingPermissions.delete(request_id)
+        logLine(`permission_request send to ${recipient.chat_id} failed: ${e}\n`)
+      })
   },
 )
+
+// Delivery and authority have to agree: if only one person is asked, only
+// that person may answer, or a prompt relayed to someone else still decides
+// what the session runs.
+function mayAnswerPermissions(access: Access, senderId: string): boolean {
+  const recipient = permissionRecipient(access)
+  return 'chat_id' in recipient && recipient.chat_id === senderId
+}
 
 mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
@@ -930,7 +1025,7 @@ bot.on('callback_query:data', async ctx => {
   }
   const access = loadAccess()
   const senderId = String(ctx.from.id)
-  if (!access.allowFrom.includes(senderId)) {
+  if (!mayAnswerPermissions(access, senderId)) {
     await ctx.answerCallbackQuery({ text: 'Not authorized.' }).catch(() => {})
     return
   }
@@ -949,18 +1044,39 @@ bot.on('callback_query:data', async ctx => {
     } catch {
       prettyInput = input_preview
     }
+    const body = `description: ${description}\ninput_preview:\n${prettyInput}`
+    // By code point: half a surrogate pair is not a legal character, and
+    // Telegram would refuse the whole edit over it.
+    const points = [...body]
+    const shown =
+      points.length > MAX_PREVIEW_CHARS
+        ? `${points.slice(0, MAX_PREVIEW_CHARS).join('')}\n… (${points.length - MAX_PREVIEW_CHARS} more characters)`
+        : body
     const expanded =
-      `🔐 Permission: ${tool_name}\n\n` +
-      `tool_name: ${tool_name}\n` +
-      `description: ${description}\n` +
-      `input_preview:\n${prettyInput}`
+      `🔐 Permission: <code>${escapeHtml(tool_name)}</code>\n\n<pre>${escapeHtml(shown)}</pre>`
     const keyboard = new InlineKeyboard()
       .text('✅ Allow', `perm:allow:${request_id}`)
       .text('❌ Deny', `perm:deny:${request_id}`)
-    await ctx.editMessageText(expanded, { reply_markup: keyboard }).catch(() => {})
+    await ctx
+      .editMessageText(expanded, { parse_mode: 'HTML', reply_markup: keyboard })
+      .catch(err => {
+        // Swallowing this left "See more" doing nothing at all, with no
+        // trace of why.
+        logLine(`telegram channel: could not expand permission prompt: ${err}\n`)
+      })
     await ctx.answerCallbackQuery().catch(() => {})
     return
   }
+
+  // Claim the request before answering it. Two taps in quick succession, or
+  // one on each of the sender's devices, would otherwise both reach Claude
+  // Code and the later behavior would win.
+  const answered = pendingPermissions.get(request_id)
+  if (!answered) {
+    await ctx.answerCallbackQuery({ text: 'Already answered.' }).catch(() => {})
+    return
+  }
+  pendingPermissions.delete(request_id)
 
   // Tapping a button is the normal way to answer, so it gets the same
   // treatment as the text path: no confirmation for an answer that the
@@ -971,21 +1087,27 @@ bot.on('callback_query:data', async ctx => {
       params: { request_id, behavior },
     })
   } catch (err) {
+    // Put it back: it was never answered, so the buttons should still work.
+    pendingPermissions.set(request_id, answered)
     logLine(`telegram channel: failed to deliver permission reply: ${err}\n`)
     await ctx
       .answerCallbackQuery({ text: 'Could not reach Claude Code — answer in the terminal.' })
       .catch(() => {})
     return
   }
-  pendingPermissions.delete(request_id)
   const label = behavior === 'allow' ? '✅ Allowed' : '❌ Denied'
   await ctx.answerCallbackQuery({ text: label }).catch(() => {})
-  // Replace buttons with the outcome so the same request can't be answered
-  // twice and the chat history shows what was chosen.
-  const msg = ctx.callbackQuery.message
-  if (msg && 'text' in msg && msg.text) {
-    await ctx.editMessageText(`${msg.text}\n\n${label}`).catch(() => {})
-  }
+  // Take the buttons away and say what was chosen. Rebuilt from the tool
+  // name rather than from the message's own text: Telegram hands that back
+  // with the <pre> stripped, so sending it again is what would turn the
+  // paths in it into links. The detail stays in the session's own
+  // transcript; what belongs here is which tool was answered, and how.
+  await ctx
+    .editMessageText(
+      `🔐 Permission: <code>${escapeHtml(answered.tool_name)}</code>\n\n${label}`,
+      { parse_mode: 'HTML' },
+    )
+    .catch(err => logLine(`telegram channel: could not close permission prompt: ${err}\n`))
 })
 
 bot.on('message:text', async ctx => {
@@ -1437,7 +1559,7 @@ async function handleInbound(
   // is access.allowFrom — the same list permission_request sends to.
   // Forwarded text is not the sender's own either, whoever they are.
   const senderMayAnswerPermissions =
-    access.allowFrom.includes(String(from.id)) && !ctx.message?.forward_origin
+    mayAnswerPermissions(access, String(from.id)) && !ctx.message?.forward_origin
   const permMatch = senderMayAnswerPermissions ? PERMISSION_REPLY_RE.exec(text) : null
   if (permMatch) {
     const allow = permMatch[1]!.toLowerCase().startsWith('y')

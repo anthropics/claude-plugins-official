@@ -134,6 +134,21 @@ What that means for you:
 
 Delete `inbound.jsonl` at any time; it is recreated on the next message.
 
+## Who answers permission prompts
+
+When the session needs approval for a tool call, the prompt can come to Telegram with Allow and Deny buttons. It goes to **one person**, because `allowFrom` is the list of people who may talk to the session, not the list who should decide what it does — a prompt carries a tool name, a description and an input preview, so broadcasting it shows one person's file paths and commands to everyone paired, and hands an actionable Allow to someone with no idea what they are approving.
+
+- **One person paired**: they get it. Nothing to configure.
+- **Several paired**: set who gets it.
+
+```
+/telegram:access set permissionChatId 412587349
+```
+
+Until that is set, a multi-person install gets no prompts on Telegram at all and the reason is written to `server.log`. Nothing is lost — the prompt is still waiting in the terminal — but answering it there is the only way.
+
+Whoever receives the prompt, only people in `allowFrom` can answer one, and a reply forwarded from someone else is never taken as an answer.
+
 ## Several sessions, one bot token
 
 Telegram allows exactly one long-polling consumer per bot token, so when more than one Claude Code session has the plugin loaded, only one of them polls. The others serve the tools (`reply`, `react`, `edit_message`, `recent_inbound`) normally and wait; whichever is polling records itself in `bot.pid`.
@@ -160,7 +175,7 @@ While another session holds the slot, permission prompts from this session are n
 | `/telegram:access policy allowlist` | Set `dmPolicy`. Values: `pairing`, `allowlist`, `disabled`. |
 | `/telegram:access group add -1001654782309` | Enable a group. Flags: `--no-mention` (also requires disabling privacy mode), `--allow id1,id2`. |
 | `/telegram:access group rm -1001654782309` | Disable a group. |
-| `/telegram:access set ackReaction 👀` | Set a config key: `ackReaction`, `replyToMode`, `textChunkLimit`, `chunkMode`, `mentionPatterns`, `pollerTakeoverSeconds`. |
+| `/telegram:access set ackReaction 👀` | Set a config key: `ackReaction`, `replyToMode`, `textChunkLimit`, `chunkMode`, `mentionPatterns`, `pollerTakeoverSeconds`, `permissionChatId`. |
 
 ## Config file
 
@@ -202,6 +217,10 @@ While another session holds the slot, permission prompts from this session are n
 
   // Seconds a new session waits before taking the polling slot from a
   // session that already has it. 0 = never take it.
-  "pollerTakeoverSeconds": 120
+  "pollerTakeoverSeconds": 120,
+
+  // Who receives permission prompts when more than one person is paired.
+  // Must be one of allowFrom.
+  "permissionChatId": "412587349"
 }
 ```

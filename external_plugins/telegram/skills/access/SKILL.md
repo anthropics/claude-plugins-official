@@ -53,7 +53,8 @@ Arguments passed: `$ARGUMENTS`
       "createdAt": <ms>, "expiresAt": <ms>
     }
   },
-  "mentionPatterns": ["@mybot"]
+  "mentionPatterns": ["@mybot"],
+  "permissionChatId": "<senderId>"
 }
 ```
 
@@ -69,7 +70,9 @@ Parse `$ARGUMENTS` (space-separated). If empty or unrecognized, show status.
 
 1. Read `<state-dir>/access.json` (handle missing file).
 2. Show: dmPolicy, allowFrom count and list, pending count with codes +
-   sender IDs + age, groups count.
+   sender IDs + age, groups count, and who receives permission prompts —
+   `permissionChatId` if set, the sole `allowFrom` entry if there is exactly
+   one, otherwise "nobody (set permissionChatId)".
 
 ### `pair <code>`
 
@@ -99,6 +102,10 @@ Parse `$ARGUMENTS` (space-separated). If empty or unrecognized, show status.
 ### `remove <senderId>`
 
 1. Read, filter `allowFrom` to exclude `<senderId>`, write.
+2. If `permissionChatId` was that sender, delete it too — left behind it
+   names someone who is no longer allowed, and permission prompts stop
+   going to Telegram at all. Say so, and that `set permissionChatId <id>`
+   names a new one.
 
 ### `policy <mode>`
 
@@ -119,13 +126,18 @@ Parse `$ARGUMENTS` (space-separated). If empty or unrecognized, show status.
 ### `set <key> <value>`
 
 Delivery/UX config. Supported keys: `ackReaction`, `replyToMode`,
-`textChunkLimit`, `chunkMode`, `mentionPatterns`, `pollerTakeoverSeconds`.
+`textChunkLimit`, `chunkMode`, `mentionPatterns`, `pollerTakeoverSeconds`,
+`permissionChatId`.
 Validate types:
 - `ackReaction`: string (emoji) or `""` to disable
 - `replyToMode`: `off` | `first` | `all`
 - `textChunkLimit`: number
 - `chunkMode`: `length` | `newline`
 - `mentionPatterns`: JSON array of regex strings
+- `permissionChatId`: a **quoted string**, matching an `allowFrom` entry, for
+  the one person who receives permission prompts. Written unquoted it matches
+  nothing and silently stops them. Only needed when more than one person is
+  paired; without it such an install gets no prompts on Telegram.
 - `pollerTakeoverSeconds`: number of seconds a newly started session waits
   before taking the Telegram polling slot from a session that already has it.
   `0` means never take it. Default 120.
