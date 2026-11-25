@@ -136,10 +136,11 @@ from diffstate import (  # noqa: E402,F401
     KEPT_NO_CAPTURE, KEPT_UNREVIEWED,
 )
 from reporesolve import (  # noqa: E402,F401
-    RES_NONE, RES_CWD, RES_COMMAND, RES_SHA_SCAN, RES_TOUCHED_PATHS, RES_HINT,
+    RES_NONE, RES_CWD, RES_COMMAND, RES_SHA_SCAN, RES_TOUCHED_PATHS, RES_HINT, RES_NAMED,
     COMMIT_SUBCOMMANDS, PUSH_SUBCOMMANDS,
     toplevel_from_command, command_in_left_out_repo, repo_containing_commit, scan_roots,
     resolve_repo_root, save_repo_hint, load_repo_hint,
+    named_repo_with_new_commit, _names_a_folder,
 )
 import diffstate  # noqa: E402  module ref for last_baseline_fail
 import gitutil  # noqa: E402  module ref for per-run counters
@@ -1275,6 +1276,23 @@ def _bash_hook_sentinel(input_data, route="once"):
     return os.path.join(gd, f"sg-hook-once-{safe}" + ("" if route == "once" else f"-{route}"))
 
 
+def _sweep_old_marks(gd):
+    """GC: best-effort sweep of stale sentinels so they don't accumulate."""
+    import time as _time
+    now = _time.time()
+    try:
+        for name in os.listdir(gd):
+            if name.startswith("sg-hook-once-"):
+                p = os.path.join(gd, name)
+                try:
+                    if now - os.path.getmtime(p) > 900:
+                        os.unlink(p)
+                except OSError:
+                    pass
+    except OSError:
+        pass
+
+
 def _claim_bash_hook_once(input_data, route="once"):
     """De-dupe across hooks.json `if` matchers firing for the same Bash call.
 
@@ -1295,21 +1313,7 @@ def _claim_bash_hook_once(input_data, route="once"):
     sentinel = _bash_hook_sentinel(input_data, route)
     if not sentinel:
         return True
-    gd = os.path.dirname(sentinel)
-    # GC: best-effort sweep of stale sentinels so they don't accumulate.
-    import time as _time
-    now = _time.time()
-    try:
-        for name in os.listdir(gd):
-            if name.startswith("sg-hook-once-"):
-                p = os.path.join(gd, name)
-                try:
-                    if now - os.path.getmtime(p) > 900:
-                        os.unlink(p)
-                except OSError:
-                    pass
-    except OSError:
-        pass
+    _sweep_old_marks(os.path.dirname(sentinel))
     try:
         fd = os.open(sentinel, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         os.close(fd)
@@ -1932,6 +1936,82 @@ def _commit_in_output(bash_output):
     return None
 
 
+# How long before this hook the command may have ended, at most.
+_COMMAND_SLACK_S = 60
+# The run time assumed where the input does not give it.
+_COMMAND_RUN_S = 60
+# How long before this hook a command of known length may have ended.
+_KNOWN_SLACK_S = 60
+
+
+def _command_started(input_data):
+    """When the Bash call began, at the earliest, in epoch seconds."""
+    ms = input_data.get("duration_ms")
+    known = isinstance(ms, (int, float)) and not isinstance(ms, bool) and 0 <= ms < 86_400_000
+    import time as _time
+    # A record has whole seconds. Unknown: an older host.
+    return _time.time() - _hook_spent_s() - (
+        ms / 1000 + _KNOWN_SLACK_S if known else _COMMAND_RUN_S + _COMMAND_SLACK_S)
+
+
+def _push_repo(input_data, cwd_root):
+    """(repository, how it was found) for the push of this Bash call."""
+    command, cwd = input_data["tool_input"]["command"], input_data.get("cwd")
+    response = input_data.get("tool_response") or {}
+    tip = _PUSH_RANGE_RE.search(_push_section(
+        (response.get("stdout", "") or "") + "\n" + (response.get("stderr", "") or "")))
+    repo_root, repo_res = resolve_repo_root(
+        cwd, command, PUSH_SUBCOMMANDS, sha=tip.group(2) if tip else None,
+        session_id=input_data.get("session_id", ""), cwd_root=cwd_root,
+    )
+    if repo_res == RES_HINT and gitutil.in_left_out_repo(cwd):
+        # Not a push of the repository an earlier turn worked in.
+        repo_root, repo_res = None, RES_NONE
+    return repo_root, repo_res
+
+
+def _first_to_look_elsewhere(input_data):
+    """True in one spawn of the Bash call, the one that may look at the other
+    folders it names. Elsewhere than outside a repository that is the one that
+    _claim_bash_hook_once let through."""
+    if _bash_hook_sentinel(input_data) or not input_data.get("tool_use_id"):
+        return True
+    safe = re.sub(r"[^A-Za-z0-9_-]", "_", str(input_data["tool_use_id"]))[:80]
+    try:
+        folder = make_state_dir()
+        _sweep_old_marks(folder)
+        os.close(os.open(os.path.join(folder, f"sg-hook-once-{safe}-commit"), os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+    except FileExistsError:
+        return False
+    except OSError:
+        pass
+    return True
+
+
+def _printed_commit_elsewhere(input_data, named, repo_root, cwd_root):
+    """The repository where the printed commit was made, if that is not
+    `repo_root` and no review has it or works on it; else None."""
+    response = input_data.get("tool_response") or {}
+    # git's own line has the branch too. A log's `[sha]` is of any commit.
+    if not re.search(r"\[[^\]\n]+ " + re.escape(named) + r"\]", response.get("stdout", "") or ""):
+        return None
+    if not _first_to_look_elsewhere(input_data):
+        return None
+    other = named_repo_with_new_commit(
+        input_data["tool_input"]["command"], input_data["cwd"], repo_root, named, _command_started(input_data))
+    if not other:
+        return None
+    full = _full_shas(other, [named])
+    if PUSH_SWEEP_ENABLED and _GIT_PUSH_RE.search(input_data["tool_input"]["command"]):
+        pushed = _push_repo(input_data, cwd_root)[0]
+        if (pushed and _push_in_output((response.get("stdout", "") or "") + "\n" + (response.get("stderr", "") or ""))
+                and _git_dir(other) and _git_dir(pushed) == _git_dir(other)):
+            return None  # the push review takes it, and at once
+    if not full or full[0] in _load_inflight_shas(other, full) or full[0] in _load_reviewed_shas(other):
+        return None
+    return other
+
+
 def _commit_review_candidates(bash_output, repo_root):
     """(shas, stale): the commits the commit review of a Bash call that was
     not interrupted takes, newest first, before it leaves out those already
@@ -2094,6 +2174,15 @@ def handle_commit_review_posttooluse(input_data):
         repo_root = load_repo_hint(session_id) if _hint else None
         if repo_root:
             repo_res = RES_HINT
+    # A review found this way, the session's own folder included, shares nothing
+    # with the others: they end as they would without it.
+    _elsewhere = False
+    if named and _names_a_folder(command):
+        _other = _printed_commit_elsewhere(input_data, named, repo_root, cwd_root)
+        if _other:
+            if repo_root and repo_res in (RES_COMMAND, RES_TOUCHED_PATHS):
+                save_repo_hint(session_id, repo_root)
+            repo_root, repo_res, _elsewhere = _other, RES_NAMED, True
     if repo_res != RES_CWD:
         _base["repo_resolution"] = repo_res
     if not repo_root:
@@ -2175,7 +2264,8 @@ def handle_commit_review_posttooluse(input_data):
     is_amend = bool(_GIT_AMEND_RE.search(command))
     commit_invocations = len(_GIT_COMMIT_RE.findall(command))
     pre_amend_sha = None
-    if (is_amend and not _reflog_shas and len(all_shas) <= 1
+    # What was amended has had no review there.
+    if (is_amend and not _elsewhere and not _reflog_shas and len(all_shas) <= 1
             and commit_invocations <= 1):
         pre_amend_sha = _resolve_amend_pre_sha(repo_root, expected_post_sha=shas[0])
     if is_amend and pre_amend_sha:
@@ -2308,7 +2398,8 @@ def handle_commit_review_posttooluse(input_data):
     # free. `rate_count` is emitted on every fire (not just rejections) so
     # telemetry can show how close to the cap sessions run.
     _allowed, _rate_n = atomic_check_rate_limit(
-        session_id, "CommitReview",
+        # Those elsewhere take no slot from the ones the push review counts too.
+        session_id, "CommitReviewElsewhere" if _elsewhere else "CommitReview",
         MAX_COMMIT_REVIEWS_PER_HOUR, COMMIT_REVIEW_RATE_WINDOW_S)
     _base = {**_base, "rate_count": _rate_n}
     if not _allowed:
@@ -2326,11 +2417,13 @@ def handle_commit_review_posttooluse(input_data):
             return []
         return list(state.get("previous_findings", []))
 
-    previous_findings = with_locked_state(session_id, _read_previous) or []
+    # They hold no repository: what was found in another hides nothing here.
+    previous_findings = [] if _elsewhere else with_locked_state(session_id, _read_previous) or []
 
     # Tell a push review (or the next commit's reflog scan) that these commits
     # are being reviewed, so it does not start a second review of them.
-    _mark_inflight(repo_root, _full_shas(repo_root, shas))
+    if not _elsewhere:
+        _mark_inflight(repo_root, _full_shas(repo_root, shas))
     # Count only: keyed on what the reviewer is sent, after the byte caps.
     _diff_token, _seen_m = _diff_review_started(
         repo_root, _cap_files_for_prompt(diff_files), tip=shas[0])
@@ -2405,6 +2498,14 @@ def handle_commit_review_posttooluse(input_data):
         else {}
     )
 
+    if review_failed and _elsewhere:
+        # Silent. Whether a push has it or will have it is not known, and the
+        # notice is told once per session: it is for the session's own.
+        debug_log(f"Commit review: got no verdict ({api_status}) in {repo_root!r}; not marked reviewed")
+        emit_metrics({"review_failed": True, **({"api_error": api_status} if api_status is not None else {}),
+                      **_base, **_agentic_m, "files_reviewed": len(diff_files), "review_ms": review_ms,
+                      "vulns_found": 0})
+        sys.exit(0)
     if review_failed:
         # Not marked reviewed, so a later push review from Claude Code still
         # covers it.
@@ -2452,7 +2553,7 @@ def handle_commit_review_posttooluse(input_data):
     # Late dedup: drop only what a concurrent Stop hook wrote while our LLM
     # ran. Anything in `previous_findings` (the pre-LLM snapshot) that the
     # LLM chose to re-flag is an intentional "fix incomplete" verdict.
-    new_vulns, n_deduped = _dedup_against_state(
+    new_vulns, n_deduped = (vulns, 0) if _elsewhere else _dedup_against_state(
         session_id, vulns, prompted=_finding_keys(previous_findings)
     )
 
@@ -2486,7 +2587,8 @@ def handle_commit_review_posttooluse(input_data):
                 existing.append(f)
         state["previous_findings"] = existing
         state["previous_findings_ts"] = _time.time()
-    with_locked_state(session_id, _record_findings)
+    if not _elsewhere:
+        with_locked_state(session_id, _record_findings)
 
     sev = {"critical": 0, "high": 0, "medium": 0}
     for v in new_vulns:
@@ -2498,6 +2600,7 @@ def handle_commit_review_posttooluse(input_data):
     # still lists deduped entries. emit_metrics writes it to stderr, the body
     # of the asyncRewake notice.
     _commit_guidance = (PROVENANCE_BANNER + "\n\n"
+                        + (f"In the repository {json.dumps(repo_root)}:\n\n" if _elsewhere else "")
                         + _format_vulns_guidance(new_vulns)
                         + CONTINUATION_SUFFIX + "\n")
     emit_metrics({
@@ -2505,7 +2608,8 @@ def handle_commit_review_posttooluse(input_data):
         "critical_count": sev["critical"], "high_count": sev["high"],
         "files_reviewed": len(diff_files), "review_ms": review_ms,
         **({"deduped": n_deduped} if n_deduped else {}),
-    }, rewake_summary=_format_vulns_summary(new_vulns, prefix="Commit security review found"),
+    }, rewake_summary=_format_vulns_summary(new_vulns, prefix="Commit security review found" if not _elsewhere
+                                         else f"Commit security review of {os.path.basename(repo_root)!r} found"),
        additional_context=_commit_guidance,
        hook_event_name="PostToolUse")
 
@@ -2586,16 +2690,8 @@ def handle_push_sweep_posttooluse(input_data):
     if not cwd:
         emit_metrics({"skipped": True, "skip_reason": 25, **_base})
         sys.exit(0)
-    _tip_m = _PUSH_RANGE_RE.search(_push_section(bash_output))
     cwd_root = _git_toplevel(cwd)
-    repo_root, repo_res = resolve_repo_root(
-        cwd, command, PUSH_SUBCOMMANDS,
-        sha=_tip_m.group(2) if _tip_m else None,
-        session_id=session_id, cwd_root=cwd_root,
-    )
-    if repo_res == RES_HINT and gitutil.in_left_out_repo(cwd):
-        # Not a push of the repository an earlier turn worked in.
-        repo_root, repo_res = None, RES_NONE
+    repo_root, repo_res = _push_repo(input_data, cwd_root)
     if not cwd_root:
         _base["cwd_is_repo"] = False
     if repo_res != RES_CWD:
