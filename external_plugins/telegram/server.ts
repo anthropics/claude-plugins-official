@@ -517,6 +517,35 @@ function escapeHtml(s: string): string {
 
 /** Keeps the expanded prompt under Telegram's 4096-character limit. */
 const MAX_PREVIEW_CHARS = 3000
+const TELEGRAM_TEXT_LIMIT = 4096
+
+// Telegram counts a message in UTF-16 code units, not characters, so a
+// preview full of emoji or CJK extensions is twice as long as it looks. A cut
+// between the halves of a surrogate pair leaves a lone surrogate, which is
+// not a legal character and loses the whole message rather than its tail.
+function cutToUnits(text: string, units: number): string {
+  if (text.length <= units) return text
+  const end = units > 0 && text.charCodeAt(units - 1) >= 0xd800 && text.charCodeAt(units - 1) <= 0xdbff ? units - 1 : units
+  return text.slice(0, end)
+}
+
+// Escaping grows the text by an amount that depends on the text, and the
+// header grows with the tool name, so the only reliable budget is the
+// finished message. Build it and shrink until it fits.
+function expandedPrompt(toolName: string, body: string): string {
+  const head = `🔐 Permission: <code>${escapeHtml(toolName)}</code>\n\n<pre>`
+  const points = [...body].length
+  let shown = cutToUnits(body, MAX_PREVIEW_CHARS)
+  for (;;) {
+    const omitted = points - [...shown].length
+    const note = omitted > 0 ? `\n… (${omitted} more characters)` : ''
+    const message = `${head}${escapeHtml(shown)}${escapeHtml(note)}</pre>`
+    if (message.length <= TELEGRAM_TEXT_LIMIT) return message
+    const next = Math.floor(shown.length * 0.8) - 1
+    if (next <= 0) return `${head}…</pre>`
+    shown = cutToUnits(shown, next)
+  }
+}
 /** Entries are dropped on a tap; a prompt answered in the terminal leaves one behind. */
 const MAX_PENDING_PERMISSIONS = 100
 
@@ -1049,15 +1078,7 @@ bot.on('callback_query:data', async ctx => {
       prettyInput = input_preview
     }
     const body = `description: ${description}\ninput_preview:\n${prettyInput}`
-    // By code point: half a surrogate pair is not a legal character, and
-    // Telegram would refuse the whole edit over it.
-    const points = [...body]
-    const shown =
-      points.length > MAX_PREVIEW_CHARS
-        ? `${points.slice(0, MAX_PREVIEW_CHARS).join('')}\n… (${points.length - MAX_PREVIEW_CHARS} more characters)`
-        : body
-    const expanded =
-      `🔐 Permission: <code>${escapeHtml(tool_name)}</code>\n\n<pre>${escapeHtml(shown)}</pre>`
+    const expanded = expandedPrompt(tool_name, body)
     const keyboard = new InlineKeyboard()
       .text('✅ Allow', `perm:allow:${request_id}`)
       .text('❌ Deny', `perm:deny:${request_id}`)
@@ -1567,12 +1588,25 @@ async function handleInbound(
   const permMatch = senderMayAnswerPermissions ? PERMISSION_REPLY_RE.exec(text) : null
   if (permMatch) {
     const allow = permMatch[1]!.toLowerCase().startsWith('y')
+    const request_id = permMatch[2]!.toLowerCase()
+    // Claim it here as the buttons do. The prompt they sit on stays in the
+    // chat after a typed answer, so answering both ways — in either order —
+    // would otherwise send Claude Code two replies to one request.
+    const answered = pendingPermissions.get(request_id)
+    if (!answered) {
+      await ctx.reply('That request is not waiting for an answer.').catch(() => {})
+      return
+    }
+    pendingPermissions.delete(request_id)
     try {
       await mcp.notification({
         method: 'notifications/claude/channel/permission',
-        params: { request_id: permMatch[2]!.toLowerCase(), behavior: allow ? 'allow' : 'deny' },
+        params: { request_id, behavior: allow ? 'allow' : 'deny' },
       })
     } catch (err) {
+      // Put it back: it was never answered, so both ways of answering it
+      // should still work.
+      pendingPermissions.set(request_id, answered)
       // ✅ on an answer that never arrived would tell the user a tool call
       // they denied went through, or that one they allowed is running. This
       // catches a broken transport, not a session that is not listening:
