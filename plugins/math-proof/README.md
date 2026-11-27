@@ -2,8 +2,8 @@
 
 Two Claude Code skills for hard, research-level mathematics problems. Each
 takes one problem stated in full, keeps everything it writes in a run folder,
-switches Claude Code's web tools off for its run, and ends with a
-self-contained `proof.md`.
+may consult the literature with Claude Code's web search and fetch tools where
+your setup has them, and ends with a self-contained `proof.md`.
 
 **`/math-proof:solo`**: Claude works the problem itself, in your session, as
 one long turn. It is instructed to write its plan and each intermediate result
@@ -26,8 +26,9 @@ run: check `/usage` before you start on a subscription, or cap the spend with
 
 ![How a siege run unfolds](assets/how-a-run-unfolds.png)
 
-Either way `proof.md` is the model's own account, and any result it cites from
-the literature is quoted from memory: read it critically. Full instructions:
+Either way `proof.md` is the model's own account, and the model is instructed
+to mark each result it cites from the literature as looked up or recalled from
+memory: read it critically. Full instructions:
 [skills/solo/SKILL.md](skills/solo/SKILL.md) and
 [skills/siege/SKILL.md](skills/siege/SKILL.md); the sub-agents are defined in
 [agents/](agents/).
@@ -38,20 +39,24 @@ the literature is quoted from memory: read it critically. Full instructions:
 /plugin install math-proof@claude-plugins-official
 ```
 
-Needs Claude Code 2.1.280 or later and, for `siege`, Python 3.7 or later on
-your PATH as `python3` or `python` (no extra packages). Then add this `"env"`
+Needs Claude Code 2.1.280 or later and Python 3.7 or later on your PATH as
+`python3` or `python` (no extra packages): `siege`'s bookkeeping script needs
+it, and both skills run short computations with it. Then add this `"env"`
 block once to `~/.claude/settings.json` (or to `.claude/settings.json` in the
-directory you run from, to limit it to that directory). The three lines allow
+directory you run from, to limit it to that directory). The four lines allow
 long responses, keep sub-agents in the foreground by turning background tasks
-off, and give a silent worker four hours before it is cut off; they affect every
-session that reads the file, so remove them when you stop using the plugin.
+off, give a silent worker four hours before it is cut off, and raise the
+session's cap on web searches (the workers of a long `siege` run share it);
+they affect every session that reads the file, so remove them when you stop
+using the plugin.
 
 ```json
 {
   "env": {
     "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "128000",
     "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1",
-    "CLAUDE_ASYNC_AGENT_STALL_TIMEOUT_MS": "14400000"
+    "CLAUDE_ASYNC_AGENT_STALL_TIMEOUT_MS": "14400000",
+    "CLAUDE_CODE_MAX_WEB_SEARCHES_PER_SESSION": "1000"
   }
 }
 ```
@@ -67,9 +72,9 @@ claude --model claude-opus-5-5 --effort high
 
 or `/math-proof:siege <…>` likewise. `solo` writes under `./math-proof-solo/`,
 `siege` under `./math-proof-run/`; the session says where `proof.md` is when it
-finishes. In the default permission mode Claude Code asks you to approve file
-writes and the `siege` judge's shell commands (short Python checks and file
-copies), so stay within reach or use the unattended form below; other than
+finishes. In the default permission mode Claude Code stops to ask before web
+searches and fetches, before each Python computation and before some file
+operations, so stay within reach or use the unattended form below; other than
 that, type nothing while it runs. While `siege` runs, `state.md` in the run
 folder shows the current round, and if the judge proves its goal and goes
 after a stronger one, the result already proved is copied to `result-so-far.md`.
@@ -83,7 +88,9 @@ Options go before the problem: `DIR=path` picks another run folder, and
 `siege` takes settings such as `MAX_ROUNDS=8` (its SKILL.md lists them). To
 change a sub-agent's thinking effort, copy its file from [agents/](agents/)
 into `~/.claude/agents/`, leave its `name:` line unchanged, and edit the
-`effort:` line; your copy takes precedence over the plugin's.
+`effort:` line; your copy takes precedence over the plugin's and does not
+change when the plugin is updated, so copy it again (and redo your edit) after
+an update.
 
 Unattended, with the problem in a file (likewise for `solo`):
 
@@ -95,10 +102,15 @@ claude -p "/math-proof:siege problem.md" --model claude-opus-5-5 --effort high \
 With an API key, adding `--max-budget-usd <amount>` to that `-p` command stops
 the run once that much has been spent; giving the command again resumes it.
 
-**Caution:** `siege`'s judge runs model-written Python through Claude Code's
-shell tool on your machine. Use `--dangerously-skip-permissions` only in a
-disposable container or VM, as a non-root user; otherwise approve its commands
-by hand.
+**Caution:** both skills give the model Claude Code's shell tool on your machine
+(it is told to use it only for short Python computations and file handling)
+and, with the web tools on, have it read text fetched from the internet, which
+could steer what it runs. Use `--dangerously-skip-permissions` only in a
+disposable container or VM that holds nothing you would mind leaking, as a
+non-root user; otherwise stay in the default permission mode, which asks before
+Python computations and web access. Adding
+`--disallowedTools WebSearch,WebFetch` at the end of the `claude` command turns
+the two web tools off for that run.
 
 ## License
 
