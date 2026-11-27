@@ -4,7 +4,9 @@ A Telegram bot is publicly addressable. Anyone who finds its username can DM it,
 
 By default, a DM from an unknown sender triggers **pairing**: the bot replies with a 6-character code and drops the message. You run `/telegram:access pair <code>` from your assistant session to approve them. Once approved, their messages pass through.
 
-All state lives in `~/.claude/channels/telegram/access.json`. The `/telegram:access` skill commands edit this file; the server re-reads it on every inbound message, so changes take effect without a restart. Set `TELEGRAM_ACCESS_MODE=static` to pin config to what was on disk at boot (pairing is unavailable in static mode since it requires runtime writes).
+Access configuration lives in `~/.claude/channels/telegram/access.json`. The `/telegram:access` skill commands edit this file; the server re-reads it on every inbound message, so changes take effect without a restart. Set `TELEGRAM_ACCESS_MODE=static` to pin config to what was on disk at boot (pairing is unavailable in static mode since it requires runtime writes; the inbound journal below is written either way).
+
+Alongside it the server keeps `inbound.jsonl`, a journal of received messages — see **What is kept on disk** — plus `server.log`, `bot.pid`, `inbox/` and `.env`.
 
 ## At a glance
 
@@ -15,6 +17,8 @@ All state lives in `~/.claude/channels/telegram/access.json`. The `/telegram:acc
 | Group key | Supergroup ID (negative, `-100…` prefix) |
 | `ackReaction` quirk | Fixed whitelist only; non-whitelisted emoji silently do nothing |
 | Config file | `~/.claude/channels/telegram/access.json` |
+| Message journal | `~/.claude/channels/telegram/inbound.jsonl`, last 500 or 7 days |
+| Server log | `~/.claude/channels/telegram/server.log`, newest 256 KB |
 
 ## DM policies
 
@@ -59,15 +63,19 @@ With the default `requireMention: true`, the bot responds only when @mentioned o
 /telegram:access group rm -1001654782309
 ```
 
-**Privacy mode.** Telegram bots default to a server-side privacy mode that filters group messages before they reach your code: only @mentions and replies are delivered. This matches the default `requireMention: true`, so it's normally invisible. Using `--no-mention` requires disabling privacy mode as well: message [@BotFather](https://t.me/BotFather), send `/setprivacy`, pick your bot, choose **Disable**. Without that step, Telegram never delivers the messages regardless of local config.
+**Privacy mode.** Telegram bots default to a server-side privacy mode that filters group messages before they reach your code. [Telegram's list](https://core.telegram.org/bots/features#privacy-mode) of what still gets through is: commands aimed at the bot (`/command@your_bot`), general commands if your bot sent the last message, inline messages sent via the bot, and **replies to the bot's own messages** — plus service messages, and everything in private chats.
+
+**@mentions are not on that list.** So with privacy mode on, replying to one of the bot's messages is the trigger to rely on; a plain `@your_bot hello` may never reach the plugin at all, and `requireMention: true` is the default. If a group looks silent, that is the first thing to check — run with `TELEGRAM_DEBUG=1` (see **When nothing arrives**) to tell "Telegram never delivered it" from "the gate dropped it".
+
+Using `--no-mention`, or relying on @mentions, requires disabling privacy mode: message [@BotFather](https://t.me/BotFather), send `/setprivacy`, pick your bot, choose **Disable**. **The bot must then be removed from the group and re-added** for the change to take effect — Telegram applies it at join time.
 
 ## Mention detection
 
 In groups with `requireMention: true`, any of the following triggers the bot:
 
-- A structured `@botusername` mention
-- A reply to one of the bot's messages
-- A match against any regex in `mentionPatterns`
+- **A reply to one of the bot's messages** — the only one Telegram guarantees while privacy mode is on, so prefer it
+- A structured `@botusername` mention — needs privacy mode disabled to be reliable
+- A match against any regex in `mentionPatterns` — the message has to reach the plugin first, so the same caveat applies
 
 ```
 /telegram:access set mentionPatterns '["^hey claude\\b", "\\bassistant\\b"]'
@@ -92,6 +100,71 @@ Configure outbound behavior with `/telegram:access set <key> <value>`.
 
 **`chunkMode`** chooses the split strategy: `length` cuts exactly at the limit; `newline` prefers paragraph boundaries.
 
+## When nothing arrives
+
+A message the gate turns away is dropped in silence, which looks the same as a bot that is broken.
+
+**The plugin keeps a log at `<state-dir>/server.log`.** Start there. It holds what the server reports — poller handovers, delivery failures, Telegram API errors — oldest entries trimmed once it passes 256 KB. The log is a file because Claude Code stops reading a plugin's stderr once the MCP connection is up, so nothing printed after startup reaches the MCP logs; only startup lines land there.
+
+Set `TELEGRAM_DEBUG=1` in `<state-dir>/.env` and restart the session to add a line for each message the gate drops, with the chat, the sender and the reason — a group that was never enabled, a sender not on the allowlist, a missing mention. Message text is never logged, only ids and the reason.
+
+Resolve `<state-dir>` first; it is not always `~/.claude/channels/telegram`:
+
+```bash
+echo "${TELEGRAM_STATE_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/channels/telegram}"
+```
+
+Two things the log will not show:
+
+- **Bot commands.** `/start`, `/help` and `/status` are answered only in private chats and are discarded in groups before the gate runs, so they produce no line.
+- **Messages Telegram never delivered.** If a group message leaves no trace even with the flag on, Telegram filtered it server-side — see **Privacy mode** above, which is the usual reason.
+
+When several sessions have the plugin loaded they share this file, and only the one holding the polling slot writes the inbound lines. That is the log to read, whichever session you are in.
+
+## What is kept on disk
+
+Handing a message to the session can fail without the plugin being told — a session running without `--channels` accepts the push and drops it. So every inbound message is written to `inbound.jsonl` *before* delivery is attempted, and the `recent_inbound` tool reads it back. Without it, a message lost that way leaves no trace anywhere.
+
+What that means for you:
+
+- **Message text is on disk**, including group messages and forwarded third-party content, in a file mode `600` inside a directory mode `700`. The plugin never sends it to Telegram: `reply` refuses any file inside the state directory.
+- **It is capped** at the most recent 500 entries or 7 days, whichever comes first. Entries past the cap are never replayed, even before the file is next rewritten.
+- **It is shared between sessions.** Every Claude Code session on the machine reads the same file, which is what makes recovery work — the session that lost the message is usually not the one you ask about it. A session in an unrelated project can therefore replay messages that arrived for another.
+- Inbound photos are already stored in `inbox/`; this adds the text beside them.
+
+Delete `inbound.jsonl` at any time; it is recreated on the next message.
+
+## Who answers permission prompts
+
+When the session needs approval for a tool call, the prompt can come to Telegram with Allow and Deny buttons. It goes to **one person**, because `allowFrom` is the list of people who may talk to the session, not the list who should decide what it does — a prompt carries a tool name, a description and an input preview, so broadcasting it shows one person's file paths and commands to everyone paired, and hands an actionable Allow to someone with no idea what they are approving.
+
+- **One person paired**: they get it. Nothing to configure.
+- **Several paired**: set who gets it.
+
+```
+/telegram:access set permissionChatId 412587349
+```
+
+Until that is set, a multi-person install gets no prompts on Telegram at all and the reason is written to `server.log`. Nothing is lost — the prompt is still waiting in the terminal — but answering it there is the only way.
+
+Whoever receives the prompt, only people in `allowFrom` can answer one, and a reply forwarded from someone else is never taken as an answer.
+
+## Several sessions, one bot token
+
+Telegram allows exactly one long-polling consumer per bot token, so when more than one Claude Code session has the plugin loaded, only one of them polls. The others serve the tools (`reply`, `react`, `edit_message`, `recent_inbound`) normally and wait; whichever is polling records itself in `bot.pid`.
+
+A session that starts while another is already polling waits **`pollerTakeoverSeconds`** (default 120) and then takes the slot, so the session you just started does end up receiving your messages. The session that had it notices on its next check and steps down to serving tools only — nothing signals it and it keeps running. The wait is what keeps short-lived instances, such as the throwaway servers `claude mcp list` spawns to health-check, from disturbing a working session at all.
+
+```
+/telegram:access set pollerTakeoverSeconds 0
+```
+
+Set it to `0` to pin the slot to the first session that claims it; no later session will take it while that one is alive. A poller that stops responding (crashed session, hung process) is replaced either way, within about half a minute — that one is terminated, since it cannot step down on its own. A process whose event loop is wedged never runs its own shutdown handler, so on macOS and Linux a holder still there a few seconds later is killed outright rather than asked again. Not on Windows: there is no cheap way there to confirm which process a reused pid now belongs to, so the slot is taken and the old holder is left to notice on its own.
+
+Starting a session installs nothing while the dependencies are in place. The plugin directory is only written to when something the server imports cannot be found — a first run, or a tree left half-written — and then by one session at a time. So an ordinary start cannot disturb a session that is already polling, and two starts at the same moment wait for each other instead of racing.
+
+While another session holds the slot, permission prompts from this session are not sent to Telegram: the tap would come back to whichever session is polling. Answer those in the terminal.
+
 ## Skill reference
 
 | Command | Effect |
@@ -104,7 +177,7 @@ Configure outbound behavior with `/telegram:access set <key> <value>`.
 | `/telegram:access policy allowlist` | Set `dmPolicy`. Values: `pairing`, `allowlist`, `disabled`. |
 | `/telegram:access group add -1001654782309` | Enable a group. Flags: `--no-mention` (also requires disabling privacy mode), `--allow id1,id2`. |
 | `/telegram:access group rm -1001654782309` | Disable a group. |
-| `/telegram:access set ackReaction 👀` | Set a config key: `ackReaction`, `replyToMode`, `textChunkLimit`, `chunkMode`, `mentionPatterns`. |
+| `/telegram:access set ackReaction 👀` | Set a config key: `ackReaction`, `replyToMode`, `textChunkLimit`, `chunkMode`, `mentionPatterns`, `pollerTakeoverSeconds`, `permissionChatId`. |
 
 ## Config file
 
@@ -142,6 +215,14 @@ Configure outbound behavior with `/telegram:access set <key> <value>`.
   "textChunkLimit": 4096,
 
   // length = cut at limit. newline = prefer paragraph boundaries.
-  "chunkMode": "newline"
+  "chunkMode": "newline",
+
+  // Seconds a new session waits before taking the polling slot from a
+  // session that already has it. 0 = never take it.
+  "pollerTakeoverSeconds": 120,
+
+  // Who receives permission prompts when more than one person is paired.
+  // Must be one of allowFrom.
+  "permissionChatId": "412587349"
 }
 ```
