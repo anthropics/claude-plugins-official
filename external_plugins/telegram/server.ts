@@ -942,6 +942,10 @@ function shutdown(): void {
   if (shuttingDown) return
   shuttingDown = true
   logLine('telegram channel: shutting down\n')
+  // Settle what this instance already asked for. Releasing the lease below
+  // removes the only record of the holder it replaced, so a kill left queued
+  // here is one nothing else on the machine would ever go back for.
+  escalatePendingKills(Infinity)
   releaseLease()
   // bot.stop() signals the poll loop to end; the current getUpdates request
   // may take up to its long-poll timeout to return. Force-exit after 2s.
@@ -1706,6 +1710,7 @@ bot.catch(err => {
 const HEARTBEAT_MS = 5000
 const LEASE_STALE_MS = 30000 // six missed beats
 const DEFAULT_TAKEOVER_MS = 120000
+const TERMINATE_GRACE_MS = 3000 // escalation lands on the next election tick
 const CONFLICT_ATTEMPTS = 8
 const CONFLICT_BACKOFF_MS = 60000
 const HEALTHY_RUN_MS = 30000
@@ -1725,8 +1730,13 @@ function readLease(): Lease | null {
   if (/^\d+$/.test(raw)) return { pid: Number(raw), heartbeat: 0 }
   try {
     const parsed = JSON.parse(raw) as Partial<Lease>
-    if (typeof parsed.pid !== 'number' || typeof parsed.heartbeat !== 'number') return null
-    return { pid: parsed.pid, heartbeat: parsed.heartbeat }
+    // A fractional or non-finite pid means nothing to process.kill or to the
+    // process lookup below; a non-finite heartbeat would read as stale
+    // forever.
+    const pid = typeof parsed.pid === 'number' ? parsed.pid : NaN
+    const heartbeat = typeof parsed.heartbeat === 'number' ? parsed.heartbeat : NaN
+    if (!Number.isInteger(pid) || !Number.isFinite(heartbeat)) return null
+    return { pid, heartbeat }
   } catch {
     return null
   }
@@ -1762,21 +1772,82 @@ function pidIsAlive(pid: number): boolean {
   }
 }
 
-// True only when the pid can be positively confirmed as a server.ts process.
-// PID files race with OS pid recycling, and a recycled pid can point at our
-// own bun-run wrapper (killing its stdin shuts us down) or an unrelated user
-// process. `ps -p` exits non-zero once the pid is gone, and does not exist at
-// all on native Windows — there we cannot confirm, so we take the lease
-// without signalling anyone and let the other instance step down on its own
-// next tick.
-function pidIsPoller(pid: number): boolean {
+// What a pid's command line says it is. PID files race with OS pid recycling,
+// and a recycled pid can point at our own bun-run wrapper (killing its stdin
+// shuts us down) or an unrelated user process.
+//
+// `ours` is the marker the start script passes, which nothing else on the
+// machine has. `maybe` is a bare server.ts — a plugin from before the marker
+// existed, or someone running the server by hand, but also any unrelated
+// project's server.ts that happens to land on a recycled pid. That ambiguity
+// is why only `ours` is ever escalated to SIGKILL.
+//
+// `ps` does not exist on native Windows, so nothing is confirmed there and
+// nothing is signalled: the lease is taken and the other instance steps down
+// on its own next tick, as before. Reading a command line there means
+// spawning PowerShell, which costs a second or more of a blocked event loop
+// per check — too much for a path that runs from the election tick.
+const POLLER_MARKER = '--channel-telegram'
+const POLLER_SCRIPT = /(?:^|[\\/\s])server\.ts(?:\s|$)/
+
+// -ww stops BSD and macOS ps truncating at the terminal width, which would
+// cut the marker off the end of an absolute path.
+function pollerIdentity(pid: number): 'ours' | 'maybe' | 'no' {
+  if (process.platform === 'win32') return 'no'
+  let argv: string
   try {
-    return execFileSync('ps', ['-p', String(pid), '-o', 'args='], {
+    argv = execFileSync('ps', ['-ww', '-p', String(pid), '-o', 'args='], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
-    }).includes('server.ts')
+      timeout: 2000,
+    })
   } catch {
-    return false
+    return 'no'
+  }
+  if (argv.includes(POLLER_MARKER)) return 'ours'
+  return POLLER_SCRIPT.test(argv) ? 'maybe' : 'no'
+}
+
+// SIGTERM is delivered to a handler on the target's event loop, and the case
+// this exists for — a holder wedged on a synchronous loop — is precisely the
+// one where that handler never runs. So note the pid and look again on a
+// later tick rather than take the signal at its word.
+const pendingKills = new Map<number, { at: number; tries: number }>()
+const KILL_ATTEMPTS = 3
+
+function terminate(pid: number, identity: 'ours' | 'maybe'): void {
+  try {
+    process.kill(pid, 'SIGTERM')
+  } catch {
+    return
+  }
+  if (identity === 'ours') pendingKills.set(pid, { at: Date.now() + TERMINATE_GRACE_MS, tries: 0 })
+}
+
+// `now` is passed so that shutdown can settle what it already asked for
+// rather than leave a wedged holder nobody is left to finish off.
+function escalatePendingKills(now: number): void {
+  for (const [pid, pending] of pendingKills) {
+    if (now < pending.at) continue
+    if (!pidIsAlive(pid)) {
+      pendingKills.delete(pid)
+      continue
+    }
+    // Re-checked because the pid can be recycled inside the grace period. A
+    // probe that fails for its own reasons is not an answer, so look again on
+    // a later tick instead of letting one bad reading cancel the escalation.
+    const identity = pollerIdentity(pid)
+    if (identity !== 'ours') {
+      pending.tries += 1
+      if (identity === 'no' && pending.tries < KILL_ATTEMPTS) continue
+      pendingKills.delete(pid)
+      continue
+    }
+    pendingKills.delete(pid)
+    logLine(`telegram channel: pid=${pid} ignored SIGTERM, sending SIGKILL\n`)
+    try {
+      process.kill(pid, 'SIGKILL')
+    } catch {}
   }
 }
 
@@ -1814,11 +1885,10 @@ function tryAcquireLease(force: boolean): boolean {
   // Claim the lease before signalling: a holder that shuts down first would
   // otherwise delete the record it still believes is its own.
   writeLease()
-  if (pidIsPoller(lease.pid)) {
+  const identity = pollerIdentity(lease.pid)
+  if (identity !== 'no') {
     logLine(`telegram channel: replacing unresponsive poller pid=${lease.pid}\n`)
-    try {
-      process.kill(lease.pid, 'SIGTERM')
-    } catch {}
+    terminate(lease.pid, identity)
   }
   return true
 }
@@ -1844,7 +1914,12 @@ function stepDown(reason: string): void {
 }
 
 function electionTick(): void {
-  if (shuttingDown || pollingDisabled || pollerState === 'stopping') return
+  if (shuttingDown) return
+  // Ahead of the other guards: a holder this instance already signalled has
+  // to be finished off whatever has since become of this instance's own
+  // polling, or nothing on the machine can take the slot it is holding.
+  escalatePendingKills(Date.now())
+  if (pollingDisabled || pollerState === 'stopping') return
   const now = Date.now()
 
   if (pollerState === 'polling') {

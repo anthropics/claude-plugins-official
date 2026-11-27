@@ -159,7 +159,9 @@ A session that starts while another is already polling waits **`pollerTakeoverSe
 /telegram:access set pollerTakeoverSeconds 0
 ```
 
-Set it to `0` to pin the slot to the first session that claims it; no later session will take it while that one is alive. A poller that stops responding (crashed session, hung process) is replaced either way, within about half a minute — that one is terminated, since it cannot step down on its own.
+Set it to `0` to pin the slot to the first session that claims it; no later session will take it while that one is alive. A poller that stops responding (crashed session, hung process) is replaced either way, within about half a minute — that one is terminated, since it cannot step down on its own. A process whose event loop is wedged never runs its own shutdown handler, so on macOS and Linux a holder still there a few seconds later is killed outright rather than asked again. Not on Windows: there is no cheap way there to confirm which process a reused pid now belongs to, so the slot is taken and the old holder is left to notice on its own.
+
+Starting a session installs nothing while the dependencies are in place. The plugin directory is only written to when something the server imports cannot be found — a first run, or a tree left half-written — and then by one session at a time. So an ordinary start cannot disturb a session that is already polling, and two starts at the same moment wait for each other instead of racing.
 
 While another session holds the slot, permission prompts from this session are not sent to Telegram: the tap would come back to whichever session is polling. Answer those in the terminal.
 
