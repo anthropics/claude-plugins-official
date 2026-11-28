@@ -92,10 +92,10 @@ Complete workflow command that commits, pushes, and creates a pull request in on
 Cleans up local branches that have been deleted from the remote repository.
 
 **What it does:**
-1. Lists all local branches to identify [gone] status
-2. Identifies and removes worktrees associated with [gone] branches
-3. Deletes all branches marked as [gone]
-4. Provides feedback on removed branches
+1. Prunes every remote, then selects branches whose upstream field is exactly `[gone]`
+2. Checks each one for commits that exist nowhere else, and stops to ask about anything doubtful
+3. Removes an attached worktree once it is confirmed clean
+4. Deletes the branch and reports the SHA so it can be restored
 
 **Usage:**
 ```bash
@@ -115,10 +115,11 @@ Cleans up local branches that have been deleted from the remote repository.
 ```
 
 **Features:**
-- Handles both regular branches and worktree branches
-- Safely removes worktrees before deleting branches
-- Shows clear feedback about what was removed
-- Reports if no cleanup was needed
+- Selects branches by git's structured upstream field, so a commit subject cannot be mistaken for a tracking marker
+- Matches worktrees exactly, so a branch name containing `.` cannot remove an unrelated worktree
+- Refuses to discard an unclean worktree without asking
+- Distinguishes a squash-merged branch from one carrying unshipped commits
+- Shows clear feedback about what was removed, and reports if no cleanup was needed
 
 **When to use:**
 - After merging and deleting remote branches
@@ -147,7 +148,7 @@ This plugin is included in the Claude Code repository. The commands are automati
 ### Using `/clean_gone`
 - Run periodically to keep your branch list clean
 - Especially useful after merging multiple PRs
-- Safe to run - only removes branches already deleted remotely
+- Review what it reports: a branch whose remote is deleted can still hold commits that were never merged
 - Helps maintain a tidy local repository
 
 ## Workflow Integration
@@ -222,4 +223,4 @@ Anthropic (support@anthropic.com)
 
 ## Version
 
-1.0.1
+1.0.2
