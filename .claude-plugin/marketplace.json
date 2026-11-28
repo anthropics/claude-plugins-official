@@ -4310,7 +4310,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/zoom/zoom-plugin.git",
-        "sha": "86e2592334f5fb563ed273e26035844004e66165"
+        "sha": "8bb4ec2de152f9ca9276e6e905518d527d2cdf83"
       },
       "homepage": "https://developers.zoom.us/"
     },
